@@ -109,6 +109,10 @@ table.ht td.ip{color:var(--cyan)}
     <button class="tab" data-p="mitm">05 · interceptación</button>
     <button class="tab" data-p="find">06 · hallazgos</button>
     <button class="tab" data-p="rep">07 · reportes</button>
+    <button class="tab" data-p="def">08 · defensa</button>
+    <button class="tab" data-p="hp">09 · honeypot</button>
+    <button class="tab" data-p="py">10 · escenarios</button>
+    <button class="tab" data-p="ioc">11 · iocs / mitre</button>
   </nav>
 
   <section class="panel on" id="op">
@@ -158,6 +162,40 @@ table.ht td.ip{color:var(--cyan)}
   </div></section>
 
   <p class="foot reveal">sealctl · geo vía ip-api · intel con fórmula transparente · iot por huella real · todo en tu dispositivo</p>
+  <section class="panel" id="def">
+    <div class="grid">
+      <div class="card wide"><div class="hd"><span class="ix">def</span><h3>módulos de defensa (Python)</h3><span class="st" id="def-count">—</span></div><div class="bd"><div id="def-list" style="display:grid;gap:10px"><div class="empty">cargando módulos…</div></div></div></div>
+    </div>
+  </section>
+
+  <section class="panel" id="hp">
+    <div class="grid">
+      <div class="card wide"><div class="hd"><span class="ix">hp</span><h3>honeypot HTTP</h3><span class="st" id="hp-st">detenido</span></div><div class="bd">
+        <p style="font-size:12.5px;color:var(--dim);line-height:1.6;margin-bottom:14px">levanta un servidor falsos endpoints (/admin, /.env, /wp-login, /backup.sql) que captura atacantes en SQLite con IP, UA, headers y payload.</p>
+        <div class="row"><input class="inp" id="hp-port" placeholder="puerto (default 8080)" style="max-width:120px"><button class="btn" id="hp-start"><span class="sp"></span>activar honeypot</button><button class="btn" id="hp-stop">detener</button></div>
+        <div id="hp-stats" style="margin-top:14px"></div>
+      </div></div>
+    </div>
+  </section>
+
+  <section class="panel" id="py">
+    <div class="grid">
+      <div class="card wide"><div class="hd"><span class="ix">py</span><h3>escenarios de ataque (Python orchestrator)</h3><span class="st" id="py-count">—</span></div><div class="bd">
+        <p style="font-size:12.5px;color:var(--dim);line-height:1.6;margin-bottom:14px">ejecuta los 13 escenarios reales del redteam toolkit contra tu app: biometría, payments, pegasus, pinning, RNG, sidechannel, etc.</p>
+        <div class="row" style="margin-bottom:12px"><input class="inp" id="py-target" placeholder="target (build/app.apk)"><input class="inp" id="py-backend" placeholder="backend URL" style="max-width:200px"></div>
+        <div class="row"><button class="btn" id="py-run-all"><span class="sp"></span>orchestrator completo</button><button class="btn" id="py-refresh">listar escenarios</button></div>
+        <div id="py-list" style="margin-top:14px;display:grid;gap:8px"></div>
+      </div></div>
+    </div>
+  </section>
+
+  <section class="panel" id="ioc">
+    <div class="grid">
+      <div class="card"><div class="hd"><span class="ix">ioc</span><h3>indicadores de compromiso</h3><span class="st" id="ioc-count">—</span></div><div class="bd"><div id="ioc-list" style="max-height:400px;overflow:auto"><div class="empty">cargando…</div></div></div></div>
+      <div class="card"><div class="hd"><span class="ix">mitre</span><h3>MITRE ATT&CK</h3><span class="st">mapeo</span></div><div class="bd"><div id="mitre-list" style="max-height:400px;overflow:auto"><div class="empty">cargando…</div></div></div></div>
+    </div>
+  </section>
+
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
@@ -413,6 +451,104 @@ reveal();
 checkCert();
 loadReports();
 log('[sealctl] consola lista — escribe una IP o lanza nmap');
+
+// ─── Defense modules ─────────────────────────────────────────────────────────
+async function loadDefense(){
+  const d=await api('/api/defense/status');
+  if(!d||!d.modules)return;
+  $('#def-count').textContent=d.modules.length+' módulos';
+  $('#def-list').innerHTML='';
+  d.modules.forEach(m=>{
+    const div=document.createElement('div');
+    div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)';
+    div.innerHTML=`<div><b style="color:${m.available?'var(--green)':'var(--red)'}">${m.available?'✅':'❌'}</b> <b>${m.name}</b><div style="font-size:11px;color:var(--dim)">${m.desc}</div></div><button class="btn" style="padding:4px 10px;font-size:10px" onclick="runDefense('${m.name.toLowerCase()}')">ejecutar</button>`;
+    $('#def-list').appendChild(div);
+  });
+}
+async function runDefense(mod){
+  log('[defense] ejecutando '+mod+'…');
+  await api('/api/defense/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({module:mod})});
+}
+
+// ─── Honeypot ────────────────────────────────────────────────────────────────
+$('#hp-start').onclick=async()=>{
+  const port=$('#hp-port').value.trim()||'8080';
+  setBtn($('#hp-start'),'run','activando…');
+  log('[honeypot] activando en puerto '+port);
+  const r=await api('/api/honeypot/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({port:parseInt(port)})});
+  if(r&&r.ok){$('#hp-st').textContent='activo en :'+port;$('#hp-st').style.color='var(--green)';setBtn($('#hp-start'),'ok','activo');log('[honeypot] '+r.message)}
+  else setBtn($('#hp-start'),'err','error');
+};
+$('#hp-stop').onclick=async()=>{
+  const r=await api('/api/honeypot/stop',{method:'POST'});
+  if(r&&r.ok){$('#hp-st').textContent='detenido';$('#hp-st').style.color='var(--dim)';setBtn($('#hp-start'),'','activar');log('[honeypot] detenido')}
+};
+
+// ─── Python scenarios ────────────────────────────────────────────────────────
+async function loadScenarios(){
+  const d=await api('/api/scenarios');
+  if(!d)return;
+  $('#py-count').textContent=d.scenarios.length+' escenarios';
+  $('#py-list').innerHTML='';
+  d.scenarios.forEach(s=>{
+    const div=document.createElement('div');
+    div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)';
+    div.innerHTML=`<span style="font-family:var(--mono);font-size:12px;color:var(--cyan)">${s}</span><button class="btn" style="padding:4px 10px;font-size:10px" onclick="runScenario('${s}')">ejecutar</button>`;
+    $('#py-list').appendChild(div);
+  });
+}
+async function runScenario(name){
+  const target=$('#py-target').value.trim()||'build/app.apk';
+  const backend=$('#py-backend').value.trim()||'http://'+location.host;
+  log('[scenario] ejecutando '+name+' contra '+target);
+  await api('/api/scenario/'+name,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target,backend})});
+}
+$('#py-run-all').onclick=async()=>{
+  const target=$('#py-target').value.trim()||'build/app.apk';
+  const backend=$('#py-backend').value.trim()||'http://'+location.host;
+  setBtn($('#py-run-all'),'run','orchestrator…');
+  log('[orchestrator] iniciando escaneo completo: '+target);
+  const r=await api('/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target,backend})});
+  if(r&&r.ok)log('[orchestrator] '+r.message);
+  else setBtn($('#py-run-all'),'err','error');
+};
+$('#py-refresh').onclick=loadScenarios;
+
+// ─── IOC + MITRE ─────────────────────────────────────────────────────────────
+async function loadIOCs(){
+  const d=await api('/api/iocs');
+  if(!d)return;
+  const iocs=d.iocs||d;
+  $('#ioc-count').textContent=iocs.length+' IOCs';
+  $('#ioc-list').innerHTML='';
+  iocs.slice(0,50).forEach(i=>{
+    const div=document.createElement('div');
+    div.style.cssText='padding:8px 0;border-bottom:1px solid var(--line)';
+    div.innerHTML=`<div><span class="pill ${i.type==='url'?'crit':i.type==='ip'?'low':'unk'}">${i.type}</span> <span style="font-family:var(--mono);font-size:11px;color:var(--cyan)">${i.value.substring(0,60)}</span></div><div style="font-size:10px;color:var(--faint);margin-top:2px">${i.source} | conf=${i.confidence}%</div>`;
+    $('#ioc-list').appendChild(div);
+  });
+}
+async function loadMITRE(){
+  try{
+    const r=await fetch('/api/mitre');
+    const txt=await r.text();
+    const lines=txt.split('\n').filter(l=>l.trim()&&!l.startsWith('#'));
+    $('#mitre-list').innerHTML='';
+    lines.forEach(l=>{
+      const div=document.createElement('div');
+      div.style.cssText='padding:6px 0;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--dim)';
+      div.textContent=l;
+      $('#mitre-list').appendChild(div);
+    });
+  }catch(e){$('#mitre-list').innerHTML='<div class="empty">error cargando</div>'}
+}
+
+// Init nuevas pestañas
+loadDefense();
+loadScenarios();
+loadIOCs();
+loadMITRE();
+
 </script>
 </body>
 </html>
