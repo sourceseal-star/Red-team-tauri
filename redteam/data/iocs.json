@@ -5114,5 +5114,389 @@
     ],
     "source": "abuse.ch URLhaus",
     "added": "2026-07-31T13:21:57.384393"
+  },
+  {
+    "id": "urlhaus-0",
+    "type": "url",
+    "value": "https://nf.boletos-notas.com/files/digitalmccontract.com/30f92c8a298f5a70/Termo%20de%20Adesao-WFM0CF.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825391"
+  },
+  {
+    "id": "urlhaus-1",
+    "type": "url",
+    "value": "https://nf.boletos-notas.com/files/bro-pdffiller.lat/be5bed68b0a963bc/DOC-QGN64O.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825410"
+  },
+  {
+    "id": "urlhaus-2",
+    "type": "url",
+    "value": "https://nf.boletos-notas.com/files/docusingdoc.tjspbr.com/1972e8755045de2c/DocuSign_pdf_-MZGG29.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825414"
+  },
+  {
+    "id": "urlhaus-3",
+    "type": "url",
+    "value": "http://158.94.211.92/std/?sid=1785503832204-r5i9sqxt",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825416"
+  },
+  {
+    "id": "urlhaus-4",
+    "type": "url",
+    "value": "https://nf.boletos-notas.com/files/nf.boletos-notas.com/fcd598f9c282fd5b/NF-e_-E4WNZD.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825418"
+  },
+  {
+    "id": "urlhaus-5",
+    "type": "url",
+    "value": "https://nf.boletos-notas.com/files/mkt.alfatransportes.site/285d907ecc568318/chrome-0WXIDA.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825420"
+  },
+  {
+    "id": "urlhaus-6",
+    "type": "url",
+    "value": "https://nf.boletos-notas.com/files/buffet.boletos-notas.com/20841165b838087d/Chrome_-N42P0V.iso",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825422"
+  },
+  {
+    "id": "urlhaus-7",
+    "type": "url",
+    "value": "https://nf.boletos-notas.com/files/alfatransportes.site/0f594d8295f4f082/NFE_-BJ1CX6.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825424"
+  },
+  {
+    "id": "urlhaus-8",
+    "type": "url",
+    "value": "https://nfe.boletos-notas.com/files/nfe.boletos-notas.com/fcd598f9c282fd5b/Nota_-SZESAW.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825426"
+  },
+  {
+    "id": "urlhaus-9",
+    "type": "url",
+    "value": "https://nf.boletos-notas.com/files/a.ste-pdffiller.lat/783fdf63b7bcbb83/DOC-B3QW6K.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825427"
+  },
+  {
+    "id": "urlhaus-10",
+    "type": "url",
+    "value": "https://nf.boletos-notas.com/files/documento.tjspbr.com/8fc430f0d9000733/NotaFiscal_-UHM3NT.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825429"
+  },
+  {
+    "id": "urlhaus-11",
+    "type": "url",
+    "value": "https://nf.boletos-notas.com/files/dn-pdflite.lat/de6ae97040d70645/DOC-C48TTX.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825431"
+  },
+  {
+    "id": "urlhaus-12",
+    "type": "url",
+    "value": "http://105.225.124.60:44053/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825433"
+  },
+  {
+    "id": "urlhaus-13",
+    "type": "url",
+    "value": "http://59.97.254.151:40167/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825434"
+  },
+  {
+    "id": "urlhaus-14",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/atualizaonavegador.com/0b19dac40e97b831/extension-fix-GYIUDM.hta",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825436"
+  },
+  {
+    "id": "urlhaus-15",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/xml.nfe-online.com/16d6a7a796a8b2e8/Xml.-SWOJ4Z.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825437"
+  },
+  {
+    "id": "urlhaus-16",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/nfe.boletos-notas.com/ee8bd98f70f5e846/Nota_-ZPVCOT.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825439"
+  },
+  {
+    "id": "urlhaus-17",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdfcomprovanteacesso.online/ecc7e62d33f88e6e/file-8XOV8W.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825441"
+  },
+  {
+    "id": "urlhaus-18",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/uol2.begdistribuidora.com.br/6cf6c4ab30ce1f08/nfe_-WPSZYN.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825442"
+  },
+  {
+    "id": "urlhaus-19",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/doc.alfanotas.com/0dd3dee85fb33b58/Nota_Fiscal--G316CT.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825444"
+  },
+  {
+    "id": "urlhaus-20",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/xml.emissaofiscal.com/7c19a64ac982b7e9/nfe_xml-D8PE8E.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825446"
+  },
+  {
+    "id": "urlhaus-21",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/cvtpremiumprp.com/829c421526d79d23/file-FJBTST.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825447"
+  },
+  {
+    "id": "urlhaus-22",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/t-adobe.lat/1b34a16ec9de882b/DOC-S8L35M.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825449"
+  },
+  {
+    "id": "urlhaus-23",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/atualizacaosis.terramailbr.com/38436f1a5301b43a/file-0MCGY1.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825451"
+  },
+  {
+    "id": "urlhaus-24",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/milofalo.lat/3f0254db66a06970/NotaFiscal-U1RFJN.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825453"
+  },
+  {
+    "id": "urlhaus-25",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/0e48f6349bcd0bd7/DOC-FKA245.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825455"
+  },
+  {
+    "id": "urlhaus-26",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/atualizaonavegador.com/0ff05b9a9880d55b/extension-fix-ZN7HUS.hta",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825457"
+  },
+  {
+    "id": "urlhaus-27",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/documentos.alfatransportes.site/a077ad0026c10365/N_fiscal_-0MB558.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825459"
+  },
+  {
+    "id": "urlhaus-28",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/zf-adobe.lat/1e693801ee2cd267/DOC-VOOAZD.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825460"
+  },
+  {
+    "id": "urlhaus-29",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/acessoprincipalconvite.com/34b6dc6109e4f634/Contrato_Acordo2026-C95AXA.lnk",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825462"
+  },
+  {
+    "id": "urlhaus-30",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/a.ste-pdffiller.lat/2ee833cf831a2e12/DOC-SJDPWM.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825463"
+  },
+  {
+    "id": "urlhaus-31",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/xml.transalfa.online/209b9276134b25f4/xml_-4B5TLP.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:43:09.825465"
   }
 ]
