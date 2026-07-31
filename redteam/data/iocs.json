@@ -3098,5 +3098,425 @@
     ],
     "source": "IPsum (GitHub)",
     "added": "2026-07-31T10:16:37.718257"
+  },
+  {
+    "id": "urlhaus-0",
+    "type": "url",
+    "value": "http://115.55.187.54:51339/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513171"
+  },
+  {
+    "id": "urlhaus-1",
+    "type": "url",
+    "value": "http://125.44.61.151:42972/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513187"
+  },
+  {
+    "id": "urlhaus-2",
+    "type": "url",
+    "value": "http://182.124.74.161:40811/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513189"
+  },
+  {
+    "id": "urlhaus-3",
+    "type": "url",
+    "value": "http://118.208.135.19:49234/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513191"
+  },
+  {
+    "id": "urlhaus-4",
+    "type": "url",
+    "value": "http://58.23.201.90:41261/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513192"
+  },
+  {
+    "id": "urlhaus-5",
+    "type": "url",
+    "value": "http://219.156.140.108:51126/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513193"
+  },
+  {
+    "id": "urlhaus-6",
+    "type": "url",
+    "value": "http://183.151.201.116:33053/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513195"
+  },
+  {
+    "id": "urlhaus-7",
+    "type": "url",
+    "value": "http://110.37.39.234:36507/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513197"
+  },
+  {
+    "id": "urlhaus-8",
+    "type": "url",
+    "value": "http://190.109.228.199:53843/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513199"
+  },
+  {
+    "id": "urlhaus-9",
+    "type": "url",
+    "value": "http://115.50.227.121:51281/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513200"
+  },
+  {
+    "id": "urlhaus-10",
+    "type": "url",
+    "value": "http://125.45.67.197:41421/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513201"
+  },
+  {
+    "id": "urlhaus-11",
+    "type": "url",
+    "value": "http://42.239.246.202:40504/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513202"
+  },
+  {
+    "id": "urlhaus-12",
+    "type": "url",
+    "value": "http://115.49.187.63:60489/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513204"
+  },
+  {
+    "id": "urlhaus-13",
+    "type": "url",
+    "value": "http://175.148.153.116:59949/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513206"
+  },
+  {
+    "id": "urlhaus-14",
+    "type": "url",
+    "value": "http://222.182.122.70:50511/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513207"
+  },
+  {
+    "id": "urlhaus-15",
+    "type": "url",
+    "value": "http://42.237.24.31:58345/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513208"
+  },
+  {
+    "id": "urlhaus-16",
+    "type": "url",
+    "value": "http://112.248.191.246:55840/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513209"
+  },
+  {
+    "id": "urlhaus-17",
+    "type": "url",
+    "value": "http://175.148.153.116:59949/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513211"
+  },
+  {
+    "id": "urlhaus-18",
+    "type": "url",
+    "value": "http://42.224.192.231:59080/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513213"
+  },
+  {
+    "id": "urlhaus-19",
+    "type": "url",
+    "value": "http://110.37.39.234:36507/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513214"
+  },
+  {
+    "id": "urlhaus-20",
+    "type": "url",
+    "value": "http://182.112.97.110:44347/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513215"
+  },
+  {
+    "id": "urlhaus-21",
+    "type": "url",
+    "value": "http://221.15.185.32:52527/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513216"
+  },
+  {
+    "id": "urlhaus-22",
+    "type": "url",
+    "value": "http://221.15.187.186:45713/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513217"
+  },
+  {
+    "id": "urlhaus-23",
+    "type": "url",
+    "value": "http://222.182.122.70:50511/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513219"
+  },
+  {
+    "id": "urlhaus-24",
+    "type": "url",
+    "value": "http://105.184.121.239:34739/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513220"
+  },
+  {
+    "id": "urlhaus-25",
+    "type": "url",
+    "value": "http://182.119.181.65:41920/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513221"
+  },
+  {
+    "id": "urlhaus-26",
+    "type": "url",
+    "value": "http://115.52.234.29:49245/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513223"
+  },
+  {
+    "id": "urlhaus-27",
+    "type": "url",
+    "value": "http://42.224.67.242:50122/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513224"
+  },
+  {
+    "id": "urlhaus-28",
+    "type": "url",
+    "value": "http://115.49.187.63:60489/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513225"
+  },
+  {
+    "id": "urlhaus-29",
+    "type": "url",
+    "value": "http://222.139.73.191:33865/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513226"
+  },
+  {
+    "id": "urlhaus-30",
+    "type": "url",
+    "value": "http://175.166.79.243:48863/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513228"
+  },
+  {
+    "id": "urlhaus-31",
+    "type": "url",
+    "value": "http://115.56.174.240:39335/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513229"
+  },
+  {
+    "id": "urlhaus-32",
+    "type": "url",
+    "value": "http://59.97.249.167:40316/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513230"
+  },
+  {
+    "id": "urlhaus-33",
+    "type": "url",
+    "value": "http://125.47.74.250:45378/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513231"
+  },
+  {
+    "id": "urlhaus-34",
+    "type": "url",
+    "value": "http://175.31.188.203:48322/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T11:21:26.513232"
   }
 ]
