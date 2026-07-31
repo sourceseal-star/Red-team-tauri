@@ -4718,5 +4718,401 @@
     ],
     "source": "abuse.ch URLhaus",
     "added": "2026-07-31T13:01:46.421520"
+  },
+  {
+    "id": "urlhaus-0",
+    "type": "url",
+    "value": "http://115.53.243.202:59090/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384323"
+  },
+  {
+    "id": "urlhaus-1",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/03f8cfabbe9bdcee/DOC-2QTLIC.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384340"
+  },
+  {
+    "id": "urlhaus-2",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/de7f1cdfd0a2600b/DOC-0IIW0G.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384342"
+  },
+  {
+    "id": "urlhaus-3",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/8260386830a6a375/DOC-95TS7Y.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384343"
+  },
+  {
+    "id": "urlhaus-4",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/075cc4ba877f273b/DOC-J0KTS7.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384345"
+  },
+  {
+    "id": "urlhaus-5",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/ae078b037cdd460a/DOC-PR2G4X.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384347"
+  },
+  {
+    "id": "urlhaus-6",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/0137adcb70b1f19d/DOC-YKCQQL.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384348"
+  },
+  {
+    "id": "urlhaus-7",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/d5a6675f5b6a995a/DOC-SAG02B.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384350"
+  },
+  {
+    "id": "urlhaus-8",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/5ef78cfaa472d28c/DOC-VRTF20.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384351"
+  },
+  {
+    "id": "urlhaus-9",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/e3453b1426b49014/DOC-QEKV4F.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384357"
+  },
+  {
+    "id": "urlhaus-10",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/0ffddb1aa8cb5122/DOC-KTF5MF.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384358"
+  },
+  {
+    "id": "urlhaus-11",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/8b4479ece29243ce/DOC-NRTF90.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384360"
+  },
+  {
+    "id": "urlhaus-12",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/9ab4581b6699ebb7/DOC-6F7FHB.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384361"
+  },
+  {
+    "id": "urlhaus-13",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/0845c6ecff44e57d/DOC-V6M9AI.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384363"
+  },
+  {
+    "id": "urlhaus-14",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/c98dc8de7235020b/DOC-V7DQUY.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384367"
+  },
+  {
+    "id": "urlhaus-15",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/84120ac8fbcadc0f/DOC-YOY4FO.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384368"
+  },
+  {
+    "id": "urlhaus-16",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/1e006bfa894b13fd/DOC-09SEDA.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384370"
+  },
+  {
+    "id": "urlhaus-17",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/01779d1417c8fe15/DOC-MVF1X2.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384372"
+  },
+  {
+    "id": "urlhaus-18",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/00a0ce9fa9eb75fd/DOC-VXW3J8.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384373"
+  },
+  {
+    "id": "urlhaus-19",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/01c89df476c11c06/DOC-2IKJOP.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384375"
+  },
+  {
+    "id": "urlhaus-20",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/772e79841035b558/DOC-G096UX.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384376"
+  },
+  {
+    "id": "urlhaus-21",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/0e38a8dd795cf2d9/DOC-8OU4I6.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384378"
+  },
+  {
+    "id": "urlhaus-22",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/3f3a2688275698d5/DOC-3VHASZ.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384379"
+  },
+  {
+    "id": "urlhaus-23",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/9436fbe373137500/DOC-4RSL2X.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384380"
+  },
+  {
+    "id": "urlhaus-24",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/36fb6b4420a2cd2f/DOC-3RDW4B.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384382"
+  },
+  {
+    "id": "urlhaus-25",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/3061ada4cb0c4572/DOC-A4690O.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384383"
+  },
+  {
+    "id": "urlhaus-26",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/ba73a102368f4f71/DOC-G6PB4Z.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384385"
+  },
+  {
+    "id": "urlhaus-27",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/7aa9a1cf80049afd/DOC-M9D8QN.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384386"
+  },
+  {
+    "id": "urlhaus-28",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/96dd66acdb777562/DOC-XI0KG9.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384387"
+  },
+  {
+    "id": "urlhaus-29",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/fd1ecc3584e78a8d/DOC-HFMRUJ.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384389"
+  },
+  {
+    "id": "urlhaus-30",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/0f98ac7c4600e17b/DOC-JUEZAM.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384390"
+  },
+  {
+    "id": "urlhaus-31",
+    "type": "url",
+    "value": "https://pdf-bro.lat/files/pdf-bro.lat/62c4ff2d34a5922b/DOC-FHZ12H.zip",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384392"
+  },
+  {
+    "id": "urlhaus-32",
+    "type": "url",
+    "value": "http://115.49.25.217:34345/i",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-07-31T13:21:57.384393"
   }
 ]
