@@ -1,0 +1,37 @@
+{
+  "started_at": "2026-07-31T12:09:40.927Z",
+  "finished_at": "2026-07-31T12:09:41.927Z",
+  "elapsed_seconds": 1,
+  "total_findings": 2,
+  "by_severity": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 1,
+    "info": 1
+  },
+  "findings": [
+    {
+      "scenario": "recon",
+      "severity": "info",
+      "title": "Host descubierto: 45.33.32.156",
+      "description": "US / San Francisco / Akamai Technologies AS63949 | Score: 0/100 (ALTA) | rDNS: scanme.nmap.org | IoT: sin huella",
+      "evidence_path": "",
+      "remediation": "",
+      "timestamp": "2026-07-31T12:00:00Z"
+    },
+    {
+      "scenario": "recon",
+      "severity": "low",
+      "title": "Host descubierto: 104.131.0.1",
+      "description": "Digital Ocean | Score: 25/100 (MEDIA) | hosting flag activo",
+      "evidence_path": "",
+      "remediation": "Verificar si el hosting es legítimo",
+      "timestamp": "2026-07-31T12:00:00Z"
+    }
+  ],
+  "errors": [],
+  "target": "scanme.nmap.org",
+  "backend": "sealctl@termux",
+  "scenarios_run": 1
+}
