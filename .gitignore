@@ -35,3 +35,4 @@ redteam/data/iocs.json
 # Reports de scans
 redteam/reports/*.json
 redteam/reports/latest.json
+node_modules/
