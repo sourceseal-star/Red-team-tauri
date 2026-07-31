@@ -1,0 +1,57 @@
+rules:
+  - id: crypto-md5-sha1
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: hashlib.sha1(...)
+          - pattern: java.security.MessageDigest.getInstance("MD5")
+          - pattern: java.security.MessageDigest.getInstance("SHA-1")
+          - pattern: CommonCrypto.$ALGO("MD5")
+    message: "Algoritmo hash débil (MD5/SHA-1). Migrar a SHA-256 o superior."
+    languages: [python, java, javascript, generic]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+
+  - id: crypto-ecb-mode
+    patterns:
+      - pattern-either:
+          - pattern: Cipher.getInstance("AES/ECB/...")
+          - pattern: AES.new(..., AES.MODE_ECB, ...)
+    message: "AES en modo ECB es determinista y filtra patrones. Usar GCM o CBC+HMAC."
+    languages: [python, java]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-327"
+
+  - id: crypto-hardcoded-key
+    patterns:
+      - pattern-either:
+          - pattern: $KEY = "0123456789abcdef..."
+          - pattern: $KEY = "-----BEGIN ... PRIVATE KEY-----"
+    message: "Clave hardcodeada detectada. Mover a KeyStore/Keychain/HSM."
+    languages: [python, java, javascript, generic]
+    severity: ERROR
+
+  - id: crypto-weak-rand
+    patterns:
+      - pattern-either:
+          - pattern: random.random()
+          - pattern: random.randint(...)
+          - pattern: java.util.Random()
+          - pattern: Math.random()
+    message: "PRNG no criptográfico. Usar secrets/SecureRandom."
+    languages: [python, java, javascript]
+    severity: WARNING
+
+  - id: crypto-tls-disabled-verification
+    patterns:
+      - pattern-either:
+          - pattern: ssl._create_unverified_context(...)
+          - pattern: TrustAllManager
+          - pattern: $X.checkServerTrusted(...)
+    message: "Verificación TLS deshabilitada. Crítico para app criptográfica."
+    languages: [python, java]
+    severity: ERROR

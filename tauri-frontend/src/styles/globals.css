@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 20% 8%;
+    --foreground: 210 40% 95%;
+    --card: 222 20% 11%;
+    --card-foreground: 210 40% 95%;
+    --muted: 217 20% 15%;
+    --muted-foreground: 215 20% 60%;
+    --accent: 217 30% 20%;
+    --accent-foreground: 210 40% 95%;
+    --border: 217 20% 18%;
+    --ring: 224 70% 60%;
+    --radius: 0.5rem;
+  }
+
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+}

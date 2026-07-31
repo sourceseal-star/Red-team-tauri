@@ -1,0 +1,14 @@
+{
+  "original": {
+    "ok": null,
+    "status": 0,
+    "error": "<urlopen error [Errno -2] Name or service not known>",
+    "dry_run": true
+  },
+  "replay": {
+    "ok": null,
+    "status": 0,
+    "error": "<urlopen error [Errno -2] Name or service not known>",
+    "dry_run": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "https://api.sourcesealcorp.local/v1/v1/health": {
+    "status": 0,
+    "leaked_canary": false
+  },
+  "https://api.sourcesealcorp.local/v1/v1/audit": {
+    "status": 0,
+    "leaked_canary": false
+  },
+  "https://api.sourcesealcorp.local/v1/v1/hashes": {
+    "status": 0,
+    "leaked_canary": false
+  },
+  "https://api.sourcesealcorp.local/v1/v1/canary": {
+    "status": 0,
+    "leaked_canary": false
+  }
+}

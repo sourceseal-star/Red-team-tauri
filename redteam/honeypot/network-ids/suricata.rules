@@ -1,0 +1,30 @@
+# SOURCESEAL RedTeam — Reglas IDS para detectar spyware C2
+
+# NSO Pegasus
+alert http any any -> $HOME_NET any (msg:"POTENTIAL Pegasus C2 beacon"; flow:to_server,established; http_uri; content:"/collector/heartbeat"; nocase; sid:1000001; rev:1;)
+alert http any any -> $HOME_NET any (msg:"POTENTIAL Pegasus checkin"; flow:to_server,established; http_uri; content:"/api/v1/checkin"; nocase; sid:1000002; rev:1;)
+alert tls any any -> any 443 (msg:"POTENTIAL Pegasus TLS fingerprint"; tls.cert_subject; content:"apple-updates"; sid:1000003; rev:1;)
+
+# FinFisher / FinSpy
+alert dns any any -> any 53 (msg:"FinFisher DNS query"; dns.query; content:"finfisher"; nocase; sid:1000010; rev:1;)
+alert dns any any -> any 53 (msg:"Gamma Group DNS query"; dns.query; content:"gamma-international"; nocase; sid:1000011; rev:1;)
+
+# HackingTeam / RCS
+alert http any any -> $HOME_NET any (msg:"HackingTeam RCS upload"; flow:to_server,established; http_uri; content:"/log/upload"; nocase; sid:1000020; rev:1;)
+alert dns any any -> any 53 (msg:"HackingTeam DNS query"; dns.query; content:"hackingteam"; nocase; sid:1000021; rev:1;)
+
+# Candiru / Sourgum
+alert dns any any -> any 53 (msg:"Candiru Sourgum DNS"; dns.query; content:"sourgum"; nocase; sid:1000030; rev:1;)
+alert dns any any -> any 53 (msg:"Candiru DNS"; dns.query; content:"candiru"; nocase; sid:1000031; rev:1;)
+
+# Stalkerware comercial
+alert dns any any -> any 53 (msg:"mSpy DNS"; dns.query; content:"mspy"; nocase; sid:1000040; rev:1;)
+alert dns any any -> any 53 (msg:"FlexiSpy DNS"; dns.query; content:"flexispy"; nocase; sid:1000041; rev:1;)
+alert dns any any -> any 53 (msg:"Hoverwatch DNS"; dns.query; content:"hoverwatch"; nocase; sid:1000042; rev:1;)
+
+# Patrones genéricos de exfiltración
+alert http any any -> any any (msg:"POSSIBLE exfil — large POST"; flow:to_server,established; http_content_len:>1000000; sid:1000090; rev:1;)
+alert tls any any -> any 443 (msg:"TLS to known-bad ASN"; tls.cert_issuer; content:"Let's Encrypt"; sid:1000091; rev:1;)
+
+# iMessage / WhatsApp / Signal abuse
+alert tcp any any -> $HOME_NET 5223 (msg:"Suspicious APNs connection — possible 0-click"; flow:to_server,established; sid:1000100; rev:1;)

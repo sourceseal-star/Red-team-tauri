@@ -1,0 +1,7 @@
+.env
+reports/*.json
+reports/*.md
+evidence/*.bin
+evidence/*.txt
+__pycache__/
+*.pyc

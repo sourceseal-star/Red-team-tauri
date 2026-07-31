@@ -1,0 +1,42 @@
+{
+  "status": "active",
+  "components": {
+    "rasp": {
+      "ok": true,
+      "enforcer_actions": 0
+    },
+    "attestation": {
+      "ok": true,
+      "keys": 1
+    },
+    "ndr": {
+      "ok": true,
+      "events_buffered": 0,
+      "ndr_findings": 0,
+      "blocklist_size": 0
+    },
+    "ztna": {
+      "ok": true,
+      "bola_attempts": 0,
+      "active_tokens": 0
+    },
+    "deception": {
+      "ok": true,
+      "decoy_token_attempts": 0,
+      "decoy_db_hits": 0,
+      "decoy_endpoint_hits": 0,
+      "stix_iocs": 0
+    },
+    "xdr": {
+      "ok": true,
+      "events_in_bus": 0,
+      "incidents": 0
+    },
+    "soar": {
+      "ok": true,
+      "playbooks": 4,
+      "playbook_runs": 0
+    }
+  },
+  "uptime_seconds": 0.123
+}

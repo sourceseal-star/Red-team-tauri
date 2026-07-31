@@ -1,0 +1,7 @@
+# Paquetes que requieren dependencias del sistema o runtime específico
+# (scapy necesita libpcap, pyshark necesita tshark/wireshark, etc.)
+# NO instalar en Replit — solo en entornos locales con las deps del sistema
+scapy>=2.5
+pyshark>=0.6
+mitmproxy>=10.0
+apkutils>=1.4.0

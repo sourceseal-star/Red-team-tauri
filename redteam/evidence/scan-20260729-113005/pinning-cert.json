@@ -1,0 +1,8 @@
+{
+  "host": "empli.fi",
+  "port": 443,
+  "sha256": "7bd70be5c191c4f5d1e9153ebfd1dd65ddd338ba67a43dd227f0cd78fa8dd6bc",
+  "subject": {
+    "commonName": "empli.fi"
+  }
+}

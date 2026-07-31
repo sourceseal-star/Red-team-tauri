@@ -1,0 +1,16 @@
+version: '3.8'
+services:
+  attestation-server:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ATTESTATION_SECRET=${ATTESTATION_SECRET:-change-me-in-production}
+      - HMAC_KEY=${HMAC_KEY:-change-me-hmac-key}
+      - PLAY_INTEGRITY_PACKAGE=${PLAY_INTEGRITY_PACKAGE:-com.sourceseal.app}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

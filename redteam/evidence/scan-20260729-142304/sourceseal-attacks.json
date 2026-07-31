@@ -1,0 +1,110 @@
+[
+  {
+    "id": "A1",
+    "name": "Reuso de hash anterior",
+    "status": "fail",
+    "expected": "rechazado (4xx)",
+    "actual": 403,
+    "passed": false,
+    "reason": "backend NO rechazó: recibió 403",
+    "evidence": "/home/runner/workspace/redteam/evidence/scan-20260729-142304/A1-hash-reuse.json"
+  },
+  {
+    "id": "A2",
+    "name": "Time-lock bypass",
+    "status": "fail",
+    "expected": "rechazado con 423/425/409",
+    "actual": 403,
+    "passed": false,
+    "reason": "time-lock NO activo: recibió 403",
+    "evidence": "/home/runner/workspace/redteam/evidence/scan-20260729-142304/A2-timelock.json"
+  },
+  {
+    "id": "A3",
+    "name": "Race condition en regeneración",
+    "status": "pass",
+    "expected": "≤1 success de 10",
+    "actual": "0 successes",
+    "passed": true,
+    "reason": "control de concurrencia OK: solo 0 request(s) exitosos",
+    "evidence": "/home/runner/workspace/redteam/evidence/scan-20260729-142304/A3-race.json"
+  },
+  {
+    "id": "A4",
+    "name": "Rate limiting",
+    "status": "pass",
+    "expected": "429 tras umbral",
+    "actual": {
+      "403": 100
+    },
+    "passed": true,
+    "reason": "todos rechazados con 4xx (rate limit implícito)",
+    "evidence": "/home/runner/workspace/redteam/evidence/scan-20260729-142304/A4-ratelimit.json"
+  },
+  {
+    "id": "A5",
+    "name": "Validación de firma HMAC",
+    "status": "pass",
+    "expected": "401 sin firma y firma inválida",
+    "actual": "no_sig=403 bad_sig=403",
+    "passed": true,
+    "reason": "validación HMAC activa: peticiones sin firma rechazadas",
+    "evidence": "/home/runner/workspace/redteam/evidence/scan-20260729-142304/A5-signature.json"
+  },
+  {
+    "id": "A6",
+    "name": "Replay attack",
+    "status": "fail",
+    "expected": "segundo envío rechazado",
+    "actual": "403 → 403",
+    "passed": false,
+    "reason": "anti-replay AUSENTE: original=403, replay=403",
+    "evidence": "/home/runner/workspace/redteam/evidence/scan-20260729-142304/A6-replay.json"
+  },
+  {
+    "id": "A7",
+    "name": "Path traversal en página de recuperación",
+    "status": "fail",
+    "expected": "todos rechazados",
+    "actual": [
+      200,
+      200,
+      200,
+      200,
+      200
+    ],
+    "passed": false,
+    "reason": "path traversal posible: algún payload no fue rechazado",
+    "evidence": "/home/runner/workspace/redteam/evidence/scan-20260729-142304/A7-traversal.json"
+  },
+  {
+    "id": "A8",
+    "name": "Canary hash exposure",
+    "status": "pass",
+    "expected": "canary NO visible",
+    "actual": "leaks=False",
+    "passed": true,
+    "reason": "canary no expuesto en endpoints públicos",
+    "evidence": "/home/runner/workspace/redteam/evidence/scan-20260729-142304/A8-canary.json"
+  },
+  {
+    "id": "A9",
+    "name": "Health + latencia",
+    "status": "pass",
+    "expected": "<2000ms promedio",
+    "actual": "avg=45ms",
+    "passed": true,
+    "reason": "latencia aceptable: 45ms promedio",
+    "evidence": "/home/runner/workspace/redteam/evidence/scan-20260729-142304/A9-health.json"
+  },
+  {
+    "id": "A10",
+    "name": "Blockchain confirm",
+    "status": "skipped",
+    "expected": "verificable",
+    "actual": "SOURCESEAL_NODE no configurado",
+    "passed": null,
+    "reason": "SOURCESEAL_NODE no configurado",
+    "evidence": ""
+  }
+]

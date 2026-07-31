@@ -1,0 +1,20 @@
+*.tar
+*.tar.*
+*.jar
+*.exe
+*.msi
+*.deb
+*.zip
+*.tgz
+*.log
+*.log.*
+*.sig
+
+pkg/
+__pycache__/
+*.pyc
+
+# Keystore de firma — NO subir al repo (contiene clave privada)
+signing/
+*.keystore
+*.jks

@@ -1,0 +1,7 @@
+requests>=2.31
+pycryptodome>=3.19
+mitmproxy>=10.0
+apkutils>=1.4.0
+pyOpenSSL>=23.0
+pytz>=2024.1
+stix2>=3.0

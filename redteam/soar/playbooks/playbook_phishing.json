@@ -1,0 +1,60 @@
+{
+  "name": "playbook_phishing",
+  "description": "Automated response to phishing attack. Quarantines email, disables compromised user if link was clicked, blocks sender IP at WAF, and alerts SOC.",
+  "mitre_techniques": ["T1566", "T1566.001", "T1566.002"],
+  "severity": "HIGH",
+  "steps": [
+    {
+      "id": "step_1",
+      "name": "Quarantine Email",
+      "handler": "quarantine_email",
+      "params": {
+        "email_provider": "o365",
+        "action": "move_to_quarantine"
+      },
+      "depends_on": [],
+      "timeout_seconds": 30,
+      "rollback_handler": "restore_email",
+      "mitre_technique": "T1566"
+    },
+    {
+      "id": "step_2",
+      "name": "Disable Compromised User",
+      "handler": "disable_user_auth",
+      "params": {
+        "auth_provider": "auth0",
+        "reason": "Phishing link clicked — account disabled pending investigation"
+      },
+      "depends_on": ["step_1"],
+      "timeout_seconds": 30,
+      "continue_on_failure": false,
+      "mitre_technique": "T1566"
+    },
+    {
+      "id": "step_3",
+      "name": "Block Sender IP at WAF",
+      "handler": "block_ip_waf",
+      "params": {
+        "waf_provider": "cloudflare",
+        "block_reason": "Phishing sender IP"
+      },
+      "depends_on": ["step_1"],
+      "timeout_seconds": 30,
+      "rollback_handler": "unblock_ip_waf",
+      "mitre_technique": "T1566.001"
+    },
+    {
+      "id": "step_4",
+      "name": "Alert SOC",
+      "handler": "slack_alert",
+      "params": {
+        "alert_title": "Phishing Attack Detected & Contained",
+        "alert_message": "Email quarantined, user disabled, sender IP blocked. Manual review required.",
+        "severity": "HIGH"
+      },
+      "depends_on": ["step_2", "step_3"],
+      "timeout_seconds": 15,
+      "mitre_technique": "T1566"
+    }
+  ]
+}

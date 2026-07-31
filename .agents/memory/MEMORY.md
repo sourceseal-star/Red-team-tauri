@@ -1,0 +1,1 @@
+- [GitHub sync setup](github-sync.md) — repo es sourceseal-star/Red-team-tauri; auth via credential helper + GITHUB_TOKEN secret

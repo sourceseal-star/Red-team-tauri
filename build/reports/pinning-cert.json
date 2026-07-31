@@ -1,0 +1,8 @@
+{
+  "host": "api.rappi.com.mx",
+  "port": 443,
+  "sha256": "99cb88852a89c29cd317e4450e92260f9b02292c34a3229f622099efe8986498",
+  "subject": {
+    "commonName": "*.rappi.com.mx"
+  }
+}

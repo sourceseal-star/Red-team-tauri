@@ -1,0 +1,40 @@
+id: "pb_quarantine_apk"
+name: "Quarantine suspicious binary"
+description: "Marca un binario (APK/IPA) como malicioso, lo aísla del allowlist de RASP, alerta a TheHive y bloquea su device_id."
+trigger_category: "binary_malicious"
+severity_min: "high"
+sources:
+  - "rasp.memory_tamper"
+  - "attestation.integrity_failure"
+inputs:
+  - name: "sha256"
+    type: "string"
+    required: true
+  - name: "device_id"
+    type: "string"
+    required: true
+  - name: "reason"
+    type: "string"
+    required: true
+actions:
+  - id: "flag_binary"
+    type: "internal"
+    target: "RASPProbe.hash_allowlist_remove"
+    timeout_ms: 50
+  - id: "quarantine_device"
+    type: "internal"
+    target: "RASPEnforcer.quarantine"
+    timeout_ms: 100
+  - id: "export_stix"
+    type: "internal"
+    target: "Deception.STIXExporter.export"
+    timeout_ms: 100
+  - id: "notify_thehive"
+    type: "external"
+    target: "thehive.case_creator"
+    timeout_ms: 200
+sla_ms: 500
+mitre:
+  - "T1518"
+  - "T1611"
+  - "T1623"

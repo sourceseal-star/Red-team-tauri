@@ -1,0 +1,22 @@
+[
+  {
+    "payload": "/../../../etc/passwd",
+    "status": 400
+  },
+  {
+    "payload": "/..%2f..%2f..%2fetc/passwd",
+    "status": 400
+  },
+  {
+    "payload": "/%2e%2e/%2e%2e/etc/passwd",
+    "status": 400
+  },
+  {
+    "payload": "/....//....//etc/passwd",
+    "status": 404
+  },
+  {
+    "payload": "/%00/../../etc/shadow",
+    "status": 400
+  }
+]

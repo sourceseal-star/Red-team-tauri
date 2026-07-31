@@ -1,0 +1,4 @@
+# Minimal requirements for SourceSeal Red Team XDR module
+# This module relies entirely on the Python Standard Library.
+# Compatible with Python 3.8+
+# No external dependencies required.

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="theme-color" content="#0b0e11" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <title>SOURCESEAL — Centro de Control</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🛡️</span>
+      <div>
+        <h1>SOURCESEAL <span class="accent">Centro de Control</span></h1>
+        <small id="agent-id" class="muted">redteam + site monitor + editor</small>
+      </div>
+    </div>
+    <div class="status">
+      <span id="status-dot" class="dot off"></span>
+      <span id="status-text">desconectado</span>
+      <button id="refresh-btn" class="btn ghost" title="Refrescar">↻</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="agent">🛡 Red Team Agent</button>
+    <button class="tab" data-tab="monitor">🛰 Monitor del Sitio</button>
+    <button class="tab" data-tab="editor">✏ Editor Frontend</button>
+  </nav>
+
+  <!-- ============================================================ TAB 1 -->
+  <main class="tab-pane active" id="tab-agent">
+    <section class="kpis">
+      <div class="kpi critical"><div class="kpi-label">Críticos</div><div class="kpi-value" id="kpi-critical">0</div></div>
+      <div class="kpi high"><div class="kpi-label">Altos</div><div class="kpi-value" id="kpi-high">0</div></div>
+      <div class="kpi medium"><div class="kpi-label">Medios</div><div class="kpi-value" id="kpi-medium">0</div></div>
+      <div class="kpi low"><div class="kpi-label">Bajos / Info</div><div class="kpi-value" id="kpi-low">0</div></div>
+      <div class="kpi total"><div class="kpi-label">Total hallazgos</div><div class="kpi-value" id="kpi-total">0</div>
+        <div class="muted small">último scan: <span id="last-scan">—</span></div></div>
+    </section>
+    <section class="grid">
+      <div class="card">
+        <div class="card-header"><h2>Hallazgos</h2>
+          <input type="text" id="filter" class="search" placeholder="🔎 buscar…" /></div>
+        <div class="table-wrap">
+          <table id="findings-table">
+            <thead><tr><th>#</th><th>Severidad</th><th>Escenario</th><th>Título</th><th>Detectado</th></tr></thead>
+            <tbody id="findings-body"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card actions">
+        <h2>Acciones</h2>
+        <button id="run-scan" class="btn primary">▶ Ejecutar escaneo</button>
+        <button id="download-report" class="btn">⬇ Descargar último reporte</button>
+        <div id="action-status" class="muted small"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================================================ TAB 2 -->
+  <main class="tab-pane" id="tab-monitor">
+    <section class="monitor-config">
+      <input type="text" id="monitor-url" placeholder="https://tu-app.tu-usuario.repl.co" />
+      <input type="number" id="monitor-interval" value="15" min="5" max="300" title="intervalo (s)" />
+      <button id="monitor-start" class="btn primary">▶ Iniciar monitor</button>
+      <span id="monitor-status" class="muted small">inactivo</span>
+    </section>
+
+    <section class="kpis" id="monitor-kpis">
+      <div class="kpi total"><div class="kpi-label">Estado</div><div class="kpi-value" id="m-state">—</div></div>
+      <div class="kpi"><div class="kpi-label">Latencia</div><div class="kpi-value" id="m-latency">—</div></div>
+      <div class="kpi"><div class="kpi-label">HTTP</div><div class="kpi-value" id="m-status">—</div></div>
+      <div class="kpi"><div class="kpi-label">TLS expira</div><div class="kpi-value" id="m-tls">—</div></div>
+      <div class="kpi critical"><div class="kpi-label">Cambios</div><div class="kpi-value" id="m-changes">0</div></div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Headers de seguridad</h2>
+        <table id="headers-table">
+          <thead><tr><th>Header</th><th>Valor</th></tr></thead>
+          <tbody id="headers-body"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>Timeline en vivo</h2>
+        <ul id="event-log" class="event-log"></ul>
+      </div>
+      <div class="card">
+        <h2>Último diff (defacement / inyección)</h2>
+        <pre id="diff-box" class="diff-box">Sin cambios detectados aún.</pre>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================================================ TAB 3 -->
+  <main class="tab-pane" id="tab-editor">
+    <section class="editor-config">
+      <input type="text" id="site-url-input" placeholder="URL de tu Repl (https://...repl.co)" />
+      <button id="btn-fetch-site" class="btn primary">⬇ Descargar sitio</button>
+      <span id="fetch-status" class="muted small">—</span>
+      <span id="editor-toast" class="muted small"></span>
+    </section>
+
+    <section class="editor-grid">
+      <div class="card">
+        <h2>Archivos del sitio</h2>
+        <select id="file-select" size="14"></select>
+        <div class="muted small" id="editor-meta">—</div>
+        <div class="editor-actions">
+          <button id="btn-save-file" class="btn primary">💾 Guardar patch</button>
+          <button id="btn-download-patch" class="btn">⬇ Último patch</button>
+          <button id="btn-download-bundle" class="btn">⬇ Todos los patches</button>
+          <button id="btn-clear-patches" class="btn ghost">🗑 Limpiar</button>
+        </div>
+        <div class="muted small">Patches pendientes: <span id="patch-count">0</span></div>
+        <ul id="patch-list" class="patch-list"></ul>
+      </div>
+      <div class="card editor-card">
+        <h2>Editor</h2>
+        <textarea id="editor-textarea" spellcheck="false" disabled></textarea>
+      </div>
+    </section>
+    <section class="card publish-card" hidden id="publish-card">
+      <h2>Publicar de vuelta a Replit</h2>
+      <p class="muted small">Tu servidor tiene <code>REPLIT_TOKEN</code> configurado, así que puedes aplicar los patches directamente.</p>
+      <button id="btn-publish" class="btn primary">🚀 Publicar patches a Replit</button>
+      <div id="publish-status" class="muted small"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <small class="muted">SOURCESEALCORP · 11 escenarios · monitor en tiempo real · editor de frontend</small>
+  </footer>
+
+  <script src="assets/app.js"></script>
+  <script src="assets/editor.js"></script>
+</body>
+</html>

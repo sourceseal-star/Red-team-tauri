@@ -1,0 +1,235 @@
+{
+  "started_at": "2026-07-29T14:24:10.173860",
+  "finished_at": "2026-07-29T14:24:16.121462",
+  "elapsed_seconds": 5.9,
+  "total_findings": 24,
+  "by_severity": {
+    "critical": 2,
+    "high": 12,
+    "medium": 3,
+    "low": 0,
+    "info": 7
+  },
+  "findings": [
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "critical",
+      "title": "4 controles de SOURCESEALCORP FALLARON",
+      "description": "Ataques fallidos: A1(Reuso de hash anterior), A2(Time-lock bypass), A6(Replay attack), A7(Path traversal en p\u00e1gina de recuperaci\u00f3n)\n1 ataques en dry-run (backend no accesible).4 fallaron \u00b7 5 pasaron \u00b7 1 no ejecutados (backend offline)",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/sourceseal-attacks.json",
+      "remediation": "Revisar cada control fallido. Detalle por ataque en el JSON.",
+      "timestamp": "2026-07-29T14:24:15.811578"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "high",
+      "title": "[A1] Reuso de hash anterior \u2014 FALL\u00d3",
+      "description": "Esperado: rechazado (4xx) | Actual: 403\nRaz\u00f3n: backend NO rechaz\u00f3: recibi\u00f3 403",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/A1-hash-reuse.json",
+      "remediation": "Corrige el control del ataque A1.",
+      "timestamp": "2026-07-29T14:24:15.811588"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "high",
+      "title": "[A2] Time-lock bypass \u2014 FALL\u00d3",
+      "description": "Esperado: rechazado con 423/425/409 | Actual: 403\nRaz\u00f3n: time-lock NO activo: recibi\u00f3 403",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/A2-timelock.json",
+      "remediation": "Corrige el control del ataque A2.",
+      "timestamp": "2026-07-29T14:24:15.811589"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "high",
+      "title": "[A6] Replay attack \u2014 FALL\u00d3",
+      "description": "Esperado: segundo env\u00edo rechazado | Actual: 403 \u2192 403\nRaz\u00f3n: anti-replay AUSENTE: original=403, replay=403",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/A6-replay.json",
+      "remediation": "Corrige el control del ataque A6.",
+      "timestamp": "2026-07-29T14:24:15.811590"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "high",
+      "title": "[A7] Path traversal en p\u00e1gina de recuperaci\u00f3n \u2014 FALL\u00d3",
+      "description": "Esperado: todos rechazados | Actual: [200, 200, 200, 200, 200]\nRaz\u00f3n: path traversal posible: alg\u00fan payload no fue rechazado",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/A7-traversal.json",
+      "remediation": "Corrige el control del ataque A7.",
+      "timestamp": "2026-07-29T14:24:15.811591"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "info",
+      "title": "[A10] Blockchain confirm \u2014 NO EJECUTADO",
+      "description": "SOURCESEAL_NODE no configurado",
+      "evidence_path": "",
+      "remediation": "Configura SOURCESEAL_API y verifica conectividad.",
+      "timestamp": "2026-07-29T14:24:15.811592"
+    },
+    {
+      "scenario": "multiplatform",
+      "severity": "info",
+      "title": "Plataforma detectada: Android",
+      "description": "Archivo: dummy.apk, extensi\u00f3n: .apk",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/dummy.apk",
+      "remediation": "N/A",
+      "timestamp": "2026-07-29T14:24:15.822110"
+    },
+    {
+      "scenario": "multiplatform",
+      "severity": "high",
+      "title": "Sin uso del almac\u00e9n seguro nativo de Android",
+      "description": "Esperado alguno de: AndroidKeyStore",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/multiplatform-strings.txt",
+      "remediation": "Usar el mecanismo nativo: AndroidKeyStore. Nunca cifrar claves con contrase\u00f1a hardcodeada.",
+      "timestamp": "2026-07-29T14:24:15.822117"
+    },
+    {
+      "scenario": "multiplatform",
+      "severity": "high",
+      "title": "Sin uso del CSPRNG nativo de Android",
+      "description": "Esperado: SecureRandom|getRandom",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/multiplatform-strings.txt",
+      "remediation": "Usar SIEMPRE el CSPRNG del SO. Nunca implementar RNG propio.",
+      "timestamp": "2026-07-29T14:24:15.822117"
+    },
+    {
+      "scenario": "multiplatform",
+      "severity": "info",
+      "title": "Check de servidor backend",
+      "description": "Backend actual: https://empli.fi/arabela/?fbclid=IwVERDUATUSKdleHRuA2FlbQIxMABzcnRjBmFwcF9pZAwzNTA2ODU1MzE3MjgAAR7j62fWM4-lxCzG347z5vVDEQ879C3VJd9EKWhZT-VOJWSRJ1AlFYAMvY4A6Q_aem_N84fvIjKvTP42gnFWGI9Rg//v1. Verificar manualmente que el servidor Ubuntu tenga: ufw activo, fail2ban, TLS 1.2+ only, AppArmor/SELinux, logrotate, backups cifrados.",
+      "evidence_path": "https://empli.fi/arabela/?fbclid=IwVERDUATUSKdleHRuA2FlbQIxMABzcnRjBmFwcF9pZAwzNTA2ODU1MzE3MjgAAR7j62fWM4-lxCzG347z5vVDEQ879C3VJd9EKWhZT-VOJWSRJ1AlFYAMvY4A6Q_aem_N84fvIjKvTP42gnFWGI9Rg//v1",
+      "remediation": "Auditar hardening del servidor con lynis / oscap. Rotar claves SSH. Desactivar login con password.",
+      "timestamp": "2026-07-29T14:24:15.822118"
+    },
+    {
+      "scenario": "rng",
+      "severity": "info",
+      "title": "Entrop\u00eda del sistema OK",
+      "description": "Shannon entropy = 7.958 bits/byte",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/rng-sample.bin",
+      "remediation": "N/A",
+      "timestamp": "2026-07-29T14:24:15.823619"
+    },
+    {
+      "scenario": "rng",
+      "severity": "info",
+      "title": "Auditar seeds en el binario",
+      "description": "Revisar manualmente el binario/app por uso de time/pid como seed. Detectado uso potencial de time.time(); Detectado uso potencial de os.getpid()",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/dummy.apk",
+      "remediation": "Usar exclusivamente CSPRNG del SO (SecRandomCopyBytes, getrandom, BCryptGenRandom).",
+      "timestamp": "2026-07-29T14:24:15.823624"
+    },
+    {
+      "scenario": "pinning",
+      "severity": "info",
+      "title": "Cert TLS del backend capturado",
+      "description": "Host empli.fi:443 SHA256=7bd70be5c191c4f5...",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/pinning-cert.json",
+      "remediation": "Comparar SHA256 contra el pin hardcodeado en la app m\u00f3vil.",
+      "timestamp": "2026-07-29T14:24:15.863473"
+    },
+    {
+      "scenario": "pinning",
+      "severity": "high",
+      "title": "Sin evidencia de pinning en el APK",
+      "description": "No se encontraron marcadores t\u00edpicos (NetworkSecurityConfig, pin-set, OkHttp CertificatePinner).",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/apk-strings.txt",
+      "remediation": "Implementar pinning v\u00eda OkHttp CertificatePinner o NSP en res/xml/.",
+      "timestamp": "2026-07-29T14:24:15.863480"
+    },
+    {
+      "scenario": "imei",
+      "severity": "medium",
+      "title": "Sin evidencia de validaci\u00f3n Luhn de IMEI",
+      "description": "No se encontraron marcadores de algoritmo Luhn. Riesgo: aceptar IMEIs malformados.",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/imei-strings.txt",
+      "remediation": "Implementar Luhn check antes de aceptar IMEI. Validar tambi\u00e9n TAC (primeros 8 d\u00edgitos) contra base de GSMA.",
+      "timestamp": "2026-07-29T14:24:15.873205"
+    },
+    {
+      "scenario": "imei",
+      "severity": "medium",
+      "title": "Sin evidencia de consulta a blacklist (IMEI robado/perdido)",
+      "description": "No se detectan referencias a GSMA blacklist. Riesgo: vender celular reportado como robado.",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/imei-strings.txt",
+      "remediation": "Integrar API de blacklist (GSMA, Stolen Phone Check, etc.) antes de aceptar IMEI.",
+      "timestamp": "2026-07-29T14:24:15.873212"
+    },
+    {
+      "scenario": "sidechannel",
+      "severity": "info",
+      "title": "Sin comparaci\u00f3n naive evidente",
+      "description": "No se detectaron patrones sospechosos en el an\u00e1lisis est\u00e1tico.",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/sidechannel-strings.txt",
+      "remediation": "Validar con microbenchmarks (medir tiempo en comparaciones v\u00e1lidas vs inv\u00e1lidas).",
+      "timestamp": "2026-07-29T14:24:15.882845"
+    },
+    {
+      "scenario": "keyhandling",
+      "severity": "high",
+      "title": "Sin uso detectable de KeyStore/Keychain nativo",
+      "description": "No se encontraron marcadores de AndroidKeyStore ni iOS Keychain.",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/keyhandling-strings.txt",
+      "remediation": "Migrar claves a KeyStore (Android) o Keychain (iOS) con protecci\u00f3n StrongBox/biometric.",
+      "timestamp": "2026-07-29T14:24:15.892111"
+    },
+    {
+      "scenario": "payments",
+      "severity": "high",
+      "title": "Sin evidencia de verificaci\u00f3n de firma en webhooks",
+      "description": "No se detectaron constructEvent/verifyWebhookSignature/validateWebhook. Riesgo de webhook spoofing \u2192 pagos falsos confirmados.",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/payments-strings.txt",
+      "remediation": "Implementar verificaci\u00f3n criptogr\u00e1fica de TODOS los webhooks antes de marcar como pagado.",
+      "timestamp": "2026-07-29T14:24:15.901628"
+    },
+    {
+      "scenario": "recovery_page",
+      "severity": "high",
+      "title": "Headers de seguridad ausentes en p\u00e1gina de recuperaci\u00f3n",
+      "description": "Faltan: x-frame-options, content-security-policy, x-content-type-options, strict-transport-security, referrer-policy",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/recovery-health.json",
+      "remediation": "A\u00f1adir headers: X-Frame-Options DENY, CSP frame-ancestors 'none', HSTS 1 a\u00f1o, X-Content-Type-Options nosniff.",
+      "timestamp": "2026-07-29T14:24:16.101096"
+    },
+    {
+      "scenario": "recovery_page",
+      "severity": "critical",
+      "title": "P\u00e1gina de recuperaci\u00f3n lista hashes SIN autenticaci\u00f3n",
+      "description": "GET /api/hashes devolvi\u00f3 200 con 3000 bytes. Cualquiera con la URL puede listar biometr\u00edas.",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/recovery-noauth.json",
+      "remediation": "A\u00d1ADIR AUTH inmediatamente. Requerir login + 2FA + audit log por acceso.",
+      "timestamp": "2026-07-29T14:24:16.101105"
+    },
+    {
+      "scenario": "recovery_page",
+      "severity": "high",
+      "title": "Endpoint de hash responde sin auth",
+      "description": "GET /api/hashes/{id} devolvi\u00f3 200. Si devuelve datos sin token v\u00e1lido, hay IDOR.",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/recovery-idor.json",
+      "remediation": "Validar sesi\u00f3n + ownership antes de servir datos de hash.",
+      "timestamp": "2026-07-29T14:24:16.101106"
+    },
+    {
+      "scenario": "recovery_page",
+      "severity": "medium",
+      "title": "Vulnerable a clickjacking",
+      "description": "Sin X-Frame-Options ni CSP frame-ancestors, la p\u00e1gina puede ser embebida en iframes maliciosos.",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/recovery-clickjack.json",
+      "remediation": "X-Frame-Options: DENY o CSP: frame-ancestors 'none'.",
+      "timestamp": "2026-07-29T14:24:16.101106"
+    },
+    {
+      "scenario": "recovery_page",
+      "severity": "high",
+      "title": "Sin evidencia de 2FA en la p\u00e1gina de recuperaci\u00f3n",
+      "description": "Acciones cr\u00edticas de rotaci\u00f3n de hash sin segundo factor detectable.",
+      "evidence_path": "/home/runner/workspace/redteam/evidence/scan-20260729-142410/recovery-2fa.json",
+      "remediation": "Implementar TOTP/WebAuthn obligatorio para cualquier acci\u00f3n de recuperaci\u00f3n.",
+      "timestamp": "2026-07-29T14:24:16.101107"
+    }
+  ],
+  "errors": [],
+  "target": "/home/runner/workspace/redteam/evidence/dummy.apk",
+  "backend": "https://empli.fi/arabela/?fbclid=IwVERDUATUSKdleHRuA2FlbQIxMABzcnRjBmFwcF9pZAwzNTA2ODU1MzE3MjgAAR7j62fWM4-lxCzG347z5vVDEQ879C3VJd9EKWhZT-VOJWSRJ1AlFYAMvY4A6Q_aem_N84fvIjKvTP42gnFWGI9Rg//v1",
+  "scenarios_run": 11
+}

@@ -1,0 +1,10 @@
+node_modules/
+.expo/
+.env
+*.log
+dist/
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+flutter_secure_storage

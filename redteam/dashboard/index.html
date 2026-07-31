@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="theme-color" content="#0b0e11" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <title>SOURCESEAL RedTeam — Dashboard</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🛡️</span>
+      <div>
+        <h1>SOURCESEAL <span class="accent">RedTeam</span></h1>
+        <small id="agent-id" class="muted">agent: ...</small>
+      </div>
+    </div>
+    <div class="status">
+      <span id="status-dot" class="dot off"></span>
+      <span id="status-text">desconectado</span>
+      <button id="refresh-btn" class="btn ghost" title="Refrescar">↻</button>
+    </div>
+  </header>
+
+  <section class="kpis">
+    <div class="kpi critical">
+      <div class="kpi-label">Críticos</div>
+      <div class="kpi-value" id="kpi-critical">0</div>
+      <div class="kpi-spark"><canvas id="spark-critical" width="120" height="32"></canvas></div>
+    </div>
+    <div class="kpi high">
+      <div class="kpi-label">Altos</div>
+      <div class="kpi-value" id="kpi-high">0</div>
+      <div class="kpi-spark"><canvas id="spark-high" width="120" height="32"></canvas></div>
+    </div>
+    <div class="kpi medium">
+      <div class="kpi-label">Medios</div>
+      <div class="kpi-value" id="kpi-medium">0</div>
+      <div class="kpi-spark"><canvas id="spark-medium" width="120" height="32"></canvas></div>
+    </div>
+    <div class="kpi low">
+      <div class="kpi-label">Bajos / Info</div>
+      <div class="kpi-value" id="kpi-low">0</div>
+      <div class="kpi-spark"><canvas id="spark-low" width="120" height="32"></canvas></div>
+    </div>
+    <div class="kpi total">
+      <div class="kpi-label">Total hallazgos</div>
+      <div class="kpi-value" id="kpi-total">0</div>
+      <div class="muted small">último scan: <span id="last-scan">—</span></div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card market">
+      <div class="card-header">
+        <h2>Hallazgos — Mercado de Vulnerabilidades</h2>
+        <input type="text" id="filter" class="search" placeholder="🔎 buscar escenario, título..." />
+      </div>
+      <div class="table-wrap">
+        <table id="findings-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Severidad</th>
+              <th>Escenario</th>
+              <th>Título</th>
+              <th>Detectado</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="findings-body">
+            <tr><td colspan="6" class="empty">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card severity-dist">
+      <h2>Distribución de Severidad</h2>
+      <canvas id="severity-chart" width="280" height="280"></canvas>
+      <ul class="legend" id="legend"></ul>
+    </div>
+
+    <div class="card scenario-bars">
+      <h2>Hallazgos por Escenario</h2>
+      <div id="scenario-bars"></div>
+    </div>
+
+    <div class="card timeline">
+      <h2>Línea de Tiempo (últimos 20 reportes)</h2>
+      <canvas id="timeline-chart" width="600" height="180"></canvas>
+    </div>
+
+    <div class="card actions">
+      <h2>Acciones</h2>
+      <button id="run-scan" class="btn primary">▶ Ejecutar escaneo ahora</button>
+      <button id="download-report" class="btn">⬇ Descargar último reporte</button>
+      <button id="install-pwa" class="btn ghost" hidden>📱 Instalar en celular</button>
+      <div id="action-status" class="muted small"></div>
+    </div>
+
+    <div class="card detail" id="detail-card" hidden>
+      <h2>Detalle del Hallazgo</h2>
+      <div id="detail-content"></div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <small class="muted">
+      SOURCESEALCORP Red Team Agent · 11 escenarios · ejecución local-first ·
+      <a href="https://github.com/" id="repo-link">docs</a>
+    </small>
+  </footer>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

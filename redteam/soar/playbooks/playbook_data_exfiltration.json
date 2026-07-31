@@ -1,0 +1,46 @@
+{
+  "name": "playbook_data_exfiltration",
+  "description": "Critical response to data exfiltration. Block egress IPs at WAF, alert DPO per GDPR Art. 33 (parallel), then disable accounts involved in exfiltration.",
+  "mitre_techniques": ["T1041", "T1048", "T1567"],
+  "severity": "CRITICAL",
+  "steps": [
+    {
+      "id": "step_1",
+      "name": "Block Egress IPs at WAF",
+      "handler": "block_ip_waf",
+      "params": {
+        "waf_provider": "cloudflare",
+        "block_reason": "Data exfiltration egress IP — CRITICAL"
+      },
+      "depends_on": [],
+      "timeout_seconds": 30,
+      "rollback_handler": "unblock_ip_waf",
+      "mitre_technique": "T1041"
+    },
+    {
+      "id": "step_2",
+      "name": "Alert DPO — GDPR Article 33",
+      "handler": "slack_alert",
+      "params": {
+        "alert_title": "🚨 DATA BREACH — GDPR Art. 33 Notification Required",
+        "alert_message": "Data exfiltration detected. DPO must assess GDPR Art. 33 reporting obligation (72h window). Evidence capture in progress.",
+        "severity": "CRITICAL"
+      },
+      "depends_on": [],
+      "timeout_seconds": 15,
+      "mitre_technique": "T1041"
+    },
+    {
+      "id": "step_3",
+      "name": "Freeze Implicated Accounts",
+      "handler": "disable_user_auth",
+      "params": {
+        "auth_provider": "auth0",
+        "reason": "Account frozen — data exfiltration investigation"
+      },
+      "depends_on": ["step_1", "step_2"],
+      "timeout_seconds": 30,
+      "mitre_technique": "T1041"
+    }
+  ]
+}

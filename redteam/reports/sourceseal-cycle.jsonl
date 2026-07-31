@@ -1,0 +1,3 @@
+{"ts": "2026-07-22T08:20:28.847434Z", "phase": "anchor", "hash": "dcfda5ed105b6956cf833fba5c6f95ee4aefc2202343be48eb0454a5436484e4", "anchor": "blockchain-tx-pending", "time_lock_until": "2026-07-23T08:20:28.847444Z"}
+{"ts": "2026-07-22T08:20:28.897466Z", "phase": "revoke-previous", "previous_hash": "dcfda5ed105b6956cf833fba5c6f95ee4aefc2202343be48eb0454a5436484e4", "expected": "revoked-in-blockchain"}
+{"ts": "2026-07-22T08:20:28.897486Z", "phase": "regenerate", "hash": "fe109d46fd7f165247b2bccbc55e71de52315867a52decac0a7c954c83bb002b", "anchor": "blockchain-tx-pending-v2", "time_lock_until": "2026-07-23T08:20:28.897488Z"}

@@ -1,0 +1,103 @@
+---
+# DefenseMesh — Configuración declarativa
+# Carga al iniciar DefenseMesh. Thresholds editables sin tocar código.
+
+mesh:
+  name: "defense-mesh-sourcesealcorp"
+  mode: "active"  # active | passive | audit
+  log_level: "INFO"
+
+rasp:
+  enabled: true
+  frida_ports: [27042, 27043]
+  frida_libs: ["frida-agent", "frida-gadget", "libfrida"]
+  xposed_indicators: ["de.robv.android.xposed", "XposedBridge", "LSPosed"]
+  emulator_indicators:
+    - "ro.product.model=sdk"
+    - "ro.product.model=Emulator"
+    - "ro.product.model=google_sdk"
+    - "ro.hardware=goldfish"
+    - "ro.hardware=qemu"
+    - "ro.boot.qemu=1"
+  binary_allowlist:
+    - "a1b2c3d4e5f6"  # placeholder; en producción, hashes reales
+  hash_algorithm: "sha256"
+
+attestation:
+  enabled: true
+  min_os_version: "13"     # Android 13+ requerido
+  min_patch_level: "2024-09"
+  required_key_strongbox: true
+  cert_chain_max_depth: 4
+  attestation_key_bits: 2048
+
+ndr:
+  enabled: true
+  window_seconds: 300       # ventana deslizante
+  beaconing:
+    max_interval_seconds: 60
+    max_jitter_pct: 20
+    min_samples: 5
+  dns_tunneling:
+    entropy_threshold: 3.5
+    min_label_length: 20
+  low_slow_exfil:
+    bytes_per_minute_threshold: 1024  # <1KB/min sostenido = sospechoso
+    sustained_minutes: 3
+  icmp_tunnel:
+    max_payload_bytes: 64
+    entropy_threshold: 2.0
+
+ztna:
+  enabled: true
+  default_deny: true
+  posture_min_score: 0.7     # 0.0 - 1.0
+  jwt_ttl_seconds: 900
+  revocation_check: "strict" # strict | cache
+  timezone_business_hours: "09:00-18:00"
+  blocked_locations:
+    - "TOR-exit"
+
+deception:
+  enabled: true
+  decoy_jwt_prefix: "decoy."
+  decoy_endpoints:
+    - "/admin-old"
+    - "/.git"
+    - "/v0/test"
+    - "/api/v1/internal-backup"
+  decoy_db_seed: "honey-vault-001"
+  canary_emit_alert: true
+
+xdr:
+  buffer_size: 100000
+  correlation_window_seconds: 300
+  rules:
+    - id: "R-COR-001"
+      name: "RASP_hooking + outbound_C2"
+      when: "any(rasp.frida_active) AND any(ndr.beaconing)"
+      mitre: "T1056.001"
+    - id: "R-COR-002"
+      name: "BOLA + decoy_hit"
+      when: "any(ztna.bola_attempt) AND any(deception.hit)"
+      mitre: "T1078"
+    - id: "R-COR-003"
+      name: "canary + admin_login"
+      when: "any(deception.canary_access) AND any(ztna.admin_login)"
+      mitre: "T1078.004"
+
+soar:
+  enabled: true
+  max_latency_ms: 500
+  playbooks_dir: "defense/playbooks"
+  actions:
+    - "revoke_jwt"
+    - "isolate_device"
+    - "block_ioc"
+    - "quarantine_apk"
+    - "notify_hive"
+
+dashboard:
+  bind: "127.0.0.1"
+  port: 8765
+  refresh_seconds: 10

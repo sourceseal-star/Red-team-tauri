@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Defense Mesh — Zero Trust + Defense in Depth</title>
+  <link rel="stylesheet" href="assets/defense.css">
+</head>
+<body>
+  <header>
+    <h1>🛡️ Defense Mesh</h1>
+    <p class="subtitle">Zero Trust + Defensa en Profundidad — Enterprise</p>
+    <nav>
+      <a href="index.html">← Red Team Dashboard</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="overview">
+      <h2>Estado del Mesh</h2>
+      <div class="grid" id="mesh-grid">
+        <div class="card" data-layer="client">
+          <h3>Cliente / App</h3>
+          <p class="metric" id="metric-rasp">—</p>
+          <p class="label">Señales RASP</p>
+        </div>
+        <div class="card" data-layer="network">
+          <h3>Tráfico / Red</h3>
+          <p class="metric" id="metric-ndr">—</p>
+          <p class="label">Findings NDR</p>
+        </div>
+        <div class="card" data-layer="api">
+          <h3>Control de API</h3>
+          <p class="metric" id="metric-ztna">—</p>
+          <p class="label">BOLA attempts</p>
+        </div>
+        <div class="card" data-layer="deception">
+          <h3>Engaño</h3>
+          <p class="metric" id="metric-deception">—</p>
+          <p class="label">Decoy hits</p>
+        </div>
+        <div class="card" data-layer="operations">
+          <h3>Operaciones</h3>
+          <p class="metric" id="metric-soar">—</p>
+          <p class="label">Playbooks ejecutados</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="incidents">
+      <h2>Incidentes Recientes (XDR)</h2>
+      <table id="incidents-table">
+        <thead>
+          <tr><th>Timestamp</th><th>Severidad</th><th>MITRE</th><th>Categoría</th><th>Resumen</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="playbooks">
+      <h2>SOAR — Runs de Playbooks</h2>
+      <table id="playbooks-table">
+        <thead>
+          <tr><th>Playbook</th><th>Status</th><th>Latencia (ms)</th><th>Inicio</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="coverage">
+      <h2>Cobertura MITRE ATT&CK</h2>
+      <div id="coverage-grid" class="grid"></div>
+    </section>
+
+    <section id="actions">
+      <h2>Acciones</h2>
+      <button id="btn-simulate">Simular compromiso</button>
+      <button id="btn-refresh">Refrescar</button>
+      <pre id="last-result"></pre>
+    </section>
+  </main>
+
+  <script src="assets/defense.js"></script>
+</body>
+</html>

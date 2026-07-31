@@ -1,0 +1,55 @@
+name: Red Team — App Criptográfica
+
+on:
+  pull_request:
+    paths: ['app/**', 'redteam/**']
+  schedule:
+    - cron: '0 3 * * *'   # nightly 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    container: returntocorp/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          semgrep --config redteam/ci/semgrep-rules/crypto-weak.yml --json > semgrep.json || true
+          semgrep --config p/crypto --config p/security-audit . --json > semgrep-full.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: semgrep
+          path: |
+            semgrep.json
+            semgrep-full.json
+
+  mobsf:
+    runs-on: ubuntu-latest
+    container: opensecurity/mobile-security-framework-mobsf:latest
+    if: hashFiles('build/app.apk') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m mobsf.MobSF -f build/app.apk --json > mobsf.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobsf
+          path: mobsf.json
+
+  redteam-runner:
+    runs-on: ubuntu-latest
+    needs: [semgrep, mobsf]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r redteam/requirements.txt
+      - run: |
+          python3 redteam/runner/orchestrator.py \
+            --target build/app.apk \
+            --backend ${{ secrets.BACKEND_URL }} \
+            --output redteam/reports
+      - uses: actions/upload-artifact@v4
+        with:
+          name: redteam-report
+          path: redteam/reports/

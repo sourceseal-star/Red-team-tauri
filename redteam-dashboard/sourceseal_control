@@ -1,0 +1,274 @@
+# 1. Crear la estructura de carpetas
+mkdir -p sourceseal_control/lib/{config,services,models,screens,widgets}
+cd sourceseal_control
+
+# 2. Crear pubspec.yaml
+cat << 'EOF' > pubspec.yaml
+name: sourceseal_control
+description: SourceSeal Red Team Enterprise Control Center
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.1.0
+  font_awesome_flutter: ^10.5.0
+  provider: ^6.1.1
+  http: ^1.1.0
+  dartssh2: ^2.8.2
+  flutter_code_editor: ^0.1.4
+  flutter_secure_storage: ^9.0.0
+  crypto: ^3.0.3
+  uuid: ^4.2.1
+  logger: ^2.0.2+1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+EOF
+
+# 3. Crear los archivos de configuración y servicios
+cat << 'EOF' > lib/config/app_config.dart
+import 'package:flutter/foundation.dart';
+import '../services/secure_storage_service.dart';
+
+class AppConfig extends ChangeNotifier {
+  String backendUrl;
+  String sshHost;
+  int sshPort;
+  String sshUser;
+  String apiKey;
+
+  AppConfig({
+    this.backendUrl = 'https://red-team--sealclient2.replit.app',
+    this.sshHost = 'localhost',
+    this.sshPort = 22,
+    this.sshUser = 'user',
+    this.apiKey = '',
+  });
+
+  static Future<AppConfig> load(SecureStorageService storage) async {
+    final config = AppConfig();
+    config.backendUrl = await storage.read(key: 'backend_url') ?? config.backendUrl;
+    config.sshHost = await storage.read(key: 'ssh_host') ?? config.sshHost;
+    config.sshPort = int.parse(await storage.read(key: 'ssh_port') ?? '${config.sshPort}');
+    config.sshUser = await storage.read(key: 'ssh_user') ?? config.sshUser;
+    config.apiKey = await storage.read(key: 'api_key') ?? config.apiKey;
+    return config;
+  }
+
+  Future<void> save(SecureStorageService storage) async {
+    await storage.write(key: 'backend_url', value: backendUrl);
+    await storage.write(key: 'ssh_host', value: sshHost);
+    await storage.write(key: 'ssh_port', value: '$sshPort');
+    await storage.write(key: 'ssh_user', value: sshUser);
+    await storage.write(key: 'api_key', value: apiKey);
+    notifyListeners();
+  }
+
+  String get healthEndpoint => '$backendUrl/health';
+  String get apiBase => '$backendUrl/v1';
+}
+EOF
+
+cat << 'EOF' > lib/services/secure_storage_service.dart
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+class SecureStorageService {
+  final FlutterSecureStorage _storage = const FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
+  Future<void> init() async {}
+  Future<void> write({required String key, required String value}) async => await _storage.write(key: key, value: value);
+  Future<String?> read({required String key}) async => await _storage.read(key: key);
+  Future<void> delete({required String key}) async => await _storage.delete(key: key);
+}
+EOF
+
+cat << 'EOF' > lib/services/api_service.dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:crypto/crypto.dart';
+import 'package:uuid/uuid.dart';
+import '../config/app_config.dart';
+import '../services/secure_storage_service.dart';
+import 'package:logger/logger.dart';
+
+class ApiService {
+  final AppConfig config;
+  final SecureStorageService storage;
+  final Logger _logger = Logger();
+
+  ApiService(this.config, this.storage);
+
+  Map<String, String> _getSecureHeaders(String body) {
+    final nonce = const Uuid().v4();
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+    final secretKey = config.apiKey.isNotEmpty ? config.apiKey : 'default_enterprise_key';
+    final payload = '$nonce$timestamp$body';
+    final hmacSha256 = Hmac(sha256, utf8.encode(secretKey));
+    final signature = hmacSha256.convert(utf8.encode(payload)).toString();
+
+    return {
+      'Content-Type': 'application/json',
+      'X-Nonce': nonce,
+      'X-Timestamp': timestamp,
+      'X-Signature': signature,
+      'Authorization': 'Bearer ${config.apiKey}',
+    };
+  }
+
+  Future<Map<String, dynamic>> getHealth() async {
+    try {
+      final response = await http.get(Uri.parse(config.healthEndpoint), headers: _getSecureHeaders(''));
+      if (response.statusCode == 200) return json.decode(response.body);
+      return {'status': 'error', 'message': 'HTTP ${response.statusCode}'};
+    } catch (e) {
+      return {'status': 'offline', 'message': e.toString()};
+    }
+  }
+}
+EOF
+
+cat << 'EOF' > lib/services/ssh_service.dart
+import 'package:dartssh2/dartssh2.dart';
+import 'package:logger/logger.dart';
+
+class SSHService {
+  SSHClient? _client;
+  final Logger _logger = Logger();
+
+  Future<bool> connect(String host, int port, String username, String password) async {
+    try {
+      _client = SSHClient(await SSHSocket.connect(host, port), username: username, onPasswordRequest: () => password);
+      return true;
+    } catch (e) {
+      _logger.e('Error SSH: $e');
+      return false;
+    }
+  }
+
+  Future<String> executeCommand(String command) async {
+    if (_client == null) throw Exception('Sin conexión SSH');
+    final result = await _client!.run(command);
+    return String.fromCharCodes(result);
+  }
+
+  void disconnect() { _client?.close(); _client = null; }
+  bool get isConnected => _client != null;
+}
+EOF
+
+# 4. Crear los Modelos
+cat << 'EOF' > lib/models/vulnerability_model.dart
+class Vulnerability {
+  final String scenario;
+  final String severity;
+  final String title;
+  final String description;
+  final String evidencePath;
+  final String remediation;
+
+  Vulnerability({required this.scenario, required this.severity, required this.title, required this.description, required this.evidencePath, required this.remediation});
+
+  int get severityColor {
+    switch (severity) {
+      case 'critical': return 0xFFE53935;
+      case 'high': return 0xFFFB8C00;
+      case 'medium': return 0xFFFDD835;
+      default: return 0xFF43A047;
+    }
+  }
+}
+EOF
+
+# 5. Crear las Pantallas (Screens)
+# (Nota: Por límites de longitud, aquí incluyo el main y el dashboard. 
+# Los demás archivos de screens los generaremos en el siguiente bloque si es necesario, 
+# pero para armar el ZIP rápido, ejecuta esto primero).
+
+cat << 'EOF' > lib/main.dart
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'config/app_config.dart';
+import 'services/secure_storage_service.dart';
+import 'services/api_service.dart';
+import 'screens/dashboard_screen.dart';
+import 'screens/config_screen.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final storage = SecureStorageService();
+  await storage.init();
+  final config = await AppConfig.load(storage);
+  runApp(SourceSealApp(config: config, storage: storage));
+}
+
+class SourceSealApp extends StatelessWidget {
+  final AppConfig config;
+  final SecureStorageService storage;
+  const SourceSealApp({super.key, required this.config, required this.storage});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => config),
+        Provider<SecureStorageService>.value(value: storage),
+        Provider<ApiService>(create: (_) => ApiService(config, storage)),
+      ],
+      child: MaterialApp(
+        title: 'SourceSeal Red Team',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          brightness: Brightness.dark,
+          colorScheme: ColorScheme.dark(primary: Colors.blueAccent, surface: const Color(0xFF0A0E27), background: const Color(0xFF050816)),
+          scaffoldBackgroundColor: const Color(0xFF050816),
+          textTheme: GoogleFonts.interTextTheme(),
+        ),
+        home: const MainNavigation(),
+      ),
+    );
+  }
+}
+
+class MainNavigation extends StatefulWidget {
+  const MainNavigation({super.key});
+  @override
+  State<MainNavigation> createState() => _MainNavigationState();
+}
+
+class _MainNavigationState extends State<MainNavigation> {
+  int _selectedIndex = 0;
+  final List<Widget> _screens = const [DashboardScreen(), ConfigScreen()];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(index: _selectedIndex, children: _screens),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (index) => setState(() => _selectedIndex = index),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Dashboard'),
+          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Config'),
+        ],
+      ),
+    );
+  }
+}
+EOF
+
+echo "✅ Estructura base creada. Ahora crea las screens..."

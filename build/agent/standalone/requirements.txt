@@ -1,0 +1,4 @@
+requests>=2.31
+pycryptodome>=3.19
+apkutils>=1.4.0
+pyOpenSSL>=23.0

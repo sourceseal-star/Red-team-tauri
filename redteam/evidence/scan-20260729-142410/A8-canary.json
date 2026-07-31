@@ -1,0 +1,18 @@
+{
+  "https://empli.fi/arabela/?fbclid=IwVERDUATUSKdleHRuA2FlbQIxMABzcnRjBmFwcF9pZAwzNTA2ODU1MzE3MjgAAR7j62fWM4-lxCzG347z5vVDEQ879C3VJd9EKWhZT-VOJWSRJ1AlFYAMvY4A6Q_aem_N84fvIjKvTP42gnFWGI9Rg//v1/v1/health": {
+    "status": 200,
+    "leaked_canary": false
+  },
+  "https://empli.fi/arabela/?fbclid=IwVERDUATUSKdleHRuA2FlbQIxMABzcnRjBmFwcF9pZAwzNTA2ODU1MzE3MjgAAR7j62fWM4-lxCzG347z5vVDEQ879C3VJd9EKWhZT-VOJWSRJ1AlFYAMvY4A6Q_aem_N84fvIjKvTP42gnFWGI9Rg//v1/v1/audit": {
+    "status": 200,
+    "leaked_canary": false
+  },
+  "https://empli.fi/arabela/?fbclid=IwVERDUATUSKdleHRuA2FlbQIxMABzcnRjBmFwcF9pZAwzNTA2ODU1MzE3MjgAAR7j62fWM4-lxCzG347z5vVDEQ879C3VJd9EKWhZT-VOJWSRJ1AlFYAMvY4A6Q_aem_N84fvIjKvTP42gnFWGI9Rg//v1/v1/hashes": {
+    "status": 200,
+    "leaked_canary": false
+  },
+  "https://empli.fi/arabela/?fbclid=IwVERDUATUSKdleHRuA2FlbQIxMABzcnRjBmFwcF9pZAwzNTA2ODU1MzE3MjgAAR7j62fWM4-lxCzG347z5vVDEQ879C3VJd9EKWhZT-VOJWSRJ1AlFYAMvY4A6Q_aem_N84fvIjKvTP42gnFWGI9Rg//v1/v1/canary": {
+    "status": 200,
+    "leaked_canary": false
+  }
+}

@@ -1,0 +1,90 @@
+[
+  {
+    "id": "A1",
+    "name": "Reuso de hash anterior",
+    "expected": "rechazado (4xx)",
+    "actual": 404,
+    "passed": false,
+    "evidence": "/home/runner/workspace/build/reports/A1-hash-reuse.json"
+  },
+  {
+    "id": "A2",
+    "name": "Time-lock bypass",
+    "expected": "rechazado con 423/425/409",
+    "actual": 404,
+    "passed": false,
+    "evidence": "/home/runner/workspace/build/reports/A2-timelock.json"
+  },
+  {
+    "id": "A3",
+    "name": "Race condition en regeneración",
+    "expected": "≤1 success de 10",
+    "actual": "0 successes",
+    "passed": true,
+    "evidence": "/home/runner/workspace/build/reports/A3-race.json"
+  },
+  {
+    "id": "A4",
+    "name": "Rate limiting",
+    "expected": "429 tras umbral",
+    "actual": {
+      "404": 100
+    },
+    "passed": false,
+    "evidence": "/home/runner/workspace/build/reports/A4-ratelimit.json"
+  },
+  {
+    "id": "A5",
+    "name": "Validación de firma HMAC",
+    "expected": "401 sin firma y firma inválida",
+    "actual": "no_sig=404 bad_sig=404",
+    "passed": false,
+    "evidence": "/home/runner/workspace/build/reports/A5-signature.json"
+  },
+  {
+    "id": "A6",
+    "name": "Replay attack",
+    "expected": "segundo envío rechazado",
+    "actual": "404 → 404",
+    "passed": false,
+    "evidence": "/home/runner/workspace/build/reports/A6-replay.json"
+  },
+  {
+    "id": "A7",
+    "name": "Path traversal en página de recuperación",
+    "expected": "todos rechazados",
+    "actual": [
+      404,
+      404,
+      404,
+      404,
+      404
+    ],
+    "passed": true,
+    "evidence": "/home/runner/workspace/build/reports/A7-traversal.json"
+  },
+  {
+    "id": "A8",
+    "name": "Canary hash exposure",
+    "expected": "canary NO visible",
+    "actual": "leaks=False",
+    "passed": true,
+    "evidence": "/home/runner/workspace/build/reports/A8-canary.json"
+  },
+  {
+    "id": "A9",
+    "name": "Health + latencia",
+    "expected": "<2000ms promedio",
+    "actual": "avg=118ms",
+    "passed": true,
+    "evidence": "/home/runner/workspace/build/reports/A9-health.json"
+  },
+  {
+    "id": "A10",
+    "name": "Blockchain confirm",
+    "expected": "verificable",
+    "actual": "SOURCESEAL_NODE no configurado",
+    "passed": null,
+    "evidence": ""
+  }
+]

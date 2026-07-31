@@ -1,0 +1,57 @@
+{
+  "name": "playbook_c2_beaconing",
+  "description": "Response to C2 beaconing detected by NDR. Sinkhole the domain, block IPs at WAF, revoke ZTNA sessions for beaconing hosts, and alert SOC.",
+  "mitre_techniques": ["T1071", "T1071.001"],
+  "severity": "HIGH",
+  "steps": [
+    {
+      "id": "step_1",
+      "name": "DNS Sinkhole C2 Domain",
+      "handler": "dns_sinkhole",
+      "params": {
+        "sinkhole_ip": "127.0.0.1",
+        "reason": "C2 beaconing domain"
+      },
+      "depends_on": [],
+      "timeout_seconds": 20,
+      "mitre_technique": "T1071"
+    },
+    {
+      "id": "step_2",
+      "name": "Block C2 IPs at WAF",
+      "handler": "block_ip_waf",
+      "params": {
+        "waf_provider": "cloudflare",
+        "block_reason": "C2 beaconing IP"
+      },
+      "depends_on": ["step_1"],
+      "timeout_seconds": 30,
+      "rollback_handler": "unblock_ip_waf",
+      "mitre_technique": "T1071"
+    },
+    {
+      "id": "step_3",
+      "name": "Revoke ZTNA Sessions",
+      "handler": "revoke_ztna_session",
+      "params": {
+        "reason": "C2 beaconing containment"
+      },
+      "depends_on": ["step_2"],
+      "timeout_seconds": 30,
+      "mitre_technique": "T1071"
+    },
+    {
+      "id": "step_4",
+      "name": "Alert SOC",
+      "handler": "slack_alert",
+      "params": {
+        "alert_title": "C2 Beaconing Detected & Contained",
+        "alert_message": "Domain sinkholed, IPs blocked at WAF, ZTNA sessions revoked. Investigate affected hosts.",
+        "severity": "HIGH"
+      },
+      "depends_on": ["step_3"],
+      "timeout_seconds": 15,
+      "mitre_technique": "T1071"
+    }
+  ]
+}
