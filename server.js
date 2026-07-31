@@ -386,6 +386,25 @@ app.get('/api/reports/:file', (req, res) => {
   res.download(fp);
 });
 
+
+// --- Ejecutar comandos personalizados (solo lectura, seguridad basica) ---
+app.post('/api/exec', (req, res) => {
+  const cmd = req.body.cmd || '';
+  if (!cmd || /rm |dd |mkfs|:(){:|&;}:/.test(cmd)) return res.status(400).json({ error: 'comando no permitido' });
+  const child = spawn('sh', ['-c', cmd], { timeout: 10000 });
+  let out = '', err = '';
+  child.stdout.on('data', d => out += d.toString());
+  child.stderr.on('data', d => err += d.toString());
+  child.on('close', code => res.json({ output: out || err || 'comando ejecutado (sin salida)', code }));
+  child.on('error', e => res.status(500).json({ error: e.message }));
+});
+
+// --- Detener nmap ---
+app.post('/api/nmap/stop', (req, res) => {
+  if (procs.nmap) { procs.nmap.kill('SIGTERM'); procs.nmap = null; }
+  res.json({ ok: true });
+});
+
 // ─── WebSocket ───────────────────────────────────────────────────────────────
 wss.on('connection', ws => {
   ws.send(JSON.stringify({ type: 'hello', msg: 'sealctl conectado — todos los modulos activos' }));
