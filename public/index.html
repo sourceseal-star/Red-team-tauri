@@ -160,8 +160,259 @@ table.ht td.ip{color:var(--cyan)}
   <p class="foot reveal">sealctl · geo vía ip-api · intel con fórmula transparente · iot por huella real · todo en tu dispositivo</p>
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const term=$('#term');
 function log(l,c='l-out'){const d=document.createElement('div');d.className=c;d.textContent=l;term.appendChild(d);term.scrollTop=term.scrollHeight;while(term.children.length>400)term.removeChild(term.firstChild)}
-function setBtn(b,st,lb){b.classList.remove('run','ok','err');if(st)b.classList.add(st);if(lb!=null){const t=b.childNodes[b.childNodes.length-1];if(t.nodeType===3)t.textCon
+function setBtn(b,st,lb){b.classList.remove('run','ok','err');if(st)b.classList.add(st);if(lb!=null){const t=b.childNodes[b.childNodes.length-1];if(t.nodeType===3)t.textContent=lb}}
+
+// ─── WebSocket ───────────────────────────────────────────────────────────────
+let ws;
+function wsConnect(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  ws=new WebSocket(`${proto}://${location.host}`);
+  ws.onopen=()=>{$('#h-ws').textContent='on';$('#h-ws').style.color='var(--green)';$('#term-st').textContent='conectado';log('[ws] conectado')};
+  ws.onclose=()=>{$('#h-ws').textContent='off';$('#h-ws').style.color='var(--red)';$('#term-st').textContent='reconectando…';log('[ws] desconectado — reintentando en 3s');setTimeout(wsConnect,3000)};
+  ws.onmessage=ev=>{
+    try{
+      const m=JSON.parse(ev.data);
+      if(m.type==='hello'){log(`[ws] ${m.msg}`)}
+      else if(m.type==='ping'){}
+      else if(m.type==='stdout'){log(m.line,m.tag==='nmap'?'l-out':'l-out')}
+      else if(m.type==='stderr'){log(m.line,'l-err')}
+      else if(m.type==='proc'){
+        if(m.tag==='nmap'){$('#t-nmap').textContent=m.state==='running'?'run…':m.state}
+        if(m.tag==='mitm'){$('#t-mitm').textContent=m.state==='running'?'run…':m.state}
+        if(m.state==='done')setBtn($(`#${m.tag}-b`),'ok','hecho');
+        if(m.state==='error')setBtn($(`#${m.tag}-b`),'err','error');
+        log(`[${m.tag}] ${m.state}${m.code?' (code '+m.code+')':''}${m.ms?' '+m.ms+'ms':''}`);
+      }
+      else if(m.type==='hosts'){enrichHosts(m.ips)}
+      else if(m.type==='report'){$('#rep-c').textContent=parseInt($('#rep-c').textContent)+1;loadReports();log(`[report] ${m.file} — ${m.total} hallazgos`)}
+    }catch(e){}
+  };
+}
+
+// ─── API helpers ──────────────────────────────────────────────────────────────
+async function api(path,opts){
+  try{const r=await fetch(path,opts);return await r.json()}catch(e){log(`[err] ${e.message}`);return null}
+}
+
+// ─── Status ticker ───────────────────────────────────────────────────────────
+async function statusLoop(){
+  const d=await api('/api/status');
+  if(!d)return;
+  $('#h-node').textContent=d.node;
+  $('#h-ip').textContent=d.ip;
+  document.querySelector('[data-count=uptime]').textContent=d.uptime_s;
+  document.querySelector('[data-count=mem]').textContent=d.mem_free_mb+'M';
+  document.querySelector('[data-count=reports]').textContent=d.reports;
+  $('#t-nmap').textContent=d.nmap?'active':'idle';
+  $('#t-mitm').textContent=d.mitm?'active':'idle';
+}
+setInterval(statusLoop,5000);
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+$$('.tab').forEach(t=>t.onclick=()=>{
+  $$('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');
+  $$('.panel').forEach(p=>p.classList.remove('on'));
+  $('#'+t.dataset.p).classList.add('on');
+});
+
+// ─── Leaflet Map ─────────────────────────────────────────────────────────────
+let map,L;
+function initMap(){
+  if(map)return;
+  L=window.L;
+  map=L.map('map',{zoomControl:true,attributionControl:true}).setView([0,0],2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM',maxZoom:19}).addTo(map);
+}
+function addMarker(lat,lon,label,color){
+  if(!map)initMap();
+  if(lat==null||lon==null)return;
+  const c=L.circleMarker([lat,lon],{radius:7,color:color||'#56d4dd',fillColor:color||'#56d4dd',fillOpacity:.7,weight:2}).addTo(map);
+  c.bindPopup(label);
+}
+function scoreColor(s){return s<=20?'#7ee787':s<=50?'#ffb000':s<=80?'#e07ad0':'#ff5d52'}
+
+// ─── Hosts table ──────────────────────────────────────────────────────────────
+const hosts=[];
+async function enrichHosts(ips){
+  log(`[hosts] enriqueciendo ${ips.length} IPs…`);
+  $('#hosts-c').textContent=ips.length;
+  $('#t-hosts').textContent=ips.length;
+  for(const ip of ips){
+    const row=document.createElement('tr');
+    row.innerHTML=`<td class="ip">${ip}</td><td>…</td><td>…</td><td>…</td><td>…</td><td></td>`;
+    $('#hosts-b').appendChild(row);
+    const [g,i]=await Promise.all([api(`/api/geo?ip=${ip}`),api(`/api/intel?ip=${ip}`)]);
+    let geo='—',isp='—',pill='<span class="pill unk">—</span>',color='#7d8a99';
+    if(g&&!g.error&&!g.private){geo=`${g.country||'—'} ${g.city||''}`;isp=`${g.isp||'—'} ${g.as?'AS'+g.as:''}`}
+    if(g&&g.private){geo='LAN';isp='red privada';pill='<span class="pill lan">LAN</span>'}
+    if(i&&!i.private){pill=`<span class="pill ${i.score<=20?'clean':i.score<=50?'mid':i.score<=80?'low':'crit'}">${i.score} · ${i.label.split(' ')[0]}</span>`;color=scoreColor(i.score)}
+    row.innerHTML=`<td class="ip">${ip}</td><td>${geo}</td><td>${isp}</td><td>${pill}</td><td>…</td><td><button class="btn" style="padding:4px 8px;font-size:10px" onclick="scanIoT('${ip}')">iot</button></td>`;
+    if(g&&g.lat&&g.lon)addMarker(g.lat,g.lon,`${ip} · ${geo} · ${g.isp||''}`,color);
+    hosts.push({ip,geo:g,intel:i});
+    log(`[host] ${ip} → ${geo} | ${isp} | ${i?i.score+'':'?'}`);
+  }
+}
+
+// ─── Nmap ────────────────────────────────────────────────────────────────────
+$('#nmap-b').onclick=async()=>{
+  const t=$('#nmap-t').value.trim();if(!t)return;
+  setBtn($('#nmap-b'),'run','escaneando…');
+  log(`[nmap] lanzando: nmap -sT -Pn --top-ports 100 ${t}`);
+  const r=await api(`/api/nmap?target=${encodeURIComponent(t)}`);
+  if(r&&r.ok)log('[nmap] escaneo iniciado — salida en vivo por WebSocket');
+  else setBtn($('#nmap-b'),'err','error');
+};
+
+// ─── One-IP queries ──────────────────────────────────────────────────────────
+$('#one-geo').onclick=async()=>{
+  const ip=$('#one-ip').value.trim();if(!ip)return;
+  const g=await api(`/api/geo?ip=${ip}`);
+  if(!g)return;
+  log(`[geo] ${ip} → ${g.country||'—'} / ${g.city||'—'} / ${g.isp||'—'} ${g.as?'AS'+g.as:''}`);
+  if(g.lat&&g.lon){if(!map)initMap();addMarker(g.lat,g.lon,`${ip} · ${g.country||''}`,'#56d4dd')}
+};
+$('#one-intel').onclick=async()=>{
+  const ip=$('#one-ip').value.trim();if(!ip)return;
+  const i=await api(`/api/intel?ip=${ip}`);
+  if(!i)return;
+  log(`[intel] ${ip} → score ${i.score}/100 [${i.label}] rDNS:${i.rdns||'—'} blocklist:${i.blocklist?'sí':'no'}`);
+  if(i.breakdown)i.breakdown.forEach(b=>log(`  ${b.f}: ${b.w>0?'+':''}${b.w}`));
+};
+$('#one-iot').onclick=()=>{
+  const ip=$('#one-ip').value.trim();if(!ip)return;
+  scanIoT(ip);
+};
+
+// ─── Local scan ──────────────────────────────────────────────────────────────
+$('#scan-b').onclick=async()=>{
+  const t=$('#scan-t').value.trim();if(!t)return;
+  setBtn($('#scan-b'),'run','escaneando…');
+  log(`[scan] rango: ${t}`);
+  // Usar nmap para escaneo local
+  const r=await api(`/api/nmap?target=${encodeURIComponent(t)}`);
+  if(r&&r.ok)log('[scan] en curso — resultados vía WebSocket');
+  else setBtn($('#scan-b'),'err','error');
+};
+
+// ─── IoT ─────────────────────────────────────────────────────────────────────
+async function scanIoT(target){
+  if(target){log(`[iot] escaneando ${target}…`);$('#iot-t').value=target}
+  const t=target||$('#iot-t').value.trim();if(!t)return;
+  if(!target)setBtn($('#iot-b'),'run','escaneando…');
+  const r=await api('/api/iot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ips:t.includes('-')||t.includes('/')?[t]:[t]})});
+  if(!r||!r.results){setBtn($('#iot-b'),'err','error');return}
+  $('#iot-out').innerHTML='';
+  r.results.forEach(h=>{
+    const div=document.createElement('div');
+    div.className='ht';
+    const pill=h.type==='camera'?'<span class="pill cam">cámara</span>':h.type==='radio'||h.type==='radio/voip'?'<span class="pill radio">radio</span>':'<span class="pill unk">sin huella</span>';
+    div.innerHTML=`<div style="padding:10px 0;border-bottom:1px solid var(--line)"><div><b style="color:var(--cyan)">${h.ip}</b> ${pill} ${h.vendor?'· '+h.vendor:''}</div><div style="font-size:11px;color:var(--dim);margin-top:4px">Puertos: ${h.ports_open.join(', ')||'—'} | ${h.summary}</div>${h.evidence.map(e=>`<div style="font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:2px">${e.port}/${e.proto}${e.path?' '+e.path:''} ${e.status?'→ '+e.status:''} ${e.vendor_hint?'· '+e.vendor_hint:''}</div>`).join('')}</div>`;
+    $('#iot-out').appendChild(div);
+  });
+  if(!target)setBtn($('#iot-b'),'ok','hecho');
+  log(`[iot] ${r.results.length} hosts escaneados`);
+}
+$('#iot-b').onclick=()=>scanIoT();
+
+// ─── MITM ────────────────────────────────────────────────────────────────────
+$('#mitm-b').onclick=async()=>{
+  setBtn($('#mitm-b'),'run','iniciando…');
+  const r=await api('/api/mitm/start',{method:'POST'});
+  if(r&&r.ok){log(`[mitm] proxy activo en :8080 → ${r.capture}`);setBtn($('#mitm-b'),'ok','activo')}
+  else setBtn($('#mitm-b'),'err','error');
+};
+$('#mitm-s').onclick=async()=>{
+  const r=await api('/api/mitm/stop',{method:'POST'});
+  log('[mitm] proxy detenido');
+  setBtn($('#mitm-b'),'','iniciar');
+};
+
+// ─── MITM cert check ─────────────────────────────────────────────────────────
+async function checkCert(){
+  const r=await api('/api/mitm/cert');
+  if(r){
+    $('#cert-st').textContent=r.exists?'disponible':'no generado';
+    $('#cert-st').style.color=r.exists?'var(--green)':'var(--dim)';
+  }
+}
+
+// ─── Reports ─────────────────────────────────────────────────────────────────
+$('#rep-b').onclick=async()=>{
+  const t=$('#rep-t').value.trim()||'manual';
+  setBtn($('#rep-b'),'run','generando…');
+  log('[report] generando JSON…');
+  const r=await api('/api/report/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:t,findings:hosts.map(h=>({scenario:'recon',severity:h.intel&&h.intel.score>50?'high':'info',title:`Host ${h.ip}`,description:`${h.geo?h.geo.country:''} ${h.geo?h.geo.isp:''} score:${h.intel?h.intel.score:0}`,evidence_path:'',remediation:'',timestamp:new Date().toISOString()}))})});
+  if(r&&r.ok){log(`[report] ${r.file} — ${r.report.total_findings} hallazgos`);setBtn($('#rep-b'),'ok','hecho');loadReports()}
+  else setBtn($('#rep-b'),'err','error');
+};
+
+async function loadReports(){
+  const r=await api('/api/reports');
+  if(!r||!r.length){$('#rep-list').innerHTML='<div class="empty">sin reportes todavía.</div>';return}
+  $('#rep-c').textContent=r.length;
+  document.querySelector('[data-count=reports]').textContent=r.length;
+  $('#rep-list').innerHTML='';
+  r.forEach(f=>{
+    const div=document.createElement('div');
+    div.style.cssText='padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;cursor:pointer';
+    div.innerHTML=`<span style="font-family:var(--mono);font-size:11px;color:var(--cyan)">${f.file}</span><span style="font-size:10px;color:var(--faint)">${(f.size/1024).toFixed(1)}KB</span>`;
+    div.onclick=async()=>{
+      const d=await api(`/api/reports/${f.file}`);
+      if(d&&d.findings){$('#find-list').innerHTML='';$('#find-st').textContent=f.file;
+        d.findings.forEach(fi=>{
+          const el=document.createElement('div');el.style.cssText='padding:8px 0;border-bottom:1px solid var(--line)';
+          const sev=fi.severity||'info';
+          el.innerHTML=`<div><span class="pill ${sev==='critical'?'crit':sev==='high'?'low':sev==='medium'?'mid':'clean'}">${sev}</span> ${fi.title}</div><div style="font-size:11px;color:var(--dim);margin-top:4px">${fi.description}</div>`;
+          $('#find-list').appendChild(el);
+        });
+      }
+    };
+    $('#rep-list').appendChild(div);
+  });
+}
+
+// ─── Radar canvas ────────────────────────────────────────────────────────────
+function radar(){
+  const c=$('#radar'),ctx=c.getContext('2d');
+  c.width=innerWidth;c.height=innerHeight;
+  let a=0;
+  (function loop(){
+    ctx.clearRect(0,0,c.width,c.height);
+    ctx.strokeStyle='rgba(255,176,0,.06)';ctx.lineWidth=1;
+    for(let r=0;r<Math.max(c.width,c.height);r+=80){ctx.beginPath();ctx.arc(c.width/2,c.height/2,r,0,Math.PI*2);ctx.stroke()}
+    a+=.008;
+    ctx.strokeStyle='rgba(255,176,0,.12)';
+    ctx.beginPath();ctx.moveTo(c.width/2,c.height/2);
+    ctx.lineTo(c.width/2+Math.cos(a)*Math.max(c.width,c.height),c.height/2+Math.sin(a)*Math.max(c.width,c.height));
+    ctx.stroke();
+    requestAnimationFrame(loop);
+  })();
+}
+
+// ─── Ticker ──────────────────────────────────────────────────────────────────
+function ticker(){
+  const items=['sealctl','geo via ipwho.is','intel: blocklist abuse.ch','iot: rtsp/onvif/sip','nmap tcp-connect','mitm proxy :8080','cero mocks','todo en tu dispositivo'];
+  $('#ticker').innerHTML=items.map(t=>`<span>${t}</span>`).join('<span class="a">·</span>')+items.map(t=>`<span>${t}</span>`).join('<span class="a">·</span>');
+}
+
+// ─── Reveal animation ────────────────────────────────────────────────────────
+function reveal(){
+  const obs=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');obs.unobserve(e.target)}})},{threshold:.1});
+  $$('.reveal').forEach(el=>obs.observe(el));
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+wsConnect();
+statusLoop();
+ticker();
+radar();
+reveal();
+checkCert();
+loadReports();
+log('[sealctl] consola lista — escribe una IP o lanza nmap');
+</script>
+</body>
+</html>
