@@ -176,6 +176,19 @@ const $ = id => document.getElementById(id);
 const qs = sel => document.querySelector(sel);
 const ce = (tag, cls) => { const e=document.createElement(tag); if(cls) e.className=cls; return e; };
 
+// --- Auth: Bearer token para todas las peticiones ---
+const AUTH_TOKEN = localStorage.getItem('sealctl_token') || '';
+function authHeaders(extra = {}) {
+  return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + AUTH_TOKEN, ...extra };
+}
+function authUrl(url) {
+  return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(AUTH_TOKEN);
+}
+function wsUrl() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  return proto + '://' + location.host + '/?token=' + encodeURIComponent(AUTH_TOKEN);
+}
+
 const tabs = document.querySelectorAll('#tabs button');
 const panels = { tab1:$('tab1'), tab2:$('tab2'), tab3:$('tab3'), tab4:$('tab4'), tab5:$('tab5'), tab6:$('tab6') };
 tabs.forEach(b => b.addEventListener('click', ()=>{
@@ -208,7 +221,7 @@ function updateMap(ips) {
 let ws = null;
 function connectWS() {
   const proto = location.protocol==='https:'?'wss':'ws';
-  ws = new WebSocket(proto+'://'+location.host);
+  ws = new WebSocket(wsUrl());
   ws.onmessage = e => {
     try {
       const data = JSON.parse(e.data);
@@ -237,6 +250,13 @@ function connectWS() {
   };
   ws.onclose = () => setTimeout(connectWS, 3000);
 }
+
+// --- Solicitar token si no esta guardado ---
+if (!AUTH_TOKEN) {
+  const input = prompt('SealCtl: Ingrese su API Key (REDTEAM_API_KEY):');
+  if (input) localStorage.setItem('sealctl_token', input.trim());
+  location.reload();
+}
 connectWS();
 
 const geoCache = new Map();
@@ -257,8 +277,8 @@ async function enrichIPs(ips) {
     while(queue.length) {
       const ip = queue.shift();
       try {
-        const geo = await fetch('/api/geo?ip='+encodeURIComponent(ip)).then(r=>r.json());
-        const intel = await fetch('/api/intel?ip='+encodeURIComponent(ip)).then(r=>r.json());
+        const geo = await fetch(authUrl('/api/geo?ip='+encodeURIComponent(ip)), {headers: authHeaders()}).then(r=>r.json());
+        const intel = await fetch(authUrl('/api/intel?ip='+encodeURIComponent(ip)), {headers: authHeaders()}).then(r=>r.json());
         const row = rows[ip];
         if(!row) continue;
         const lat = geo.lat, lon = geo.lon;
@@ -302,9 +322,9 @@ document.querySelector('#geo-table').addEventListener('click', async e => {
   const action = btn.dataset.action;
   const row = btn.closest('tr');
   let data = {};
-  if(action === 'geo') data = row._geo || await fetch('/api/geo?ip='+ip).then(r=>r.json());
-  else if(action === 'intel') data = row._intel || await fetch('/api/intel?ip='+ip).then(r=>r.json());
-  else if(action === 'iot') data = await fetch('/api/iot?target='+ip).then(r=>r.json());
+  if(action === 'geo') data = row._geo || await fetch(authUrl('/api/geo?ip='+ip), {headers: authHeaders()}).then(r=>r.json());
+  else if(action === 'intel') data = row._intel || await fetch(authUrl('/api/intel?ip='+ip), {headers: authHeaders()}).then(r=>r.json());
+  else if(action === 'iot') data = await fetch(authUrl('/api/iot?target='+ip), {headers: authHeaders()}).then(r=>r.json());
   showModal(JSON.stringify(data, null, 2));
 });
 
@@ -324,7 +344,7 @@ $('geo-refresh').addEventListener('click', ()=>{
 $('geo-iot-scan').addEventListener('click', async ()=>{
   const ips = Array.from(document.querySelectorAll('#geo-table tbody tr')).map(tr=>tr.dataset.ip).filter(Boolean);
   if(!ips.length) return alert('No hay IPs.');
-  const resp = await fetch('/api/iot/scan', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ips}) });
+  const resp = await fetch('/api/iot/scan', { method:'POST', headers: authHeaders(), body:JSON.stringify({ips}) });
   const res = await resp.json();
   showModal(JSON.stringify(res, null, 2));
 });
@@ -332,14 +352,14 @@ $('geo-iot-scan').addEventListener('click', async ()=>{
 $('cmd-run').addEventListener('click', async ()=>{
   const cmd = $('cmd-input').value.trim();
   if(!cmd) return;
-  const res = await fetch('/api/exec', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cmd}) });
+  const res = await fetch('/api/exec', { method:'POST', headers: authHeaders(), body:JSON.stringify({action: cmd.includes('whoami')?'whoami':cmd.includes('df')?'disk_usage':cmd.includes('free')?'memory':cmd.includes('ps')?'processes':cmd.includes('uptime')?'uptime':cmd.includes('hostname')?'hostname':cmd.includes('uname')?'uname':'date') });
   const data = await res.json();
   $('cmd-output').textContent = data.output || data.error || 'sin salida';
 });
 
 async function updateStatus() {
   try {
-    const r = await fetch('/api/status');
+    const r = await fetch(authUrl('/api/status'), {headers: authHeaders()});
     const s = await r.json();
     $('status').innerHTML =
       '<div>host: '+s.node+' - '+s.platform+'/'+s.arch+'</div>' +
@@ -355,10 +375,10 @@ $('nmap-run').addEventListener('click', ()=>{
   const target = $('nmap-target').value.trim();
   if(!target) return;
   $('nmap-output').textContent = '';
-  fetch('/api/nmap?target='+encodeURIComponent(target)).then(r=>r.json());
+  fetch(authUrl('/api/nmap?target='+encodeURIComponent(target)), {headers: authHeaders()}).then(r=>r.json());
 });
 $('nmap-stop').addEventListener('click', ()=>{
-  fetch('/api/nmap/stop', {method:'POST'}).then(r=>r.json());
+  fetch(authUrl('/api/nmap/stop'), {method:'POST', headers: authHeaders()}).then(r=>r.json());
 });
 
 let findings = [];
@@ -378,18 +398,18 @@ $('finding-add').addEventListener('click', ()=>{
 });
 
 $('mitm-start').addEventListener('click', ()=>{
-  fetch('/api/mitm/start', {method:'POST'}).then(r=>r.json());
+  fetch(authUrl('/api/mitm/start'), {method:'POST', headers: authHeaders()}).then(r=>r.json());
   $('mitm-output').textContent = '';
 });
 $('mitm-stop').addEventListener('click', ()=>{
-  fetch('/api/mitm/stop', {method:'POST'}).then(r=>r.json());
+  fetch(authUrl('/api/mitm/stop'), {method:'POST', headers: authHeaders()}).then(r=>r.json());
 });
-fetch('/api/mitm/cert').then(r=>r.json()).then(d=>{
+fetch(authUrl('/api/mitm/cert'), {headers: authHeaders()}).then(r=>r.json()).then(d=>{
   $('mitm-cert').textContent = d.exists ? 'disponible' : 'no disponible';
 }).catch(()=>{ $('mitm-cert').textContent = 'error'; });
 
 $('report-gen').addEventListener('click', async ()=>{
-  const resp = await fetch('/api/report/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ findings }) });
+  const resp = await fetch('/api/report/generate', { method:'POST', headers: authHeaders(), body:JSON.stringify({ findings }) });
   const data = await resp.json();
   alert('Reporte generado: '+(data.file||''));
   listReports();
@@ -397,7 +417,7 @@ $('report-gen').addEventListener('click', async ()=>{
 
 async function listReports() {
   try {
-    const r = await fetch('/api/reports');
+    const r = await fetch(authUrl('/api/reports'), {headers: authHeaders()});
     const reports = await r.json();
     $('report-list').innerHTML = reports.map(rp =>
       '<li style="padding:6px 0;border-bottom:1px solid #1d2733;"><button class="btn" data-file="'+rp.file+'">'+rp.file+'</button> <small style="color:#7d8a99;">'+rp.size+' bytes</small></li>'
