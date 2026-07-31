@@ -69,7 +69,7 @@ app.get('/api/iot', async (req, res) => {
 });
 app.post('/api/iot/scan', async (req, res) => {
   const ips = (req.body.ips || []).filter(Boolean);
-  res.json(await iot.scanMany(ips, 6));
+  res.json({ results: await iot.scanMany(ips, 6) });
 });
 
 // mitm
