@@ -145,7 +145,7 @@ export const api = {
   getResources:     () => get<Resources>("/resources"),
 
   // Escaneos
-  startScan:        () => post<{ status: string; message: string }>("/scan"),
+  startScan:        (target?: string) => post<{ status: string; message: string }>("/scan", target ? { target } : undefined),
   getScanStatus:    () => get<ScanStatus>("/scan/status"),
   getLatestReport:  () => get<Report>("/latest"),
   getHistory:       () => get<Report[]>("/history"),
@@ -170,6 +170,7 @@ export const api = {
   addIoc:           (ioc: Partial<IOC>) => post<{ ok: boolean; id: string }>("/tip/iocs", ioc),
   deleteIoc:        (id: string) => del<{ ok: boolean }>(`/tip/iocs/${id}`),
   importStix:       (bundle: unknown) => post<{ ok: boolean; imported: number }>("/tip/import-stix", bundle),
+  updateFromFeeds:  () => post<{ ok: boolean; iocs_loaded: number }>("/tip/update", {}),
 
   // RASP dispositivos
   getDevices:       () => get<Device[]>("/rasp/devices"),

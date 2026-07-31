@@ -500,7 +500,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Red Team Enterprise v4 — Unified Scanner")
     parser.add_argument("--target", default="evidence/dummy.apk", help="Target APK/file")
-    parser.add_argument("--backend", default="https://sourceseal.co", help="Backend URL to scan")
+    parser.add_argument("--backend", default="", help="Backend URL to scan (required)")
     parser.add_argument("--output", default="reports", help="Output directory for reports")
     args = parser.parse_args()
     

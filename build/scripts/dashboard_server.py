@@ -36,6 +36,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from site_monitor.monitor import EventBus, SiteMonitor  # noqa: E402
+from redteam.threat_intel import (  # noqa: E402
+    fetch_all_iocs, get_iocs, add_ioc, delete_ioc, import_stix,
+)
 from site_monitor.edit import (  # noqa: E402
     ReplitPublisher, fetch_site, parse_repl_url,
 )
@@ -92,6 +95,11 @@ class Handler(SimpleHTTPRequestHandler):
             return self._serve_site_fetch(q.get("url", [""])[0])
         if p == "/api/site/publish_check":
             return self._json({"publish_enabled": bool(os.environ.get("REPLIT_TOKEN"))})
+
+        # ── Threat Intelligence ──────────────────────────────────
+        if p == "/tip/iocs":
+            return self._json(get_iocs())
+
         return super().do_GET()
 
     # ----------------------------------------------------------------- POST
@@ -111,6 +119,19 @@ class Handler(SimpleHTTPRequestHandler):
             return self._configure_site(body)
         if p == "/api/site/publish":
             return self._publish_to_replit(body)
+
+        # ── Threat Intelligence ──────────────────────────────────
+        if p == "/tip/iocs":
+            return self._json(add_ioc(body))
+        if p.startswith("/tip/iocs/"):
+            ioc_id = p.split("/tip/iocs/")[1]
+            return self._json(delete_ioc(ioc_id))
+        if p == "/tip/import-stix":
+            return self._json(import_stix(body))
+        if p == "/tip/update":
+            iocs = fetch_all_iocs()
+            return self._json({"iocs_loaded": len(iocs)})
+
         self._json({"error": "not found"}, 404)
 
     # ----------------------------------------------------------------- SSE

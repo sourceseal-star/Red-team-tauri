@@ -88,7 +88,7 @@ export interface DownloadItem {
 }
 
 // ─── API Client ─────────────────────────────────────────
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.sourceseal.corp';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8001';
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
