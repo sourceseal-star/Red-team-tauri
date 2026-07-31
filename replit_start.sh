@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Restaurar autenticación de GitHub en cada inicio
+bash "$(dirname "$0")/scripts/init_git_auth.sh" || true
+
 cd "$(dirname "$0")/redteam"
 mkdir -p reports evidence
 
