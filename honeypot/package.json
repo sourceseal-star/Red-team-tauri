@@ -1,0 +1,26 @@
+{
+  "name": "sourceseal-honeypot",
+  "version": "1.0.0",
+  "description": "SourceSeal Honeypot — HTTP honeypot with real attack capture, SQLite logging, and Termux API",
+  "main": "start-honeypot.js",
+  "scripts": {
+    "start": "node start-honeypot.js",
+    "start:9090": "HONEYPOT_PORT=9090 node start-honeypot.js",
+    "dev": "node start-honeypot.js 8080",
+    "install:all": "npm install express socket.io sqlite3 uuid cors helmet"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "socket.io": "^4.7.0",
+    "sqlite3": "^5.1.0",
+    "uuid": "^9.0.0",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0"
+  },
+  "optionalDependencies": {
+    "geoip-lite": "^1.4.10"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
