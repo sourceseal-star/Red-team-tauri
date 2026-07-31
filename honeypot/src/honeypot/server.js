@@ -22,8 +22,8 @@ const FAKE_ENDPOINTS = [
   { path: '/phpmyadmin', status: 200, body: '<html><body><h1>phpMyAdmin</h1><form method="POST"><input name="username"><input name="password" type="password"><button>Go</button></form></body></html>' },
   { path: '/.env', status: 200, body: 'DB_PASSWORD=s3cr3t\nAPI_KEY=sk-xxxxxxxxxxxx\nJWT_SECRET=super_secret_jwt_123\nDATABASE_URL=postgres://user:pass@db:5432/prod' },
   { path: '/.git/config', status: 200, body: '[core]\n\trepositoryformatversion = 0\n[remote "origin"]\n\turl = git@github.com:company/private-repo.git\n[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/main' },
-  { path: '/api/v1/users', status: 200, body: '[{"id":1,"email":"admin@sourceseal.co","role":"admin"},{"id":2,"email":"ceo@sourceseal.co","role":"ceo"}]' },
-  { path: '/backup.sql', status: 200, body: '-- MySQL dump\nCREATE TABLE users (id INT, email VARCHAR(255), password VARCHAR(255));\nINSERT INTO users VALUES (1, "admin@sourceseal.co", "$2b$10$xxxx");' },
+  { path: '/api/v1/users', status: 200, body: '[{"id":1,"email":"admin@example.local","role":"admin"},{"id":2,"email":"ceo@example.local","role":"ceo"}]' },
+  { path: '/backup.sql', status: 200, body: '-- MySQL dump\nCREATE TABLE users (id INT, email VARCHAR(255), password VARCHAR(255));\nINSERT INTO users VALUES (1, "admin@example.local", "$2b$10$xxxx");' },
   { path: '/robots.txt', status: 200, body: 'User-agent: *\nDisallow: /admin/\nDisallow: /backup/\nDisallow: /.env\nDisallow: /api/internal/' },
 ];
 

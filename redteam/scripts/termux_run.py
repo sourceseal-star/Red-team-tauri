@@ -160,7 +160,7 @@ def cmd_scan(args):
         return
     
     target = args.get("--target") or str(ROOT / "evidence" / "dummy.apk")
-    backend = args.get("--backend") or os.environ.get("SOURCESEAL_API", "https://sourceseal.co")
+    backend = args.get("--backend") or os.environ.get("SOURCESEAL_API", "")
     output = args.get("--output") or str(ROOT / "reports")
 
     from runner.unified_orchestrator import run_unified_scan

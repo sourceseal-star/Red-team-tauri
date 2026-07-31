@@ -145,7 +145,7 @@ export const api = {
   getResources:     () => get<Resources>("/resources"),
 
   // Escaneos
-  startScan:        () => post<{ status: string; message: string }>("/scan"),
+  startScan:        (target?: string) => post<{ status: string; message: string }>("/scan", target ? { target } : undefined),
   getScanStatus:    () => get<ScanStatus>("/scan/status"),
   getLatestReport:  () => get<Report>("/latest"),
   getHistory:       () => get<Report[]>("/history"),

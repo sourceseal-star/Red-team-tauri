@@ -117,8 +117,9 @@ class RealScanner:
         """Test 2: Descubrir endpoints de API y probar acceso."""
         print("  [probe] Escaneando endpoints API...")
         
-        # ─── ENDPOINTS REALES DE SOURCESEAL.CO ────────────────────────────────
-        if "sourceseal.co" in self.backend:
+        # ─── ENDPOINTS COMUNES DE API (funciona con cualquier dominio) ──────────
+        # Los endpoints se prueban contra cualquier dominio objetivo
+        if True:  # siempre ejecutar — los endpoints son genéricos
             ss_endpoints = [
                 "/api/healthz", "/api/seals", "/api/seals/", "/api/seals/1",
                 "/api/seals/2", "/api/seals/3", "/api/seals/4", "/api/seals/5",

@@ -26,7 +26,7 @@ echo "[start] Iniciando backend REAL en :8001..."
 cd "$ROOT/redteam"
 export PORT=8001
 export PYTHONUNBUFFERED=1
-export SOURCESEAL_API="https://sourceseal.co"
+# SOURCESEAL_API se configura desde la UI (Settings) — no hardcodear aqui
 python3 scripts/dashboard_server.py &
 BACKEND_PID=$!
 echo "[start] Backend PID: $BACKEND_PID"

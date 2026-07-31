@@ -28,7 +28,15 @@ LOGS_DIR  = ROOT / "logs"
 DATA_DIR  = ROOT / "data"
 PORT = int(os.environ.get("PORT", "8001"))
 
-BACKEND = os.environ.get("SOURCESEAL_API", "https://sourceseal.co")
+BACKEND = os.environ.get("SOURCESEAL_API", "")  # Se carga desde settings.json en runtime
+
+def _get_active_target():
+    """Obtiene el target activo desde settings.json (configurable desde la UI)."""
+    settings = _load_json(SETTINGS_FILE, {})
+    target = settings.get("api_url", "") or os.environ.get("SOURCESEAL_API", "")
+    if not target:
+        return None  # Sin target configurado
+    return target
 
 for d in (REPORTS, EVIDENCE, LOGS_DIR, DATA_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -232,7 +240,7 @@ def _init_data():
             "last_trigger": None, "token_rotated_at": None})
     if not SOAR_FILE.exists(): _save_json(SOAR_FILE, [])
     if not SETTINGS_FILE.exists():
-        _save_json(SETTINGS_FILE, {"api_url": BACKEND, "interval": 15,
+        _save_json(SETTINGS_FILE, {"api_url": "", "interval": 15,
             "scan_on_startup": False, "notify_slack": False, "slack_webhook": ""})
 
 _init_data()
@@ -675,13 +683,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self._read_body()
 
         if p == "/api/scan":
-            target = body.get("target", BACKEND)
+            target = body.get("target", "") or _get_active_target()
+            if not target:
+                return self._json({"status": "error", "message": "No hay target configurado. Ve a Settings y setea la API URL."}, 400)
             with _scan_lock:
                 if _scan_state["running"]:
                     return self._json({"status": "already_running"})
             t = threading.Thread(target=_run_scan_thread, args=(target,), daemon=True)
             t.start()
-            return self._json({"status": "started", "message": f"Scanning {target} (REAL HTTP)"})
+            return self._json({"status": "started", "message": f"Scaneando {target}"})
 
         if p == "/api/services/start": return self._json(_start_service(body.get("name","")))
         if p == "/api/services/stop": return self._json(_stop_service(body.get("name","")))
@@ -873,7 +883,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"[server] SourceSeal Console — Backend REAL en puerto {PORT}", flush=True)
-    print(f"[server] Target: {BACKEND}", flush=True)
+    _target = _get_active_target()
+    print(f"[server] Target: {_target or 'No configurado (setear en Settings)'}", flush=True)
     print(f"[server] psutil: {'OK' if HAS_PSUTIL else 'NOT AVAILABLE'}", flush=True)
     print(f"[server] Cero mocks. Cero dummy data. Solo datos reales.", flush=True)
     server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
