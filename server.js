@@ -5,30 +5,83 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const geo = require('./lib/geo');
 const intel = require('./lib/intel');
 const iot = require('./lib/iot');
 
+// ─── Security: API Key Authentication ────────────────────────────────────────
+const API_KEY = process.env.REDTEAM_API_KEY || crypto.randomBytes(24).toString('hex');
+const HOST = process.env.HOST || '127.0.0.1';
+const PORT = process.env.PORT || 3000;
+
+if (!process.env.REDTEAM_API_KEY) {
+  console.log('  ⚠ ADVERTENCIA: REDTEAM_API_KEY no configurada. Usando clave temporal.');
+  console.log('  ⚠ Clave de esta sesion: ' + API_KEY);
+  console.log('  ⚠ Configura REDTEAM_API_KEY en .env para persistencia.');
+}
+
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const queryToken = req.query.token;
+  const providedToken = token || queryToken;
+  if (!providedToken || providedToken !== API_KEY) {
+    return res.status(401).json({ error: 'Acceso no autorizado' });
+  }
+  next();
+}
+
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
-const PORT = process.env.PORT || 3000;
-const EVIDENCE = path.join(__dirname, 'evidence');
-fs.mkdirSync(EVIDENCE, { recursive: true });
 
-app.use(express.json({ limit: '4mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+// ─── Security: Rate Limiting (simple in-memory) ──────────────────────────────
+const rateBuckets = new Map();
+function rateLimit(windowMs, max) {
+  return (req, res, next) => {
+    const key = req.ip + ':' + Math.floor(Date.now() / windowMs);
+    const count = rateBuckets.get(key) || 0;
+    if (count >= max) {
+      return res.status(429).json({ error: 'Demasiadas solicitudes. Intente mas tarde.' });
+    }
+    rateBuckets.set(key, count + 1);
+    // Cleanup old entries
+    if (rateBuckets.size > 10000) {
+      for (const [k] of rateBuckets) {
+        if (parseInt(k.split(':').pop()) < Math.floor(Date.now() / windowMs) - 1) rateBuckets.delete(k);
+      }
+    }
+    next();
+  };
+}
 
-// CORS para el dashboard movil
+const globalLimiter = rateLimit(60000, 60);   // 60 req/min
+const heavyLimiter = rateLimit(60000, 10);    // 10 req/min for scans/exec
+
+// ─── Security: CORS restringido ─────────────────────────────────────────────
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000').split(',').map(s => s.trim());
+
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, X-Sourceseal-Signature, X-Sourceseal-Timestamp');
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
 
+app.use(express.json({ limit: '4mb' }));
+
+// ─── Public static (dashboard) — sin auth pero solo sirve HTML/JS/CSS ────────
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ─── Rate limiting global ────────────────────────────────────────────────────
+app.use('/api/', globalLimiter);
+
 // ─── WebSocket helpers ──────────────────────────────────────────────────────
+const wss = new WebSocketServer({ server });
 function emit(type, payload) {
   const msg = JSON.stringify({ type, t: new Date().toISOString(), ...payload });
   wss.clients.forEach(c => { if (c.readyState === 1) c.send(msg); });
@@ -52,11 +105,13 @@ function runStreamed(name, cmd, args, tag, onDone) {
   return p;
 }
 
+const EVIDENCE = path.join(__dirname, 'evidence');
+fs.mkdirSync(EVIDENCE, { recursive: true });
 const REDTEAM_DIR = path.join(__dirname, 'redteam');
-const SCENARIOS = ['biometric','business_logic','imei','keyhandling','multiplatform','payments','pegasus','pinning','recovery_page','rng','sidechannel','sourcesealcorp','zt_checks'];
+const SCENARIOS = ['biometric','business_logic','imei','keyhandling','multiplatform','payments','pegasus','recovery_page','rng','sidechannel','sourcesealcorp','zt_checks'];
 
-// ─── Status ──────────────────────────────────────────────────────────────────
-app.get('/api/status', (req, res) => {
+// ─── Status (autenticado) ────────────────────────────────────────────────────
+app.get('/api/status', authenticateToken, (req, res) => {
   const ifaces = os.networkInterfaces(); let ip = '127.0.0.1';
   for (const k in ifaces) for (const i of ifaces[k]) if (i.family === 'IPv4' && !i.internal) ip = i.address;
   const reports = fs.readdirSync(EVIDENCE).filter(f => f.endsWith('.json'));
@@ -78,10 +133,12 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// ─── Nmap + enriquecimiento automático ──────────────────────────────────────
-app.get('/api/nmap', (req, res) => {
+// ─── Nmap + enriquecimiento automatico (autenticado) ────────────────────────
+app.get('/api/nmap', authenticateToken, heavyLimiter, (req, res) => {
   const target = (req.query.target || '').trim();
   if (!target) return res.status(400).json({ error: 'target requerido' });
+  // Validar formato de target (IP, CIDR o hostname)
+  if (!/^[a-zA-Z0-9.\-\/]+$/.test(target)) return res.status(400).json({ error: 'target invalido' });
   runStreamed('nmap', 'nmap', ['-sT','-Pn','--top-ports','100','-T4', target], 'nmap', (buf) => {
     const ips = [...new Set((buf.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/g) || []))]
       .filter(x => !/^(127\.|0\.0\.0\.0|255\.)/.test(x));
@@ -90,34 +147,49 @@ app.get('/api/nmap', (req, res) => {
   res.json({ ok: true, target });
 });
 
-// ─── Geo / Intel / IoT ──────────────────────────────────────────────────────
-app.get('/api/geo', async (req, res) => res.json(await geo.lookup((req.query.ip || '').trim())));
-app.get('/api/intel', async (req, res) => res.json(await intel.assess((req.query.ip || '').trim())));
-app.get('/api/iot', async (req, res) => {
+app.post('/api/nmap/stop', authenticateToken, (req, res) => {
+  if (procs.nmap) { procs.nmap.kill('SIGTERM'); procs.nmap = null; }
+  res.json({ ok: true });
+});
+
+// ─── Geo / Intel / IoT (autenticado) ────────────────────────────────────────
+app.get('/api/geo', authenticateToken, async (req, res) => {
+  const ip = (req.query.ip || '').trim();
+  if (!ip) return res.status(400).json({ error: 'ip requerido' });
+  res.json(await geo.lookup(ip));
+});
+app.get('/api/intel', authenticateToken, async (req, res) => {
+  const ip = (req.query.ip || '').trim();
+  if (!ip) return res.status(400).json({ error: 'ip requerido' });
+  res.json(await intel.assess(ip));
+});
+app.get('/api/iot', authenticateToken, async (req, res) => {
   const t = (req.query.target || '').trim();
   if (!t) return res.status(400).json({ error: 'target requerido' });
   res.json(await iot.scan(t));
 });
-app.post('/api/iot/scan', async (req, res) => {
-  const ips = (req.body.ips || []).filter(Boolean);
+app.post('/api/iot/scan', authenticateToken, async (req, res) => {
+  const ips = (req.body.ips || []).filter(Boolean).slice(0, 100);
+  if (!ips.length) return res.status(400).json({ error: 'ips requerido' });
   res.json({ results: await iot.scanMany(ips, 6) });
 });
 
-// ─── MITM ────────────────────────────────────────────────────────────────────
-app.post('/api/mitm/start', (req, res) => {
+// ─── MITM (autenticado) ──────────────────────────────────────────────────────
+app.post('/api/mitm/start', authenticateToken, heavyLimiter, (req, res) => {
   const out = path.join(EVIDENCE, 'traffic-' + Date.now() + '.flow');
   runStreamed('mitm', 'mitmdump', ['-q','-w',out,'--set','console_eventlog_verbosity=info'], 'mitm');
   res.json({ ok: true, listen: '0.0.0.0:8080', capture: out });
 });
-app.post('/api/mitm/stop', (req, res) => { if (procs.mitm) procs.mitm.kill('SIGINT'); res.json({ ok: true }); });
-app.get('/api/mitm/cert', (req, res) => {
+app.post('/api/mitm/stop', authenticateToken, (req, res) => { if (procs.mitm) procs.mitm.kill('SIGINT'); res.json({ ok: true }); });
+app.get('/api/mitm/cert', authenticateToken, (req, res) => {
   const ca = path.join(os.homedir(), '.mitmproxy', 'mitmproxy-ca-cert.cer');
-  res.json({ exists: fs.existsSync(ca), path: ca });
+  res.json({ exists: fs.existsSync(ca) });
 });
 
-// ─── Honeypot (integracion real) ────────────────────────────────────────────
-app.post('/api/honeypot/start', (req, res) => {
+// ─── Honeypot (autenticado) ─────────────────────────────────────────────────
+app.post('/api/honeypot/start', authenticateToken, (req, res) => {
   const port = parseInt(req.body && req.body.port || req.query.port || 8080);
+  if (port < 1 || port > 65535) return res.status(400).json({ error: 'puerto invalido' });
   if (procs.honeypot) { try { procs.honeypot.kill('SIGTERM'); } catch(e){} }
   const hpPath = path.join(__dirname, 'honeypot', 'start-honeypot.js');
   if (!fs.existsSync(hpPath)) return res.status(404).json({ error: 'honeypot no encontrado' });
@@ -140,22 +212,21 @@ app.post('/api/honeypot/start', (req, res) => {
   });
   setTimeout(() => { if (!responded) { responded = true; res.json({ ok: true, port, message: 'Honeypot iniciando en :' + port }); } }, 5000);
 });
-app.post('/api/honeypot/stop', (req, res) => {
+app.post('/api/honeypot/stop', authenticateToken, (req, res) => {
   if (procs.honeypot) procs.honeypot.kill('SIGTERM');
   procs.honeypot = null;
   emit('proc', { tag: 'honeypot', state: 'stopped' });
   res.json({ ok: true });
 });
 
-// ─── Python Orchestrator (escenarios reales) ────────────────────────────────
-// /scan — ejecuta el orchestrator Python (lo que el dashboard movil espera)
-app.post('/scan', (req, res) => {
-  const target = (req.body && req.body.target || 'build/app.apk').trim();
-  const backend = (req.body && req.body.backend || 'http://localhost:' + PORT).trim();
+// ─── Python Orchestrator (autenticado) ──────────────────────────────────────
+app.post('/scan', authenticateToken, heavyLimiter, (req, res) => {
+  const target = String((req.body && req.body.target) || 'build/app.apk').trim().slice(0, 500);
+  const backend = String((req.body && req.body.backend) || 'http://localhost:' + PORT).trim().slice(0, 500);
   if (procs.scan) return res.status(409).json({ error: 'Escaneo en curso' });
   
   const args = [path.join(REDTEAM_DIR,'runner','orchestrator.py'),'--target',target,'--backend',backend,'--output',EVIDENCE];
-  emit('proc', { tag: 'scan', state: 'running', cmd: 'python3 orchestrator.py --target ' + target });
+  emit('proc', { tag: 'scan', state: 'running', cmd: 'python3 orchestrator.py' });
   const started = Date.now();
   const p = spawn('python3', args, { cwd: REDTEAM_DIR, env: { ...process.env, PYTHONPATH: REDTEAM_DIR } });
   procs.scan = p;
@@ -175,8 +246,7 @@ app.post('/scan', (req, res) => {
   });
 });
 
-// /latest — ultimo reporte (dashboard movil)
-app.get('/latest', (req, res) => {
+app.get('/latest', authenticateToken, (req, res) => {
   try {
     const files = fs.readdirSync(EVIDENCE).filter(f => f.startsWith('report-') && f.endsWith('.json')).sort().reverse();
     if (files.length === 0) {
@@ -188,178 +258,96 @@ app.get('/latest', (req, res) => {
       return res.json({ started_at:'', finished_at:'', elapsed_seconds:0, total_findings:0, by_severity:{critical:0,high:0,medium:0,low:0,info:0}, findings:[], scenarios_run:[], target:'none', backend:'sealctl' });
     }
     res.json(JSON.parse(fs.readFileSync(path.join(EVIDENCE, files[0]), 'utf-8')));
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// /history — historial de escaneos (dashboard movil)
-app.get('/history', (req, res) => {
+app.get('/history', authenticateToken, (req, res) => {
   try {
     const files = fs.readdirSync(EVIDENCE).filter(f => f.startsWith('report-') && f.endsWith('.json')).sort().reverse();
     const history = files.map(f => {
       try {
         const d = JSON.parse(fs.readFileSync(path.join(EVIDENCE, f), 'utf-8'));
-        return { finished_at: d.finished_at || f, total_findings: d.total_findings || 0, by_severity: d.by_severity || {} };
+        return { finished_at: d.finished_at || f, total_findings: d.total_findings || 0, target: d.target || 'unknown' };
       } catch { return null; }
     }).filter(Boolean);
     res.json(history);
-  } catch(e) { res.json([]); }
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// /playbooks — SOAR playbooks (dashboard movil)
-app.get('/playbooks', (req, res) => {
-  const pbDir = path.join(REDTEAM_DIR, 'defense', 'playbooks');
-  try {
-    if (!fs.existsSync(pbDir)) return res.json([]);
-    const files = fs.readdirSync(pbDir).filter(f => f.endsWith('.yaml'));
-    const playbooks = files.map(f => {
-      try {
-        const content = fs.readFileSync(path.join(pbDir, f), 'utf-8');
-        const name = f.replace('.yaml','');
-        const desc = (content.match(/description:\s*(.+)/)||[])[1] || '';
-        const severity = (content.match(/severity:\s*(.+)/)||[])[1] || 'MEDIUM';
-        const stepCount = (content.match(/-\s*name:/g)||[]).length;
-        return { name, description: desc.trim(), severity: severity.trim(), mitre_techniques:[], steps:[], status:'idle', file:f, step_count: stepCount };
-      } catch { return null; }
-    }).filter(Boolean);
-    res.json(playbooks);
-  } catch(e) { res.json([]); }
-});
-
-// /trigger-playbook — ejecutar playbook SOAR (dashboard movil)
-app.post('/trigger-playbook', (req, res) => {
-  const name = (req.body && req.body.name || '').trim();
-  if (!name) return res.status(400).json({ error: 'name requerido' });
+// ─── Defense playbooks (autenticado + path traversal fix) ───────────────────
+app.post('/trigger-playbook', authenticateToken, (req, res) => {
+  const name = path.basename(String((req.body && req.body.name) || '').trim()).replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!name) return res.status(400).json({ error: 'Nombre de playbook invalido' });
   const pbFile = path.join(REDTEAM_DIR, 'defense', 'playbooks', name + '.yaml');
-  if (!fs.existsSync(pbFile)) return res.status(404).json({ error: 'playbook ' + name + ' no encontrado' });
-  const soarScript = path.join(REDTEAM_DIR, 'defense', 'soar.py');
-  if (fs.existsSync(soarScript)) {
-    const p = spawn('python3', [soarScript, '--playbook', name], { cwd: REDTEAM_DIR, env: { ...process.env, PYTHONPATH: REDTEAM_DIR } });
-    p.stdout.on('data', d => emit('stdout', { tag: 'soar', line: d.toString() }));
-    p.stderr.on('data', d => emit('stderr', { tag: 'soar', line: d.toString() }));
-    p.on('close', code => emit('proc', { tag: 'soar', state: code === 0 ? 'done' : 'error', code }));
-    res.json({ success: true, detail: 'Playbook ' + name + ' ejecutandose' });
+  if (!fs.existsSync(pbFile)) return res.status(404).json({ error: 'playbook no encontrado' });
+  const started = Date.now();
+  const p = spawn('python3', [path.join(REDTEAM_DIR, 'runner', 'playbook_runner.py'), '--playbook', pbFile], { cwd: REDTEAM_DIR, env: { ...process.env, PYTHONPATH: REDTEAM_DIR } });
+  p.stdout.on('data', d => emit('stdout', { tag: 'playbook-' + name, line: d.toString() }));
+  p.stderr.on('data', d => emit('stderr', { tag: 'playbook-' + name, line: d.toString() }));
+  p.on('close', code => emit('proc', { tag: 'playbook-' + name, state: code === 0 ? 'done' : 'error', code, ms: Date.now() - started }));
+  res.json({ ok: true, playbook: name, message: 'Playbook ejecutandose' });
+});
+
+// ─── Escenarios individuales (autenticado + sin inyeccion Python) ────────────
+app.post('/api/scenario/:name', authenticateToken, heavyLimiter, (req, res) => {
+  const name = path.basename(req.params.name).replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!SCENARIOS.includes(name)) return res.status(400).json({ error: 'escenario no disponible' });
+  const target = String((req.body && req.body.target) || 'build/app.apk').trim().slice(0, 500);
+  const backend = String((req.body && req.body.backend) || 'http://localhost:' + PORT).trim().slice(0, 500);
+  // SEGURIDAD: pasar argumentos en vez de interpolar strings en python3 -c
+  const runnerScript = path.join(REDTEAM_DIR, 'runner', 'run_scenario.py');
+  let args;
+  if (fs.existsSync(runnerScript)) {
+    args = [runnerScript, '--name', name, '--target', target, '--backend', backend, '--output', EVIDENCE];
   } else {
-    res.json({ success: false, detail: 'SOAR module no disponible, ' + name + ' simulado' });
+    // Fallback: crear runner temporal seguro
+    const tmpRunner = path.join(REDTEAM_DIR, 'runner', '_safe_runner.py');
+    fs.writeFileSync(tmpRunner, `import sys, json, argparse, importlib
+parser = argparse.ArgumentParser()
+parser.add_argument('--name', required=True)
+parser.add_argument('--target', required=True)
+parser.add_argument('--backend', required=True)
+parser.add_argument('--output', required=True)
+a = parser.parse_args()
+sys.path.insert(0, '${REDTEAM_DIR.replace(/\\/g, '\\\\')}')
+mod = importlib.import_module('scenarios.' + a.name)
+results = mod.run(a.target, a.backend, a.output)
+print(json.dumps(results, indent=2))
+`);
+    args = [tmpRunner, '--name', name, '--target', target, '--backend', backend, '--output', EVIDENCE];
   }
-});
-
-// /incidents — incidentes activos (dashboard movil)
-app.get('/incidents', (req, res) => {
-  try {
-    const files = fs.readdirSync(EVIDENCE).filter(f => f.startsWith('report-') && f.endsWith('.json')).sort().reverse();
-    const incidents = [];
-    if (files.length > 0) {
-      const report = JSON.parse(fs.readFileSync(path.join(EVIDENCE, files[0]), 'utf-8'));
-      for (const f of (report.findings || [])) {
-        if (f.severity === 'critical' || f.severity === 'high') {
-          incidents.push({
-            id: 'inc-' + f.scenario + '-' + Date.now(),
-            severity: f.severity, title: f.title, description: f.description,
-            mitre_techniques: [], kill_chain_phases: [],
-            confidence: f.severity === 'critical' ? 0.95 : 0.75,
-            timestamp: f.timestamp || report.finished_at, status: 'open',
-            related_findings: [f.scenario]
-          });
-        }
-      }
-    }
-    res.json(incidents);
-  } catch(e) { res.json([]); }
-});
-
-// /downloads — archivos descargables (dashboard movil)
-app.get('/downloads', (req, res) => {
-  try {
-    const items = [];
-    const reports = fs.readdirSync(EVIDENCE).filter(f => f.endsWith('.json'));
-    for (const f of reports) {
-      const stat = fs.statSync(path.join(EVIDENCE, f));
-      items.push({ id:f, name:f, type:'report', date:stat.mtime.toISOString(), size:(stat.size/1024).toFixed(1)+'KB', url:'/api/reports/'+f });
-    }
-    const rdir = path.join(REDTEAM_DIR, 'reports');
-    if (fs.existsSync(rdir)) {
-      const strings = fs.readdirSync(rdir).filter(f => f.endsWith('-strings.txt'));
-      for (const f of strings) {
-        const stat = fs.statSync(path.join(rdir, f));
-        items.push({ id:f, name:f, type:'strings', date:stat.mtime.toISOString(), size:(stat.size/1024).toFixed(1)+'KB' });
-      }
-    }
-    res.json(items);
-  } catch(e) { res.json([]); }
-});
-
-// ─── Defense modules ─────────────────────────────────────────────────────────
-app.get('/api/defense/status', (req, res) => {
-  const checks = [
-    { name:'XDR', file:'defense/xdr.py', desc:'Extended Detection & Response' },
-    { name:'ZTNA', file:'defense/ztna.py', desc:'Zero Trust Network Access' },
-    { name:'SOAR', file:'defense/soar.py', desc:'Security Orchestration & Response' },
-    { name:'NDR', file:'defense/ndr.py', desc:'Network Detection & Response' },
-    { name:'RASP', file:'defense/rasp.py', desc:'Runtime App Self-Protection' },
-    { name:'Deception', file:'defense/deception.py', desc:'Deception & Honeytokens' },
-    { name:'Attestation', file:'attestation/server.py', desc:'Device Attestation' },
-    { name:'Integrity', file:'integrity/seal_manager.py', desc:'Seal & Integrity Manager' },
-    { name:'NDR-Engine', file:'ndr/engine.py', desc:'ML Network Detection Engine' },
-  ];
-  res.json({ modules: checks.map(m => ({ ...m, available: fs.existsSync(path.join(REDTEAM_DIR, m.file)) })) });
-});
-
-app.post('/api/defense/run', (req, res) => {
-  const mod = (req.body && req.body.module || '').trim();
-  if (!mod) return res.status(400).json({ error: 'module requerido' });
-  const moduleMap = {
-    'xdr':'defense/xdr.py','ztna':'defense/ztna.py','soar':'defense/soar.py',
-    'ndr':'defense/ndr.py','rasp':'defense/rasp.py','deception':'defense/deception.py',
-    'attestation':'attestation/server.py','integrity':'integrity/seal_manager.py','ndr-engine':'ndr/engine.py'
-  };
-  const file = moduleMap[mod];
-  if (!file) return res.status(400).json({ error: 'modulo ' + mod + ' no reconocido' });
-  const fp = path.join(REDTEAM_DIR, file);
-  if (!fs.existsSync(fp)) return res.status(404).json({ error: file + ' no encontrado' });
-  runStreamed(mod, 'python3', [fp], 'defense-' + mod);
-  res.json({ ok: true, module: mod, message: mod + ' ejecutandose' });
-});
-
-// ─── Escenarios individuales ─────────────────────────────────────────────────
-app.post('/api/scenario/:name', (req, res) => {
-  const name = req.params.name;
-  if (!SCENARIOS.includes(name)) return res.status(400).json({ error: 'escenario ' + name + ' no disponible' });
-  const target = (req.body && req.body.target || 'build/app.apk').trim();
-  const backend = (req.body && req.body.backend || 'http://localhost:' + PORT).trim();
-  const scriptPath = path.join(REDTEAM_DIR, 'scenarios', name + '.py');
-  const p = spawn('python3', ['-c',
-    `import sys; sys.path.insert(0,'${REDTEAM_DIR.replace(/\\/g,'\\\\')}')\nfrom scenarios import ${name}\nimport json\nresults = ${name}.run('${target}','${backend}','${EVIDENCE.replace(/\\/g,'\\\\')}')\nprint(json.dumps(results, indent=2))`
-  ], { cwd: REDTEAM_DIR, env: { ...process.env, PYTHONPATH: REDTEAM_DIR } });
-  let out = '';
-  p.stdout.on('data', d => { out += d.toString(); emit('stdout', { tag: 'scenario-' + name, line: d.toString() }); });
+  emit('proc', { tag: 'scenario-' + name, state: 'running' });
+  const p = spawn('python3', args, { cwd: REDTEAM_DIR, env: { ...process.env, PYTHONPATH: REDTEAM_DIR } });
+  p.stdout.on('data', d => emit('stdout', { tag: 'scenario-' + name, line: d.toString() }));
   p.stderr.on('data', d => emit('stderr', { tag: 'scenario-' + name, line: d.toString() }));
   p.on('close', code => emit('proc', { tag: 'scenario-' + name, state: code === 0 ? 'done' : 'error', code }));
-  res.json({ ok: true, scenario: name, message: 'Escenario ' + name + ' ejecutandose' });
+  res.json({ ok: true, scenario: name, message: 'Escenario ejecutandose' });
 });
 
-app.get('/api/scenarios', (req, res) => res.json({ scenarios: SCENARIOS }));
+app.get('/api/scenarios', authenticateToken, (req, res) => res.json({ scenarios: SCENARIOS }));
 
-// ─── IOC feed ────────────────────────────────────────────────────────────────
-app.get('/api/iocs', (req, res) => {
+// ─── IOC feed (autenticado) ──────────────────────────────────────────────────
+app.get('/api/iocs', authenticateToken, (req, res) => {
   try {
     const iocFile = path.join(REDTEAM_DIR, 'data', 'iocs.json');
     if (fs.existsSync(iocFile)) res.json({ iocs: JSON.parse(fs.readFileSync(iocFile, 'utf-8')) });
     else res.json({ iocs: [], message: 'No hay IOCs cargados' });
-  } catch(e) { res.json({ iocs: [], error: e.message }); }
+  } catch(e) { res.json({ iocs: [], error: 'Error interno' }); }
 });
 
-// ─── MITRE ATT&CK mapping ────────────────────────────────────────────────────
-app.get('/api/mitre', (req, res) => {
+// ─── MITRE ATT&CK mapping (autenticado) ─────────────────────────────────────
+app.get('/api/mitre', authenticateToken, (req, res) => {
   try {
     const mitreFile = path.join(REDTEAM_DIR, 'defense', 'mitre_map.yaml');
     if (fs.existsSync(mitreFile)) res.type('text/yaml').send(fs.readFileSync(mitreFile, 'utf-8'));
     else res.json({ error: 'MITRE map no encontrado' });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// ─── Reportes ────────────────────────────────────────────────────────────────
-app.post('/api/report/generate', (req, res) => {
-  const { target = 'manual', findings = [] } = req.body;
+// ─── Reportes (autenticado) ──────────────────────────────────────────────────
+app.post('/api/report/generate', authenticateToken, (req, res) => {
+  const target = String((req.body && req.body.target) || 'manual').slice(0, 200);
+  const findings = Array.isArray(req.body.findings) ? req.body.findings.slice(0, 1000) : [];
   const by = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   findings.forEach(f => { if (by[f.severity] != null) by[f.severity]++; });
   const report = {
@@ -371,48 +359,72 @@ app.post('/api/report/generate', (req, res) => {
   const file = 'report-' + Date.now() + '.json';
   fs.writeFileSync(path.join(EVIDENCE, file), JSON.stringify(report, null, 2));
   emit('report', { file, total: findings.length, by });
-  res.json({ ok: true, file, report });
+  res.json({ ok: true, file });
 });
 
-app.get('/api/reports', (req, res) => {
+app.get('/api/reports', authenticateToken, (req, res) => {
   res.json(fs.readdirSync(EVIDENCE).filter(f => f.endsWith('.json'))
     .map(f => ({ file: f, size: fs.statSync(path.join(EVIDENCE, f)).size }))
     .sort((a,b) => b.file.localeCompare(a.file)));
 });
 
-app.get('/api/reports/:file', (req, res) => {
-  const fp = path.join(EVIDENCE, path.basename(req.params.file));
+app.get('/api/reports/:file', authenticateToken, (req, res) => {
+  const safeFile = path.basename(req.params.file);
+  const fp = path.join(EVIDENCE, safeFile);
   if (!fs.existsSync(fp)) return res.status(404).json({ error: 'no existe' });
   res.download(fp);
 });
 
+// ─── /api/exec: WHITELIST de comandos seguros (autenticado) ──────────────────
+const SAFE_COMMANDS = {
+  'uptime': { cmd: 'uptime', args: [] },
+  'disk_usage': { cmd: 'df', args: ['-h'] },
+  'memory': { cmd: 'free', args: ['-m'] },
+  'processes': { cmd: 'ps', args: ['aux'] },
+  'hostname': { cmd: 'hostname', args: [] },
+  'whoami': { cmd: 'whoami', args: [] },
+  'date': { cmd: 'date', args: [] },
+  'uname': { cmd: 'uname', args: ['-a'] },
+};
 
-// --- Ejecutar comandos personalizados (solo lectura, seguridad basica) ---
-app.post('/api/exec', (req, res) => {
-  const cmd = req.body.cmd || '';
-  if (!cmd || /rm |dd |mkfs|:(){:|&;}:/.test(cmd)) return res.status(400).json({ error: 'comando no permitido' });
-  const child = spawn('sh', ['-c', cmd], { timeout: 10000 });
+app.post('/api/exec', authenticateToken, heavyLimiter, (req, res) => {
+  const action = String(req.body.action || '').trim();
+  if (!action || !SAFE_COMMANDS[action]) {
+    return res.status(400).json({ error: 'Accion no permitida. Disponibles: ' + Object.keys(SAFE_COMMANDS).join(', ') });
+  }
+  const spec = SAFE_COMMANDS[action];
+  const child = spawn(spec.cmd, spec.args, { timeout: 10000 });
   let out = '', err = '';
   child.stdout.on('data', d => out += d.toString());
   child.stderr.on('data', d => err += d.toString());
-  child.on('close', code => res.json({ output: out || err || 'comando ejecutado (sin salida)', code }));
-  child.on('error', e => res.status(500).json({ error: e.message }));
+  child.on('close', code => res.json({ output: out || err || 'comando ejecutado (sin salida)', code, action }));
+  child.on('error', () => res.status(500).json({ error: 'Error al ejecutar comando' }));
 });
 
-// --- Detener nmap ---
-app.post('/api/nmap/stop', (req, res) => {
-  if (procs.nmap) { procs.nmap.kill('SIGTERM'); procs.nmap = null; }
-  res.json({ ok: true });
+// ─── WebSocket autenticado ──────────────────────────────────────────────────
+server.on('upgrade', (request, socket, head) => {
+  const url = new URL(request.url, 'http://' + (request.headers.host || 'localhost'));
+  const token = url.searchParams.get('token');
+  if (token !== API_KEY) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+  });
 });
 
-// ─── WebSocket ───────────────────────────────────────────────────────────────
 wss.on('connection', ws => {
-  ws.send(JSON.stringify({ type: 'hello', msg: 'sealctl conectado — todos los modulos activos' }));
+  ws.send(JSON.stringify({ type: 'hello', msg: 'sealctl conectado - todos los modulos activos' }));
   const hb = setInterval(() => { try { ws.send(JSON.stringify({ type: 'ping' })); } catch(e){} }, 15000);
   ws.on('close', () => clearInterval(hb));
 });
 
 // ─── Start ──────────────────────────────────────────────────────────────────
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('\\n  SealCtl v2.0 en http://localhost:' + PORT + '\\n  Recon: geo/intel/iot/nmap/mitm | Defense: xdr/ztna/soar/ndr/rasp | Honeypot | ' + SCENARIOS.length + ' escenarios Python\\n');
+server.listen(PORT, HOST, () => {
+  console.log('\\n  SealCtl v2.1 (hardened) en http://' + HOST + ':' + PORT);
+  console.log('  Recon: geo/intel/iot/nmap/mitm | Defense: playbooks/scenarios | Honeypot');
+  console.log('  Auth: Bearer token requerido en todas las rutas /api/*');
+  console.log('  ' + SCENARIOS.length + ' escenarios Python | Binding: ' + HOST + '\n');
 });
