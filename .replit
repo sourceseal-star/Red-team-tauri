@@ -8,12 +8,14 @@ channel = "stable-25_05"
 deploymentTarget = "autoscale"
 run = ["bash", "replit_start.sh"]
 
-# Puerto 5000 → interfaz web principal (React frontend)
 [[ports]]
 localPort = 5000
 externalPort = 80
 
-# Puerto 8001 → backend Python (interno, no expuesto)
+[[ports]]
+localPort = 5001
+externalPort = 3000
+
 [[ports]]
 localPort = 8001
 externalPort = 3001
