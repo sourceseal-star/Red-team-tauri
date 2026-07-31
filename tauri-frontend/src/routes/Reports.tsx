@@ -122,7 +122,7 @@ export default function Reports() {
                 <p className="text-xs text-muted-foreground">{r.finished_at ? new Date(r.finished_at).toLocaleString() : ''}</p>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-sm font-mono">{r.total} findings</span>
+                <span className="text-sm font-mono">{r.total_findings} findings</span>
                 {(r.by_severity?.critical ?? 0) > 0 && (
                   <Badge variant="destructive">{r.by_severity.critical} critical</Badge>
                 )}
