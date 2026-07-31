@@ -69,6 +69,22 @@
     .modal-content pre { background:#0a0e14; padding:12px; border-radius:6px; white-space:pre-wrap; word-break:break-all; max-height:400px; overflow:auto; font-size:0.8rem; }
     .modal-close { float:right; background:none; border:none; color:#7d8a99; font-size:1.5rem; cursor:pointer; }
     .modal-close:hover { color:#cdd6e0; }
+    .origin-panel { display:none; background:#0a0e14; border:1px solid #1d2733; border-radius:6px; padding:10px; margin-top:4px; font-size:0.78rem; }
+    .origin-panel.active { display:block; }
+    .origin-panel .bd-row { display:flex; justify-content:space-between; padding:2px 0; border-bottom:1px solid #111823; }
+    .origin-panel .bd-row .factor { color:#cdd6e0; }
+    .origin-panel .bd-row .weight { font-family:'JetBrains Mono',monospace; }
+    .origin-panel .bd-row .weight.pos { color:#ff5d52; }
+    .origin-panel .bd-row .weight.neg { color:#7ee787; }
+    .origin-panel .section-label { color:#7d8a99; font-size:0.7rem; text-transform:uppercase; margin-top:6px; margin-bottom:2px; letter-spacing:0.03em; }
+    .origin-panel .flag-row { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
+    .port-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); gap:4px; margin-top:6px; }
+    .port-cell { background:#111823; border-radius:4px; padding:4px 6px; text-align:center; font-size:0.72rem; }
+    .port-cell.open { border:1px solid #7ee78740; }
+    .port-cell.closed { border:1px solid #1d2733; opacity:0.5; }
+    .port-cell .port-num { font-family:'JetBrains Mono',monospace; font-weight:700; }
+    .port-cell .port-banner { font-size:0.65rem; color:#7d8a99; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
   </style>
 </head>
 <body>
@@ -116,13 +132,14 @@
     <div class="card">
       <h3>hallazgos</h3>
       <div class="flex">
+        <input id="finding-ip" placeholder="IP origen (opcional)" style="flex:0.8;">
         <input id="finding-desc" placeholder="descripcion" style="flex:2;">
         <select id="finding-sev" style="background:#0a0e14;border:1px solid #1d2733;color:#cdd6e0;padding:6px 10px;border-radius:6px;">
           <option value="critical">critico</option><option value="high">alto</option><option value="medium">medio</option><option value="low">bajo</option><option value="info">info</option>
         </select>
         <button class="btn mag" id="finding-add">agregar</button>
       </div>
-      <div class="table-wrap"><table id="findings-table"><thead><tr><th>severidad</th><th>descripcion</th></tr></thead><tbody></tbody></table></div>
+      <div class="table-wrap"><table id="findings-table"><thead><tr><th>sev</th><th>IP origen</th><th>descripcion</th><th>acciones</th></tr></thead><tbody></tbody></table></div>
     </div>
   </div>
 
@@ -154,9 +171,14 @@
     <div class="card">
       <h3>geo / inteligencia</h3>
       <div class="flex-between mb-8">
+        <span class="flex">
+          <input id="iot-range" placeholder="rango LAN: 192.168.1.1-40" style="width:200px;">
+          <button class="btn mag" id="iot-range-scan">IoT scan rango</button>
+        </span>
         <span><button class="btn cyan" id="geo-refresh">actualizar tabla</button></span>
         <span><button class="btn mag" id="geo-iot-scan">IoT scan en todas las IPs</button></span>
       </div>
+      <div id="iot-range-results" style="margin-bottom:8px;"></div>
       <div id="map"></div>
       <div class="table-wrap mt-8">
         <table id="geo-table">
@@ -323,10 +345,85 @@ document.querySelector('#geo-table').addEventListener('click', async e => {
   const row = btn.closest('tr');
   let data = {};
   if(action === 'geo') data = row._geo || await fetch(authUrl('/api/geo?ip='+ip), {headers: authHeaders()}).then(r=>r.json());
-  else if(action === 'intel') data = row._intel || await fetch(authUrl('/api/intel?ip='+ip), {headers: authHeaders()}).then(r=>r.json());
-  else if(action === 'iot') data = await fetch(authUrl('/api/iot?target='+ip), {headers: authHeaders()}).then(r=>r.json());
+  else if(action === 'intel') {
+    data = row._intel || await fetch(authUrl('/api/intel?ip='+ip), {headers: authHeaders()}).then(r=>r.json());
+    // Desplegar panel inline con descomposicion
+    let nextRow = row.nextElementSibling;
+    if(nextRow && nextRow.classList.contains('origin-detail-row')) {
+      nextRow.remove();
+      return;
+    }
+    let detailRow = document.createElement('tr');
+    detailRow.classList.add('origin-detail-row');
+    let cell = document.createElement('td');
+    cell.colSpan = 8;
+    let panel = document.createElement('div');
+    panel.className = 'origin-panel active';
+    renderOriginPanel(panel, data);
+    cell.appendChild(panel);
+    detailRow.appendChild(cell);
+    row.parentNode.insertBefore(detailRow, row.nextSibling);
+    return;
+  }
+  else if(action === 'iot') {
+    data = await fetch(authUrl('/api/iot?target='+ip), {headers: authHeaders()}).then(r=>r.json());
+    // Mostrar resultados de IoT en panel inline con grid de puertos
+    let nextRow = row.nextElementSibling;
+    if(nextRow && nextRow.classList.contains('iot-detail-row')) {
+      nextRow.remove();
+      return;
+    }
+    let detailRow = document.createElement('tr');
+    detailRow.classList.add('iot-detail-row');
+    let cell = document.createElement('td');
+    cell.colSpan = 8;
+    renderIoTDetail(cell, data, ip);
+    detailRow.appendChild(cell);
+    row.parentNode.insertBefore(detailRow, row.nextSibling);
+    return;
+  }
   showModal(JSON.stringify(data, null, 2));
 });
+
+function renderIoTDetail(container, data, ip) {
+  var ports = data.ports || [];
+  var anyOpen = ports.some(function(p) { return p.open; });
+  var html = '<div class="origin-panel active" style="font-size:0.78rem;">';
+  html += '<div class="section-label">IoT scan — '+ip+' — '+ports.length+' puertos probados</div>';
+  if(!anyOpen && ports.length > 0) {
+    html += '<div style="color:#7d8a99;padding:8px;">sin huella — ningun puerto responde en los puertos IoT probados (80,443,554,3702,8080,8000,8001,8088,37777,5060)</div>';
+  } else if(ports.length === 0) {
+    html += '<div style="color:#ff5d52;padding:8px;">error: sin resultados del probe</div>';
+  } else {
+    html += '<div class="port-grid">';
+    ports.forEach(function(p) {
+      var cls = p.open ? 'open' : 'closed';
+      var status = p.open ? 'ABIERTO' : 'cerrado';
+      var banner = p.banner ? p.banner.slice(0, 50).replace(/\n/g,' ') : '';
+      html += '<div class="port-cell '+cls+'"><div class="port-num">'+p.port+'</div><div style="font-size:0.65rem;color:'+(p.open?'#7ee787':'#7d8a99')+';">'+status+'</div><div class="port-banner">'+(banner||'—')+'</div></div>';
+    });
+    html += '</div>';
+  }
+  // RTSP / SIP / HTTP banner
+  if(data.rtsp && data.rtsp.ok) {
+    html += '<div class="section-label">RTSP (554)</div><div class="mono" style="font-size:0.7rem;color:#7ee787;">RTSP activo — banner: '+(data.rtsp.banner||'').slice(0,120)+'</div>';
+  }
+  if(data.sip && data.sip.ok) {
+    html += '<div class="section-label">SIP (5060)</div><div class="mono" style="font-size:0.7rem;color:#7ee787;">SIP activo — banner: '+(data.sip.banner||'').slice(0,120)+'</div>';
+  }
+  if(data.http) {
+    var found = false;
+    data.http.forEach(function(h) {
+      if(h && h.matched) {
+        found = true;
+        html += '<div class="section-label">HTTP — '+h.vendor+'</div><div class="mono" style="font-size:0.7rem;">path: '+h.path+' | status: '+(h.status||'—')+'</div>';
+      }
+    });
+  }
+  html += '<div class="section-label">JSON crudo</div><pre style="background:#0a0e14;padding:8px;border-radius:4px;font-size:0.68rem;white-space:pre-wrap;word-break:break-all;max-height:150px;overflow:auto;margin-top:4px;">'+JSON.stringify(data,null,2)+'</pre>';
+  html += '</div>';
+  container.innerHTML = html;
+}
 
 function showModal(text) {
   $('modal-body').textContent = text;
@@ -344,9 +441,84 @@ $('geo-refresh').addEventListener('click', ()=>{
 $('geo-iot-scan').addEventListener('click', async ()=>{
   const ips = Array.from(document.querySelectorAll('#geo-table tbody tr')).map(tr=>tr.dataset.ip).filter(Boolean);
   if(!ips.length) return alert('No hay IPs.');
-  const resp = await fetch('/api/iot/scan', { method:'POST', headers: authHeaders(), body:JSON.stringify({ips}) });
+  const resp = await fetch(authUrl('/api/iot/scan'), { method:'POST', headers: authHeaders(), body:JSON.stringify({ips}) });
   const res = await resp.json();
   showModal(JSON.stringify(res, null, 2));
+});
+
+// IoT scan por rango LAN (e.g. 192.168.1.1-40)
+function expandRange(rangeStr) {
+  var m = rangeStr.match(/^(\d+\.\d+\.\d+\.)(\d+)-(\d+)$/);
+  if(!m) {
+    // IP unica
+    if(/^\d+\.\d+\.\d+\.\d+$/.test(rangeStr)) return [rangeStr];
+    return null;
+  }
+  var prefix = m[1];
+  var start = parseInt(m[2]);
+  var end = parseInt(m[3]);
+  var ips = [];
+  for(var i = start; i <= end; i++) ips.push(prefix + i);
+  return ips;
+}
+
+$('iot-range-scan').addEventListener('click', async ()=>{
+  var rangeStr = $('iot-range').value.trim();
+  if(!rangeStr) return;
+  var ips = expandRange(rangeStr);
+  if(!ips || !ips.length) return alert('Formato invalido. Usa: 192.168.1.1-40 o 192.168.1.5');
+  var container = $('iot-range-results');
+  container.innerHTML = '<div style="color:#7d8a99;font-size:0.85rem;">Escaneando '+ips.length+' IPs (probes TCP reales por puerto)...</div>';
+  try {
+    var resp = await fetch(authUrl('/api/iot/scan'), { method:'POST', headers: authHeaders(), body:JSON.stringify({ips: ips}) });
+    var res = await resp.json();
+    var results = res.results || [];
+    var html = '<div class="section-label" style="color:#7d8a99;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:4px;">IoT scan rango '+rangeStr+' — '+results.length+' IPs</div>';
+    var anyFound = false;
+    results.forEach(function(r) {
+      var ports = r.ports || [];
+      var openPorts = ports.filter(function(p) { return p.open; });
+      var hasRtsp = r.rtsp && r.rtsp.ok;
+      var hasSip = r.sip && r.sip.ok;
+      var hasHttp = (r.http || []).some(function(h) { return h && h.matched; });
+      var hasAny = openPorts.length > 0 || hasRtsp || hasSip || hasHttp;
+      if(hasAny) anyFound = true;
+      var rowColor = hasAny ? '#cdd6e0' : '#7d8a99';
+      html += '<div style="border-bottom:1px solid #111823;padding:6px 0;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+      html += '<span class="mono" style="color:'+rowColor+';">'+r.ip+'</span>';
+      if(hasAny) {
+        html += '<span class="badge green">huella detectada</span>';
+      } else {
+        html += '<span class="badge" style="color:#7d8a99;">sin huella</span>';
+      }
+      html += '</div>';
+      if(hasAny) {
+        // Grid de puertos
+        html += '<div class="port-grid" style="margin-top:4px;">';
+        ports.forEach(function(p) {
+          if(p.open) {
+            var banner = p.banner ? p.banner.slice(0,40).replace(/\n/g,' ') : '';
+            html += '<div class="port-cell open"><div class="port-num">'+p.port+'</div><div style="font-size:0.65rem;color:#7ee787;">ABIERTO</div><div class="port-banner">'+banner+'</div></div>';
+          }
+        });
+        html += '</div>';
+        if(hasRtsp) html += '<div class="mono" style="font-size:0.7rem;color:#7ee787;margin-top:2px;">RTSP: '+(r.rtsp.banner||'').slice(0,80)+'</div>';
+        if(hasSip) html += '<div class="mono" style="font-size:0.7rem;color:#7ee787;margin-top:2px;">SIP: '+(r.sip.banner||'').slice(0,80)+'</div>';
+        (r.http||[]).forEach(function(h) {
+          if(h && h.matched) html += '<div class="mono" style="font-size:0.7rem;color:#56d4dd;margin-top:2px;">HTTP: '+h.vendor+' ('+h.path+')</div>';
+        });
+      }
+      html += '</div>';
+    });
+    if(!anyFound) {
+      html += '<div style="padding:10px;color:#7d8a99;font-size:0.85rem;">Ningun dispositivo IoT respondio en el rango. El resultado honesto es "sin huella" — es correcto si no hay camaras/radios en esa LAN.</div>';
+    }
+    html += '<details style="margin-top:6px;"><summary style="font-size:0.75rem;color:#7d8a99;cursor:pointer;">JSON crudo completo</summary><pre style="background:#0a0e14;padding:8px;border-radius:4px;font-size:0.7rem;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;margin-top:4px;">'+JSON.stringify(res,null,2)+'</pre></details>';
+    container.innerHTML = html;
+  } catch(err) {
+    container.innerHTML = '<div style="color:#ff5d52;">error: '+err.message+'</div>';
+  }
 });
 
 $('cmd-run').addEventListener('click', async ()=>{
@@ -384,17 +556,92 @@ $('nmap-stop').addEventListener('click', ()=>{
 let findings = [];
 function renderFindings() {
   const tbody = document.querySelector('#findings-table tbody');
-  tbody.innerHTML = findings.map(f =>
-    '<tr><td><span class="badge '+(f.severity==='critical'?'red':f.severity==='high'?'amber':f.severity==='medium'?'violet':'green')+'">'+f.severity+'</span></td><td>'+f.desc+'</td></tr>'
+  tbody.innerHTML = findings.map((f, i) =>
+    '<tr data-idx="'+i+'">' +
+      '<td><span class="badge '+(f.severity==='critical'?'red':f.severity==='high'?'amber':f.severity==='medium'?'violet':'green')+'">'+f.severity+'</span></td>' +
+      '<td>'+(f.ip || '—')+'</td>' +
+      '<td>'+f.desc+'</td>' +
+      '<td class="action-btns">'+(f.ip?'<button class="btn cyan" data-origin="'+i+'">origen</button>':'')+'</td>' +
+    '</tr>' +
+    (f.ip ? '<tr class="origin-row" data-origin-row="'+i+'" style="display:none;"><td colspan="4"><div class="origin-panel" id="origin-'+i+'">cargando...</div></td></tr>' : '')
   ).join('');
 }
+
+// Boton [origen] — despliega el JSON crudo de intel
+document.querySelector('#findings-table').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-origin]');
+  if(!btn) return;
+  const idx = btn.dataset.origin;
+  const row = document.querySelector('tr[data-origin-row="'+idx+'"]');
+  const panel = $('origin-'+idx);
+  if(!row) return;
+  const isVisible = row.style.display !== 'none';
+  if(isVisible) { row.style.display = 'none'; return; }
+  row.style.display = '';
+  if(!panel.dataset.loaded) {
+    panel.classList.add('active');
+    panel.textContent = 'consultando backend...';
+    try {
+      const ip = findings[idx].ip;
+      const resp = await fetch(authUrl('/api/intel?ip='+encodeURIComponent(ip)), {headers: authHeaders()});
+      const data = await resp.json();
+      panel.dataset.loaded = '1';
+      renderOriginPanel(panel, data);
+    } catch(err) {
+      panel.innerHTML = '<span style="color:#ff5d52;">error: '+err.message+'</span>';
+    }
+  }
+});
+
+function renderOriginPanel(panel, data) {
+  if(data.private) {
+    panel.innerHTML = '<div class="section-label">resultado</div>'+
+      '<div class="bd-row"><span class="factor">tipo</span><span class="weight">IP privada (LAN)</span></div>'+
+      '<div class="bd-row"><span class="factor">score</span><span class="weight neg">0 — confianza N/A</span></div>'+
+      '<div class="section-label">rDNS</div><div class="mono">'+(data.rdns||'—')+'</div>'+
+      '<div class="section-label">JSON crudo</div><pre style="background:#0a0e14;padding:8px;border-radius:4px;font-size:0.72rem;white-space:pre-wrap;word-break:break-all;margin-top:4px;">'+JSON.stringify(data,null,2)+'</pre>';
+    return;
+  }
+  var bd = (data.breakdown||[]).map(function(b) {
+    var cls = b.w > 0 ? 'pos' : 'neg';
+    var sign = b.w > 0 ? '+' : '';
+    return '<div class="bd-row"><span class="factor">'+b.f+'</span><span class="weight '+cls+'">'+sign+b.w+'</span></div>';
+  }).join('');
+  var flags = data.flags || {};
+  var flagHtml = '';
+  ['hosting','proxy','mobile'].forEach(function(f) {
+    if(flags[f]) flagHtml += '<span class="badge '+(f==='hosting'?'amber':f==='proxy'?'red':'cyan')+'">'+f+'</span>';
+  });
+  if(data.rdns && /tor|exit|relay/i.test(data.rdns)) flagHtml += '<span class="badge violet">tor?</span>';
+  var blStatus = data.blocklist ? '<span class="badge green">blocklist OK (abuse.ch activo)</span>' : '<span class="badge amber">blocklist N/A (feed no disponible)</span>';
+  var scoreColor = data.score <= 20 ? '#7ee787' : data.score <= 50 ? '#56d4dd' : data.score <= 80 ? '#ffb000' : '#ff5d52';
+  panel.innerHTML =
+    '<div class="section-label">score de confianza</div>'+
+    '<div class="bd-row"><span class="factor">'+data.label+'</span><span class="weight" style="color:'+scoreColor+';">'+data.score+'/100</span></div>'+
+    '<div class="section-label">descomposicion (flags + pesos)</div>'+bd+
+    '<div class="section-label">flags activos</div><div class="flag-row">'+flagHtml+'</div>'+
+    '<div class="section-label">blocklist</div>'+blStatus+
+    '<div class="section-label">rDNS</div><div class="mono" style="font-size:0.75rem;">'+(data.rdns||'—')+'</div>'+
+    '<div class="section-label">datos geo (flags completos)</div>'+
+    '<div class="mono" style="font-size:0.72rem;line-height:1.5;">'+
+      'pais: '+(flags.country||'—')+' | ciudad: '+(flags.city||'—')+'<br>'+
+      'ISP: '+(flags.isp||'—')+' | AS: '+(flags.as||'—')+'<br>'+
+      'coord: '+(flags.lat&&flags.lon?flags.lat.toFixed(2)+', '+flags.lon.toFixed(2):'—')+
+    '</div>'+
+    '<div class="section-label">nota del backend</div><div style="color:#7d8a99;font-size:0.72rem;">'+(data.note||'—')+'</div>'+
+    '<div class="section-label">JSON crudo del backend</div>'+
+    '<pre style="background:#0a0e14;padding:8px;border-radius:4px;font-size:0.7rem;white-space:pre-wrap;word-break:break-all;margin-top:4px;max-height:200px;overflow:auto;">'+JSON.stringify(data,null,2)+'</pre>';
+}
+
 $('finding-add').addEventListener('click', ()=>{
   const desc = $('finding-desc').value.trim();
   if(!desc) return;
   const severity = $('finding-sev').value;
-  findings.push({severity, desc});
+  const ip = $('finding-ip').value.trim();
+  findings.push({severity, desc, ip: ip || null});
   renderFindings();
   $('finding-desc').value = '';
+  $('finding-ip').value = '';
 });
 
 $('mitm-start').addEventListener('click', ()=>{
