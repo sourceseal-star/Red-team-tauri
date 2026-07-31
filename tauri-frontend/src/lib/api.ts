@@ -183,4 +183,8 @@ export const api = {
   // Settings
   getSettings:      () => get<Settings>("/settings"),
   saveSettings:     (s: Partial<Settings>) => post<{ ok: boolean }>("/settings", s),
+
+  // Geo + Threat Intel
+  getGeo:           (ip: string) => get<unknown>(`/geo?ip=${encodeURIComponent(ip)}`),
+  getIntel:         (ip: string) => get<unknown>(`/intel?ip=${encodeURIComponent(ip)}`),
 }

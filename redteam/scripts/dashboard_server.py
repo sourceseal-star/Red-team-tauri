@@ -598,6 +598,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "/api/config": lambda: self._json(_list_config_files()),
             "/api/honeypot": lambda: self._json(_load_json(HONEYPOT_FILE, {})),
             "/api/soar/dags": lambda: self._json(_load_json(SOAR_FILE, [])),
+            "/api/geo":      self._api_geo,
+            "/api/intel":    self._api_intel,
             "/api/tip/iocs": lambda: self._json(_load_json(IOC_FILE, [])),
             "/api/rasp/devices": lambda: self._json(_load_json(DEVICES_FILE, [])),
             "/api/settings": lambda: self._json(_load_json(SETTINGS_FILE, {})),
@@ -668,6 +670,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "by_severity": data.get("by_severity", {}), "target": data.get("target")})
             except: pass
         return self._json(out)
+
+    def _api_geo(self):
+        parsed = urlparse(self.path)
+        q = {k: v[0] for k, v in __import__("urllib.parse", fromlist=["parse_qs"]).parse_qs(parsed.query).items()}
+        ip = q.get("ip", "").strip()
+        try:
+            import sys; sys.path.insert(0, str(ROOT))
+            from geo_intel import lookup
+            return self._json(lookup(ip))
+        except Exception as e:
+            return self._json({"error": str(e), "ip": ip})
+
+    def _api_intel(self):
+        parsed = urlparse(self.path)
+        q = {k: v[0] for k, v in __import__("urllib.parse", fromlist=["parse_qs"]).parse_qs(parsed.query).items()}
+        ip = q.get("ip", "").strip()
+        try:
+            import sys; sys.path.insert(0, str(ROOT))
+            from geo_intel import assess
+            return self._json(assess(ip))
+        except Exception as e:
+            return self._json({"error": str(e), "ip": ip})
 
     def _api_config_read(self, path):
         if not path: return self._json({"error": "path required"}, 400)
