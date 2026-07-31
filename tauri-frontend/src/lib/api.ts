@@ -170,6 +170,7 @@ export const api = {
   addIoc:           (ioc: Partial<IOC>) => post<{ ok: boolean; id: string }>("/tip/iocs", ioc),
   deleteIoc:        (id: string) => del<{ ok: boolean }>(`/tip/iocs/${id}`),
   importStix:       (bundle: unknown) => post<{ ok: boolean; imported: number }>("/tip/import-stix", bundle),
+  updateFromFeeds:  () => post<{ ok: boolean; iocs_loaded: number }>("/tip/update", {}),
 
   // RASP dispositivos
   getDevices:       () => get<Device[]>("/rasp/devices"),

@@ -3,7 +3,7 @@ import { api, type IOC } from '../lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import { RefreshCw, Plus, Trash2, Upload } from 'lucide-react'
+import { RefreshCw, Plus, Trash2, Upload, Download } from 'lucide-react'
 
 const TYPE_COLOR: Record<string, string> = {
   domain: 'text-purple-400', ip: 'text-blue-400',
@@ -13,6 +13,7 @@ const TYPE_COLOR: Record<string, string> = {
 export default function ThreatIntel() {
   const [iocs, setIocs]       = useState<IOC[]>([])
   const [loading, setLoading] = useState(false)
+  const [updating, setUpdating] = useState(false)
   const [adding, setAdding]   = useState(false)
   const [form, setForm]       = useState({ type: 'domain', value: '', confidence: 80, tags: '' })
   const [msg, setMsg]         = useState('')
@@ -23,6 +24,22 @@ export default function ThreatIntel() {
   }
 
   useEffect(() => { load() }, [])
+
+  const updateFromFeeds = async () => {
+    setUpdating(true)
+    setMsg('Descargando IOCs de feeds...')
+    try {
+      const r = await api.updateFromFeeds()
+      setMsg(`✓ ${r.iocs_loaded} IOCs cargados de feeds reales`)
+      setTimeout(() => setMsg(''), 5000)
+      load()
+    } catch {
+      setMsg('Error conectando a feeds')
+      setTimeout(() => setMsg(''), 3000)
+    } finally {
+      setUpdating(false)
+    }
+  }
 
   const addIoc = async () => {
     if (!form.value.trim()) return
@@ -42,7 +59,6 @@ export default function ThreatIntel() {
   }
 
   const importStix = async () => {
-    // Importa un bundle STIX2 de ejemplo con indicadores reales
     const bundle = {
       type: 'bundle', id: `bundle--${crypto.randomUUID()}`,
       objects: [
@@ -68,8 +84,12 @@ export default function ThreatIntel() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-xl font-bold">Threat Intelligence</h2>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={importStix}><Upload className="h-3 w-3 mr-1" />Import STIX2</Button>
-          <Button size="sm" variant="outline" onClick={() => setAdding(!adding)}><Plus className="h-3 w-3 mr-1" />Añadir IOC</Button>
+          <Button size="sm" variant="default" onClick={updateFromFeeds} disabled={updating}>
+            <Download className={`h-3 w-3 mr-1 ${updating ? 'animate-spin' : ''}`} />
+            {updating ? 'Actualizando...' : 'Feeds reales'}
+          </Button>
+          <Button size="sm" variant="outline" onClick={importStix}><Upload className="h-3 w-3 mr-1" />STIX2</Button>
+          <Button size="sm" variant="outline" onClick={() => setAdding(!adding)}><Plus className="h-3 w-3 mr-1" />IOC</Button>
           <Button size="sm" variant="outline" onClick={load} disabled={loading}><RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} /></Button>
         </div>
       </div>
@@ -142,7 +162,9 @@ export default function ThreatIntel() {
                   </tr>
                 ))}
                 {iocs.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Sin indicadores. Añade IOCs o importa un bundle STIX2.</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                    Sin indicadores. Presiona "Feeds reales" para descargar IOCs de AlienVault, abuse.ch, Tor e IPsum.
+                  </td></tr>
                 )}
               </tbody>
             </table>
