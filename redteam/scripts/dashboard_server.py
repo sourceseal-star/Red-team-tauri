@@ -583,8 +583,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._json({"ok": True})
 
     def do_GET(self):
-        p = self.path.rstrip("/")
         parsed = urlparse(self.path)
+        p = parsed.path.rstrip("/")
         q = parse_qs(parsed.query)
 
         routes = {
@@ -673,10 +673,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _api_geo(self):
         parsed = urlparse(self.path)
-        q = {k: v[0] for k, v in __import__("urllib.parse", fromlist=["parse_qs"]).parse_qs(parsed.query).items()}
-        ip = q.get("ip", "").strip()
+        q = parse_qs(parsed.query)
+        ip = q.get("ip", [""])[0].strip()
         try:
-            import sys; sys.path.insert(0, str(ROOT))
+            sys.path.insert(0, str(ROOT))
             from geo_intel import lookup
             return self._json(lookup(ip))
         except Exception as e:
@@ -684,10 +684,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _api_intel(self):
         parsed = urlparse(self.path)
-        q = {k: v[0] for k, v in __import__("urllib.parse", fromlist=["parse_qs"]).parse_qs(parsed.query).items()}
-        ip = q.get("ip", "").strip()
+        q = parse_qs(parsed.query)
+        ip = q.get("ip", [""])[0].strip()
         try:
-            import sys; sys.path.insert(0, str(ROOT))
+            sys.path.insert(0, str(ROOT))
             from geo_intel import assess
             return self._json(assess(ip))
         except Exception as e:
