@@ -1,5 +1,5 @@
 run = "bash replit_start.sh"
-modules = ["python-3.11"]
+modules = ["python-3.12", "nodejs-20"]
 
 [nix]
 channel = "stable-25_05"
