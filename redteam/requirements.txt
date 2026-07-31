@@ -1,4 +1,5 @@
 requests>=2.31
+psutil>=5.9
 pycryptodome>=3.19
 pyOpenSSL>=23.0
 stix2>=3.0

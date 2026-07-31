@@ -1,13 +1,5 @@
 import { create } from 'zustand'
-import { invoke } from '@tauri-apps/api/tauri'
-
-export interface Service {
-  name: string
-  status: 'running' | 'stopped' | 'error'
-  pid?: number
-  uptime?: string
-  lastLogs: string[]
-}
+import { api, type Service } from '../lib/api'
 
 interface ServiceStore {
   services: Service[]
@@ -26,16 +18,16 @@ export const useServiceStore = create<ServiceStore>((set, get) => ({
   fetchStatus: async () => {
     set({ loading: true })
     try {
-      const data = await invoke('get_services_status') as Service[]
+      const data = await api.getServices()
       set({ services: data, loading: false })
     } catch (e) {
-      console.error(e)
+      console.error('[serviceStore] fetchStatus:', e)
       set({ loading: false })
     }
   },
-  startService: async (name) => { await invoke('start_service', { name }); await get().fetchStatus() },
-  stopService: async (name) => { await invoke('stop_service', { name }); await get().fetchStatus() },
-  restartService: async (name) => { await invoke('restart_service', { name }); await get().fetchStatus() },
-  startAll: async () => { await invoke('start_all_services'); await get().fetchStatus() },
-  stopAll: async () => { await invoke('stop_all_services'); await get().fetchStatus() },
+  startService:   async (name) => { await api.startService(name);   await get().fetchStatus() },
+  stopService:    async (name) => { await api.stopService(name);    await get().fetchStatus() },
+  restartService: async (name) => { await api.restartService(name); await get().fetchStatus() },
+  startAll:       async ()     => { await api.startAll();           await get().fetchStatus() },
+  stopAll:        async ()     => { await api.stopAll();            await get().fetchStatus() },
 }))
