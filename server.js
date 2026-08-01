@@ -64,7 +64,7 @@ const globalLimiter = rateLimit(60000, 60);   // 60 req/min
 const heavyLimiter = rateLimit(60000, 10);    // 10 req/min for scans/exec
 
 // ─── Security: CORS restringido ─────────────────────────────────────────────
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000').split(',').map(s => s.trim());
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5000,http://127.0.0.1:5000').split(',').map(s => s.trim());
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;

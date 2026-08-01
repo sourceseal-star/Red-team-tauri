@@ -8,13 +8,12 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
     proxy: {
-      // Redirige todas las llamadas /api/* y /health al backend Python real
       '/api': {
-        target: 'http://localhost:8001',
+        target: 'http://localhost:3000',
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:8001',
+        target: 'http://localhost:3000',
         changeOrigin: true,
       },
     },
