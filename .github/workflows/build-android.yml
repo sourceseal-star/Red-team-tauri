@@ -1,107 +1,12 @@
-name: Build Android APK — SourceSeal Console
-
-# PAUSA: workflow de build Android suspendido hasta tener PC/VPS con NDK + Rust cross-compile.
-# Activar manualmente desde la UI de GitHub Actions cuando sea necesario.
-# Razón: no es manejable desde Termux + Motorola Edge 50 Fusion sin infraestructura de build.
-on:
-  workflow_dispatch:
-    inputs:
-      confirm:
-        description: 'Escribe CONFIRMAR para ejecutar el build (requiere NDK+Rust en runner)'
-        required: true
-        default: ''
-
-jobs:
-  build-android:
-    name: Build Tauri v2 Android APK
-    runs-on: ubuntu-22.04
-    if: github.event.inputs.confirm == 'CONFIRMAR'
-    timeout-minutes: 75
-
-    steps:
-      # ── 1. Checkout ────────────────────────────────────────────────────────
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # ── 2. Java 17 (requerido por Android Gradle) ─────────────────────────
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: "17"
-          distribution: "temurin"
-
-      # ── 3. Android SDK + NDK ──────────────────────────────────────────────
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK r26d
+      - name: Install frontend deps
         run: |
-          echo "y" | sdkmanager "ndk;26.3.11579264" --channel=0
-          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.3.11579264" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.3.11579264" >> $GITHUB_ENV
-          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
+          cd tauri-frontend
+          npm install
+          npm install --save-dev @types/react@18.2.43 @types/react-dom@18.2.17
 
-      # ── 4. Rust + Android cross-compile targets ───────────────────────────
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: >-
-            aarch64-linux-android
-            armv7-linux-androideabi
-            i686-linux-android
-            x86_64-linux-android
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      # ── 5. Node.js ────────────────────────────────────────────────────────
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: tauri-frontend/package-lock.json
-
-      # ── 6. Frontend React/Vite ────────────────────────────────────────────
-      - name: Install frontend dependencies
-        working-directory: tauri-frontend
-        run: npm ci
-
-      - name: Build frontend (Vite)
-        working-directory: tauri-frontend
-        run: npm run build
-
-      # ── 7. Tauri CLI v2 ───────────────────────────────────────────────────
-      - name: Install Tauri CLI v2
-        run: cargo install tauri-cli --version "^2" --locked
-
-      # ── 8. Init Android project (genera src-tauri/gen/android/) ──────────
-      - name: Initialize Tauri Android project
-        run: cargo tauri android init
-        env:
-          NDK_HOME: ${{ env.NDK_HOME }}
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-          JAVA_HOME: ${{ env.JAVA_HOME }}
-
-      # ── 9. Build APK debug ────────────────────────────────────────────────
-      - name: Build Android APK (debug)
-        run: cargo tauri android build --debug
-        env:
-          NDK_HOME: ${{ env.NDK_HOME }}
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-          JAVA_HOME: ${{ env.JAVA_HOME }}
-
-      # ── 10. Upload APK artifact ───────────────────────────────────────────
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: sourceseal-console-debug
-          path: |
-            src-tauri/gen/android/app/build/outputs/apk/universal/debug/*.apk
-            src-tauri/gen/android/app/build/outputs/apk/arm64-v8a/debug/*.apk
-          if-no-files-found: warn
-          retention-days: 14
+      - name: Build frontend
+        run: |
+          cd tauri-frontend
+          ls node_modules/@types/react/index.d.ts
+          npm run build
+          
