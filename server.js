@@ -177,7 +177,10 @@ app.post('/api/iot/scan', authenticateToken, async (req, res) => {
 // ─── MITM (autenticado) ──────────────────────────────────────────────────────
 app.post('/api/mitm/start', authenticateToken, heavyLimiter, (req, res) => {
   const out = path.join(EVIDENCE, 'traffic-' + Date.now() + '.flow');
-  runStreamed('mitm', 'mitmdump', ['-q','-w',out,'--set','console_eventlog_verbosity=info'], 'mitm');
+  const addon = path.join(__dirname,'lib','mitm_addon.py');
+  const jsonl = path.join(EVIDENCE,'intercept.jsonl');
+  runStreamed('mitm', 'mitmdump', ['-s', addon, '-q', '-w', out, '--set', 'console_eventlog_verbosity=info'], 'mitm');
+  tailJsonl(jsonl);
   res.json({ ok: true, listen: '0.0.0.0:8080', capture: out });
 });
 app.post('/api/mitm/stop', authenticateToken, (req, res) => { if (procs.mitm) procs.mitm.kill('SIGINT'); res.json({ ok: true }); });
@@ -414,6 +417,34 @@ server.on('upgrade', (request, socket, head) => {
     wss.emit('connection', ws, request);
   });
 });
+
+
+// ---- tail del jsonl de interceptacion -> WS en vivo ----
+function tailJsonl(file){
+  let pos=0;
+  const tick=()=>{
+    fs.stat(file,(e,st)=>{ if(e){return setTimeout(tick,1500)}
+      if(st.size<pos)pos=0; if(st.size===pos){return setTimeout(tick,800)}
+      const fd=fs.openSync(file,'r');const buf=Buffer.alloc(st.size-pos);fs.readSync(fd,buf,0,buf.length,pos);fs.closeSync(fd);pos=st.size;
+      buf.toString('utf8').split('\n').filter(Boolean).forEach(line=>{ try{emit('intercept',JSON.parse(line))}catch(_){} });
+      setTimeout(tick,800);
+    });
+  }; tick();
+}
+app.get('/api/intercept/list', authenticateToken, (req,res)=>{
+  const f=path.join(EVIDENCE,'intercept.jsonl'); if(!fs.existsSync(f))return res.json([]);
+  const lines=fs.readFileSync(f,'utf8').split('\n').filter(Boolean).slice(-500).reverse();
+  res.json(lines.map(l=>{try{return JSON.parse(l)}catch(_){return null}}).filter(Boolean));
+});
+app.post('/api/intercept/clear', authenticateToken, (req,res)=>{fs.writeFileSync(path.join(EVIDENCE,'intercept.jsonl'),'');res.json({ok:true})});
+
+// ---- login-audit defensivo: credenciales TUYAS contra TUS dispositivos ----
+app.post('/api/iot/login', authenticateToken, async (req,res)=>{
+  const {ip,user,pass,port}=req.body||{};
+  if(!ip||user==null||pass==null)return res.status(400).json({error:'ip,user,pass requeridos (los TUYOS, contra TUS dispositivos)'});
+  res.json(await iot.loginAudit(ip,String(user),String(pass),+(port||80)));
+});
+
 
 wss.on('connection', ws => {
   ws.send(JSON.stringify({ type: 'hello', msg: 'sealctl conectado - todos los modulos activos' }));
