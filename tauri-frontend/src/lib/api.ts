@@ -138,6 +138,96 @@ export interface ScanStatus {
   last_error?: string | null
 }
 
+
+// ── Tipos: Geo + Intel + Cámaras + Video ────────────────────────────────────────
+
+export interface IPGeolocationResponse {
+  ip: string
+  country: string
+  country_code?: string
+  city: string
+  lat: number | null
+  lon: number | null
+  isp: string
+  as: string
+  timezone?: string | null
+  proxy?: boolean
+  hosting?: boolean
+  mobile?: boolean
+  private?: boolean
+  error?: string
+}
+
+export interface IPVerificationResponse {
+  ip: string
+  rdns: string | null
+  asn?: string
+  org?: string
+  abuse_contact?: string
+  country?: string
+  network_name?: string
+}
+
+export interface IPTrustScoreResponse {
+  ip: string
+  score: number
+  label: string
+  rdns: string | null
+  breakdown: { f: string; w: number }[]
+  flags: IPGeolocationResponse
+  tls?: { present: boolean; self_signed?: boolean; issuer?: string; valid_to?: string }
+  rdap?: { ok: boolean; network?: string; country?: string }
+  note?: string
+}
+
+export interface CameraFinding {
+  port: number
+  protocol: string
+  vendor?: string
+  evidence: string
+}
+
+export interface CameraScanResult {
+  ok: boolean
+  ip: string
+  is_camera_exposed: boolean
+  ports_scanned: number
+  open_ports: { port: number; banner_preview?: string }[]
+  findings: CameraFinding[]
+  scanned_at: string
+  error?: string
+}
+
+export interface RadioScanResult {
+  ok: boolean
+  ip: string
+  is_radio_exposed: boolean
+  ports_scanned: number
+  findings: CameraFinding[]
+  scanned_at: string
+  error?: string
+}
+
+export interface VideoSource {
+  path: string
+  port: number
+  type: 'mjpeg' | 'snapshot' | 'rtsp' | 'html'
+  vendor: string
+  available: boolean
+  stream_url: string | null
+  snapshot_url: string | null
+  rtsp_url?: string
+  content_type?: string
+  note?: string
+}
+
+export interface VideoUrlsResponse {
+  ip: string
+  video_sources: VideoSource[]
+  total: number
+  note: string
+}
+
 // ── Servicios ─────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -193,6 +283,7 @@ export const api = {
   getSettings:      () => get<Settings>("/settings"),
   saveSettings:     (s: Partial<Settings>) => post<{ ok: boolean }>("/settings", s),
 
+
   // Geo + Threat Intel
   getGeo:           (ip: string) => get<unknown>(`/geo?ip=${encodeURIComponent(ip)}`),
   getIntel:         (ip: string) => get<unknown>(`/intel?ip=${encodeURIComponent(ip)}`),
@@ -209,4 +300,19 @@ export const api = {
       `/network/radio?target=${encodeURIComponent(target)}${timeout ? `&timeout=${timeout}` : ''}`,
       apiKey
     ),
+
+  // IP Actions (nuevos endpoints SealCtl)
+  ipGeolocate:     (ip: string) => get<IPGeolocationResponse>(`/geo?ip=${encodeURIComponent(ip)}`),
+  ipVerifySource:  (ip: string) => get<IPVerificationResponse>(`/intel/deep?ip=${encodeURIComponent(ip)}`),
+  ipTrustScore:    (ip: string) => get<IPTrustScoreResponse>(`/intel/deep?ip=${encodeURIComponent(ip)}`),
+  ipScanCameras:   (ip: string) => get<CameraScanResult>(`/iot?target=${encodeURIComponent(ip)}`),
+  ipScanRadio:     (ip: string) => get<RadioScanResult>(`/iot?target=${encodeURIComponent(ip)}`),
+
+  // Video de cámaras IP
+  ipVideoUrls:     (ip: string, user?: string, pass?: string) =>
+    get<VideoUrlsResponse>(`/iot/video-urls?ip=${encodeURIComponent(ip)}${user ? `&user=${encodeURIComponent(user)}` : ''}${pass ? `&pass=${encodeURIComponent(pass)}` : ''}`),
+  ipSnapshot:      (ip: string, port: number, path: string, user?: string, pass?: string) =>
+    `/iot/snapshot?ip=${encodeURIComponent(ip)}&port=${port}&path=${encodeURIComponent(path)}${user ? `&user=${encodeURIComponent(user)}` : ''}${pass ? `&pass=${encodeURIComponent(pass)}` : ''}`,
+  ipStreamUrl:      (ip: string, port: number, path: string, user?: string, pass?: string) =>
+    `/iot/stream?ip=${encodeURIComponent(ip)}&port=${port}&path=${encodeURIComponent(path)}${user ? `&user=${encodeURIComponent(user)}` : ''}${pass ? `&pass=${encodeURIComponent(pass)}` : ''}`,
 }

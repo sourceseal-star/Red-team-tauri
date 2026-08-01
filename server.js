@@ -668,6 +668,163 @@ app.get('/api/deception/status', authenticateToken, (req,res)=>{
   res.json({ available: true, modules: files, dir: decDir });
 });
 
+
+// ---- VIDEO: snapshot, stream proxy, deteccion de URLs de video ----
+// Snapshot: capturar un frame de una camara y devolverlo como imagen
+app.get('/api/iot/snapshot', authenticateToken, async (req,res)=>{
+  const ip = (req.query.ip || '').trim();
+  const port = parseInt(req.query.port) || 80;
+  const path = (req.query.path || '/snapshot.cgi').slice(0, 200);
+  const user = req.query.user || '';
+  const pass = req.query.pass || '';
+  if (!ip) return res.status(400).json({ error: 'ip requerido' });
+  try {
+    const iot = require('./lib/iot');
+    let r;
+    if (user && pass) {
+      r = await iot.loginAudit ? null : null; // no usamos loginAudit aquí
+    }
+    // Usar httpRaw del módulo iot indirectamente via httpGet con auth
+    const http = require('http');
+    const https = require('https');
+    const proto = (port === 443 || port === 8443) ? https : http;
+    const headers = { 'User-Agent': 'sealctl-snapshot/1.0' };
+    if (user && pass) headers['Authorization'] = 'Basic ' + Buffer.from(user + ':' + pass).toString('base64');
+    const reqOpts = { host: ip, port, path, timeout: 5000, headers, rejectUnauthorized: false };
+    proto.get(reqOpts, r2 => {
+      const ct = r2.headers['content-type'] || '';
+      const chunks = [];
+      r2.on('data', d => { chunks.push(d); if (Buffer.concat(chunks).length > 2000000) r2.destroy(); });
+      r2.on('end', () => {
+        const buf = Buffer.concat(chunks);
+        if (ct.startsWith('image/')) {
+          res.set('Content-Type', ct);
+          res.set('Cache-Control', 'no-cache');
+          res.send(buf);
+        } else if (ct.startsWith('text/') || ct.includes('json')) {
+          // No es imagen, devolver info
+          res.json({ ok: false, content_type: ct, length: buf.length, preview: buf.toString('utf8').slice(0, 200) });
+        } else {
+          // Intentar devolver como imagen de todos modos
+          res.set('Content-Type', 'image/jpeg');
+          res.set('Cache-Control', 'no-cache');
+          res.send(buf);
+        }
+      });
+      r2.on('error', e => res.status(502).json({ error: 'camara no respondio: ' + e.message }));
+    }).on('error', e => res.status(502).json({ error: 'conexion fallida: ' + e.message }))
+      .on('timeout', function() { this.destroy(); res.status(504).json({ error: 'timeout' }); });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Stream proxy: redirige MJPEG stream desde la camara al cliente (evita CORS)
+app.get('/api/iot/stream', authenticateToken, (req,res)=>{
+  const ip = (req.query.ip || '').trim();
+  const port = parseInt(req.query.port) || 80;
+  const path = (req.query.path || '/mjpg/video.mjpg').slice(0, 200);
+  const user = req.query.user || '';
+  const pass = req.query.pass || '';
+  if (!ip) return res.status(400).json({ error: 'ip requerido' });
+  const http = require('http');
+  const https = require('https');
+  const proto = (port === 443 || port === 8443) ? https : http;
+  const headers = { 'User-Agent': 'sealctl-stream/1.0' };
+  if (user && pass) headers['Authorization'] = 'Basic ' + Buffer.from(user + ':' + pass).toString('base64');
+  const upstream = proto.request({ host: ip, port, path, method: 'GET', headers, rejectUnauthorized: false, timeout: 30000 }, upstream_res => {
+    const ct = upstream_res.headers['content-type'] || '';
+    if (!ct.includes('multipart') && !ct.includes('image/') && !ct.includes('video/') && !ct.includes('octet-stream')) {
+      upstream_res.destroy();
+      return res.status(400).json({ error: 'el endpoint no retorna video/stream (content-type: ' + ct + ')' });
+    }
+    res.set('Content-Type', ct || 'multipart/x-mixed-replace; boundary=--BoundaryString');
+    res.set('Cache-Control', 'no-cache, no-store');
+    res.set('Connection', 'keep-alive');
+    upstream_res.pipe(res);
+    req.on('close', () => upstream_res.destroy());
+  });
+  upstream.on('error', e => res.status(502).json({ error: 'stream fallido: ' + e.message }));
+  upstream.on('timeout', () => { upstream.destroy(); res.status(504).json({ error: 'stream timeout' }); });
+  upstream.end();
+});
+
+// Detección de URLs de video disponibles para una IP
+app.get('/api/iot/video-urls', authenticateToken, async (req,res)=>{
+  const ip = (req.query.ip || '').trim();
+  if (!ip) return res.status(400).json({ error: 'ip requerido' });
+  const http = require('http');
+  const https = require('https');
+  const user = req.query.user || '';
+  const pass = req.query.pass || '';
+  const authHdr = (user && pass) ? { 'Authorization': 'Basic ' + Buffer.from(user + ':' + pass).toString('base64') } : {};
+
+  const VIDEO_PATHS = [
+    { path: '/mjpg/video.mjpg', port: 80, type: 'mjpeg', vendor: 'Axis' },
+    { path: '/video/mjpg.cgi', port: 80, type: 'mjpeg', vendor: 'Foscam' },
+    { path: '/cgi-bin/viewer/video.jpg', port: 80, type: 'snapshot', vendor: 'Axis' },
+    { path: '/snapshot.cgi', port: 80, type: 'snapshot', vendor: 'Generic' },
+    { path: '/cgi-bin/snapshot.cgi', port: 80, type: 'snapshot', vendor: 'Dahua' },
+    { path: '/ISAPI/Streaming/channels/101/picture', port: 80, type: 'snapshot', vendor: 'Hikvision' },
+    { path: '/ISAPI/Streaming/channels/101/httppreview', port: 80, type: 'mjpeg', vendor: 'Hikvision' },
+    { path: '/live/cam.html', port: 80, type: 'html', vendor: 'Generic' },
+    { path: '/mjpg/1/video.mjpg', port: 80, type: 'mjpeg', vendor: 'Axis' },
+    { path: '/stream/video.mjpeg', port: 80, type: 'mjpeg', vendor: 'Generic' },
+    { path: '/cgi-bin/viewer/video.mjpg', port: 80, type: 'mjpeg', vendor: 'Generic' },
+    { path: '/videostream.cgi', port: 80, type: 'mjpeg', vendor: 'Foscam' },
+    { path: '/image/jpeg.cgi', port: 80, type: 'snapshot', vendor: 'Edimax' },
+    { path: '/goform/video', port: 80, type: 'mjpeg', vendor: 'Wansview' },
+    { path: '/video.cgi', port: 80, type: 'mjpeg', vendor: 'Generic' },
+    { path: '/video.mjpg', port: 80, type: 'mjpeg', vendor: 'Generic' },
+  ];
+
+  const results = [];
+  await Promise.all(VIDEO_PATHS.map(async vp => {
+    return new Promise(resolve => {
+      const proto = (vp.port === 443) ? https : http;
+      const reqOpts = { host: ip, port: vp.port, path: vp.path, method: 'GET', timeout: 3000, headers: { ...authHdr, 'User-Agent': 'sealctl-probe/1.0' }, rejectUnauthorized: false };
+      const r = proto.request(reqOpts, resp => {
+        const ct = resp.headers['content-type'] || '';
+        resp.destroy();
+        if (resp.statusCode === 200 && (ct.includes('image') || ct.includes('multipart') || ct.includes('video') || ct.includes('text/html'))) {
+          results.push({ ...vp, status: resp.statusCode, content_type: ct, available: true,
+            stream_url: `/api/iot/stream?ip=${encodeURIComponent(ip)}&port=${vp.port}&path=${encodeURIComponent(vp.path)}${user ? '&user=' + encodeURIComponent(user) : ''}${pass ? '&pass=' + encodeURIComponent(pass) : ''}`,
+            snapshot_url: vp.type === 'snapshot' || vp.type === 'mjpeg'
+              ? `/api/iot/snapshot?ip=${encodeURIComponent(ip)}&port=${vp.port}&path=${encodeURIComponent(vp.path)}${user ? '&user=' + encodeURIComponent(user) : ''}${pass ? '&pass=' + encodeURIComponent(pass) : ''}`
+              : null
+          });
+        }
+        resolve();
+      });
+      r.on('error', () => resolve());
+      r.on('timeout', () => { r.destroy(); resolve(); });
+      r.end();
+    });
+  }));
+
+  // Also check RTSP
+  const iot = require('./lib/iot');
+  const rtsp = await iot.scan ? null : null; // check RTSP separately
+  try {
+    const rtspResult = await new Promise(res => {
+      const s = require('net').createConnection({ host: ip, port: 554 }, () => {
+        s.write('OPTIONS rtsp://' + ip + ':554/ RTSP/1.0\r\nCSeq: 1\r\n\r\n');
+        let buf = '';
+        s.on('data', d => { buf += d.toString(); if (/RTSP\/1\.0 \d+/.test(buf)) { s.destroy(); res({ available: true, url: 'rtsp://' + ip + ':554/' }); } });
+        s.setTimeout(2000, () => { s.destroy(); res({ available: buf.includes('RTSP'), url: 'rtsp://' + ip + ':554/' }); });
+      });
+      s.on('error', () => res(null));
+      s.setTimeout(2500, () => { s.destroy(); res(null); });
+    });
+    if (rtspResult && rtspResult.available) {
+      results.push({ path: '/', port: 554, type: 'rtsp', vendor: 'RTSP', available: true,
+        rtsp_url: rtspResult.url, stream_url: null, snapshot_url: null,
+        note: 'RTSP requiere VLC o player externo. URL: ' + rtspResult.url });
+    }
+  } catch {}
+
+  res.json({ ip, video_sources: results.filter(r => r.available), total: results.filter(r => r.available).length,
+    note: results.filter(r => r.available).length > 0 ? 'fuentes de video disponibles' : 'no se detectaron fuentes de video HTTP' });
+});
+
 // ---- expediente de reapertura (casefile) ----
 app.get('/api/casefile', authenticateToken, async (req,res)=>{
   try { const r = await casefile.run(req.query.path); res.json(r); }
