@@ -19,41 +19,44 @@ def test_kill_chain():
     
     # Crear eventos de ejemplo
     event1 = XDREvent(
-        event_id="EV-001",
-        timestamp=datetime.now(),
+        id="EV-001",
+        severity="HIGH",
+        timestamp=datetime.now().isoformat(),
         source="firewall",
-        event_type="network_scan",
+        title="network_scan",
         description="Escaneo de puertos activo desde IP externa",
-        mitre_techniques=["T1595"]
+        mitre_technique="T1595"
     )
     
     event2 = XDREvent(
-        event_id="EV-002",
-        timestamp=datetime.now(),
+        id="EV-002",
+        severity="HIGH",
+        timestamp=datetime.now().isoformat(),
         source="email_gateway",
-        event_type="phishing",
+        title="phishing",
         description="Correo de phishing con adjunto detectado",
-        mitre_techniques=["T1566", "T1204"]
+        mitre_technique="T1566,T1204"
     )
     
     event3 = XDREvent(
-        event_id="EV-003",
-        timestamp=datetime.now(),
+        id="EV-003",
+        severity="CRITICAL",
+        timestamp=datetime.now().isoformat(),
         source="endpoint_agent",
-        event_type="process_creation",
+        title="process_creation",
         description="Ejecución de PowerShell sospechosa",
-        mitre_techniques=["T1059"]
+        mitre_technique="T1059"
     )
 
     # Crear incidente
     incident = Incident(
-        incident_id="INC-100",
+        id="INC-100",
         title="Intrusión en fase temprana detectada",
-        description="Se detectó una secuencia de escaneo de puertos seguido de phishing y ejecución de PowerShell",
         severity="HIGH",
-        timestamp=datetime.now(),
-        events=[event1, event2, event3],
-        mitre_techniques=["T1595", "T1566", "T1204", "T1059"]
+        status="OPEN",
+        events=[{"id": e.id, "title": e.title, "source": e.source, "mitre_technique": e.mitre_technique} for e in [event1, event2, event3]],
+        mitre_techniques=["T1595", "T1566", "T1204", "T1059"],
+        created_at=datetime.now().isoformat()
     )
 
     # Ejecutar análisis
@@ -139,7 +142,7 @@ def test_stix_taxii():
     # Añadir malware
     malware_ref = bundle.add_malware("ShadowStealer", "infostealer", aliases=["ShadowSpy"])
     # Añadir relación
-    bundle.add_relationship(malware_ref.id, "indicator--abcdef", "indicates")
+    bundle.add_relationship(malware_ref.id, "indicator--a1b2c3d4-e5f6-7890-abcd-ef1234567890", "indicates")
     
     print("Bundle STIX generado con éxito!")
     print(f"Longitud de objetos: {len(bundle.objects)}")

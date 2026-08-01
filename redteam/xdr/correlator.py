@@ -45,6 +45,10 @@ MITRE_TECHNIQUES = {
     "T1074": {"name": "Data Staged",                        "tactic": "Collection"},
     "T1190": {"name": "Exploit Public-Facing Application",  "tactic": "Initial Access"},
     "T1133": {"name": "External Remote Services",           "tactic": "Initial Access"},
+    "T1566": {"name": "Phishing",                             "tactic": "Initial Access"},
+    "T1204": {"name": "User Execution",                       "tactic": "Execution"},
+    "T1049": {"name": "System Information Discovery",          "tactic": "Discovery"},
+    "T1087": {"name": "Account Discovery",                     "tactic": "Discovery"},
 }
 
 
