@@ -25,6 +25,15 @@ import re
 import struct
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+# ── Geo/Intel module (import top-level para evitar errores de import dinámico) ──
+sys.path.insert(0, str(ROOT))
+try:
+    from geo_intel import lookup as _geo_lookup, assess as _intel_assess
+    _GEO_INTEL_OK = True
+except Exception as _geo_import_err:
+    _GEO_INTEL_OK = False
+    print(f"[WARN] geo_intel import falló: {_geo_import_err}", flush=True)
 REPORTS   = ROOT / "reports"
 EVIDENCE  = ROOT / "evidence"
 LOGS_DIR  = ROOT / "logs"
@@ -1082,23 +1091,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         q = parse_qs(parsed.query)
         ip = q.get("ip", [""])[0].strip()
+        if not ip:
+            return self._json({"error": "ip requerida"}, 400)
         try:
+            if _GEO_INTEL_OK:
+                return self._json(_geo_lookup(ip))
+            # fallback: import dinámico si el top-level falló
             sys.path.insert(0, str(ROOT))
             from geo_intel import lookup
             return self._json(lookup(ip))
         except Exception as e:
-            return self._json({"error": str(e), "ip": ip})
+            return self._json({"error": f"geo falló: {str(e)}", "ip": ip}, 500)
 
     def _api_intel(self):
         parsed = urlparse(self.path)
         q = parse_qs(parsed.query)
         ip = q.get("ip", [""])[0].strip()
+        if not ip:
+            return self._json({"error": "ip requerida"}, 400)
         try:
+            if _GEO_INTEL_OK:
+                return self._json(_intel_assess(ip))
+            # fallback: import dinámico si el top-level falló
             sys.path.insert(0, str(ROOT))
             from geo_intel import assess
             return self._json(assess(ip))
         except Exception as e:
-            return self._json({"error": str(e), "ip": ip})
+            return self._json({"error": f"intel falló: {str(e)}", "ip": ip}, 500)
 
     def _api_config_read(self, path):
         if not path: return self._json({"error": "path required"}, 400)

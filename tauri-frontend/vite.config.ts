@@ -21,11 +21,15 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:8001',
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+      },
+      '/healthz': {
+        target: 'http://localhost:8001',
         changeOrigin: true,
       },
     },
