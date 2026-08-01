@@ -495,6 +495,85 @@ function selftest(){
   return {ran_at:new Date().toISOString(),pasadas:P,totales:V.length,veredictos:V};
 }
 
+
+// ---- endpoints ampliados: recon, bulk, cidr, ssdp ----
+// Recon combinado: DNS + geo + intel + port scan en una llamada
+app.get('/api/recon', authenticateToken, heavyLimiter, async (req,res)=>{
+  const target = (req.query.target || '').trim();
+  if (!target) return res.status(400).json({ error: 'target requerido (IP o hostname)' });
+  try {
+    const geoRecon = await geo.recon(target);
+    const ips = geoRecon.resolved_ips || [target];
+    const results = [];
+    for (const ip of ips.slice(0, 3)) {
+      const [intelData, iotData] = await Promise.all([
+        intel.assess(ip, { ports: null }).catch(e => ({ error: e.message })),
+        iot.scan(ip, { ports: [22, 80, 443, 8080, 8443, 554, 21, 23, 3306, 6379] }).catch(e => ({ error: e.message }))
+      ]);
+      results.push({ ip, rdns: geoRecon.results?.find(r => r.ip === ip)?.rdns || null,
+        geo: geoRecon.results?.find(r => r.ip === ip)?.geo || null,
+        intel: intelData, ports: iotData });
+    }
+    res.json({ target, resolved_ips: ips, results });
+  } catch(e) { res.status(500).json({ error: 'recon fallo: ' + e.message }); }
+});
+
+// Geo bulk: array de IPs
+app.post('/api/geo/bulk', authenticateToken, async (req,res)=>{
+  const ips = (req.body.ips || []).filter(Boolean).slice(0, 50);
+  if (!ips.length) return res.status(400).json({ error: 'ips requerido (array, max 50)' });
+  res.json({ results: await geo.lookupMany(ips, 4) });
+});
+
+// Geo CIDR: expandir y geolocalizar
+app.get('/api/geo/cidr', authenticateToken, heavyLimiter, async (req,res)=>{
+  const cidr = (req.query.cidr || '').trim();
+  if (!cidr) return res.status(400).json({ error: 'cidr requerido (ej 192.168.1.0/24)' });
+  const ips = geo.expandCidr(cidr);
+  if (ips.length > 256) return res.status(400).json({ error: 'CIDR demasiado amplio (max /24)' });
+  res.json({ cidr, expanded: ips.length, results: await geo.lookupMany(ips, 4) });
+});
+
+// Geo distancia entre dos IPs
+app.get('/api/geo/distance', authenticateToken, async (req,res)=>{
+  const ip1 = (req.query.ip1 || '').trim(), ip2 = (req.query.ip2 || '').trim();
+  if (!ip1 || !ip2) return res.status(400).json({ error: 'ip1 e ip2 requeridos' });
+  const [g1, g2] = await Promise.all([geo.lookup(ip1), geo.lookup(ip2)]);
+  const km = geo.haversine(g1.lat, g1.lon, g2.lat, g2.lon);
+  res.json({ ip1, ip2, geo1: g1, geo2: g2, distance_km: km });
+});
+
+// Intel deep: assess + TLS cert + RDAP + port correlation
+app.get('/api/intel/deep', authenticateToken, heavyLimiter, async (req,res)=>{
+  const ip = (req.query.ip || '').trim();
+  if (!ip) return res.status(400).json({ error: 'ip requerido' });
+  res.json(await intel.assess(ip, { tls: true, rdap: true }));
+});
+
+// IoT scan con puertos custom
+app.post('/api/iot/scan-custom', authenticateToken, heavyLimiter, async (req,res)=>{
+  const { ip, ports } = req.body;
+  if (!ip) return res.status(400).json({ error: 'ip requerido' });
+  const validPorts = (ports || []).filter(p => typeof p === 'number' && p > 0 && p < 65536).slice(0, 50);
+  res.json(await iot.scan(ip, { ports: validPorts.length ? validPorts : undefined }));
+});
+
+// SSDP/UPnP discovery en la red local
+app.get('/api/ssdp', authenticateToken, async (req,res)=>{
+  try { res.json({ devices: await iot.ssdpDiscover(3000) }); }
+  catch(e) { res.status(500).json({ error: 'ssdp fallo: ' + e.message }); }
+});
+
+// Geo DNS resolve (hostname -> IPs)
+app.get('/api/geo/dns', authenticateToken, async (req,res)=>{
+  const host = (req.query.host || '').trim();
+  if (!host) return res.status(400).json({ error: 'host requerido' });
+  const ips = await geo.resolveHost(host);
+  const results = [];
+  for (const ip of ips) { const rdns = await geo.reverse(ip); results.push({ ip, rdns, forward: host }); }
+  res.json({ host, ips, results });
+});
+
 // ---- expediente de reapertura (casefile) ----
 app.get('/api/casefile', authenticateToken, async (req,res)=>{
   try { const r = await casefile.run(req.query.path); res.json(r); }
