@@ -100,7 +100,16 @@
     .port-cell .port-num { font-family:'JetBrains Mono',monospace; font-weight:700; }
     .port-cell .port-banner { font-size:0.65rem; color:#7d8a99; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-  </style>
+  .alrt-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--dim);border:1px solid var(--line2);padding:3px 9px}
+.alrt-badge.hot{color:var(--red);border-color:var(--red)}
+.alrt-dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.alrt-badge.hot .alrt-dot{background:var(--red);animation:p 1s infinite}
+.alrt-row{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line);opacity:0;transform:translateX(-8px);transition:.4s}
+.alrt-row.in{opacity:1;transform:none}
+.alrt-row .sv{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:1px;min-width:62px}
+.alrt-row.critical .sv{color:var(--red)} .alrt-row.high .sv{color:var(--amber)} .alrt-row.medium .sv{color:var(--mag)} .alrt-row.low .sv,.alrt-row.info .sv{color:var(--cyan)}
+.alrt-row .ms{font-family:var(--mono);font-size:11.5px;color:var(--ink)}
+</style>
 </head>
 <body>
 <div class="app">
@@ -113,6 +122,7 @@
     <button data-tab="tab5">05 - reportes</button>
     <button data-tab="tab6">06 - geo / intel</button>
     <button data-tab="tab7">07 - interceptacion</button>
+    <span class="alrt-badge" id="alrt-badge" title="alertas activas"><span class="alrt-dot"></span><b id="alrt-n">0</b></span>
   </div>
 
   <div class="panel active" id="tab1">
@@ -243,6 +253,12 @@
         <div id="disc-list" style="display:flex;flex-wrap:wrap;gap:8px;min-height:34px"><div class="empty" style="width:100%">sin anuncios todavía. pulsa escuchar.</div></div>
       </div></div>
   </div>
+
+    <div class="card wide"><div class="hd"><span class="ix">alrt</span><h3>motor de alertas</h3><span class="st" id="alrt-st">0 activas</span></div><div class="bd">
+        <p style="font-size:12px;color:var(--dim);line-height:1.6;margin-bottom:12px">reglas sobre el feed con cooldown por host. sin tráfico que dispare, sin alerta. credencial-en-claro y credenciales-por-defecto = <b style="color:var(--red)">critical</b>; auth-sobre-http y cámara-sin-tls = <b style="color:var(--amber)">high</b>.</p>
+        <div class="row" style="margin-bottom:12px"><button class="btn sm" id="alrt-clear">silenciar feed</button></div>
+        <div id="alrt-list" style="max-height:260px;overflow:auto"><div class="empty">sin alertas. el motor está escuchando.</div></div>
+      </div></div>
 
 <div class="modal" id="modal"><div class="modal-content"><button class="modal-close" id="modal-close">&times;</button><pre id="modal-body"></pre></div></div>
 
@@ -893,6 +909,19 @@ $('#disc-stop').onclick=async()=>{await fetch(authUrl('/api/discovery/stop'),{me
 const _discPatch=()=>{if(!ws)return;const om=ws.onmessage;ws.onmessage=e=>{try{om&&om(e)}catch(_){};try{const m=JSON.parse(e.data);if(m.type==='discovery')discRefresh()}catch(_){}}};
 const _discConn=connect;connect=function(){_discConn();setTimeout(_discPatch,60)};
 discRefresh();
+// ---- motor de alertas en tab 07 + badge cabecera ----
+const alrtList=$('#alrt-list');let alrtN=0;
+function paintAlerts(list){
+  $('#alrt-st').textContent=list.length+' activas';
+  if(!list.length){alrtList.innerHTML='<div class="empty">sin alertas. el motor está escuchando.</div>';return;}
+  alrtList.innerHTML=list.map(a=>`<div class="alrt-row ${a.severity}"><span class="sv">${a.severity}</span><span class="ms">${a.msg} <span style="color:var(--faint)">· ${new Date(a.ts).toLocaleTimeString()}</span></span></div>`).join('');
+  setTimeout(()=>alrtList.querySelectorAll('.alrt-row').forEach((r,i)=>setTimeout(()=>r.classList.add('in'),i*40)),20);
+}
+function bumpBadge(){alrtN++;$('#alrt-n').textContent=alrtN;const b=$('#alrt-badge');b.classList.add('hot');clearTimeout(b._t);b._t=setTimeout(()=>b.classList.remove('hot'),2500);}
+$('#alrt-clear').onclick=async()=>{await fetch(authUrl('/api/alerts/clear'),{method:'POST',headers:authHeaders()});alrtN=0;$('#alrt-n').textContent=0;paintAlerts([]);};
+(async()=>{paintAlerts(await fetch(authUrl('/api/alerts'),{headers:authHeaders()}).then(r=>r.json()).catch(()=>[]))})();
+// enganche WS robusto
+const _alConn=connect;connect=function(){_alConn();setTimeout(()=>{if(ws){const om=ws.onmessage;ws.onmessage=e=>{try{om&&om(e)}catch(_){};try{const m=JSON.parse(e.data);if(m.type==='alert'){bumpBadge();fetch(authUrl('/api/alerts'),{headers:authHeaders()}).then(r=>r.json()).then(paintAlerts)}}catch(_){}};}},60)};
 </script>
 </body>
 </html>

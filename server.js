@@ -10,6 +10,9 @@ const geo = require('./lib/geo');
 const intel = require('./lib/intel');
 const iot = require('./lib/iot');
 const discovery = require('./lib/discovery');
+const alerts = require('./lib/alerts');
+const exporter = require('./lib/export');
+const regression = require('./lib/regression');
 
 // ─── Security: API Key Authentication ────────────────────────────────────────
 const API_KEY = process.env.REDTEAM_API_KEY || crypto.randomBytes(24).toString('hex');
@@ -74,6 +77,8 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '4mb' }));
+function appendIntercept(rec){ rec.ts=rec.ts||Date.now()/1000; rec.id=rec.id||require('crypto').createHash('sha1').update(JSON.stringify(rec)+Math.random()).digest('hex').slice(0,12);
+  fs.appendFileSync(path.join(EVIDENCE,'intercept.jsonl'), JSON.stringify(rec)+'\n'); alerts.feed(rec, a=>emit('alert',a)); }
 
 // ─── Public static (dashboard) — sin auth pero solo sirve HTML/JS/CSS ────────
 app.use(express.static(path.join(__dirname, 'public')));
@@ -112,6 +117,8 @@ const REDTEAM_DIR = path.join(__dirname, 'redteam');
 const SCENARIOS = ['biometric','business_logic','imei','keyhandling','multiplatform','payments','pegasus','recovery_page','rng','sidechannel','sourcesealcorp','zt_checks'];
 
 // ─── Status (autenticado) ────────────────────────────────────────────────────
+app.use((req,res,next)=>{ res.set({'X-Frame-Options':'DENY','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'}); if(req.secure||req.headers['x-forwarded-proto']==='https') res.set('Strict-Transport-Security','max-age=31536000'); next(); });
+
 app.get('/api/status', authenticateToken, (req, res) => {
   const ifaces = os.networkInterfaces(); let ip = '127.0.0.1';
   for (const k in ifaces) for (const i of ifaces[k]) if (i.family === 'IPv4' && !i.internal) ip = i.address;
@@ -427,7 +434,7 @@ function tailJsonl(file){
     fs.stat(file,(e,st)=>{ if(e){return setTimeout(tick,1500)}
       if(st.size<pos)pos=0; if(st.size===pos){return setTimeout(tick,800)}
       const fd=fs.openSync(file,'r');const buf=Buffer.alloc(st.size-pos);fs.readSync(fd,buf,0,buf.length,pos);fs.closeSync(fd);pos=st.size;
-      buf.toString('utf8').split('\n').filter(Boolean).forEach(line=>{ try{emit('intercept',JSON.parse(line))}catch(_){} });
+      buf.toString('utf8').split('\n').filter(Boolean).forEach(line=>{ try{const _ev=JSON.parse(line); emit('intercept',_ev); alerts.feed(_ev, a=>emit('alert',a))}catch(_){} });
       setTimeout(tick,800);
     });
   }; tick();
@@ -443,7 +450,7 @@ app.post('/api/intercept/clear', authenticateToken, (req,res)=>{fs.writeFileSync
 app.post('/api/iot/login', authenticateToken, async (req,res)=>{
   const {ip,user,pass,port}=req.body||{};
   if(!ip||user==null||pass==null)return res.status(400).json({error:'ip,user,pass requeridos (los TUYOS, contra TUS dispositivos)'});
-  res.json(await iot.loginAudit(ip,String(user),String(pass),+(port||80)));
+  const _la = await iot.loginAudit(ip,String(user),String(pass),+(port||80)); if(_la.defaultCreds||(_la.tests||[]).some(t=>t.cleartext)) appendIntercept({ _src:'audit', kind:'AUDIT', ip, ..._la }); res.json(_la);
 });
 
 
@@ -463,6 +470,29 @@ app.post('/api/discovery/start', authenticateToken, (req,res)=>{
 app.post('/api/discovery/stop', authenticateToken, (req,res)=>res.json(discovery.stop()));
 app.get('/api/discovery/list', authenticateToken, (req,res)=>res.json({running:discovery.isRunning(), devices:discovery.list()}));
 
+
+app.get('/api/alerts', authenticateToken, (req,res)=>res.json(alerts.list()));
+app.post('/api/alerts/clear', authenticateToken, (req,res)=>{alerts.clear();res.json({ok:true})});
+app.post('/api/report/unified', authenticateToken, (req,res)=>{ const r=exporter.build({ target:req.body&&req.body.target, legacy_quirks:!!(req.body&&req.body.legacy_quirks) });
+  const file='unified-'+Date.now()+'.json'; fs.writeFileSync(path.join(EVIDENCE,file), JSON.stringify(r,null,2)); res.json({ok:true,file,report:r}); });
+app.get('/api/regression', authenticateToken, (req,res)=>regression.run().then(r=>res.json(r)));
+app.get('/api/selftest', authenticateToken, (req,res)=>res.json(selftest()));
+
+
+function selftest(){
+  const V=[]; const ok=(c,d)=>V.push({case:c,st:'PASS',d}); const no=(c,d)=>V.push({case:c,st:'FAIL',d});
+  let fired=[]; const cap=a=>fired.push(a);
+  alerts.feed({kind:'CRED_CLEARTEXT',cleartext:true,host:'192.168.1.50',user:'admin'}, cap);
+  (fired.some(a=>a.id==='cred-plaintext'&&a.severity==='critical'))?ok('alert_cred_plaintext','dispara critical'):no('alert_cred_plaintext','no disparo');
+  fired=[]; alerts.feed({kind:'OUT_OF_SCOPE',host:'8.8.8.8'}, cap);
+  (fired.length===0)?ok('alert_out_of_scope_silente','fuera de cerco no alerta'):no('alert_out_of_scope_silente','alerto fuera de cerco');
+  const rep=exporter.build({target:'selftest'});
+  (rep&&rep.by_severity&&Array.isArray(rep.findings))?ok('export_schema','tiene by_severity+findings[]'):no('export_schema','schema roto');
+  const na=regression.CONTROLS.filter(c=>!c.applies);
+  (na.length>0)?ok('regression_no_infla',na.length+' controles marcados applies=false'):no('regression_no_infla','todo applies=true (sospechoso)');
+  const P=V.filter(x=>x.st==='PASS').length;
+  return {ran_at:new Date().toISOString(),pasadas:P,totales:V.length,veredictos:V};
+}
 server.listen(PORT, HOST, () => {
   console.log('\\n  SealCtl v2.1 (hardened) en http://' + HOST + ':' + PORT);
   console.log('  Recon: geo/intel/iot/nmap/mitm | Defense: playbooks/scenarios | Honeypot');
