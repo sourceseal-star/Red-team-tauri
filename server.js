@@ -574,6 +574,100 @@ app.get('/api/geo/dns', authenticateToken, async (req,res)=>{
   res.json({ host, ips, results });
 });
 
+
+// ---- modulos fusionados del zip: c2-sinkhole, canary, ids, ndr, soar ----
+// C2 sinkhole status
+app.get('/api/c2-sinkhole/status', authenticateToken, (req,res)=>{
+  const py = path.join(__dirname, 'redteam', 'honeypot', 'c2-sinkhole', 'sinkhole.py');
+  res.json({ available: fs.existsSync(py), script: py });
+});
+// IDS rules (Suricata-compatible)
+app.get('/api/ids/rules', authenticateToken, (req,res)=>{
+  const rulesFile = path.join(__dirname, 'redteam', 'honeypot', 'network-ids', 'suricata.rules');
+  if (fs.existsSync(rulesFile)) res.type('text/plain').send(fs.readFileSync(rulesFile, 'utf8'));
+  else res.json({ error: 'reglas IDS no encontradas' });
+});
+// IDS patterns para pcap matching
+app.get('/api/ids/patterns', authenticateToken, (req,res)=>{
+  try {
+    const { execSync } = require('child_process');
+    const out = execSync('python3 -c "import sys; sys.path.insert(0,\"redteam/honeypot/network-ids\"); import ids_rules; print(json.dumps(ids_rules.PCAP_PATTERNS))"', { encoding: 'utf8', timeout: 5000 });
+    res.json({ patterns: JSON.parse(out) });
+  } catch(e) { res.json({ error: 'no se pudieron cargar los patrones: ' + e.message }); }
+});
+// Canary files - generar
+app.post('/api/canary/generate', authenticateToken, (req,res)=>{
+  const dir = String(req.body.dir || '/tmp/canary').slice(0, 200);
+  const name = req.body.name ? String(req.body.name).slice(0, 100) : '';
+  try {
+    const { execSync } = require('child_process');
+    const args = ['redteam/honeypot/canary-files/generate.py', '--dir', dir];
+    if (name) args.push('--name', name);
+    const out = execSync('python3 ' + args.map(a => '\"' + a.replace(/'/g, "'\\''") + '\"').join(' '), { encoding: 'utf8', timeout: 5000 });
+    res.json({ ok: true, output: out.trim() });
+  } catch(e) { res.json({ ok: false, error: e.message.slice(0, 200) }); }
+});
+// Notifier - enviar alerta
+app.post('/api/notify', authenticateToken, (req,res)=>{
+  const report = req.body.report || {};
+  try {
+    const { execSync } = require('child_process');
+    const tmpFile = path.join(EVIDENCE, 'notify-' + Date.now() + '.json');
+    fs.writeFileSync(tmpFile, JSON.stringify(report));
+    const out = execSync('python3 redteam/integration/notifier.py ' + tmpFile, { encoding: 'utf8', timeout: 10000 });
+    fs.unlinkSync(tmpFile);
+    res.json({ ok: true, output: out.trim() });
+  } catch(e) { res.json({ ok: false, error: e.message.slice(0, 200) }); }
+});
+// TheHive case creation
+app.post('/api/thehive/case', authenticateToken, (req,res)=>{
+  const finding = req.body.finding || {};
+  try {
+    const { execSync } = require('child_process');
+    const tmpFile = path.join(EVIDENCE, 'thehive-' + Date.now() + '.json');
+    fs.writeFileSync(tmpFile, JSON.stringify(finding));
+    const out = execSync('python3 redteam/integration/thehive/case_creator.py ' + tmpFile, { encoding: 'utf8', timeout: 10000, env: { ...process.env, THEHIVE_URL: process.env.THEHIVE_URL || '', THEHIVE_API_KEY: process.env.THEHIVE_API_KEY || '' } });
+    fs.unlinkSync(tmpFile);
+    res.json({ ok: true, output: out.trim() });
+  } catch(e) { res.json({ ok: false, error: e.message.slice(0, 200) }); }
+});
+// Semgrep rules - ver
+app.get('/api/semgrep/rules', authenticateToken, (req,res)=>{
+  const dir = path.join(__dirname, 'build', 'ci', 'semgrep-rules');
+  if (!fs.existsSync(dir)) return res.json({ rules: [] });
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.yml'));
+  const rules = files.map(f => ({ name: f, content: fs.readFileSync(path.join(dir, f), 'utf8') }));
+  res.json({ rules });
+});
+// NDR status
+app.get('/api/ndr/status', authenticateToken, (req,res)=>{
+  const ndrDir = path.join(__dirname, 'redteam', 'ndr');
+  if (!fs.existsSync(ndrDir)) return res.json({ available: false });
+  const files = fs.readdirSync(ndrDir).filter(f => f.endsWith('.py'));
+  res.json({ available: true, modules: files, dir: ndrDir });
+});
+// SOAR status
+app.get('/api/soar/status', authenticateToken, (req,res)=>{
+  const soarDir = path.join(__dirname, 'redteam', 'soar');
+  if (!fs.existsSync(soarDir)) return res.json({ available: false });
+  const files = fs.readdirSync(soarDir).filter(f => f.endsWith('.py'));
+  res.json({ available: true, modules: files, dir: soarDir });
+});
+// RASP status
+app.get('/api/rasp/status', authenticateToken, (req,res)=>{
+  const raspDir = path.join(__dirname, 'redteam', 'rasp');
+  if (!fs.existsSync(raspDir)) return res.json({ available: false });
+  const files = fs.readdirSync(raspDir).filter(f => f.endsWith('.py'));
+  res.json({ available: true, modules: files, dir: raspDir });
+});
+// Deception status
+app.get('/api/deception/status', authenticateToken, (req,res)=>{
+  const decDir = path.join(__dirname, 'redteam', 'deception');
+  if (!fs.existsSync(decDir)) return res.json({ available: false });
+  const files = fs.readdirSync(decDir).filter(f => f.endsWith('.py'));
+  res.json({ available: true, modules: files, dir: decDir });
+});
+
 // ---- expediente de reapertura (casefile) ----
 app.get('/api/casefile', authenticateToken, async (req,res)=>{
   try { const r = await casefile.run(req.query.path); res.json(r); }
