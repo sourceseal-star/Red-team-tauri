@@ -165,17 +165,20 @@ app.post('/api/nmap/stop', authenticateToken, (req, res) => {
 app.get('/api/geo', authenticateToken, async (req, res) => {
   const ip = (req.query.ip || '').trim();
   if (!ip) return res.status(400).json({ error: 'ip requerido' });
-  res.json(await geo.lookup(ip));
+  try { res.json(await geo.lookup(ip)); }
+  catch(e) { res.status(500).json({ error: 'geo lookup falló: ' + e.message }); }
 });
 app.get('/api/intel', authenticateToken, async (req, res) => {
   const ip = (req.query.ip || '').trim();
   if (!ip) return res.status(400).json({ error: 'ip requerido' });
-  res.json(await intel.assess(ip));
+  try { res.json(await intel.assess(ip)); }
+  catch(e) { res.status(500).json({ error: 'intel assess falló: ' + e.message }); }
 });
 app.get('/api/iot', authenticateToken, async (req, res) => {
   const t = (req.query.target || '').trim();
   if (!t) return res.status(400).json({ error: 'target requerido' });
-  res.json(await iot.scan(t));
+  try { res.json(await iot.scan(t)); }
+  catch(e) { res.status(500).json({ error: 'iot scan falló: ' + e.message }); }
 });
 
 // ---- Expansión de CIDR/rango de red a lista de IPs ----
@@ -1193,6 +1196,70 @@ app.post('/api/terminal', authenticateToken, heavyLimiter, (req, res) => {
   }
 });
 
+
+
+// ─── /api/network/cameras — Escaneo de cámaras IP (X-Api-Key o Bearer) ──────
+function authenticateFlexible(req, res, next) {
+  const bearerHeader = req.headers['authorization'];
+  const bearerToken = bearerHeader && bearerHeader.startsWith('Bearer ') ? bearerHeader.slice(7) : null;
+  const xApiKey = req.headers['x-api-key'];
+  const queryToken = req.query.token;
+  const provided = bearerToken || xApiKey || queryToken;
+  if (!provided || provided !== API_KEY) return res.status(401).json({ error: 'Acceso no autorizado' });
+  next();
+}
+
+app.get('/api/network/cameras', authenticateFlexible, heavyLimiter, async (req, res) => {
+  const target = (req.query.target || '').trim();
+  const timeout = parseInt(req.query.timeout) || 2;
+  if (!target) return res.status(400).json({ error: 'target requerido (IP, rango o CIDR)' });
+  try {
+    // Expandir si es rango o CIDR, o usar IP única
+    let ips = [];
+    if (target.includes('/')) {
+      ips = expandCIDR(target).slice(0, 64);
+    } else if (target.includes('-')) {
+      // rango: 192.168.1.1-40
+      const m = target.match(/^(\d+\.\d+\.\d+\.)(\d+)-(\d+)$/);
+      if (m) { for (let i = parseInt(m[2]); i <= parseInt(m[3]) && ips.length < 64; i++) ips.push(m[1] + i); }
+      else ips = [target];
+    } else {
+      ips = [target];
+    }
+    const results = await iot.scanMany(ips, 8, { fast: true, ports: [80, 443, 554, 8080, 8443, 8554, 37777, 8899, 34567, 9000] });
+    const cameras = results.filter(r => r.ports_open && r.ports_open.length > 0 && (r.type === 'camera' || r.vendor || r.ports_open.some(p => ['554', '37777', '8899', '34567'].some(cp => p.includes(cp)))));
+    res.json({
+      target, total_scanned: ips.length, cameras_found: cameras.length,
+      cameras, all_results: results.filter(r => r.ports_open && r.ports_open.length > 0)
+    });
+  } catch(e) { res.status(500).json({ error: 'camera scan falló: ' + e.message }); }
+});
+
+app.get('/api/network/radio', authenticateFlexible, heavyLimiter, async (req, res) => {
+  const target = (req.query.target || '').trim();
+  const timeout = parseInt(req.query.timeout) || 2;
+  if (!target) return res.status(400).json({ error: 'target requerido (IP, rango o CIDR)' });
+  try {
+    let ips = [];
+    if (target.includes('/')) {
+      ips = expandCIDR(target).slice(0, 64);
+    } else if (target.includes('-')) {
+      const m = target.match(/^(\d+\.\d+\.\d+\.)(\d+)-(\d+)$/);
+      if (m) { for (let i = parseInt(m[2]); i <= parseInt(m[3]) && ips.length < 64; i++) ips.push(m[1] + i); }
+      else ips = [target];
+    } else {
+      ips = [target];
+    }
+    // Puertos de radio/streaming: Icecast, Shoutcast, RTSP-audio, RTMP
+    const RADIO_PORTS = [8000, 8001, 8080, 8888, 1755, 554, 1935, 7070];
+    const results = await iot.scanMany(ips, 8, { fast: true, ports: RADIO_PORTS });
+    const streams = results.filter(r => r.ports_open && r.ports_open.some(p => RADIO_PORTS.some(rp => p.includes(String(rp)))));
+    res.json({
+      target, total_scanned: ips.length, streams_found: streams.length,
+      streams, all_results: results.filter(r => r.ports_open && r.ports_open.length > 0)
+    });
+  } catch(e) { res.status(500).json({ error: 'radio scan falló: ' + e.message }); }
+});
 
 server.listen(PORT, HOST, () => {
   console.log('\\n  SealCtl v2.1 (hardened) en http://' + HOST + ':' + PORT);
