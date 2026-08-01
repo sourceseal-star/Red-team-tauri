@@ -4,6 +4,7 @@ import { ServiceCard } from '../components/ServiceCard'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Progress } from '../components/ui/progress'
 import { useResourceStore } from '../stores/resourceStore'
+import { NetworkScanner } from '../components/NetworkScanner'
 
 export default function Dashboard() {
   const { services, fetchStatus } = useServiceStore()
@@ -57,6 +58,12 @@ export default function Dashboard() {
         {services.map(service => (
           <ServiceCard key={service.name} service={service} />
         ))}
+      </div>
+
+      {/* ── Escaneo de red CCTV ────────────────────────────────────────── */}
+      <div>
+        <h3 className="text-sm font-semibold mb-2">Escaneo de red - Camaras IP / CCTV</h3>
+        <NetworkScanner />
       </div>
     </div>
   )

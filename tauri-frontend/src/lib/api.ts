@@ -3,10 +3,47 @@
  * Todas las funciones hacen fetch() reales; no hay mocks.
  */
 
+// API key management — se guarda en SecureStore (mobile) o localStorage (web)
+let _apiKey: string | null = null
+
+export function getApiKey(): string | null {
+  if (_apiKey) return _apiKey
+  if (typeof window !== 'undefined' && window.localStorage) {
+    _apiKey = localStorage.getItem('sealctl_api_key')
+  }
+  return _apiKey
+}
+
+export function setApiKey(key: string) {
+  _apiKey = key
+  if (typeof window !== 'undefined' && window.localStorage) {
+    localStorage.setItem('sealctl_api_key', key)
+  }
+}
+
+export function clearApiKey() {
+  _apiKey = null
+  if (typeof window !== 'undefined' && window.localStorage) {
+    localStorage.removeItem('sealctl_api_key')
+  }
+}
+
+// Construye la URL completa para recursos que no pueden usar headers (img, video)
+export function authUrl(path: string): string {
+  const key = getApiKey()
+  const sep = path.includes('?') ? '&' : '?'
+  return BASE + path + (key ? `${sep}token=${encodeURIComponent(key)}` : '')
+}
+
+function authHeaders(): Record<string, string> {
+  const key = getApiKey()
+  return key ? { 'Authorization': `Bearer ${key}` } : {}
+}
+
 const BASE = "/api"
 
 async function get<T>(path: string): Promise<T> {
-  const r = await fetch(BASE + path)
+  const r = await fetch(BASE + path, { headers: { ...authHeaders() } })
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
   return r.json()
 }
@@ -14,7 +51,7 @@ async function get<T>(path: string): Promise<T> {
 async function post<T>(path: string, body?: unknown): Promise<T> {
   const r = await fetch(BASE + path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
@@ -22,7 +59,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function del<T>(path: string): Promise<T> {
-  const r = await fetch(BASE + path, { method: "DELETE" })
+  const r = await fetch(BASE + path, { method: "DELETE", headers: { ...authHeaders() } })
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
   return r.json()
 }
@@ -228,6 +265,31 @@ export interface VideoUrlsResponse {
   note: string
 }
 
+
+export interface NetworkScanResult {
+  network: string
+  total_ips: number
+  total_scanned: number
+  cameras_found: number
+  devices_with_open_ports: number
+  cameras: CameraScanResult[]
+  all_devices: any[]
+  full_results: any[]
+}
+
+export interface LocalScanResult {
+  detected_ip: string
+  detected_mask: string
+  detected_cidr: string
+  total_ips: number
+  total_scanned: number
+  cameras_found: number
+  devices_with_open_ports: number
+  cameras: CameraScanResult[]
+  all_devices: any[]
+  full_results: any[]
+}
+
 // ── Servicios ─────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -315,4 +377,8 @@ export const api = {
     `/iot/snapshot?ip=${encodeURIComponent(ip)}&port=${port}&path=${encodeURIComponent(path)}${user ? `&user=${encodeURIComponent(user)}` : ''}${pass ? `&pass=${encodeURIComponent(pass)}` : ''}`,
   ipStreamUrl:      (ip: string, port: number, path: string, user?: string, pass?: string) =>
     `/iot/stream?ip=${encodeURIComponent(ip)}&port=${port}&path=${encodeURIComponent(path)}${user ? `&user=${encodeURIComponent(user)}` : ''}${pass ? `&pass=${encodeURIComponent(pass)}` : ''}`,
+
+  // Escaneo de red por CIDR o rango
+  scanNetwork:     (cidr: string) => post<NetworkScanResult>('/iot/scan-network', { cidr }),
+  scanLocal:       () => post<LocalScanResult>('/iot/scan-local', {}),
 }

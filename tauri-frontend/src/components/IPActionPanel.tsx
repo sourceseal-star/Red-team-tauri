@@ -98,7 +98,7 @@ export function IPActionPanel({ ip, defaultAction = 'geolocate', compact = false
     if (!src.snapshot_url) return
     setSnapshotLoading(true)
     setActiveVideo(null) // detener stream
-    const url = api.ipSnapshot(ip, src.port, src.path, camUser || undefined, camPass || undefined)
+    const url = authUrl(src.snapshot_url)
     setSnapshotUrl(url)
     setTimeout(() => setSnapshotLoading(false), 1500)
   }
@@ -374,7 +374,7 @@ export function IPActionPanel({ ip, defaultAction = 'geolocate', compact = false
                         </div>
                       </div>
                       <div className="relative rounded border border-border overflow-hidden bg-black">
-                        <img src={activeVideo.stream_url} alt="Live MJPEG stream"
+                        <img src={authUrl(activeVideo.stream_url)} alt="Live MJPEG stream"
                           className="w-full max-h-64 object-contain"
                           onError={(e) => {
                             const el = e.target as HTMLImageElement

@@ -177,6 +177,38 @@ app.get('/api/iot', authenticateToken, async (req, res) => {
   if (!t) return res.status(400).json({ error: 'target requerido' });
   res.json(await iot.scan(t));
 });
+
+// ---- Expansión de CIDR/rango de red a lista de IPs ----
+function expandCIDR(cidr) {
+  const cidrMatch = cidr.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)\/(\d+)$/);
+  if (!cidrMatch) {
+    // IP simple o rango con guion
+    const rangeMatch = cidr.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)-(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (rangeMatch) {
+      const start = parseInt(rangeMatch[1]) * 16777216 + parseInt(rangeMatch[2]) * 65536 + parseInt(rangeMatch[3]) * 256 + parseInt(rangeMatch[4]);
+      const end = parseInt(rangeMatch[5]) * 16777216 + parseInt(rangeMatch[6]) * 65536 + parseInt(rangeMatch[7]) * 256 + parseInt(rangeMatch[8]);
+      const ips = [];
+      for (let i = start; i <= end && ips.length < 254; i++) {
+        ips.push([Math.floor(i/16777216)%256, Math.floor(i/65536)%256, Math.floor(i/256)%256, i%256].join('.'));
+      }
+      return ips;
+    }
+    // IP simple
+    return [cidr.trim()];
+  }
+  const base = parseInt(cidrMatch[1]) * 16777216 + parseInt(cidrMatch[2]) * 65536 + parseInt(cidrMatch[3]) * 256 + parseInt(cidrMatch[4]);
+  const prefix = parseInt(cidrMatch[5]);
+  if (prefix < 16 || prefix > 30) return [cidr.trim()]; // /16 o más amplio es demasiado
+  const mask = prefix === 0 ? 0 : (0xFFFFFFFF << (32 - prefix)) >>> 0;
+  const network = (base & mask) >>> 0;
+  const broadcast = (network | (~mask >>> 0)) >>> 0;
+  const ips = [];
+  for (let i = network + 1; i < broadcast && ips.length < 254; i++) {
+    ips.push([Math.floor(i/16777216)%256, Math.floor(i/65536)%256, Math.floor(i/256)%256, i%256].join('.'));
+  }
+  return ips;
+}
+
 app.post('/api/iot/scan', authenticateToken, async (req, res) => {
   let ips = req.body.ips || [];
   if (typeof ips === 'string') ips = ips.split(/[\s,]+/);
@@ -753,7 +785,7 @@ app.get('/api/iot/stream', authenticateToken, (req,res)=>{
   upstream.end();
 });
 
-// Detección de URLs de video disponibles para una IP
+// Detección de URLs de video disponibles para una IP — prueba MULTIPLES PUERTOS
 app.get('/api/iot/video-urls', authenticateToken, async (req,res)=>{
   const ip = (req.query.ip || '').trim();
   if (!ip) return res.status(400).json({ error: 'ip requerido' });
@@ -763,80 +795,168 @@ app.get('/api/iot/video-urls', authenticateToken, async (req,res)=>{
   const pass = req.query.pass || '';
   const authHdr = (user && pass) ? { 'Authorization': 'Basic ' + Buffer.from(user + ':' + pass).toString('base64') } : {};
 
+  // Puertos web a probar para cada path de video
+  const WEB_PORTS = [80, 81, 8080, 8000, 8888, 8443, 85, 8081, 8001, 8088, 9000];
+
+  // Paths de video por vendor — sin puerto fijo, se prueba en todos los WEB_PORTS
   const VIDEO_PATHS = [
-    { path: '/mjpg/video.mjpg', port: 80, type: 'mjpeg', vendor: 'Axis' },
-    { path: '/video/mjpg.cgi', port: 80, type: 'mjpeg', vendor: 'Foscam' },
-    { path: '/cgi-bin/viewer/video.jpg', port: 80, type: 'snapshot', vendor: 'Axis' },
-    { path: '/snapshot.cgi', port: 80, type: 'snapshot', vendor: 'Generic' },
-    { path: '/cgi-bin/snapshot.cgi', port: 80, type: 'snapshot', vendor: 'Dahua' },
-    { path: '/ISAPI/Streaming/channels/101/picture', port: 80, type: 'snapshot', vendor: 'Hikvision' },
-    { path: '/ISAPI/Streaming/channels/101/httppreview', port: 80, type: 'mjpeg', vendor: 'Hikvision' },
-    { path: '/live/cam.html', port: 80, type: 'html', vendor: 'Generic' },
-    { path: '/mjpg/1/video.mjpg', port: 80, type: 'mjpeg', vendor: 'Axis' },
-    { path: '/stream/video.mjpeg', port: 80, type: 'mjpeg', vendor: 'Generic' },
-    { path: '/cgi-bin/viewer/video.mjpg', port: 80, type: 'mjpeg', vendor: 'Generic' },
-    { path: '/videostream.cgi', port: 80, type: 'mjpeg', vendor: 'Foscam' },
-    { path: '/image/jpeg.cgi', port: 80, type: 'snapshot', vendor: 'Edimax' },
-    { path: '/goform/video', port: 80, type: 'mjpeg', vendor: 'Wansview' },
-    { path: '/video.cgi', port: 80, type: 'mjpeg', vendor: 'Generic' },
-    { path: '/video.mjpg', port: 80, type: 'mjpeg', vendor: 'Generic' },
+    { path: '/mjpg/video.mjpg', type: 'mjpeg', vendor: 'Axis' },
+    { path: '/video/mjpg.cgi', type: 'mjpeg', vendor: 'Foscam' },
+    { path: '/cgi-bin/viewer/video.jpg', type: 'snapshot', vendor: 'Axis' },
+    { path: '/snapshot.cgi', type: 'snapshot', vendor: 'Generic' },
+    { path: '/cgi-bin/snapshot.cgi', type: 'snapshot', vendor: 'Dahua' },
+    { path: '/snapshot.jpg', type: 'snapshot', vendor: 'Generic' },
+    { path: '/image/jpeg.cgi', type: 'snapshot', vendor: 'Edimax' },
+    { path: '/ISAPI/Streaming/channels/101/picture', type: 'snapshot', vendor: 'Hikvision' },
+    { path: '/ISAPI/Streaming/channels/102/picture', type: 'snapshot', vendor: 'Hikvision' },
+    { path: '/ISAPI/Streaming/channels/1/picture', type: 'snapshot', vendor: 'Hikvision' },
+    { path: '/ISAPI/Streaming/channels/101/httppreview', type: 'mjpeg', vendor: 'Hikvision' },
+    { path: '/ISAPI/Streaming/channels/1/httppreview', type: 'mjpeg', vendor: 'Hikvision' },
+    { path: '/live/cam.html', type: 'html', vendor: 'Generic' },
+    { path: '/mjpg/1/video.mjpg', type: 'mjpeg', vendor: 'Axis' },
+    { path: '/stream/video.mjpeg', type: 'mjpeg', vendor: 'Generic' },
+    { path: '/cgi-bin/viewer/video.mjpg', type: 'mjpeg', vendor: 'Generic' },
+    { path: '/videostream.cgi', type: 'mjpeg', vendor: 'Foscam' },
+    { path: '/videostream.jpg', type: 'snapshot', vendor: 'Foscam' },
+    { path: '/goform/video', type: 'mjpeg', vendor: 'Wansview' },
+    { path: '/video.cgi', type: 'mjpeg', vendor: 'Generic' },
+    { path: '/video.mjpg', type: 'mjpeg', vendor: 'Generic' },
+    { path: '/cgi-bin/view/image', type: 'snapshot', vendor: 'Generic' },
+    { path: '/cgi-bin/viewer/view.jpg', type: 'snapshot', vendor: 'Vivotek' },
+    { path: '/cgi-bin/camcam/cam.cgi', type: 'snapshot', vendor: 'Bosch' },
+    { path: '/onvif/device_service', type: 'onvif', vendor: 'ONVIF' },
+    { path: '/doc/page/login.asp', type: 'html', vendor: 'Hikvision web' },
+    { path: '/doc/page/preview.asp', type: 'html', vendor: 'Hikvision preview' },
+    // Dahua
+    { path: '/cgi-bin/snapshot.cgi?channel=1', type: 'snapshot', vendor: 'Dahua' },
+    { path: '/cgi-bin/snapshot.cgi?channel=1&subtype=0', type: 'snapshot', vendor: 'Dahua' },
+    // Amcrest
+    { path: '/cgi-bin/snapshot.cgi?1', type: 'snapshot', vendor: 'Amcrest' },
+    // Xiongmai
+    { path: '/snap.jpg', type: 'snapshot', vendor: 'Xiongmai' },
+    { path: '/tmpfs/snap.jpg', type: 'snapshot', vendor: 'Xiongmai' },
+    { path: '/webcapture.jpg', type: 'snapshot', vendor: 'Xiongmai' },
+    // Generic MJPEG streams
+    { path: '/stream?topic=/cam01/image', type: 'mjpeg', vendor: 'ROS/Generic' },
+    { path: '/?action=stream', type: 'mjpeg', vendor: 'OctoPrint/Generic' },
+    { path: '/video/feed', type: 'mjpeg', vendor: 'Generic' },
+    { path: '/mjpeg', type: 'mjpeg', vendor: 'Generic' },
+    { path: '/cam.mjpg', type: 'mjpeg', vendor: 'Generic' },
+    { path: '/stream.mjpg', type: 'mjpeg', vendor: 'Generic' },
   ];
 
   const results = [];
-  await Promise.all(VIDEO_PATHS.map(async vp => {
-    return new Promise(resolve => {
-      const proto = (vp.port === 443) ? https : http;
-      const reqOpts = { host: ip, port: vp.port, path: vp.path, method: 'GET', timeout: 3000, headers: { ...authHdr, 'User-Agent': 'sealctl-probe/1.0' }, rejectUnauthorized: false };
-      const r = proto.request(reqOpts, resp => {
-        const ct = resp.headers['content-type'] || '';
-        resp.destroy();
-        if (resp.statusCode === 200 && (ct.includes('image') || ct.includes('multipart') || ct.includes('video') || ct.includes('text/html'))) {
-          results.push({ ...vp, status: resp.statusCode, content_type: ct, available: true,
-            stream_url: `/api/iot/stream?ip=${encodeURIComponent(ip)}&port=${vp.port}&path=${encodeURIComponent(vp.path)}${user ? '&user=' + encodeURIComponent(user) : ''}${pass ? '&pass=' + encodeURIComponent(pass) : ''}`,
-            snapshot_url: vp.type === 'snapshot' || vp.type === 'mjpeg'
-              ? `/api/iot/snapshot?ip=${encodeURIComponent(ip)}&port=${vp.port}&path=${encodeURIComponent(vp.path)}${user ? '&user=' + encodeURIComponent(user) : ''}${pass ? '&pass=' + encodeURIComponent(pass) : ''}`
-              : null
-          });
-        }
-        resolve();
-      });
-      r.on('error', () => resolve());
-      r.on('timeout', () => { r.destroy(); resolve(); });
-      r.end();
-    });
-  }));
+  const probes = [];
 
-  // Also check RTSP on port 554
-  try {
-    const net = require('net');
-    const rtspResult = await new Promise(resolve => {
-      const sock = net.createConnection({ host: ip, port: 554 }, () => {
-        sock.write('OPTIONS rtsp://' + ip + ':554/ RTSP/1.0\r\nCSeq: 1\r\n\r\n');
-        let buf = '';
-        sock.on('data', d => {
-          buf += d.toString();
-          if (/RTSP\/1\.0 \d+/.test(buf)) {
-            sock.destroy();
-            resolve({ available: true, url: 'rtsp://' + ip + ':554/' });
-          }
-        });
-        sock.setTimeout(2000, () => {
-          sock.destroy();
-          resolve(buf.includes('RTSP') ? { available: true, url: 'rtsp://' + ip + ':554/' } : null);
-        });
-      });
-      sock.on('error', () => resolve(null));
-      sock.setTimeout(2500, () => { try { sock.destroy(); } catch(e){} resolve(null); });
-    });
-    if (rtspResult && rtspResult.available) {
-      results.push({ path: '/', port: 554, type: 'rtsp', vendor: 'RTSP', available: true,
-        rtsp_url: rtspResult.url, stream_url: null, snapshot_url: null,
-        note: 'RTSP requiere VLC o player externo. URL: ' + rtspResult.url });
+  // Generar todas las combinaciones path × puerto
+  for (const vp of VIDEO_PATHS) {
+    for (const port of WEB_PORTS) {
+      probes.push({ ...vp, port });
     }
-  } catch(e) {}
+  }
 
-  res.json({ ip, video_sources: results.filter(r => r.available), total: results.filter(r => r.available).length,
-    note: results.filter(r => r.available).length > 0 ? 'fuentes de video disponibles' : 'no se detectaron fuentes de video HTTP' });
+  // Limitar concurrencia para no saturar
+  const CONC = 10;
+  let idx = 0;
+  const worker = async () => {
+    while (idx < probes.length) {
+      const vp = probes[idx++];
+      await new Promise(resolve => {
+        const proto = (vp.port === 443 || vp.port === 8443) ? https : http;
+        const reqOpts = {
+          host: ip, port: vp.port, path: vp.path, method: 'GET',
+          timeout: 2500,
+          headers: { ...authHdr, 'User-Agent': 'sealctl-probe/1.0' },
+          rejectUnauthorized: false
+        };
+        const r = proto.request(reqOpts, resp => {
+          const ct = resp.headers['content-type'] || '';
+          const sc = resp.statusCode;
+          resp.destroy();
+          if (sc === 200 || sc === 401) {
+            const isVideo = ct.includes('image') || ct.includes('multipart') || ct.includes('video') || ct.includes('octet-stream');
+            const isHtml = ct.includes('text/html');
+            const isAuth = sc === 401;
+            if (isVideo || isHtml || isAuth) {
+              const streamUrl = isVideo
+                ? `/api/iot/stream?ip=${encodeURIComponent(ip)}&port=${vp.port}&path=${encodeURIComponent(vp.path)}${user ? '&user=' + encodeURIComponent(user) : ''}${pass ? '&pass=' + encodeURIComponent(pass) : ''}`
+                : null;
+              const snapshotUrl = (isVideo && (vp.type === 'snapshot' || vp.type === 'mjpeg'))
+                ? `/api/iot/snapshot?ip=${encodeURIComponent(ip)}&port=${vp.port}&path=${encodeURIComponent(vp.path)}${user ? '&user=' + encodeURIComponent(user) : ''}${pass ? '&pass=' + encodeURIComponent(pass) : ''}`
+                : null;
+              results.push({
+                ...vp, status: sc, content_type: ct, available: true,
+                needs_auth: isAuth,
+                stream_url: streamUrl,
+                snapshot_url: snapshotUrl
+              });
+            }
+          }
+          resolve();
+        });
+        r.on('error', () => resolve());
+        r.on('timeout', () => { r.destroy(); resolve(); });
+        r.end();
+      });
+    }
+  };
+  await Promise.all(Array.from({ length: CONC }, () => worker()));
+
+  // Also check RTSP on multiple ports
+  const RTSP_PORTS = [554, 8554, 10554, 15554];
+  for (const rtspPort of RTSP_PORTS) {
+    try {
+      const net = require('net');
+      const rtspResult = await new Promise(resolve => {
+        const sock = net.createConnection({ host: ip, port: rtspPort }, () => {
+          sock.write('OPTIONS rtsp://' + ip + ':' + rtspPort + '/ RTSP/1.0\r\nCSeq: 1\r\n\r\n');
+          let buf = '';
+          sock.on('data', d => {
+            buf += d.toString();
+            if (/RTSP\/1\.0 \d+/.test(buf)) {
+              sock.destroy();
+              resolve({ available: true, url: 'rtsp://' + ip + ':' + rtspPort + '/' });
+            }
+          });
+          sock.setTimeout(2000, () => {
+            sock.destroy();
+            resolve(buf.includes('RTSP') ? { available: true, url: 'rtsp://' + ip + ':' + rtspPort + '/' } : null);
+          });
+        });
+        sock.on('error', () => resolve(null));
+        sock.setTimeout(2500, () => { try { sock.destroy(); } catch(e){} resolve(null); });
+      });
+      if (rtspResult && rtspResult.available) {
+        results.push({ path: '/', port: rtspPort, type: 'rtsp', vendor: 'RTSP', available: true,
+          rtsp_url: rtspResult.url, stream_url: null, snapshot_url: null,
+          note: 'RTSP requiere VLC o player externo. URL: ' + rtspResult.url });
+        break; // un RTSP es suficiente
+      }
+    } catch(e) {}
+  }
+
+  // Deduplicar por port+path
+  const seen = new Set();
+  const deduped = results.filter(r => {
+    const key = r.port + ':' + r.path;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // Ordenar: snapshot > mjpeg > html > rtsp
+  const order = { snapshot: 0, mjpeg: 1, onvif: 2, html: 3, rtsp: 4 };
+  deduped.sort((a, b) => (order[a.type] || 5) - (order[b.type] || 5));
+
+  res.json({
+    ip, video_sources: deduped, total: deduped.length,
+    ports_probed: WEB_PORTS.length,
+    paths_probed: VIDEO_PATHS.length,
+    total_probes: probes.length,
+    note: deduped.length > 0
+      ? deduped.length + ' fuente(s) de video disponible(s)'
+      : 'no se detectaron fuentes de video HTTP (probaron ' + probes.length + ' combinaciones en ' + WEB_PORTS.length + ' puertos)'
+  });
 });
 
 // ---- expediente de reapertura (casefile) ----
@@ -852,6 +972,81 @@ app.get('/api/casefile/sanitize', authenticateToken, (req,res)=>{
   const clean = casefile.sanitizeUrl(raw);
   res.json({ raw, sanitized: clean, changed: clean !== raw.trim() });
 });
+
+
+// Escaneo de red completo — acepta CIDR (192.168.1.0/24) o rango (192.168.1.1-192.168.1.254)
+app.post('/api/iot/scan-network', authenticateToken, heavyLimiter, async (req, res) => {
+  const cidr = (req.body.cidr || req.body.network || req.body.range || '').trim();
+  if (!cidr) return res.status(400).json({ error: 'cidr requerido (ej: 192.168.1.0/24 o 192.168.1.1-192.168.1.254)' });
+  const ips = expandCIDR(cidr);
+  if (ips.length === 0) return res.status(400).json({ error: 'rango invalido' });
+  if (ips.length > 254) return res.status(400).json({ error: 'maximo 254 IPs por escaneo' });
+  try {
+    const results = await iot.scanMany(ips, 15, { fast: true });
+    // Filtrar solo los que tienen al menos un puerto abierto
+    const active = results.filter(r => r.ports_open && r.ports_open.length > 0);
+    const cameras = active.filter(r => r.type === 'camera' || r.type === 'radio/voip' || r.vendor);
+    const allOpen = active;
+    res.json({
+      network: cidr,
+      total_ips: ips.length,
+      total_scanned: results.length,
+      cameras_found: cameras.length,
+      devices_with_open_ports: allOpen.length,
+      cameras: cameras,
+      all_devices: allOpen,
+      full_results: results
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Auto-detectar red local del servidor y escanear
+app.post('/api/iot/scan-local', authenticateToken, heavyLimiter, async (req, res) => {
+  const os = require('os');
+  const ifaces = os.networkInterfaces();
+  let localIP = null, localMask = null;
+  for (const name in ifaces) {
+    for (const iface of ifaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        localIP = iface.address;
+        localMask = iface.netmask || '255.255.255.0';
+        break;
+      }
+    }
+    if (localIP) break;
+  }
+  if (!localIP) return res.status(500).json({ error: 'no se pudo detectar IP local' });
+  // Construir CIDR desde IP + mascara
+  const parts = localIP.split('.').map(Number);
+  // Asumir /24 si la mascara es 255.255.255.0
+  let prefix = 24;
+  if (localMask === '255.255.0.0') prefix = 16;
+  else if (localMask === '255.255.255.128') prefix = 25;
+  else if (localMask === '255.255.255.0') prefix = 24;
+  else if (localMask === '255.255.254.0') prefix = 23;
+  const cidr = parts[0] + '.' + parts[1] + '.' + parts[2] + '.0/' + prefix;
+  const ips = expandCIDR(cidr);
+  if (ips.length === 0) return res.status(500).json({ error: 'no se pudo expandir CIDR: ' + cidr });
+  try {
+    const results = await iot.scanMany(ips, 15, { fast: true });
+    const active = results.filter(r => r.ports_open && r.ports_open.length > 0);
+    const cameras = active.filter(r => r.type === 'camera' || r.type === 'radio/voip' || r.vendor);
+    const allOpen = active;
+    res.json({
+      detected_ip: localIP,
+      detected_mask: localMask,
+      detected_cidr: cidr,
+      total_ips: ips.length,
+      total_scanned: results.length,
+      cameras_found: cameras.length,
+      devices_with_open_ports: allOpen.length,
+      cameras: cameras,
+      all_devices: allOpen,
+      full_results: results
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 
 server.listen(PORT, HOST, () => {
   console.log('\\n  SealCtl v2.1 (hardened) en http://' + HOST + ':' + PORT);
