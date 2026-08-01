@@ -77,6 +77,12 @@
     .intc-ev .pill-radio { background:#e07ad030; color:#e07ad0; }
     .intc-ev .pill-unk { background:#1d2733; color:#7d8a99; }
     .intc-ev .ev-detail { color:#7d8a99; margin-top:2px; }
+.disc-ring{width:11px;height:11px;border-radius:50%;border:2px solid currentColor;display:inline-block;margin-right:2px;opacity:.5}
+#disc-b.run .disc-ring{opacity:1;box-shadow:0 0 0 0 currentColor;animation:dring 1.3s infinite}
+@keyframes dring{0%{box-shadow:0 0 0 0 rgba(86,212,221,.5)}70%{box-shadow:0 0 0 7px rgba(86,212,221,0)}100%{box-shadow:0 0 0 0 rgba(86,212,221,0)}}
+.disc-chip{font-family:var(--mono);font-size:11px;border:1px solid var(--line2);background:var(--panel2);padding:7px 10px;opacity:0;transform:translateY(8px);transition:.4s}
+.disc-chip.in{opacity:1;transform:none}
+.disc-chip b{color:var(--cyan)} .disc-chip .v{color:var(--amber);font-size:9.5px;text-transform:uppercase;letter-spacing:1px;margin-left:6px}
 
     .origin-panel { display:none; background:#0a0e14; border:1px solid #1d2733; border-radius:6px; padding:10px; margin-top:4px; font-size:0.78rem; }
     .origin-panel.active { display:block; }
@@ -227,6 +233,15 @@
         <pre id="la-out" class="mono" style="display:none;margin-top:10px;background:#0a0e14;padding:10px;border-radius:6px;max-height:250px;overflow:auto;font-size:0.75rem;border:1px solid #1d2733;"></pre>
       </div>
     </div>
+    <div class="card wide"><div class="hd"><span class="ix">disc</span><h3>escucha pasiva · WS-Discovery</h3><span class="st" id="disc-st">inactivo</span></div><div class="bd">
+        <p style="font-size:12px;color:var(--dim);line-height:1.6;margin-bottom:12px">no toca ningún dispositivo: escucha cómo tus cámaras/NVR ONVIF se anuncian por multicast en <b>tu</b> LAN. sin root. desde Replit no verá tu casa (no estás en tu broadcast domain); desde Termux en tu wifi, sí.</p>
+        <div class="row" style="margin-bottom:14px">
+          <button class="btn" id="disc-b"><span class="disc-ring"></span><span class="lbl-btn">escuchar mi LAN</span></button>
+          <button class="btn sm" id="disc-stop">detener</button>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--faint)">probe → 239.255.255.250:3702</span>
+        </div>
+        <div id="disc-list" style="display:flex;flex-wrap:wrap;gap:8px;min-height:34px"><div class="empty" style="width:100%">sin anuncios todavía. pulsa escuchar.</div></div>
+      </div></div>
   </div>
 
 <div class="modal" id="modal"><div class="modal-content"><button class="modal-close" id="modal-close">&times;</button><pre id="modal-body"></pre></div></div>
@@ -860,6 +875,24 @@ $('la-b').addEventListener('click', async ()=>{
   $('la-b').disabled = false;
 });
 
+// ---- WS-Discovery pasivo en el tab 07 ----
+const discList=$('#disc-list');
+function paintDisc(devs){
+  if(!devs.length){discList.innerHTML='<div class="empty" style="width:100%">sin anuncios en tu LAN.</div>';return;}
+  discList.innerHTML=devs.map(d=>`<div class="disc-chip"><b>${d.addr}</b><span class="v">${/onvif|NetworkVideo/i.test(d.types)?'onvif':'ws-disc'}</span></div>`).join('');
+  setTimeout(()=>discList.querySelectorAll('.disc-chip').forEach((c,i)=>setTimeout(()=>c.classList.add('in'),i*70)),20);
+}
+async function discRefresh(){const r=await fetch('/api/discovery/list').then(x=>x.json());
+  $('#disc-st').textContent=r.running?('escuchando · '+r.devices.length):'inactivo';
+  $('#disc-b').classList.toggle('run',r.running);
+  $('#disc-b').querySelector('.lbl-btn').textContent=r.running?'escuchando…':'escuchar mi LAN';
+  paintDisc(r.devices);}
+$('#disc-b').onclick=async()=>{await fetch('/api/discovery/start',{method:'POST'});discRefresh()};
+$('#disc-stop').onclick=async()=>{await fetch('/api/discovery/stop',{method:'POST'});discRefresh();discList.innerHTML='<div class="empty" style="width:100%">detenido.</div>'};
+// enganche al WS: cuando llegue un 'discovery', refresca la lista
+const _discPatch=()=>{if(!ws)return;const om=ws.onmessage;ws.onmessage=e=>{try{om&&om(e)}catch(_){};try{const m=JSON.parse(e.data);if(m.type==='discovery')discRefresh()}catch(_){}}};
+const _discConn=connect;connect=function(){_discConn();setTimeout(_discPatch,60)};
+discRefresh();
 </script>
 </body>
 </html>

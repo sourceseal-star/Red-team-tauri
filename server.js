@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const geo = require('./lib/geo');
 const intel = require('./lib/intel');
 const iot = require('./lib/iot');
+const discovery = require('./lib/discovery');
 
 // ─── Security: API Key Authentication ────────────────────────────────────────
 const API_KEY = process.env.REDTEAM_API_KEY || crypto.randomBytes(24).toString('hex');
@@ -453,6 +454,15 @@ wss.on('connection', ws => {
 });
 
 // ─── Start ──────────────────────────────────────────────────────────────────
+
+// ---- WS-Discovery pasivo (solo tu LAN) ----
+app.post('/api/discovery/start',(req,res)=>{
+  const r=discovery.start(rec=>emit('discovery',rec));
+  res.json({ok:true, listening:r.ok, already:!!r.already, count:r.count, note:'multicast 239.255.255.250:3702 · solo ve tu broadcast domain'});
+});
+app.post('/api/discovery/stop',(req,res)=>res.json(discovery.stop()));
+app.get('/api/discovery/list',(req,res)=>res.json({running:discovery.isRunning(), devices:discovery.list()}));
+
 server.listen(PORT, HOST, () => {
   console.log('\\n  SealCtl v2.1 (hardened) en http://' + HOST + ':' + PORT);
   console.log('  Recon: geo/intel/iot/nmap/mitm | Defense: playbooks/scenarios | Honeypot');
