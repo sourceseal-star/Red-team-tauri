@@ -8150,5 +8150,29 @@
     ],
     "source": "abuse.ch URLhaus",
     "added": "2026-08-01T07:30:48.551718"
+  },
+  {
+    "id": "urlhaus-0",
+    "type": "url",
+    "value": "http://42.224.123.145:51281/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-08-01T07:45:44.743365"
+  },
+  {
+    "id": "urlhaus-1",
+    "type": "url",
+    "value": "http://160.30.142.2:59486/bin.sh",
+    "confidence": 85,
+    "tags": [
+      "malware",
+      "urlhaus"
+    ],
+    "source": "abuse.ch URLhaus",
+    "added": "2026-08-01T07:45:44.743379"
   }
 ]
