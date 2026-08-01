@@ -69,6 +69,15 @@
     .modal-content pre { background:#0a0e14; padding:12px; border-radius:6px; white-space:pre-wrap; word-break:break-all; max-height:400px; overflow:auto; font-size:0.8rem; }
     .modal-close { float:right; background:none; border:none; color:#7d8a99; font-size:1.5rem; cursor:pointer; }
     .modal-close:hover { color:#cdd6e0; }
+    .intc-ev { border-bottom:1px solid #111823; padding:6px 4px; font-size:0.78rem; }
+    .intc-ev .kind-pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:0.65rem; font-weight:700; text-transform:uppercase; }
+    .intc-ev .pill-crit { background:#ff5d5230; color:#ff5d52; }
+    .intc-ev .pill-low { background:#ffb00030; color:#ffb000; }
+    .intc-ev .pill-cam { background:#56d4dd30; color:#56d4dd; }
+    .intc-ev .pill-radio { background:#e07ad030; color:#e07ad0; }
+    .intc-ev .pill-unk { background:#1d2733; color:#7d8a99; }
+    .intc-ev .ev-detail { color:#7d8a99; margin-top:2px; }
+
     .origin-panel { display:none; background:#0a0e14; border:1px solid #1d2733; border-radius:6px; padding:10px; margin-top:4px; font-size:0.78rem; }
     .origin-panel.active { display:block; }
     .origin-panel .bd-row { display:flex; justify-content:space-between; padding:2px 0; border-bottom:1px solid #111823; }
@@ -97,6 +106,7 @@
     <button data-tab="tab4">04 - MITM</button>
     <button data-tab="tab5">05 - reportes</button>
     <button data-tab="tab6">06 - geo / intel</button>
+    <button data-tab="tab7">07 - interceptacion</button>
   </div>
 
   <div class="panel active" id="tab1">
@@ -190,9 +200,112 @@
   </div>
 </div>
 
+
+  <div class="panel" id="tab7">
+    <div class="grid-2">
+      <div class="card">
+        <h3>tráfico interceptado (mi red)</h3>
+        <p style="font-size:0.78rem;color:#7d8a99;line-height:1.6;margin-bottom:10px;">solo ves lo que TU enrutas por el proxy. inicia mitm en <b>Operaciones</b>, apunta el wifi del dispositivo a este nodo:8080 con el CA instalado. el addon clasifica camara / radio / credencial-en-claro / token-en-query.</p>
+        <div class="flex mb-8">
+          <button class="btn red" id="intc-clear">limpiar feed</button>
+          <span class="badge" id="intc-st">0 eventos</span>
+          <span style="font-size:0.7rem;color:#7d8a99;">las contrasenas NO se guardan por defecto (SEALCTL_LOG_CREDS)</span>
+        </div>
+        <div id="intc-feed" style="max-height:340px;overflow:auto;border:1px solid #1d2733;border-radius:6px;padding:8px;background:#0a0e14;">
+          <div style="color:#7d8a99;font-size:0.8rem;">sin eventos. el jsonl esta vacio hasta que pase trafico.</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>auditar MI camara</h3>
+        <label style="font-size:0.72rem;color:#7d8a99;display:block;margin-bottom:4px;">ip de tu camara</label>
+        <input id="la-ip" placeholder="192.168.1.50" style="margin-bottom:8px;">
+        <label style="font-size:0.72rem;color:#7d8a99;display:block;margin-bottom:4px;">usuario (tuyo)</label>
+        <input id="la-u" placeholder="admin" style="margin-bottom:8px;">
+        <label style="font-size:0.72rem;color:#7d8a99;display:block;margin-bottom:4px;">contrasena (tuya)</label>
+        <input id="la-p" type="password" style="margin-bottom:10px;">
+        <button class="btn amber" id="la-b">auditar login</button>
+        <pre id="la-out" class="mono" style="display:none;margin-top:10px;background:#0a0e14;padding:10px;border-radius:6px;max-height:250px;overflow:auto;font-size:0.75rem;border:1px solid #1d2733;"></pre>
+      </div>
+    </div>
+  </div>
+
 <div class="modal" id="modal"><div class="modal-content"><button class="modal-close" id="modal-close">&times;</button><pre id="modal-body"></pre></div></div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+// ---- feed de interceptacion en vivo ----
+const feed = $('intc-feed'); let intcN = 0;
+function kindPill(k) {
+  const m = {'CRED_CLEARTEXT':'pill-crit','AUTH_OVER_HTTP':'pill-crit','TOKEN_IN_QUERY':'pill-low',
+             'CAMERA':'pill-cam','CAMERA_BANNER':'pill-cam','RADIO':'pill-radio'};
+  return '<span class="kind-pill '+(m[k]||'pill-unk')+'">'+(k||'?')+'</span>';
+}
+function pushInterc(ev) {
+  intcN++; $('intc-st').textContent = intcN + ' eventos';
+  if(feed.querySelector('div[style]')) feed.innerHTML = '';
+  const d = document.createElement('div');
+  d.className = 'intc-ev';
+  d.innerHTML = '<span style="color:#7d8a99;font-size:0.65rem;">'+(ev.dir||'')+'</span> ' +
+    kindPill(ev.kind) + ' <span class="mono" style="font-size:0.75rem;">'+(ev.host||'')+'</span>' +
+    '<span style="color:#7d8a99;"> '+(ev.method||'')+' '+(ev.path||'')+'</span>' +
+    '<div class="ev-detail">'+
+      (ev.vendor?'vendor '+ev.vendor+' · ':'')+
+      (ev.user?'user '+ev.user+' · ':'')+
+      (ev.cleartext?'<span style="color:#ff5d52;">EN CLARO</span> · ':'tls '+(ev.tls?'si':'NO'))+
+      (ev.snippet?'<br><span style="font-size:0.7rem;">'+ev.snippet.replace(/</g,'&lt;').slice(0,150)+'</span>':'')+
+      (ev.note?'<br><span style="color:#7d8a99;">'+ev.note+'</span>':'')+
+    '</div>';
+  feed.prepend(d);
+  while(feed.children.length > 200) feed.removeChild(feed.lastChild);
+}
+$('intc-clear').addEventListener('click', async ()=>{
+  await fetch(authUrl('/api/intercept/clear'), {method:'POST', headers: authHeaders()});
+  feed.innerHTML = '<div style="color:#7d8a99;font-size:0.8rem;">feed limpio.</div>';
+  intcN = 0; $('intc-st').textContent = '0 eventos';
+});
+
+// Parchear el WS handler existente para incluir intercept
+const _origConnectWS = connectWS;
+connectWS = function() {
+  _origConnectWS();
+  // Re-hook onmessage after connect
+  setTimeout(() => {
+    if(ws) {
+      const _origOnMsg = ws.onmessage;
+      ws.onmessage = function(e) {
+        if(_origOnMsg) { try { _origOnMsg(e); } catch(_){} }
+        try {
+          const m = JSON.parse(e.data);
+          if(m.type === 'intercept') pushInterc(m);
+        } catch(_){}
+      };
+    }
+  }, 100);
+};
+
+// ---- login-audit ----
+$('la-b').addEventListener('click', async ()=>{
+  const ip = $('la-ip').value.trim();
+  const u = $('la-u').value;
+  const p = $('la-p').value;
+  if(!ip) return;
+  $('la-b').textContent = 'auditando...';
+  $('la-b').disabled = true;
+  try {
+    const r = await fetch(authUrl('/api/iot/login'), {
+      method:'POST', headers: authHeaders(),
+      body: JSON.stringify({ip, user:u, pass:p})
+    }).then(x=>x.json());
+    $('la-out').style.display = 'block';
+    $('la-out').textContent = JSON.stringify(r, null, 2);
+  } catch(e) {
+    $('la-out').style.display = 'block';
+    $('la-out').textContent = 'Error: '+e.message;
+  }
+  $('la-b').textContent = 'auditar login';
+  $('la-b').disabled = false;
+});
+
+</script>
 <script>
 const $ = id => document.getElementById(id);
 const qs = sel => document.querySelector(sel);
@@ -673,6 +786,80 @@ async function listReports() {
 }
 $('report-refresh').addEventListener('click', listReports);
 listReports();
+
+// ---- feed de interceptacion en vivo ----
+const feed = $('intc-feed'); let intcN = 0;
+function kindPill(k) {
+  const m = {'CRED_CLEARTEXT':'pill-crit','AUTH_OVER_HTTP':'pill-crit','TOKEN_IN_QUERY':'pill-low',
+             'CAMERA':'pill-cam','CAMERA_BANNER':'pill-cam','RADIO':'pill-radio'};
+  return '<span class="kind-pill '+(m[k]||'pill-unk')+'">'+(k||'?')+'</span>';
+}
+function pushInterc(ev) {
+  intcN++; $('intc-st').textContent = intcN + ' eventos';
+  if(feed.querySelector('div[style]')) feed.innerHTML = '';
+  const d = document.createElement('div');
+  d.className = 'intc-ev';
+  d.innerHTML = '<span style="color:#7d8a99;font-size:0.65rem;">'+(ev.dir||'')+'</span> ' +
+    kindPill(ev.kind) + ' <span class="mono" style="font-size:0.75rem;">'+(ev.host||'')+'</span>' +
+    '<span style="color:#7d8a99;"> '+(ev.method||'')+' '+(ev.path||'')+'</span>' +
+    '<div class="ev-detail">'+
+      (ev.vendor?'vendor '+ev.vendor+' · ':'')+
+      (ev.user?'user '+ev.user+' · ':'')+
+      (ev.cleartext?'<span style="color:#ff5d52;">EN CLARO</span> · ':'tls '+(ev.tls?'si':'NO'))+
+      (ev.snippet?'<br><span style="font-size:0.7rem;">'+ev.snippet.replace(/</g,'&lt;').slice(0,150)+'</span>':'')+
+      (ev.note?'<br><span style="color:#7d8a99;">'+ev.note+'</span>':'')+
+    '</div>';
+  feed.prepend(d);
+  while(feed.children.length > 200) feed.removeChild(feed.lastChild);
+}
+$('intc-clear').addEventListener('click', async ()=>{
+  await fetch(authUrl('/api/intercept/clear'), {method:'POST', headers: authHeaders()});
+  feed.innerHTML = '<div style="color:#7d8a99;font-size:0.8rem;">feed limpio.</div>';
+  intcN = 0; $('intc-st').textContent = '0 eventos';
+});
+
+// Parchear el WS handler existente para incluir intercept
+const _origConnectWS = connectWS;
+connectWS = function() {
+  _origConnectWS();
+  // Re-hook onmessage after connect
+  setTimeout(() => {
+    if(ws) {
+      const _origOnMsg = ws.onmessage;
+      ws.onmessage = function(e) {
+        if(_origOnMsg) { try { _origOnMsg(e); } catch(_){} }
+        try {
+          const m = JSON.parse(e.data);
+          if(m.type === 'intercept') pushInterc(m);
+        } catch(_){}
+      };
+    }
+  }, 100);
+};
+
+// ---- login-audit ----
+$('la-b').addEventListener('click', async ()=>{
+  const ip = $('la-ip').value.trim();
+  const u = $('la-u').value;
+  const p = $('la-p').value;
+  if(!ip) return;
+  $('la-b').textContent = 'auditando...';
+  $('la-b').disabled = true;
+  try {
+    const r = await fetch(authUrl('/api/iot/login'), {
+      method:'POST', headers: authHeaders(),
+      body: JSON.stringify({ip, user:u, pass:p})
+    }).then(x=>x.json());
+    $('la-out').style.display = 'block';
+    $('la-out').textContent = JSON.stringify(r, null, 2);
+  } catch(e) {
+    $('la-out').style.display = 'block';
+    $('la-out').textContent = 'Error: '+e.message;
+  }
+  $('la-b').textContent = 'auditar login';
+  $('la-b').disabled = false;
+});
+
 </script>
 </body>
 </html>
