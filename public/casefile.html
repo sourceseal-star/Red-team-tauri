@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#b5402f">
+<title>orden de trabajo · caso 2026-07-27 / reapertura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#15181d; --paper2:#101317; --ink:#e7e0d0; --ink2:#b9b1a0; --faint:#6f6857;
+  --rule:#2b2f36; --rule2:#3a3f47;
+  --stamp:#b5402f; --stamp2:#8f3022; --marker:#d6a23e; --closed:#6f9c72; --open:#c9603f;
+  --serif:'Fraunces',Georgia,serif; --mono:'JetBrains Mono',monospace; --body:'IBM Plex Sans',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+::selection{background:var(--marker);color:#1a1408}
+.grain{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.rules{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;
+  background:repeating-linear-gradient(0deg,transparent 0 31px,rgba(231,224,208,.025) 31px 32px)}
+.watermark{position:fixed;z-index:0;pointer-events:none;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-19deg);
+  font-family:var(--serif);font-weight:900;font-size:clamp(5rem,21vw,17rem);color:var(--ink);opacity:.022;white-space:nowrap;letter-spacing:-.02em}
+.vig{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(120% 100% at 50% 0%,transparent 55%,rgba(0,0,0,.5))}
+.sheet{position:relative;z-index:2;max-width:1180px;margin:0 auto;padding:30px 22px 110px}
+.docket{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:start;border-bottom:2px solid var(--ink);padding-bottom:18px}
+.docket .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--stamp);margin-bottom:10px}
+.docket h1{font-family:var(--serif);font-weight:900;font-size:clamp(2.3rem,7.4vw,4.6rem);line-height:.92;letter-spacing:-.02em;color:var(--ink)}
+.docket h1 .reopen{display:block;font-style:italic;font-weight:400;color:var(--marker);font-size:.5em;letter-spacing:0;margin-top:.18em}
+.docket .ref{font-family:var(--mono);font-size:11.5px;color:var(--ink2);margin-top:14px;max-width:46ch}
+.docket .ref b{color:var(--ink)}
+.seal{flex:0 0 auto;width:128px;height:128px;border:3px double var(--stamp);border-radius:50%;display:grid;place-items:center;text-align:center;
+  transform:rotate(-13deg);color:var(--stamp);position:relative;cursor:pointer;transition:transform .25s,opacity .25s;opacity:.92;user-select:none}
+.seal:hover{transform:rotate(-13deg) scale(1.05)}
+.seal .s1{font-family:var(--serif);font-weight:900;font-size:13px;letter-spacing:.12em;line-height:1.1}
+.seal .s2{font-family:var(--mono);font-size:9px;letter-spacing:.18em;margin-top:4px;color:var(--stamp2)}
+.seal::after{content:'';position:absolute;inset:-3px;border-radius:50%;border:2px solid var(--stamp);opacity:0}
+.seal.stamped{animation:stamp .5s cubic-bezier(.2,1.3,.4,1)}
+.seal.stamped::after{animation:ring .6s ease-out}
+.seal.stamped.closed{border-color:var(--closed);color:var(--closed)}
+.seal.stamped.closed .s2{color:var(--closed)}
+.seal.stamped.partial{border-color:var(--marker);color:var(--marker)}
+.seal.stamped.partial .s2{color:var(--marker)}
+@keyframes stamp{0%{transform:rotate(-13deg) scale(1.5);opacity:0}60%{transform:rotate(-13deg) scale(.94);opacity:1}100%{transform:rotate(-13deg) scale(1)}}
+@keyframes ring{0%{opacity:.6;transform:scale(1)}100%{opacity:0;transform:scale(1.5)}}
+.layout{display:grid;grid-template-columns:268px 1fr;gap:34px;margin-top:30px}
+@media(max-width:860px){.layout{grid-template-columns:1fr}}
+.meta{position:sticky;top:18px;align-self:start;border:1px solid var(--rule);background:var(--paper2);padding:0}
+.meta h2{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);padding:12px 16px;border-bottom:1px solid var(--rule)}
+.meta dl{padding:6px 16px 16px}
+.meta .row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed var(--rule);font-family:var(--mono);font-size:11.5px}
+.meta .row:last-child{border-bottom:none}
+.meta .k{color:var(--faint)}
+.meta .v{color:var(--ink);text-align:right}
+.meta .v.bad{color:var(--open)} .meta .v.warn{color:var(--marker)} .meta .v.ok{color:var(--closed)}
+.meta .sev{display:flex;gap:5px;margin:10px 0 4px}
+.meta .sev i{height:9px;flex:1;display:block;background:var(--rule)}
+.meta .sev i.c{background:var(--stamp)} .meta .sev i.h{background:var(--open)} .meta .sev i.m{background:var(--marker)} .meta .sev i.l{background:var(--faint)} .meta .sev i.n{background:var(--closed)}
+.meta .sevlab{font-family:var(--mono);font-size:9px;color:var(--faint);letter-spacing:.1em;display:flex;justify-content:space-between}
+.meta .wound{margin-top:12px;font-family:var(--mono);font-size:10px;line-height:1.5;color:var(--open);background:rgba(181,64,47,.08);border:1px solid rgba(181,64,47,.3);padding:8px 10px;word-break:break-all}
+.meta .wound b{color:var(--ink2);display:block;margin-bottom:4px;letter-spacing:.1em}
+.meta .counts{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 16px 16px}
+.meta .count{border:1px solid var(--rule);padding:8px 10px;text-align:center}
+.meta .count .n{font-family:var(--serif);font-weight:900;font-size:1.8rem;line-height:1}
+.meta .count .l{font-family:var(--mono);font-size:9px;color:var(--faint);letter-spacing:.1em;text-transform:uppercase;margin-top:4px}
+.meta .count.cerrado .n{color:var(--closed)} .meta .count.sigue .n{color:var(--open)} .meta .count.noapp .n{color:var(--faint)} .meta .count.noreaud .n{color:var(--ink2)}
+.evtable{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px;margin-top:20px}
+.evtable th{text-align:left;color:var(--faint);font-size:9px;letter-spacing:.14em;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--rule2)}
+.evtable td{padding:9px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+.evtable tr{cursor:pointer;transition:background .2s;opacity:0;transform:translateY(8px);transition:opacity .4s,transform .4s,background .2s}
+.evtable tr.in{opacity:1;transform:none}
+.evtable tr:hover td{background:var(--paper2)}
+.evtable .id{color:var(--stamp);font-weight:700;white-space:nowrap}
+.evtable .ti{color:var(--ink);font-family:var(--body);font-size:13px}
+.tag{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border:1px solid}
+.tag.f{color:var(--open);border-color:var(--open)} .tag.c{color:var(--closed);border-color:var(--closed)} .tag.n{color:var(--faint);border-color:var(--rule2)} .tag.x{color:var(--marker);border-color:var(--marker)} .tag.e{color:var(--ink2);border-color:var(--rule2)}
+.evtable .probe{display:none}
+.evtable tr.open .probe{display:table-row}
+.evtable .probe td{background:var(--paper2);color:var(--ink2);font-size:11px;border-bottom:1px solid var(--rule2)}
+.evtable .probe code{color:var(--marker)}
+.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:8px;padding-top:22px;border-top:2px solid var(--ink)}
+.btn{font-family:var(--mono);font-size:12px;letter-spacing:.06em;border:1px solid var(--rule2);background:var(--paper2);color:var(--ink);padding:12px 20px;cursor:pointer;transition:.18s;display:inline-flex;gap:9px;align-items:center}
+.btn:hover{border-color:var(--marker);color:var(--marker);transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn.primary{border-color:var(--stamp);color:var(--ink);background:rgba(181,64,47,.14)}
+.btn.primary:hover{background:rgba(181,64,47,.24);color:var(--ink);border-color:var(--stamp)}
+.btn.run{border-color:var(--marker);color:var(--marker)}
+.btn .sp{width:11px;height:11px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:sp .7s linear infinite;display:none}@keyframes sp{to{transform:rotate(360deg)}}
+.btn.run .sp{display:inline-block}
+.foot{font-family:var(--mono);font-size:10px;color:var(--faint);text-align:center;margin-top:46px;letter-spacing:.12em}
+.loading{font-family:var(--mono);font-size:13px;color:var(--faint);padding:30px;text-align:center}
+</style>
+</head>
+<body>
+<div class="grain"></div><div class="rules"></div><div class="watermark" id="wm">PENDIENTE</div><div class="vig"></div>
+<main class="sheet">
+  <header class="docket">
+    <div>
+      <div class="kicker">expediente de reapertura · fuente única de verdad</div>
+      <h1>Caso 2026&#8209;07&#8209;27<span class="reopen" id="reopen-text">/ cargando delta…</span></h1>
+      <p class="ref" id="ref">cargando expediente…</p>
+    </div>
+    <div class="seal" id="seal" title="sello del caso"><div><div class="s1" id="seal-t">PENDIENTE</div><div class="s2" id="seal-s">—</div></div></div>
+  </header>
+  <div class="layout">
+    <aside class="meta">
+      <h2>metadatos del caso</h2>
+      <dl id="meta-dl">
+        <div class="row"><span class="k">hallazgos</span><span class="v" id="m-total">—</span></div>
+        <div class="row"><span class="k">escenarios</span><span class="v" id="m-scen">—</span></div>
+        <div class="row"><span class="k">elapsed</span><span class="v" id="m-elapsed">—</span></div>
+        <div class="row"><span class="k">objetivo</span><span class="v" id="m-target">—</span></div>
+        <div class="sev"><i class="c"></i><i class="h"></i><i class="m"></i><i class="l"></i><i class="n"></i></div>
+        <div class="sevlab" id="sev-lab"><span>C?</span><span>H?</span><span>M?</span><span>L?</span><span>I?</span></div>
+      </dl>
+      <div style="padding:0 16px 16px">
+        <div class="wound" id="wound"><b>backend registrado (roto)</b>cargando…</div>
+      </div>
+      <div class="counts" id="counts" style="display:none">
+        <div class="count cerrado"><div class="n" id="c-cerrado">0</div><div class="l">cerrados</div></div>
+        <div class="count sigue"><div class="n" id="c-sigue">0</div><div class="l">sigue abierto</div></div>
+        <div class="count noapp"><div class="n" id="c-noapp">0</div><div class="l">no aplica</div></div>
+        <div class="count noreaud"><div class="n" id="c-noreaud">0</div><div class="l">no re-audit.</div></div>
+      </div>
+    </aside>
+    <section style="min-width:0">
+      <div id="loading" class="loading">cargando expediente desde /api/casefile…</div>
+      <table class="evtable" id="evtable" style="display:none">
+        <thead><tr><th>#</th><th>hallazgo</th><th>veredicto base</th><th>veredicto hoy</th><th>delta</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="actions">
+        <button class="btn primary" id="rerun"><span class="sp"></span>re-auditar ahora</button>
+        <button class="btn" id="apk">ver estado del apk</button>
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-left:auto;max-width:42ch;text-align:right;line-height:1.5" id="backend-info"></span>
+      </div>
+    </section>
+  </div>
+  <p class="foot">expediente generado por probes reales contra la propia consola y el backend saneado · ningún dato es de muestra</p>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const AUTH=localStorage.getItem('sealctl_token')||'';
+function aH(){return{'Content-Type':'application/json','Authorization':'Bearer '+AUTH}}
+function aU(u){return u+(u.includes('?')?'&':'?')+'token='+encodeURIComponent(AUTH)}
+
+function tagFor(now){
+  if(now==='PASA')return'<span class="tag c">PASA</span>';
+  if(now==='FALLA')return'<span class="tag f">FALLA</span>';
+  if(now==='NO_APLICA')return'<span class="tag n">N/A</span>';
+  if(now==='NO_REAUDITABLE')return'<span class="tag e">NO-REAUD</span>';
+  if(now==='ERR')return'<span class="tag x">ERR</span>';
+  return'<span class="tag n">'+now+'</span>';
+}
+function deltaTag(d){
+  if(d==='CERRADO')return'<span class="tag c">CERRADO</span>';
+  if(d==='SIGUE_ABIERTO')return'<span class="tag f">SIGUE-ABIERTO</span>';
+  if(d==='NO_APLICA')return'<span class="tag n">N/A</span>';
+  if(d==='NO_REAUDITABLE')return'<span class="tag e">NO-REAUD</span>';
+  if(d==='NUEVO')return'<span class="tag x">NUEVO</span>';
+  return'<span class="tag n">'+d+'</span>';
+}
+function paint(d){
+  if(d.error){$('#loading').textContent='ERROR: '+d.error;return;}
+  $('#loading').style.display='none';
+  $('#evtable').style.display='table';
+  
+  // header
+  $('#reopen-text').textContent='/ reapertura con bytes de '+new Date(d.ran_at).toLocaleString();
+  $('#ref').innerHTML='expediente base <b>'+(d.base_file||'').split('/').pop()+'</b> · '+d.base_total+' hallazgos · '+d.base_elapsed+'s · objetivo <b>'+(d.target||'').split('/').pop()+'</b>. no se añade capacidad nueva: se re-audita lo ya registrado.';
+  
+  // meta
+  $('#m-total').textContent=d.base_total;
+  $('#m-scen').textContent=d.scenarios_run||'—';
+  $('#m-elapsed').textContent=d.base_elapsed+'s';
+  $('#m-target').textContent=(d.target||'').split('/').pop();
+  var bs=d.by_severity||{};
+  $('#sev-lab').innerHTML='<span>C'+(bs.critical||0)+'</span><span>H'+(bs.high||0)+'</span><span>M'+(bs.medium||0)+'</span><span>L'+(bs.low||0)+'</span><span>I'+(bs.info||0)+'</span>';
+  
+  // wound (URL rota)
+  $('#wound').innerHTML='<b>backend registrado (roto)</b>'+(d.backend_raw||'').slice(0,120)+'…';
+  $('#backend-info').textContent='backend saneado: '+(d.backend_sanitized||'N/A');
+  
+  // counts
+  $('#counts').style.display='grid';
+  var c=d.counts||{};
+  $('#c-cerrado').textContent=c.cerrado||0;
+  $('#c-sigue').textContent=c.sigue_abierto||0;
+  $('#c-noapp').textContent=c.no_aplica||0;
+  $('#c-noreaud').textContent=c.no_reauditable||0;
+  
+  // sello
+  var seal=$('#seal');
+  if(c.cerrado>0){seal.classList.add('stamped','partial');$('#seal-t').textContent='REABIERTO';$('#seal-s').textContent='PARCIAL';$('#wm').textContent='REABIERTO';}
+  else{seal.classList.add('stamped');$('#seal-t').textContent='REABIERTO';$('#seal-s').textContent=new Date(d.ran_at).toLocaleDateString();}
+  
+  // rows
+  var rows=$('#rows');
+  rows.innerHTML='';
+  (d.rows||[]).forEach(function(r,i){
+    var tr=document.createElement('tr');
+    tr.innerHTML='<td class="id">'+r.id+'</td>'+
+      '<td class="ti">'+r.title+'</td>'+
+      '<td>'+(r.base_verdict==='FALLÓ'?'<span class="tag f">FALLÓ</span>':'<span class="tag n">INFO</span>')+'</td>'+
+      '<td>'+tagFor(r.now)+'</td>'+
+      '<td>'+deltaTag(r.delta)+'</td>';
+    var pr=document.createElement('tr');pr.className='probe';
+    pr.innerHTML='<td colspan="5"><code>'+r.evidence+'</code></td>';
+    tr.onclick=function(){tr.classList.toggle('open');pr.classList.toggle('open')};
+    rows.appendChild(tr);rows.appendChild(pr);
+    setTimeout(function(){tr.classList.add('in')},i*40);
+  });
+}
+
+async function load(){
+  try{
+    var r=await fetch(aU('/api/casefile'),{headers:aH()}).then(function(x){return x.json()});
+    paint(r);
+  }catch(e){$('#loading').textContent='no se pudo cargar: '+e.message+' (¿server corriendo?)';}
+}
+$('#rerun').onclick=async function(){var b=$('#rerun');b.classList.add('run');b.textContent=' corriendo';
+  try{var r=await fetch(aU('/api/casefile'),{headers:aH()}).then(function(x){return x.json()});paint(r);}
+  catch(e){}b.classList.remove('run');b.textContent='re-auditar ahora';};
+$('#apk').onclick=async function(){
+  try{var r=await fetch(aU('/api/casefile/apk'),{headers:aH()}).then(function(x){return x.json()});
+    alert(JSON.stringify(r,null,2));
+  }catch(e){alert('error: '+e.message);}};
+load();
+</script>
+</body>
+</html>

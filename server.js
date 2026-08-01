@@ -13,6 +13,7 @@ const discovery = require('./lib/discovery');
 const alerts = require('./lib/alerts');
 const exporter = require('./lib/export');
 const regression = require('./lib/regression');
+const casefile = require('./lib/casefile');
 
 // ─── Security: API Key Authentication ────────────────────────────────────────
 const API_KEY = process.env.REDTEAM_API_KEY || crypto.randomBytes(24).toString('hex');
@@ -493,6 +494,21 @@ function selftest(){
   const P=V.filter(x=>x.st==='PASS').length;
   return {ran_at:new Date().toISOString(),pasadas:P,totales:V.length,veredictos:V};
 }
+
+// ---- expediente de reapertura (casefile) ----
+app.get('/api/casefile', authenticateToken, async (req,res)=>{
+  try { const r = await casefile.run(req.query.path); res.json(r); }
+  catch(e) { res.status(500).json({error:'casefile falló: '+e.message}); }
+});
+app.get('/api/casefile/apk', authenticateToken, (req,res)=>{
+  res.json(casefile.probeApk());
+});
+app.get('/api/casefile/sanitize', authenticateToken, (req,res)=>{
+  const raw = req.query.url || '';
+  const clean = casefile.sanitizeUrl(raw);
+  res.json({ raw, sanitized: clean, changed: clean !== raw.trim() });
+});
+
 server.listen(PORT, HOST, () => {
   console.log('\\n  SealCtl v2.1 (hardened) en http://' + HOST + ':' + PORT);
   console.log('  Recon: geo/intel/iot/nmap/mitm | Defense: playbooks/scenarios | Honeypot');
