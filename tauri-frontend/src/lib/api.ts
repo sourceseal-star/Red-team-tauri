@@ -27,6 +27,15 @@ async function del<T>(path: string): Promise<T> {
   return r.json()
 }
 
+/** GET con header X-Api-Key para rutas de escaneo de red protegidas. */
+async function getWithKey<T>(path: string, apiKey: string): Promise<T> {
+  const r = await fetch(BASE + path, {
+    headers: { "X-Api-Key": apiKey },
+  })
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
+  return r.json()
+}
+
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
 export interface Service {
@@ -187,4 +196,17 @@ export const api = {
   // Geo + Threat Intel
   getGeo:           (ip: string) => get<unknown>(`/geo?ip=${encodeURIComponent(ip)}`),
   getIntel:         (ip: string) => get<unknown>(`/intel?ip=${encodeURIComponent(ip)}`),
+
+  // Escaneo de red — cámaras IP y radio (REAL)
+  // Requiere X-Api-Key = REDTEAM_API_KEY configurado en el servidor.
+  scanCameras: (target: string, apiKey: string, timeout?: number) =>
+    getWithKey<unknown>(
+      `/network/cameras?target=${encodeURIComponent(target)}${timeout ? `&timeout=${timeout}` : ''}`,
+      apiKey
+    ),
+  scanRadio: (target: string, apiKey: string, timeout?: number) =>
+    getWithKey<unknown>(
+      `/network/radio?target=${encodeURIComponent(target)}${timeout ? `&timeout=${timeout}` : ''}`,
+      apiKey
+    ),
 }

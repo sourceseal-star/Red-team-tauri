@@ -20,6 +20,9 @@ import socket
 from urllib.parse import urlparse, parse_qs
 import urllib.request
 import urllib.error
+import ipaddress
+import re
+import struct
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REPORTS   = ROOT / "reports"
@@ -29,6 +32,15 @@ DATA_DIR  = ROOT / "data"
 PORT = int(os.environ.get("PORT", "8001"))
 
 BACKEND = os.environ.get("SOURCESEAL_API", "")  # Se carga desde settings.json en runtime
+
+# ── Autenticación para endpoints de escaneo de red ───────────────────────────
+# Se lee en tiempo de ejecución; puede cambiarse sin reiniciar.
+def _netscan_api_key() -> str:
+    """Devuelve el API key de red desde la variable de entorno REDTEAM_API_KEY."""
+    return os.environ.get("REDTEAM_API_KEY", "").strip()
+
+# Semáforo: un solo escaneo de red activo a la vez (evita DoS por saturación)
+_netscan_sem = threading.Semaphore(1)
 
 def _get_active_target():
     """Obtiene el target activo desde settings.json (configurable desde la UI)."""
@@ -274,6 +286,347 @@ def _run_terminal(command):
         return {"stdout": "", "stderr": "Timeout (10s)", "code": 124}
     except Exception as e:
         return {"stdout": "", "stderr": str(e), "code": 1}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SCANNER DE CÁMARAS IP Y RADIO — REAL (cero mocks)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Puertos conocidos de cámaras IP
+CAMERA_PORTS = [
+    (80,   "HTTP"),
+    (443,  "HTTPS"),
+    (554,  "RTSP"),
+    (8080, "HTTP-ALT"),
+    (8554, "RTSP-ALT"),
+    (8899, "ONVIF"),
+    (37777,"DAHUA"),
+    (34567,"DVR-TCP"),
+    (2020, "AXIS"),
+    (9000, "HTTP-CAM"),
+    (1935, "RTMP"),
+    (8081, "HTTP-CAM2"),
+]
+
+# Marcas conocidas por banner/respuesta HTTP
+CAMERA_BRANDS = [
+    (re.compile(r'hikvision|dvrdvs|webs\s+server',   re.I), 'Hikvision'),
+    (re.compile(r'dahua',                             re.I), 'Dahua'),
+    (re.compile(r'axis',                              re.I), 'Axis'),
+    (re.compile(r'foscam',                            re.I), 'Foscam'),
+    (re.compile(r'netgear',                           re.I), 'Netgear'),
+    (re.compile(r'reolink',                           re.I), 'Reolink'),
+    (re.compile(r'amcrest',                           re.I), 'Amcrest'),
+    (re.compile(r'vivotek',                           re.I), 'Vivotek'),
+    (re.compile(r'hanwha|samsung\s+techwin',          re.I), 'Hanwha/Samsung'),
+    (re.compile(r'bosch',                             re.I), 'Bosch'),
+    (re.compile(r'panasonic',                         re.I), 'Panasonic'),
+    (re.compile(r'sony',                              re.I), 'Sony'),
+    (re.compile(r'pelco',                             re.I), 'Pelco'),
+    (re.compile(r'uniview|univideo',                  re.I), 'Uniview'),
+    (re.compile(r'onvif',                             re.I), 'ONVIF Device'),
+]
+
+# Puertos de radio/streaming
+RADIO_PORTS = [
+    (8000,  "Icecast/ShoutCast"),
+    (8001,  "ShoutCast-alt"),
+    (8080,  "HTTP-stream"),
+    (8443,  "HTTPS-stream"),
+    (1755,  "MMS"),
+    (554,   "RTSP-audio"),
+    (7070,  "RTSP-alt"),
+    (3000,  "HTTP-radio"),
+    (9000,  "Icecast-alt"),
+    (10000, "Webmin/radio"),
+]
+
+def _tcp_connect(host: str, port: int, timeout: float = 1.5) -> bool:
+    """Intenta conexión TCP pura. Retorna True si el puerto está abierto."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+def _http_banner(host: str, port: int, path: str = "/", timeout: float = 3.0,
+                 use_https: bool = False) -> dict:
+    """Hace un GET HTTP y devuelve status, server header y preview del body."""
+    scheme = "https" if use_https else "http"
+    url = f"{scheme}://{host}:{port}{path}"
+    try:
+        ctx = None
+        if use_https:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        req = urllib.request.Request(url, headers={"User-Agent": "SourceSeal-NetScan/2.0"})
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=ctx) if use_https else urllib.request.HTTPHandler()
+        )
+        with opener.open(req, timeout=timeout) as resp:
+            server = resp.headers.get("Server", "")
+            ct     = resp.headers.get("Content-Type", "")
+            icy_name  = resp.headers.get("icy-name", "")
+            icy_genre = resp.headers.get("icy-genre", "")
+            body = resp.read(1024).decode("utf-8", errors="replace")
+            return {"ok": True, "status": resp.status, "server": server,
+                    "content_type": ct, "body": body[:400],
+                    "icy_name": icy_name, "icy_genre": icy_genre}
+    except urllib.error.HTTPError as e:
+        try: body = e.read(256).decode("utf-8", errors="replace")
+        except: body = ""
+        server = e.headers.get("Server", "") if e.headers else ""
+        return {"ok": False, "status": e.code, "server": server, "body": body}
+    except Exception as e:
+        return {"ok": False, "status": None, "server": "", "error": str(e)[:120]}
+
+def _rtsp_options(host: str, port: int, timeout: float = 3.0) -> dict:
+    """Envía un RTSP OPTIONS real y parsea la respuesta."""
+    try:
+        sock = socket.create_connection((host, port), timeout=timeout)
+        cmd = (f"OPTIONS rtsp://{host}:{port}/ RTSP/1.0\r\n"
+               f"CSeq: 1\r\nUser-Agent: SourceSeal-RTSP/2.0\r\n\r\n")
+        sock.sendall(cmd.encode())
+        resp = sock.recv(2048).decode("utf-8", errors="replace")
+        sock.close()
+        if resp.startswith("RTSP/"):
+            parts = resp.split("\r\n")
+            status_line = parts[0]
+            headers = {}
+            for line in parts[1:]:
+                if ": " in line:
+                    k, v = line.split(": ", 1)
+                    headers[k.lower()] = v
+            return {"ok": True, "status_line": status_line,
+                    "public": headers.get("public", ""),
+                    "server": headers.get("server", ""),
+                    "raw": resp[:400]}
+        return {"ok": False, "raw": resp[:200]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:120]}
+
+def _detect_camera_brand(banner_text: str) -> str:
+    for pattern, brand in CAMERA_BRANDS:
+        if pattern.search(banner_text):
+            return brand
+    return "Desconocida"
+
+def _scan_single_ip_cameras(host: str, timeout: float = 2.0) -> dict:
+    """Escanea una IP buscando cámaras en todos los puertos conocidos. REAL."""
+    found_services = []
+    is_camera = False
+    brand = "Desconocida"
+
+    for port, proto in CAMERA_PORTS:
+        if not _tcp_connect(host, port, timeout=min(timeout, 1.5)):
+            continue
+        svc = {"port": port, "proto": proto, "open": True,
+               "type": "unknown", "banner": "", "rtsp": False}
+
+        if proto in ("RTSP", "RTSP-ALT") or port in (554, 8554):
+            rtsp = _rtsp_options(host, port, timeout=timeout)
+            if rtsp.get("ok"):
+                svc["rtsp"] = True
+                svc["type"] = "RTSP Stream"
+                svc["banner"] = rtsp.get("server", "") or rtsp.get("status_line", "")
+                b = rtsp.get("server", "") + rtsp.get("public", "")
+                bd = _detect_camera_brand(b)
+                if bd != "Desconocida":
+                    brand = bd; is_camera = True
+                else:
+                    is_camera = True  # RTSP abierto = cámara probable
+
+        elif proto in ("HTTP", "HTTPS", "HTTP-ALT", "ONVIF", "HTTP-CAM", "HTTP-CAM2"):
+            use_https = (port == 443 or proto == "HTTPS")
+            ban = _http_banner(host, port, "/", timeout=timeout, use_https=use_https)
+            svc["banner"] = ban.get("server", "")
+            svc["status"] = ban.get("status")
+            full_text = (ban.get("server", "") + " " + ban.get("body", ""))
+
+            # ONVIF discovery
+            if port == 8899 or "onvif" in full_text.lower():
+                svc["type"] = "ONVIF"
+                is_camera = True
+                bd = _detect_camera_brand(full_text)
+                if bd != "Desconocida": brand = bd
+
+            # Dahua
+            elif port == 37777:
+                svc["type"] = "Dahua DVR"
+                brand = "Dahua"; is_camera = True
+
+            else:
+                bd = _detect_camera_brand(full_text)
+                if bd != "Desconocida":
+                    brand = bd; is_camera = True
+                    svc["type"] = f"HTTP Camera ({bd})"
+                elif ban.get("ok") or ban.get("status") in (200, 401, 403):
+                    svc["type"] = "HTTP (posible cámara)"
+
+            # Intento en /onvif/device_service si no detectamos marca
+            if not is_camera and port in (80, 8080):
+                onvif_ban = _http_banner(host, port, "/onvif/device_service",
+                                         timeout=timeout)
+                if onvif_ban.get("status") in (200, 401, 405, 400):
+                    svc["type"] = "ONVIF Device"
+                    is_camera = True
+
+        elif proto == "DAHUA":
+            # Puerto 37777 TCP de Dahua NVR/DVR — solo verifica si está abierto
+            svc["type"] = "Dahua TCP"; brand = "Dahua"; is_camera = True
+
+        elif proto == "DVR-TCP":
+            svc["type"] = "DVR TCP"; is_camera = True
+
+        found_services.append(svc)
+
+    return {
+        "host": host,
+        "is_camera": is_camera,
+        "brand": brand if is_camera else None,
+        "services": found_services,
+        "open_ports": [s["port"] for s in found_services],
+        "scanned_at": datetime.datetime.utcnow().isoformat(),
+    }
+
+def _scan_single_ip_radio(host: str, timeout: float = 2.0) -> dict:
+    """Escanea una IP buscando servidores de radio/streaming. REAL."""
+    found_streams = []
+    is_radio = False
+    stream_name = ""
+
+    for port, proto in RADIO_PORTS:
+        if not _tcp_connect(host, port, timeout=min(timeout, 1.5)):
+            continue
+
+        ban = _http_banner(host, port, "/", timeout=timeout)
+        server  = ban.get("server", "")
+        ct      = ban.get("content_type", "")
+        body    = ban.get("body", "")
+        icy     = ban.get("icy_name", "")
+        icy_gen = ban.get("icy_genre", "")
+        full    = (server + " " + body + " " + icy).lower()
+
+        svc = {"port": port, "proto": proto, "open": True,
+               "server": server, "content_type": ct,
+               "icy_name": icy, "icy_genre": icy_gen,
+               "type": "unknown", "is_stream": False}
+
+        # Icecast
+        if "icecast" in full:
+            svc["type"] = "Icecast"; svc["is_stream"] = True
+            is_radio = True
+            if icy: stream_name = icy
+
+        # ShoutCast (headers icy-*)
+        elif icy or "shoutcast" in full or "icy" in full:
+            svc["type"] = "ShoutCast"; svc["is_stream"] = True
+            is_radio = True
+            if icy: stream_name = icy
+
+        # Audio content-type
+        elif re.search(r'audio/(mpeg|ogg|aac|mp4|flac|wav|opus|webm)', ct, re.I):
+            svc["type"] = "Audio Stream"; svc["is_stream"] = True
+            is_radio = True
+
+        # Liquidsoap, AzuraCast, etc.
+        elif re.search(r'liquidsoap|azuracast|centova|radioco', full, re.I):
+            svc["type"] = "Radio Server"; svc["is_stream"] = True
+            is_radio = True
+
+        # Puerto 8000/8001 abierto con HTTP = posible radio
+        elif port in (8000, 8001) and ban.get("status") in (200, 401, 403):
+            svc["type"] = "HTTP (posible stream)"
+            svc["is_stream"] = False  # No confirmado
+
+        if svc["type"] != "unknown" or ban.get("status") is not None:
+            found_streams.append(svc)
+
+    return {
+        "host": host,
+        "is_radio": is_radio,
+        "stream_name": stream_name,
+        "streams": found_streams,
+        "open_ports": [s["port"] for s in found_streams],
+        "scanned_at": datetime.datetime.utcnow().isoformat(),
+    }
+
+def _scan_subnet_cameras(subnet: str, max_hosts: int = 254,
+                          timeout: float = 1.5) -> list:
+    """Escanea una subred /24 buscando cámaras. Paralelo con threads."""
+    try:
+        net = ipaddress.ip_network(subnet, strict=False)
+    except ValueError as e:
+        return [{"error": f"Subred inválida: {e}"}]
+
+    hosts = list(net.hosts())[:max_hosts]
+    results = []
+    lock = threading.Lock()
+
+    def scan_host(ip_obj):
+        host = str(ip_obj)
+        # Pre-check: al menos uno de los puertos clave abierto antes de escaneo completo
+        quick_ports = [80, 554, 8080, 8554]
+        has_any = any(_tcp_connect(host, p, timeout=0.8) for p in quick_ports)
+        if not has_any:
+            return
+        r = _scan_single_ip_cameras(host, timeout=timeout)
+        if r["services"]:
+            with lock:
+                results.append(r)
+
+    threads = []
+    for ip_obj in hosts:
+        t = threading.Thread(target=scan_host, args=(ip_obj,), daemon=True)
+        threads.append(t)
+        t.start()
+        # Batch de 32 threads simultáneos
+        if len([tt for tt in threads if tt.is_alive()]) >= 32:
+            for tt in threads:
+                tt.join(timeout=0.05)
+
+    for t in threads:
+        t.join(timeout=timeout + 1)
+
+    return sorted(results, key=lambda x: x.get("is_camera", False), reverse=True)
+
+def _scan_subnet_radio(subnet: str, max_hosts: int = 254,
+                        timeout: float = 1.5) -> list:
+    """Escanea una subred buscando servidores de radio. Paralelo."""
+    try:
+        net = ipaddress.ip_network(subnet, strict=False)
+    except ValueError as e:
+        return [{"error": f"Subred inválida: {e}"}]
+
+    hosts = list(net.hosts())[:max_hosts]
+    results = []
+    lock = threading.Lock()
+
+    def scan_host(ip_obj):
+        host = str(ip_obj)
+        quick_ports = [8000, 8001, 8080]
+        has_any = any(_tcp_connect(host, p, timeout=0.8) for p in quick_ports)
+        if not has_any:
+            return
+        r = _scan_single_ip_radio(host, timeout=timeout)
+        if r["streams"]:
+            with lock:
+                results.append(r)
+
+    threads = []
+    for ip_obj in hosts:
+        t = threading.Thread(target=scan_host, args=(ip_obj,), daemon=True)
+        threads.append(t)
+        t.start()
+        if len([tt for tt in threads if tt.is_alive()]) >= 32:
+            for tt in threads:
+                tt.join(timeout=0.05)
+
+    for t in threads:
+        t.join(timeout=timeout + 1)
+
+    return sorted(results, key=lambda x: x.get("is_radio", False), reverse=True)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SCANNER HTTP REAL
@@ -572,6 +925,58 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _json_restricted(self, data, code=200):
+        """JSON con CORS restringido al origen local (para rutas sensibles de escaneo de red)."""
+        body = json.dumps(data, indent=2, default=str).encode()
+        origin = self.headers.get("Origin", "")
+        # Permitir solo origenes locales (localhost / 127.0.0.1 / dominio .replit.dev)
+        allowed = (
+            not origin
+            or origin.startswith("http://localhost")
+            or origin.startswith("http://127.0.0.1")
+            or ".replit.dev" in origin
+        )
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        if allowed and origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+        elif allowed:
+            self.send_header("Access-Control-Allow-Origin", "http://localhost:5000")
+        self.send_header("Access-Control-Allow-Methods", "GET,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type,X-Api-Key")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _check_netscan_auth(self) -> bool:
+        """Valida X-Api-Key para rutas de escaneo de red.
+        Si REDTEAM_API_KEY no está configurado en el entorno, bloquea siempre.
+        """
+        key = _netscan_api_key()
+        if not key:
+            self._json_restricted({"error": "Escaneo de red deshabilitado: configura la variable de entorno REDTEAM_API_KEY para habilitarlo."}, 403)
+            return False
+        provided = self.headers.get("X-Api-Key", "").strip()
+        if not provided or provided != key:
+            self._json_restricted({"error": "Autenticación requerida. Envía tu REDTEAM_API_KEY en el header X-Api-Key."}, 401)
+            return False
+        return True
+
+    def _validate_scan_target(self, target: str) -> str | None:
+        """Valida que target sea una IP o subred válida. Retorna error string o None."""
+        if not target:
+            return "Parámetro 'target' requerido."
+        try:
+            if "/" in target:
+                net = ipaddress.ip_network(target, strict=False)
+                if net.num_addresses > 256:
+                    return "Solo se admiten subredes de hasta /24 (256 hosts máximo)."
+            else:
+                ipaddress.ip_address(target)
+        except ValueError:
+            return f"'{target}' no es una IP ni subred válida (ej: 192.168.1.1 o 192.168.1.0/24)."
+        return None
+
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
         if length == 0: return {}
@@ -603,6 +1008,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "/api/tip/iocs": lambda: self._json(_load_json(IOC_FILE, [])),
             "/api/rasp/devices": lambda: self._json(_load_json(DEVICES_FILE, [])),
             "/api/settings": lambda: self._json(_load_json(SETTINGS_FILE, {})),
+            "/api/network/cameras": self._api_scan_cameras,
+            "/api/network/radio":   self._api_scan_radio,
         }
 
         if p.startswith("/api/services/") and p.endswith("/logs"):
@@ -701,6 +1108,100 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json({"content": full.read_text(errors="replace"), "path": path})
         except Exception as e:
             return self._json({"error": str(e)}, 500)
+
+    def _api_scan_cameras(self):
+        """GET /api/network/cameras?target=IP_o_subred&timeout=2
+        Requiere header X-Api-Key con el valor de REDTEAM_API_KEY.
+        """
+        if not self._check_netscan_auth():
+            return
+
+        parsed = urlparse(self.path)
+        q = parse_qs(parsed.query)
+        target = q.get("target", [""])[0].strip()
+
+        err = self._validate_scan_target(target)
+        if err:
+            return self._json_restricted({"error": err}, 400)
+
+        timeout = float(q.get("timeout", ["2.0"])[0])
+        timeout = max(0.5, min(timeout, 5.0))
+
+        if not _netscan_sem.acquire(blocking=False):
+            return self._json_restricted(
+                {"error": "Ya hay un escaneo de red en curso. Espera a que termine antes de lanzar otro."}, 429)
+        t0 = time.time()
+        try:
+            is_subnet = "/" in target
+            if is_subnet:
+                results = _scan_subnet_cameras(target, max_hosts=254, timeout=timeout)
+            else:
+                results = [_scan_single_ip_cameras(target, timeout=timeout)]
+        except Exception as e:
+            return self._json_restricted({"error": str(e)[:300]}, 500)
+        finally:
+            _netscan_sem.release()
+
+        elapsed = round(time.time() - t0, 2)
+        cameras = [r for r in results if r.get("is_camera")]
+        return self._json_restricted({
+            "target": target,
+            "mode": "subnet" if is_subnet else "single",
+            "hosts_with_services": len([r for r in results if r.get("services")]),
+            "cameras_found": len(cameras),
+            "elapsed_seconds": elapsed,
+            "results": results,
+            "scanner": "SourceSeal CamScan/2.0 REAL",
+            "note": "Escaneo real. Cero simulaciones.",
+            "scanned_at": datetime.datetime.utcnow().isoformat(),
+        })
+
+    def _api_scan_radio(self):
+        """GET /api/network/radio?target=IP_o_subred&timeout=2
+        Requiere header X-Api-Key con el valor de REDTEAM_API_KEY.
+        """
+        if not self._check_netscan_auth():
+            return
+
+        parsed = urlparse(self.path)
+        q = parse_qs(parsed.query)
+        target = q.get("target", [""])[0].strip()
+
+        err = self._validate_scan_target(target)
+        if err:
+            return self._json_restricted({"error": err}, 400)
+
+        timeout = float(q.get("timeout", ["2.0"])[0])
+        timeout = max(0.5, min(timeout, 5.0))
+
+        if not _netscan_sem.acquire(blocking=False):
+            return self._json_restricted(
+                {"error": "Ya hay un escaneo de red en curso. Espera a que termine antes de lanzar otro."}, 429)
+        t0 = time.time()
+        try:
+            is_subnet = "/" in target
+            if is_subnet:
+                results = _scan_subnet_radio(target, max_hosts=254, timeout=timeout)
+            else:
+                results = [_scan_single_ip_radio(target, timeout=timeout)]
+        except Exception as e:
+            return self._json_restricted({"error": str(e)[:300]}, 500)
+        finally:
+            _netscan_sem.release()
+
+        elapsed = round(time.time() - t0, 2)
+        radios = [r for r in results if r.get("is_radio")]
+        return self._json_restricted({
+            "target": target,
+            "mode": "subnet" if is_subnet else "single",
+            "hosts_with_streams": len([r for r in results if r.get("streams")]),
+            "radios_found": len(radios),
+            "elapsed_seconds": elapsed,
+            "results": results,
+            "scanner": "SourceSeal RadioScan/2.0 REAL",
+            "note": "Escaneo real. Cero simulaciones.",
+            "scanned_at": datetime.datetime.utcnow().isoformat(),
+        })
 
     def do_POST(self):
         p = self.path.rstrip("/")
