@@ -193,6 +193,7 @@ export interface IPGeolocationResponse {
   mobile?: boolean
   private?: boolean
   error?: string
+  note?: string
 }
 
 export interface IPVerificationResponse {

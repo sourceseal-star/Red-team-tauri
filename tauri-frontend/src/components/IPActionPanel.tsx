@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   api,
+  authUrl,
   type IPGeolocationResponse,
   type IPVerificationResponse,
   type IPTrustScoreResponse,

@@ -1048,6 +1048,152 @@ app.post('/api/iot/scan-local', authenticateToken, heavyLimiter, async (req, res
 });
 
 
+
+// ── ENDPOINTS DEL DASHBOARD (stub/implementación ligera para Termux) ────────────
+
+// Settings — configuración del frontend
+let _settings = { api_url: '', interval: 15, scan_on_startup: false, notify_slack: false, slack_webhook: '' };
+app.get('/api/settings', authenticateToken, (req, res) => res.json(_settings));
+app.post('/api/settings', authenticateToken, (req, res) => {
+  if (req.body) _settings = Object.assign(_settings, req.body);
+  res.json({ ok: true });
+});
+
+// Services — estado de módulos del backend
+app.get('/api/services', authenticateToken, (req, res) => {
+  res.json([
+    { name: 'geo', status: 'running', label: 'Geo Intel' },
+    { name: 'intel', status: 'running', label: 'Threat Intel' },
+    { name: 'iot', status: 'running', label: 'IoT Scanner' },
+    { name: 'mitm', status: procs.mitm ? 'running' : 'stopped', label: 'MITM Proxy' },
+    { name: 'honeypot', status: procs.honeypot ? 'running' : 'stopped', label: 'Honeypot' },
+    { name: 'nmap', status: 'stopped', label: 'Nmap' },
+  ]);
+});
+app.post('/api/services/start', authenticateToken, (req, res) => res.json({ ok: false, message: 'use endpoint especifico del modulo' }));
+app.post('/api/services/stop', authenticateToken, (req, res) => res.json({ ok: false, message: 'use endpoint especifico del modulo' }));
+app.post('/api/services/restart', authenticateToken, (req, res) => res.json({ ok: false, message: 'use endpoint especifico del modulo' }));
+app.post('/api/services/start-all', authenticateToken, (req, res) => res.json({ ok: true }));
+app.post('/api/services/stop-all', authenticateToken, (req, res) => { for (const k in procs) if (procs[k]) try { procs[k].kill(); } catch(e){} res.json({ ok: true }); });
+app.get('/api/services/:name/logs', authenticateToken, (req, res) => res.json(['no logs available for ' + req.params.name]));
+
+// Resources — CPU/memoria del sistema
+app.get('/api/resources', authenticateToken, (req, res) => {
+  const os = require('os');
+  const total = os.totalmem();
+  const free = os.freemem();
+  const cpus = os.cpus();
+  const load = os.loadavg();
+  res.json({
+    cpu_percent: Math.round((load[0] / cpus.length) * 100),
+    cpu_cores: cpus.length,
+    memory_total: total,
+    memory_used: total - free,
+    memory_percent: Math.round(((total - free) / total) * 100),
+    uptime: os.uptime(),
+    load_avg: load
+  });
+});
+
+// Scan status — estado del escaneo de reportes
+app.get('/api/scan/status', authenticateToken, (req, res) => res.json({ running: false, progress: '' }));
+
+// Config files — listar/editar archivos de configuración
+app.get('/api/config', authenticateToken, (req, res) => {
+  try {
+    const files = fs.readdirSync(__dirname).filter(f => f.endsWith('.js') || f.endsWith('.json') || f.endsWith('.md'));
+    res.json(files.map(f => ({ name: f, path: f, size: fs.statSync(path.join(__dirname, f)).size })));
+  } catch(e) { res.json([]); }
+});
+app.get('/api/config/read', authenticateToken, (req, res) => {
+  const p = String(req.query.path || '').replace(/\.\./g, '').slice(0, 200);
+  if (!p) return res.status(400).json({ error: 'path requerido' });
+  try {
+    const fp = path.join(__dirname, p);
+    if (!fp.startsWith(__dirname)) return res.status(403).json({ error: 'acceso denegado' });
+    res.json({ content: fs.readFileSync(fp, 'utf8').slice(0, 50000), path: p });
+  } catch(e) { res.status(404).json({ error: 'archivo no encontrado' }); }
+});
+app.post('/api/config/write', authenticateToken, (req, res) => {
+  const p = String(req.body?.path || '').replace(/\.\./g, '').slice(0, 200);
+  if (!p) return res.status(400).json({ error: 'path requerido' });
+  try {
+    const fp = path.join(__dirname, p);
+    if (!fp.startsWith(__dirname)) return res.status(403).json({ error: 'acceso denegado' });
+    fs.writeFileSync(fp, String(req.body?.content || '').slice(0, 100000));
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Honeypot — toggle y rotate
+app.get('/api/honeypot', authenticateToken, (req, res) => {
+  res.json({ running: !!procs.honeypot, tokens: 0, port: 0 });
+});
+app.post('/api/honeypot/toggle', authenticateToken, (req, res) => {
+  res.json({ running: !!procs.honeypot, message: 'use /api/honeypot/start o /api/honeypot/stop' });
+});
+app.post('/api/honeypot/rotate', authenticateToken, (req, res) => {
+  res.json({ ok: true, tokens_deployed: 0 });
+});
+
+// SOAR — DAGs
+let _dags = [];
+app.get('/api/soar/dags', authenticateToken, (req, res) => res.json(_dags));
+app.post('/api/soar/dags', authenticateToken, (req, res) => {
+  const id = 'dag_' + Date.now();
+  _dags.push(Object.assign({ id }, req.body || {}));
+  res.json({ ok: true, id });
+});
+app.post('/api/soar/dry-run', authenticateToken, (req, res) => {
+  res.json({ ok: true, steps: _dags.map(d => d.id || 'unknown'), count: _dags.length });
+});
+
+// TIP — IOCs
+let _iocs = [];
+app.get('/api/tip/iocs', authenticateToken, (req, res) => res.json(_iocs));
+app.post('/api/tip/iocs', authenticateToken, (req, res) => {
+  const id = 'ioc_' + Date.now();
+  _iocs.push(Object.assign({ id, created: new Date().toISOString() }, req.body || {}));
+  res.json({ ok: true, id });
+});
+app.delete('/api/tip/iocs/:id', authenticateToken, (req, res) => {
+  _iocs = _iocs.filter(i => i.id !== req.params.id);
+  res.json({ ok: true });
+});
+app.post('/api/tip/update', authenticateToken, (req, res) => {
+  res.json({ ok: true, iocs_loaded: _iocs.length });
+});
+app.post('/api/tip/import-stix', authenticateToken, (req, res) => {
+  res.json({ ok: true, imported: 0 });
+});
+
+// RASP — devices
+let _raspDevices = [];
+app.get('/api/rasp/devices', authenticateToken, (req, res) => res.json(_raspDevices));
+app.post('/api/rasp/devices', authenticateToken, (req, res) => {
+  const id = 'dev_' + Date.now();
+  _raspDevices.push(Object.assign({ id }, req.body || {}));
+  res.json({ ok: true, id });
+});
+app.delete('/api/rasp/devices/:id', authenticateToken, (req, res) => {
+  _raspDevices = _raspDevices.filter(d => d.id !== req.params.id);
+  res.json({ ok: true });
+});
+
+// Terminal — ejecutar comandos
+app.post('/api/terminal', authenticateToken, heavyLimiter, (req, res) => {
+  const cmd = String(req.body?.command || '').slice(0, 500);
+  if (!cmd) return res.status(400).json({ error: 'command requerido' });
+  try {
+    const { execSync } = require('child_process');
+    const stdout = execSync(cmd, { timeout: 10000, encoding: 'utf8', maxBuffer: 100000 });
+    res.json({ stdout: stdout.slice(0, 50000), stderr: '', code: 0 });
+  } catch(e) {
+    res.json({ stdout: '', stderr: String(e.stderr || e.message).slice(0, 50000), code: e.status || 1 });
+  }
+});
+
+
 server.listen(PORT, HOST, () => {
   console.log('\\n  SealCtl v2.1 (hardened) en http://' + HOST + ':' + PORT);
   console.log('  Recon: geo/intel/iot/nmap/mitm | Defense: playbooks/scenarios | Honeypot');
