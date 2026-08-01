@@ -178,9 +178,12 @@ app.get('/api/iot', authenticateToken, async (req, res) => {
   res.json(await iot.scan(t));
 });
 app.post('/api/iot/scan', authenticateToken, async (req, res) => {
-  const ips = (req.body.ips || []).filter(Boolean).slice(0, 100);
-  if (!ips.length) return res.status(400).json({ error: 'ips requerido' });
-  res.json({ results: await iot.scanMany(ips, 6) });
+  let ips = req.body.ips || [];
+  if (typeof ips === 'string') ips = ips.split(/[\s,]+/);
+  ips = ips.filter(Boolean).slice(0, 100);
+  if (!ips.length) return res.status(400).json({ error: 'ips requerido (array o string separado por comas)' });
+  try { res.json({ results: await iot.scanMany(ips, 6) }); }
+  catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── MITM (autenticado) ──────────────────────────────────────────────────────
@@ -674,54 +677,54 @@ app.get('/api/deception/status', authenticateToken, (req,res)=>{
 app.get('/api/iot/snapshot', authenticateToken, async (req,res)=>{
   const ip = (req.query.ip || '').trim();
   const port = parseInt(req.query.port) || 80;
-  const path = (req.query.path || '/snapshot.cgi').slice(0, 200);
+  const snapPath = (req.query.path || '/snapshot.cgi').slice(0, 200);
   const user = req.query.user || '';
   const pass = req.query.pass || '';
   if (!ip) return res.status(400).json({ error: 'ip requerido' });
+  const http = require('http');
+  const https = require('https');
+  const proto = (port === 443 || port === 8443) ? https : http;
+  let responded = false;
+  const safeJson = (code, obj) => { if (!responded && !res.headersSent) { responded = true; res.status(code).json(obj); } };
   try {
-    const iot = require('./lib/iot');
-    let r;
-    if (user && pass) {
-      r = await iot.loginAudit ? null : null; // no usamos loginAudit aquí
-    }
-    // Usar httpRaw del módulo iot indirectamente via httpGet con auth
-    const http = require('http');
-    const https = require('https');
-    const proto = (port === 443 || port === 8443) ? https : http;
     const headers = { 'User-Agent': 'sealctl-snapshot/1.0' };
     if (user && pass) headers['Authorization'] = 'Basic ' + Buffer.from(user + ':' + pass).toString('base64');
-    const reqOpts = { host: ip, port, path, timeout: 5000, headers, rejectUnauthorized: false };
-    proto.get(reqOpts, r2 => {
+    const reqOpts = { host: ip, port, path: snapPath, timeout: 5000, headers, rejectUnauthorized: false };
+    const upstreamReq = proto.get(reqOpts, r2 => {
       const ct = r2.headers['content-type'] || '';
       const chunks = [];
       r2.on('data', d => { chunks.push(d); if (Buffer.concat(chunks).length > 2000000) r2.destroy(); });
       r2.on('end', () => {
         const buf = Buffer.concat(chunks);
+        if (responded) return;
+        responded = true;
         if (ct.startsWith('image/')) {
           res.set('Content-Type', ct);
-          res.set('Cache-Control', 'no-cache');
+          res.set('Cache-Control', 'no-cache, no-store');
           res.send(buf);
-        } else if (ct.startsWith('text/') || ct.includes('json')) {
-          // No es imagen, devolver info
+        } else if (ct.startsWith('text/') || ct.includes('json') || ct.includes('html')) {
           res.json({ ok: false, content_type: ct, length: buf.length, preview: buf.toString('utf8').slice(0, 200) });
-        } else {
-          // Intentar devolver como imagen de todos modos
+        } else if (buf.length > 0) {
+          // Intentar como imagen JPEG
           res.set('Content-Type', 'image/jpeg');
-          res.set('Cache-Control', 'no-cache');
+          res.set('Cache-Control', 'no-cache, no-store');
           res.send(buf);
+        } else {
+          res.json({ ok: false, error: 'respuesta vacia' });
         }
       });
-      r2.on('error', e => res.status(502).json({ error: 'camara no respondio: ' + e.message }));
-    }).on('error', e => res.status(502).json({ error: 'conexion fallida: ' + e.message }))
-      .on('timeout', function() { this.destroy(); res.status(504).json({ error: 'timeout' }); });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+      r2.on('error', e => safeJson(502, { error: 'camara no respondio: ' + e.message }));
+    });
+    upstreamReq.on('error', e => safeJson(502, { error: 'conexion fallida: ' + e.message }));
+    upstreamReq.on('timeout', function() { this.destroy(); safeJson(504, { error: 'timeout' }); });
+  } catch(e) { safeJson(500, { error: e.message }); }
 });
 
 // Stream proxy: redirige MJPEG stream desde la camara al cliente (evita CORS)
 app.get('/api/iot/stream', authenticateToken, (req,res)=>{
   const ip = (req.query.ip || '').trim();
   const port = parseInt(req.query.port) || 80;
-  const path = (req.query.path || '/mjpg/video.mjpg').slice(0, 200);
+  const streamPath = (req.query.path || '/mjpg/video.mjpg').slice(0, 200);
   const user = req.query.user || '';
   const pass = req.query.pass || '';
   if (!ip) return res.status(400).json({ error: 'ip requerido' });
@@ -730,20 +733,23 @@ app.get('/api/iot/stream', authenticateToken, (req,res)=>{
   const proto = (port === 443 || port === 8443) ? https : http;
   const headers = { 'User-Agent': 'sealctl-stream/1.0' };
   if (user && pass) headers['Authorization'] = 'Basic ' + Buffer.from(user + ':' + pass).toString('base64');
-  const upstream = proto.request({ host: ip, port, path, method: 'GET', headers, rejectUnauthorized: false, timeout: 30000 }, upstream_res => {
+  let headersSent = false;
+  const safeJson = (code, obj) => { if (!headersSent && !res.headersSent) { res.status(code).json(obj); } else { try { res.end(); } catch(e){} } };
+  const upstream = proto.request({ host: ip, port, path: streamPath, method: 'GET', headers, rejectUnauthorized: false, timeout: 30000 }, upstream_res => {
     const ct = upstream_res.headers['content-type'] || '';
     if (!ct.includes('multipart') && !ct.includes('image/') && !ct.includes('video/') && !ct.includes('octet-stream')) {
       upstream_res.destroy();
-      return res.status(400).json({ error: 'el endpoint no retorna video/stream (content-type: ' + ct + ')' });
+      return safeJson(400, { error: 'el endpoint no retorna video/stream (content-type: ' + ct + ')' });
     }
+    headersSent = true;
     res.set('Content-Type', ct || 'multipart/x-mixed-replace; boundary=--BoundaryString');
     res.set('Cache-Control', 'no-cache, no-store');
     res.set('Connection', 'keep-alive');
     upstream_res.pipe(res);
-    req.on('close', () => upstream_res.destroy());
+    req.on('close', () => { try { upstream_res.destroy(); } catch(e){} });
   });
-  upstream.on('error', e => res.status(502).json({ error: 'stream fallido: ' + e.message }));
-  upstream.on('timeout', () => { upstream.destroy(); res.status(504).json({ error: 'stream timeout' }); });
+  upstream.on('error', e => safeJson(502, { error: 'stream fallido: ' + e.message }));
+  upstream.on('timeout', () => { upstream.destroy(); safeJson(504, { error: 'stream timeout' }); });
   upstream.end();
 });
 
@@ -800,26 +806,34 @@ app.get('/api/iot/video-urls', authenticateToken, async (req,res)=>{
     });
   }));
 
-  // Also check RTSP
-  const iot = require('./lib/iot');
-  const rtsp = await iot.scan ? null : null; // check RTSP separately
+  // Also check RTSP on port 554
   try {
-    const rtspResult = await new Promise(res => {
-      const s = require('net').createConnection({ host: ip, port: 554 }, () => {
-        s.write('OPTIONS rtsp://' + ip + ':554/ RTSP/1.0\r\nCSeq: 1\r\n\r\n');
+    const net = require('net');
+    const rtspResult = await new Promise(resolve => {
+      const sock = net.createConnection({ host: ip, port: 554 }, () => {
+        sock.write('OPTIONS rtsp://' + ip + ':554/ RTSP/1.0\r\nCSeq: 1\r\n\r\n');
         let buf = '';
-        s.on('data', d => { buf += d.toString(); if (/RTSP\/1\.0 \d+/.test(buf)) { s.destroy(); res({ available: true, url: 'rtsp://' + ip + ':554/' }); } });
-        s.setTimeout(2000, () => { s.destroy(); res({ available: buf.includes('RTSP'), url: 'rtsp://' + ip + ':554/' }); });
+        sock.on('data', d => {
+          buf += d.toString();
+          if (/RTSP\/1\.0 \d+/.test(buf)) {
+            sock.destroy();
+            resolve({ available: true, url: 'rtsp://' + ip + ':554/' });
+          }
+        });
+        sock.setTimeout(2000, () => {
+          sock.destroy();
+          resolve(buf.includes('RTSP') ? { available: true, url: 'rtsp://' + ip + ':554/' } : null);
+        });
       });
-      s.on('error', () => res(null));
-      s.setTimeout(2500, () => { s.destroy(); res(null); });
+      sock.on('error', () => resolve(null));
+      sock.setTimeout(2500, () => { try { sock.destroy(); } catch(e){} resolve(null); });
     });
     if (rtspResult && rtspResult.available) {
       results.push({ path: '/', port: 554, type: 'rtsp', vendor: 'RTSP', available: true,
         rtsp_url: rtspResult.url, stream_url: null, snapshot_url: null,
         note: 'RTSP requiere VLC o player externo. URL: ' + rtspResult.url });
     }
-  } catch {}
+  } catch(e) {}
 
   res.json({ ip, video_sources: results.filter(r => r.available), total: results.filter(r => r.available).length,
     note: results.filter(r => r.available).length > 0 ? 'fuentes de video disponibles' : 'no se detectaron fuentes de video HTTP' });
