@@ -1090,6 +1090,13 @@ def topology_scan(req: TopologyRequest):
         "analysis": topology_analysis,
     }
 
+
+# Geo/Intel module
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from app.api.geo import router as geo_router
+app.include_router(geo_router)
+
 # ===================== LAUNCH =====================
 
 if __name__ == "__main__":
