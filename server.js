@@ -14,6 +14,8 @@ const alerts = require('./lib/alerts');
 const exporter = require('./lib/export');
 const regression = require('./lib/regression');
 const casefile = require('./lib/casefile');
+const healthRouter = require('./src/routes/health');
+const termuxBridge = require('./src/services/termux-bridge');
 
 // ─── Security: API Key Authentication ────────────────────────────────────────
 const API_KEY = process.env.REDTEAM_API_KEY || crypto.randomBytes(24).toString('hex');
@@ -83,6 +85,14 @@ function appendIntercept(rec){ rec.ts=rec.ts||Date.now()/1000; rec.id=rec.id||re
 
 // ─── Public static (dashboard) — sin auth pero solo sirve HTML/JS/CSS ────────
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ─── Health check público (sin auth) — usado por el heartbeat de termux-bridge y monitoreo externo ───
+app.use('/api', healthRouter);
+
+// ─── Estado del puente Termux (público) — MODO RESILIENCIA visible para el frontend ───
+app.get('/api/termux/status', (req, res) => {
+  res.json(termuxBridge.getStatus());
+});
 
 // ─── Rate limiting global ────────────────────────────────────────────────────
 app.use('/api/', globalLimiter);
@@ -1266,4 +1276,15 @@ server.listen(PORT, HOST, () => {
   console.log('  Recon: geo/intel/iot/nmap/mitm | Defense: playbooks/scenarios | Honeypot');
   console.log('  Auth: Bearer token requerido en todas las rutas /api/*');
   console.log('  ' + SCENARIOS.length + ' escenarios Python | Binding: ' + HOST + '\n');
+
+  // ─── Termux Bridge: heartbeat + notificación en tiempo real de MODO RESILIENCIA ───
+  termuxBridge.onStateChange((status) => {
+    emit('termux-bridge', status);
+    if (status.isResilienceMode) {
+      console.log('  ⚠ ' + status.message + ' (' + termuxBridge.TERMUX_API_URL + ')');
+    } else {
+      console.log('  ✅ Conexión con backend Termux restaurada.');
+    }
+  });
+  termuxBridge.startHeartbeat();
 });
