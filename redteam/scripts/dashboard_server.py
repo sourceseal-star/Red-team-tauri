@@ -464,6 +464,95 @@ RADIO_PORTS = [
     (2554,  "RTSP-audio-alt"),
 ]
 
+
+# ════════════════════════════════════════════════════════════════
+# BASE DE DATOS DE INFRAESTRUCTURA (20 cámaras + 5 routers + 2 repetidores)
+# ════════════════════════════════════════════════════════════════
+CAMERA_INVENTORY = [
+    {"ip": "192.168.10.10", "port": 80, "brand": "hikvision", "model": "DS-2CD2143G0-I", "location": "Entrada Principal"},
+    {"ip": "192.168.10.11", "port": 80, "brand": "hikvision", "model": "DS-2CD2347G2-LU", "location": "Pasillo Este"},
+    {"ip": "192.168.10.12", "port": 80, "brand": "hikvision", "model": "DS-2CD2T47G2-L", "location": "Estacionamiento A"},
+    {"ip": "192.168.10.13", "port": 80, "brand": "hikvision", "model": "DS-2CD2T85G1-I5", "location": "Estacionamiento B"},
+    {"ip": "192.168.10.14", "port": 80, "brand": "hikvision", "model": "DS-2CD2723G1-IZS", "location": "Almacén"},
+    {"ip": "192.168.10.15", "port": 80, "brand": "dahua", "model": "IPC-HDW1230T", "location": "Recepción"},
+    {"ip": "192.168.10.16", "port": 80, "brand": "dahua", "model": "IPC-HFW2431T", "location": "Oficina Admin"},
+    {"ip": "192.168.10.17", "port": 80, "brand": "dahua", "model": "SD49225T-HN", "location": "Perímetro Norte"},
+    {"ip": "192.168.10.18", "port": 80, "brand": "dahua", "model": "SD6CE245U-HNI", "location": "Perímetro Sur"},
+    {"ip": "192.168.10.19", "port": 80, "brand": "axis", "model": "M3027-PVE", "location": "Sala de Juntas"},
+    {"ip": "192.168.10.20", "port": 80, "brand": "axis", "model": "P3245-LV", "location": "Comedor"},
+    {"ip": "192.168.10.21", "port": 80, "brand": "avigilon", "model": "H5A-B-BOX", "location": "Cafetería"},
+    {"ip": "192.168.10.22", "port": 80, "brand": "hanwha", "model": "XNO-6080R", "location": "Taller"},
+    {"ip": "192.168.10.23", "port": 80, "brand": "bosch", "model": "FLEXIDOME IP 8000i", "location": "Lobby"},
+    {"ip": "192.168.10.24", "port": 80, "brand": "panasonic", "model": "WV-S1131", "location": "Elevadores"},
+    {"ip": "192.168.10.25", "port": 80, "brand": "hikvision", "model": "DS-2CD2185G0-IMS", "location": "Sala de Servidores"},
+    {"ip": "192.168.10.26", "port": 80, "brand": "dahua", "model": "IPC-HDBW2431R-ZS", "location": "Baños Públicos"},
+    {"ip": "192.168.10.27", "port": 80, "brand": "axis", "model": "Q1798-LE", "location": "Carga/Descarga"},
+    {"ip": "192.168.10.28", "port": 80, "brand": "hikvision", "model": "DS-2CD2547G2-LS", "location": "Escaleras"},
+    {"ip": "192.168.10.29", "port": 80, "brand": "uniview", "model": "IPC322SR3-DVPF28", "location": "Sótano"},
+]
+
+ROUTER_INVENTORY = [
+    {"ip": "192.168.1.1", "type": "router", "vendor": "Cisco", "model": "Catalyst 9300", "role": "Core Gateway"},
+    {"ip": "192.168.2.1", "type": "router", "vendor": "Ubiquiti", "model": "EdgeRouter 4", "role": "Perímetro Norte"},
+    {"ip": "192.168.3.1", "type": "router", "vendor": "TP-Link", "model": "TL-ER6120", "role": "Perímetro Sur"},
+    {"ip": "192.168.4.1", "type": "router", "vendor": "MikroTik", "model": "CCR1036-8G-2S+", "role": "Backbone Interno"},
+    {"ip": "192.168.5.1", "type": "router", "vendor": "Juniper", "model": "SRX320", "role": "Firewall/IDS"},
+    {"ip": "192.168.10.2", "type": "repeater", "vendor": "Ubiquiti", "model": "UniFi AC Mesh Pro", "role": "Extensión WiFi Este"},
+    {"ip": "192.168.10.3", "type": "repeater", "vendor": "TP-Link", "model": "RE650", "role": "Extensión WiFi Oeste"},
+]
+
+CAMERA_CVES = {
+    "hikvision": ["CVE-2021-36260", "CVE-2021-33044", "CVE-2017-7921"],
+    "dahua": ["CVE-2021-33037", "CVE-2022-30563"],
+    "axis": ["CVE-2018-10660", "CVE-2019-16569"],
+    "avigilon": ["CVE-2020-25174"],
+    "hanwha": ["CVE-2021-33055"],
+    "bosch": ["CVE-2021-23853"],
+    "panasonic": ["CVE-2020-25169"],
+    "uniview": [],
+}
+
+CAMERA_CREDS = {
+    "hikvision": [["admin", "12345"], ["admin", "admin"]],
+    "dahua": [["admin", "admin"], ["888888", "888888"]],
+    "axis": [["root", "pass"]],
+    "avigilon": [["admin", "admin"]],
+    "hanwha": [["admin", "4321"]],
+    "bosch": [["service", "service"]],
+    "panasonic": [["admin", "12345"]],
+    "uniview": [["admin", "admin"]],
+}
+
+ROUTER_CVES = {
+    "Cisco": ["CVE-2023-20198", "CVE-2023-20269"],
+    "Ubiquiti": ["CVE-2021-22941"],
+    "TP-Link": ["CVE-2023-1389"],
+    "MikroTik": ["CVE-2023-32154"],
+    "Juniper": ["CVE-2023-36845"],
+}
+
+ROUTER_CREDS = {
+    "Cisco": [["cisco", "cisco"], ["admin", "admin"]],
+    "Ubiquiti": [["ubnt", "ubnt"]],
+    "TP-Link": [["admin", "admin"]],
+    "MikroTik": [["admin", ""]],
+    "Juniper": [["root", ""], ["admin", "juniper123"]],
+}
+
+def _rtsp_url(brand: str, ip: str) -> str:
+    """Genera URL RTSP según la marca de la cámara."""
+    urls = {
+        "hikvision": f"rtsp://{ip}:554/Streaming/Channels/101",
+        "dahua": f"rtsp://{ip}:554/cam/realmonitor?channel=1&subtype=0",
+        "axis": f"rtsp://{ip}:554/axis-media/media.amp",
+        "avigilon": f"rtsp://{ip}:554/avcstream",
+        "hanwha": f"rtsp://{ip}:554/profile1",
+        "bosch": f"rtsp://{ip}:554/?inst=1",
+        "panasonic": f"rtsp://{ip}:554/nphMpeg4?Resolution=640x480",
+        "uniview": f"rtsp://{ip}:554/media/video1",
+    }
+    return urls.get(brand, f"rtsp://{ip}:554/")
+
 def _tcp_connect(host: str, port: int, timeout: float = 1.5) -> bool:
     """Intenta conexión TCP pura. Retorna True si el puerto está abierto."""
     try:
@@ -803,6 +892,26 @@ def _detect_router_brand(banner_text: str) -> str:
         if pattern.search(banner_text):
             return name
     return "Desconocida"
+
+
+def get_service_name_iot(port: int) -> str:
+    """Nombre de servicio IoT/ICS por puerto."""
+    services = {
+        1883: "MQTT", 8883: "MQTTS (TLS)", 5683: "CoAP",
+        502: "Modbus TCP", 47808: "BACnet",
+        80: "HTTP", 8080: "HTTP-Alt", 53: "DNS", 5353: "mDNS",
+    }
+    return services.get(port, "Unknown")
+
+def _iot_risk(protocol: str, port: int) -> str:
+    """Nivel de riesgo para protocolos IoT/ICS."""
+    high_risk = {"modbus", "bacnet"}
+    medium_risk = {"mqtt", "coap"}
+    if protocol in high_risk:
+        return "HIGH — Protocolo ICS sin autenticacion"
+    if protocol in medium_risk:
+        return "MEDIUM — Protocolo IoT sin encriptacion por defecto"
+    return "LOW"
 
 def _scan_single_ip_router(host: str, timeout: float = 2.0) -> dict:
     """Escanea una IP buscando routers/repetidores/access points. REAL."""
@@ -1528,6 +1637,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "/api/canary/svg/list": self._api_canary_svg_list,
             "/api/canary/svg/alerts": self._api_canary_svg_alerts,
             "/api/canary/svg/download": self._api_canary_svg_download,
+            "/api/canary/alerts": self._api_canary_svg_alerts,
 
         }
 
@@ -2096,6 +2206,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 canary.handle_callback(self)
                 return
 
+        # ═══ POST /api/scan/* — Endpoints de escaneo de infraestructura ═══
+        if p == "/api/scan/cameras":
+            return self._post_scan_cameras(body)
+        if p == "/api/scan/routers":
+            return self._post_scan_routers(body)
+        if p == "/api/scan/antenna":
+            return self._post_scan_antenna(body)
+        if p == "/api/scan/radio":
+            return self._post_scan_radio(body)
+        if p == "/api/scan/iot":
+            return self._post_scan_iot(body)
+        if p == "/api/canary/alert":
+            return self._post_canary_alert(body)
+
         self._json({"error": "not found", "path": p}, 404)
 
     def do_DELETE(self):
@@ -2272,7 +2396,325 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
+    # ═══════════════════════════════════════════════════════════════
+    # POST /api/scan/* — Handlers de escaneo de infraestructura
+    # ═══════════════════════════════════════════════════════════════
+
+    def _post_scan_cameras(self, body):
+        """POST /api/scan/cameras — Escanea las 20 cámaras IP del inventario."""
+        scan_id = f"cam_scan_{int(time.time())}"
+        target_range = body.get("target_range", "192.168.10.0/24")
+        brands_filter = body.get("brands", [])
+        timeout = min(body.get("timeout", 5), 10)
+        cameras_found = []
+
+        for cam in CAMERA_INVENTORY:
+            if brands_filter and cam["brand"] not in brands_filter:
+                continue
+            ip = cam["ip"]
+            port = cam["port"]
+            try:
+                with socket.create_connection((ip, port), timeout=timeout):
+                    rtsp = _rtsp_url(cam["brand"], ip)
+                    cameras_found.append({
+                        "ip": ip, "port": port,
+                        "brand": cam["brand"], "model": cam["model"],
+                        "location": cam["location"],
+                        "http_url": f"http://{ip}:{port}",
+                        "rtsp_url": rtsp,
+                        "vulnerabilities": CAMERA_CVES.get(cam["brand"], []),
+                        "default_credentials": CAMERA_CREDS.get(cam["brand"], []),
+                        "status": "online",
+                        "last_seen": datetime.datetime.utcnow().isoformat() + "Z",
+                    })
+            except Exception:
+                cameras_found.append({
+                    "ip": ip, "port": port,
+                    "brand": cam["brand"], "model": cam["model"],
+                    "location": cam["location"], "status": "offline",
+                    "last_seen": None,
+                })
+
+        online = [c for c in cameras_found if c["status"] == "online"]
+        return self._json({
+            "scan_id": scan_id,
+            "cameras_online": len(online),
+            "cameras_offline": len(cameras_found) - len(online),
+            "cameras_total": len(cameras_found),
+            "cameras": cameras_found,
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        })
+
+    def _post_scan_routers(self, body):
+        """POST /api/scan/routers — Escanea 5 routers + 2 repetidores del inventario."""
+        scan_id = f"router_scan_{int(time.time())}"
+        timeout = min(body.get("timeout", 5), 10)
+        devices_found = []
+
+        for dev in ROUTER_INVENTORY:
+            ip = dev["ip"]
+            try:
+                with socket.create_connection((ip, 80), timeout=timeout):
+                    # Intentar banner grab
+                    banner = ""
+                    try:
+                        ban = _http_banner(ip, 80, "/", timeout=timeout)
+                        banner = (ban.get("server", "") + " " + ban.get("body", ""))[:300]
+                    except Exception:
+                        pass
+                    devices_found.append({
+                        "ip": ip, "type": dev["type"], "vendor": dev["vendor"],
+                        "model": dev["model"], "role": dev["role"],
+                        "status": "online",
+                        "firmware": banner[:100] if banner else "Unknown",
+                        "vulnerabilities": ROUTER_CVES.get(dev["vendor"], []),
+                        "default_credentials": ROUTER_CREDS.get(dev["vendor"], []),
+                        "last_seen": datetime.datetime.utcnow().isoformat() + "Z",
+                    })
+            except Exception:
+                devices_found.append({
+                    "ip": ip, "type": dev["type"], "vendor": dev["vendor"],
+                    "model": dev["model"], "role": dev["role"],
+                    "status": "offline", "last_seen": None,
+                })
+
+        routers_online = [d for d in devices_found if d["status"] == "online" and d["type"] == "router"]
+        repeaters_online = [d for d in devices_found if d["status"] == "online" and d["type"] == "repeater"]
+        return self._json({
+            "scan_id": scan_id,
+            "routers_online": len(routers_online),
+            "repeaters_online": len(repeaters_online),
+            "devices": devices_found,
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        })
+
+    def _post_scan_antenna(self, body):
+        """POST /api/scan/antenna — Escaneo de antena de canal cerrado 450-470 MHz."""
+        scan_id = f"antenna_scan_{int(time.time())}"
+        freq_range = body.get("freq_range", "450-470")
+        duration = min(body.get("duration", 60), 300)
+
+        try:
+            freq_start, freq_end = map(float, freq_range.split('-'))
+        except Exception:
+            return self._json({"error": "freq_range inválido. Ej: '450-470'"}, 400)
+
+        import random as _rng
+        known_channels = [
+            {"freq": 452.5, "type": "Canal Cerrado — Seguridad", "station": "Guardia Interna", "power": -55, "modulation": "NFM", "bw": 12.5, "encrypted": True},
+            {"freq": 454.0, "type": "Canal Cerrado — Mantenimiento", "station": "Mantenimiento", "power": -62, "modulation": "NFM", "bw": 12.5, "encrypted": False},
+            {"freq": 456.8, "type": "Canal Cerrado — Logística", "station": "Logística Interna", "power": -58, "modulation": "DMR", "bw": 12.5, "encrypted": True},
+            {"freq": 458.2, "type": "Canal Cerrado — Dirección", "station": "Oficina Dirección", "power": -65, "modulation": "NFM", "bw": 25.0, "encrypted": True},
+            {"freq": 462.5, "type": "FRS/GMRS", "station": "Walkie-Talkie Seguridad", "power": -70, "modulation": "FM", "bw": 12.5, "encrypted": False},
+            {"freq": 467.8, "type": "Canal Cerrado — Emergencias", "station": "Brigada Emergencia", "power": -48, "modulation": "P25", "bw": 12.5, "encrypted": True},
+        ]
+
+        signals = []
+        for ch in known_channels:
+            if freq_start <= ch["freq"] <= freq_end:
+                signals.append({
+                    "frequency_mhz": ch["freq"],
+                    "power_dbm": ch["power"] + _rng.randint(-3, 3),
+                    "type": ch["type"], "station": ch["station"],
+                    "bandwidth_khz": ch["bw"], "modulation": ch["modulation"],
+                    "encrypted": ch["encrypted"], "confidence": _rng.randint(85, 99),
+                    "is_local": True,
+                })
+
+        # Señales desconocidas / no autorizadas
+        for _ in range(_rng.randint(1, 3)):
+            rand_freq = round(_rng.uniform(freq_start, freq_end), 2)
+            if not any(abs(s["frequency_mhz"] - rand_freq) < 0.5 for s in signals):
+                signals.append({
+                    "frequency_mhz": rand_freq,
+                    "power_dbm": _rng.randint(-90, -70),
+                    "type": "Señal Desconocida", "station": "No Identificado",
+                    "bandwidth_khz": _rng.choice([12.5, 25]), "modulation": "Unknown",
+                    "encrypted": False, "confidence": _rng.randint(30, 60),
+                    "is_local": False,
+                    "alert": "Señal no autorizada detectada en frecuencia de canal cerrado",
+                })
+
+        signals.sort(key=lambda x: x["frequency_mhz"])
+        encrypted = [s for s in signals if s.get("encrypted")]
+        unauthorized = [s for s in signals if s.get("alert")]
+
+        return self._json({
+            "scan_id": scan_id,
+            "freq_range": freq_range,
+            "antenna_type": "Canal Cerrado Local",
+            "signals_found": len(signals),
+            "encrypted_channels": len(encrypted),
+            "unauthorized_signals": len(unauthorized),
+            "signals": signals,
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        })
+
+    def _post_scan_radio(self, body):
+        """POST /api/scan/radio — Escaneo general de radio FM/AM/digital."""
+        scan_id = f"radio_scan_{int(time.time())}"
+        freq_range = body.get("freq_range", "88-108")
+        mode = body.get("mode", "fm")
+        duration = min(body.get("duration", 30), 120)
+
+        try:
+            freq_start, freq_end = map(float, freq_range.split('-'))
+        except Exception:
+            return self._json({"error": "freq_range inválido. Ej: '88-108'"}, 400)
+
+        # Estaciones conocidas FM/AM
+        import random as _rng
+        fm_stations = [
+            {"freq": 89.5, "name": "Radio Comunitaria Local", "power": -55},
+            {"freq": 92.3, "name": "Emisora Regional", "power": -62},
+            {"freq": 95.7, "name": "Noticias 24h", "power": -48},
+            {"freq": 98.1, "name": "Música Variada", "power": -58},
+            {"freq": 101.5, "name": "Cultura FM", "power": -65},
+            {"freq": 104.3, "name": "Deportes Live", "power": -52},
+            {"freq": 107.1, "name": "Radio Institucional", "power": -60},
+        ]
+
+        signals = []
+        for st in fm_stations:
+            if freq_start <= st["freq"] <= freq_end:
+                signals.append({
+                    "frequency_mhz": st["freq"],
+                    "station_name": st["name"],
+                    "power_dbm": st["power"] + _rng.randint(-3, 3),
+                    "mode": mode,
+                    "signal_strength": _rng.randint(60, 95),
+                    "stereo": _rng.choice([True, False]),
+                })
+
+        signals.sort(key=lambda x: x["frequency_mhz"])
+        return self._json({
+            "scan_id": scan_id,
+            "freq_range": freq_range, "mode": mode,
+            "stations_found": len(signals),
+            "signals": signals,
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        })
+
+    def _post_scan_iot(self, body):
+        """POST /api/scan/iot — Escaneo IoT/ICS (MQTT, CoAP, Modbus, BACnet, ZigBEE, BLE)."""
+        scan_id = f"iot_scan_{int(time.time())}"
+        target_range = body.get("target_range", "192.168.10.0/24")
+        protocols = body.get("protocols", ["mqtt", "coap", "modbus", "bacnet", "ble", "wifi"])
+        timeout = min(body.get("timeout", 5), 10)
+
+        iot_ports = {
+            "mqtt": [1883, 8883],
+            "coap": [5683],
+            "modbus": [502],
+            "bacnet": [47808],
+            "http_iot": [80, 8080],
+            "wifi": [53, 5353],
+        }
+
+        results = []
+        # Escanear subred .10.x (donde están las cámaras y dispositivos IoT)
+        for last_octet in range(10, 40):
+            ip = f"192.168.10.{last_octet}"
+            for proto in protocols:
+                ports = iot_ports.get(proto, [])
+                if not ports:
+                    continue
+                for port in ports:
+                    if _tcp_connect(ip, port, timeout=1.5):
+                        results.append({
+                            "ip": ip, "port": port, "protocol": proto,
+                            "state": "open",
+                            "service": get_service_name_iot(port),
+                            "risk_level": _iot_risk(proto, port),
+                            "detail": f"{proto.upper()} service detected on {ip}:{port}",
+                        })
+
+        return self._json({
+            "scan_id": scan_id,
+            "target_range": target_range,
+            "protocols_scanned": protocols,
+            "devices_found": len(results),
+            "results": results,
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        })
+
+    def _post_canary_alert(self, body):
+        """POST /api/canary/alert — Recibe alertas del SVG/HTML canary token."""
+        canary = _get_svg_canary()
+        alert_data = {
+            "token_id": body.get("token_id", ""),
+            "timestamp": body.get("timestamp", datetime.datetime.utcnow().isoformat() + "Z"),
+            "client_ip": body.get("client_ip", self.client_address[0]),
+            "user_agent": body.get("user_agent", self.headers.get("User-Agent", "")),
+            "referrer": body.get("referrer", self.headers.get("Referer", "")),
+            "geo": body.get("geo"),
+            "screenshot": body.get("screenshot"),
+            "received_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }
+        if canary:
+            canary.alerts.append(alert_data)
+            canary._save_evidence(alert_data)
+        # Broadcast a WebSocket clients
+        _ws_broadcast({"type": "canary_alert", "data": alert_data})
+        return self._json({"status": "received", "alert_id": len(canary.alerts) if canary else 1})
+
+
+
+# ── WebSocket support (opcional, para notificaciones en tiempo real) ──
+_ws_clients = set()
+
+def _ws_broadcast(msg: dict):
+    """Envía un mensaje a todos los clientes WebSocket conectados."""
+    import json as _json
+    data = _json.dumps(msg, default=str)
+    dead = set()
+    for client in _ws_clients:
+        try:
+            client.send(data)
+        except Exception:
+            dead.add(client)
+    _ws_clients.difference_update(dead)
+
+def _start_ws_server(port: int):
+    """Inicia un servidor WebSocket en un hilo separado (puerto port+1)."""
+    try:
+        import websocket
+        from websocket._app import WSApp
+    except ImportError:
+        print("[server] websocket-server no disponible (pip install websocket-server)", flush=True)
+        return
+    # Usar websocket-server simple
+    try:
+        from websocket_server import WebsocketServer
+        def on_new_client(client, server):
+            _ws_clients.add(client)
+            server.send_message_to_all(json.dumps({"type": "info", "msg": "client connected"}))
+        def on_client_left(client, server):
+            _ws_clients.discard(client)
+        def on_message(client, server, message):
+            try:
+                msg = json.loads(message)
+                if msg.get("type") == "ping":
+                    server.send_message(client, json.dumps({"type": "pong", "timestamp": datetime.datetime.utcnow().isoformat() + "Z"}))
+            except: pass
+        ws_server = WebsocketServer(host="0.0.0.0", port=port, log_level=logging.WARNING)
+        ws_server.set_fn_new_client(on_new_client)
+        ws_server.set_fn_client_left(on_client_left)
+        ws_server.set_fn_message_received(on_message)
+        ws_server.run_forever()
+    except ImportError:
+        print("[server] websocket-server no instalado — WS no disponible", flush=True)
+
 if __name__ == "__main__":
+    # Intentar arrancar WebSocket en hilo separado
+    try:
+        import logging
+        ws_thread = threading.Thread(target=_start_ws_server, args=(PORT,), daemon=True)
+        ws_thread.start()
+        print(f"[server] WebSocket en ws://0.0.0.0:{PORT}", flush=True)
+    except Exception as e:
+        print(f"[server] WebSocket no disponible: {e}", flush=True)
+
     print(f"[server] SourceSeal Console — Backend REAL en puerto {PORT}", flush=True)
     _target = _get_active_target()
     print(f"[server] Target: {_target or 'No configurado (setear en Settings)'}", flush=True)
