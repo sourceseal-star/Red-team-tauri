@@ -1,4 +1,10 @@
 """
+⚠️  DEPRECADO: Este backend FastAPI ha sido reemplazado por redteam/scripts/dashboard_server.py
+    que incluye canary funcional, frontend estático, scan de red real y WebSocket.
+    Usar: bash start-termux.sh
+"""
+
+"""
 SourceSeal Backend Engine
 Escaneo de IP, Cámaras, Video, Radio, IoT, Red Team Ops
 Compatible con Replit y Termux

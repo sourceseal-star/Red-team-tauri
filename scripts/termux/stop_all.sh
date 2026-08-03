@@ -1,17 +1,10 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# ============================================
-# SourceSeal Console Pro — Stop All Services
-# ============================================
+# SourceSeal Red-team — Detener todos los servicios
 
-PROJECT_DIR="$HOME/Red-team-tauri"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PID_DIR="$PROJECT_DIR/.pids"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-echo "${CYAN}🛑 Deteniendo servicios SourceSeal...${NC}"
+echo "🛑 Deteniendo servicios SourceSeal..."
 
 # Detener por PID files
 if [ -d "$PID_DIR" ]; then
@@ -20,8 +13,8 @@ if [ -d "$PID_DIR" ]; then
             pid=$(cat "$pidfile")
             name=$(basename "$pidfile" .pid)
             if kill -0 "$pid" 2>/dev/null; then
-                kill "$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null
-                echo "${GREEN}   ✅ $name detenido (PID: $pid)${NC}"
+                kill "$pid" 2>/dev/null
+                echo "   ✅ $name detenido (PID: $pid)"
             fi
             rm -f "$pidfile"
         fi
@@ -29,8 +22,7 @@ if [ -d "$PID_DIR" ]; then
 fi
 
 # Matar procesos huérfanos
-pkill -f "python.*main.py" 2>/dev/null || true
 pkill -f "dashboard_server.py" 2>/dev/null || true
 pkill -f "canary_monitor.py" 2>/dev/null || true
 
-echo "${GREEN}✅ Todos los servicios detenidos${NC}"
+echo "✅ Todos los servicios detenidos"
