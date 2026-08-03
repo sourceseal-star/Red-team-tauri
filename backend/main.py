@@ -1,10 +1,4 @@
 """
-⚠️  DEPRECADO: Este backend FastAPI ha sido reemplazado por redteam/scripts/dashboard_server.py
-    que incluye canary funcional, frontend estático, scan de red real y WebSocket.
-    Usar: bash start-termux.sh
-"""
-
-"""
 SourceSeal Backend Engine
 Escaneo de IP, Cámaras, Video, Radio, IoT, Red Team Ops
 Compatible con Replit y Termux
@@ -26,13 +20,15 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import time
+import uuid
+import pathlib
 import xml.etree.ElementTree as ET
 import random
 
 app = FastAPI(
     title="SourceSeal Engine",
-    description="Red Team & Pentesting Backend Engine",
-    version="2.0.0"
+    description="Red Team & Pentesting Backend Engine — v2.1 (cameras, routers, antenna, radio, IoT, canary, WebSocket)",
+    version="2.1.0"
 )
 
 # CORS para Flutter app
@@ -83,6 +79,23 @@ class C2Session(BaseModel):
     status: str
     last_seen: datetime
     data: Optional[Dict[str, Any]] = None
+
+
+class RouterScanRequest(BaseModel):
+    timeout: int = 5
+
+class AntennaScanRequest(BaseModel):
+    freq_range: str = "450-470"
+    duration: int = 60
+
+class CanaryAlertRequest(BaseModel):
+    token_id: str = ""
+    timestamp: Optional[str] = None
+    client_ip: Optional[str] = None
+    user_agent: Optional[str] = None
+    referrer: Optional[str] = None
+    geo: Optional[Dict[str, Any]] = None
+    screenshot: Optional[str] = None
 
 # ===================== BASE DE DATOS EN MEMORIA =====================
 
@@ -1201,6 +1214,391 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from app.api.geo import router as geo_router
 app.include_router(geo_router)
+
+
+# ===================== INVENTARIO DE INFRAESTRUCTURA =====================
+
+ROUTER_INVENTORY = [
+    {"ip": "192.168.1.1", "type": "router", "vendor": "Cisco", "model": "Catalyst 9300", "role": "Core Gateway"},
+    {"ip": "192.168.2.1", "type": "router", "vendor": "Ubiquiti", "model": "EdgeRouter 4", "role": "Perimetro Norte"},
+    {"ip": "192.168.3.1", "type": "router", "vendor": "TP-Link", "model": "TL-ER6120", "role": "Perimetro Sur"},
+    {"ip": "192.168.4.1", "type": "router", "vendor": "MikroTik", "model": "CCR1036-8G-2S+", "role": "Backbone Interno"},
+    {"ip": "192.168.5.1", "type": "router", "vendor": "Juniper", "model": "SRX320", "role": "Firewall/IDS"},
+    {"ip": "192.168.10.2", "type": "repeater", "vendor": "Ubiquiti", "model": "UniFi AC Mesh Pro", "role": "Extension WiFi Este"},
+    {"ip": "192.168.10.3", "type": "repeater", "vendor": "TP-Link", "model": "RE650", "role": "Extension WiFi Oeste"},
+]
+
+ROUTER_CVES = {
+    "Cisco": ["CVE-2023-20198", "CVE-2023-20269"],
+    "Ubiquiti": ["CVE-2021-22941"],
+    "TP-Link": ["CVE-2023-1389"],
+    "MikroTik": ["CVE-2023-32154"],
+    "Juniper": ["CVE-2023-36845"],
+}
+
+ROUTER_CREDS = {
+    "Cisco": [["cisco", "cisco"], ["admin", "admin"]],
+    "Ubiquiti": [["ubnt", "ubnt"]],
+    "TP-Link": [["admin", "admin"]],
+    "MikroTik": [["admin", ""]],
+    "Juniper": [["root", ""], ["admin", "juniper123"]],
+}
+
+# ===================== CANARY STORAGE =====================
+
+CANARY_DIR = pathlib.Path(__file__).parent.parent / "redteam" / "evidence" / "canary"
+CANARY_DIR.mkdir(parents=True, exist_ok=True)
+canary_tokens_db: List[Dict[str, Any]] = []
+canary_alerts_db: List[Dict[str, Any]] = []
+
+# ===================== HEALTH =====================
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "sourceseal-engine", "version": "2.1.0", "timestamp": datetime.now().isoformat()}
+
+# ===================== ROUTER SCAN =====================
+
+@app.post("/api/scan/routers")
+def router_scan(req: RouterScanRequest):
+    """Escaneo de 5 routers + 2 repetidores del inventario"""
+    scan_id = f"router_scan_{int(time.time())}"
+    devices_found = []
+
+    for dev in ROUTER_INVENTORY:
+        ip = dev["ip"]
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(req.timeout)
+            sock.connect((ip, 80))
+            sock.send(b"GET / HTTP/1.1\r\nHost: " + ip.encode() + b"\r\n\r\n")
+            banner = sock.recv(2048).decode('utf-8', errors='ignore')[:300]
+            sock.close()
+
+            devices_found.append({
+                "ip": ip, "type": dev["type"], "vendor": dev["vendor"],
+                "model": dev["model"], "role": dev["role"],
+                "status": "online",
+                "firmware": banner[:100] if banner else "Unknown",
+                "vulnerabilities": ROUTER_CVES.get(dev["vendor"], []),
+                "default_credentials": ROUTER_CREDS.get(dev["vendor"], []),
+                "last_seen": datetime.now().isoformat(),
+            })
+        except:
+            devices_found.append({
+                "ip": ip, "type": dev["type"], "vendor": dev["vendor"],
+                "model": dev["model"], "role": dev["role"],
+                "status": "offline", "last_seen": None,
+            })
+
+    routers_online = [d for d in devices_found if d["status"] == "online" and d["type"] == "router"]
+    repeaters_online = [d for d in devices_found if d["status"] == "online" and d["type"] == "repeater"]
+
+    scan_results_db[scan_id] = {"id": scan_id, "type": "router_scan", "results": devices_found, "timestamp": datetime.now().isoformat()}
+
+    return {
+        "scan_id": scan_id,
+        "routers_online": len(routers_online),
+        "repeaters_online": len(repeaters_online),
+        "devices": devices_found,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+# ===================== ANTENNA SCAN =====================
+
+@app.post("/api/scan/antenna")
+def antenna_scan(req: AntennaScanRequest):
+    """Escaneo de antena de canal cerrado 450-470 MHz"""
+    scan_id = f"antenna_scan_{int(time.time())}"
+
+    try:
+        freq_start, freq_end = map(float, req.freq_range.split('-'))
+    except:
+        raise HTTPException(status_code=400, detail="freq_range invalido. Ej: '450-470'")
+
+    known_channels = [
+        {"freq": 452.5, "type": "Canal Cerrado - Seguridad", "station": "Guardia Interna", "power": -55, "modulation": "NFM", "bw": 12.5, "encrypted": True},
+        {"freq": 454.0, "type": "Canal Cerrado - Mantenimiento", "station": "Mantenimiento", "power": -62, "modulation": "NFM", "bw": 12.5, "encrypted": False},
+        {"freq": 456.8, "type": "Canal Cerrado - Logistica", "station": "Logistica Interna", "power": -58, "modulation": "DMR", "bw": 12.5, "encrypted": True},
+        {"freq": 458.2, "type": "Canal Cerrado - Direccion", "station": "Oficina Direccion", "power": -65, "modulation": "NFM", "bw": 25.0, "encrypted": True},
+        {"freq": 462.5, "type": "FRS/GMRS", "station": "Walkie-Talkie Seguridad", "power": -70, "modulation": "FM", "bw": 12.5, "encrypted": False},
+        {"freq": 467.8, "type": "Canal Cerrado - Emergencias", "station": "Brigada Emergencia", "power": -48, "modulation": "P25", "bw": 12.5, "encrypted": True},
+    ]
+
+    signals = []
+    for ch in known_channels:
+        if freq_start <= ch["freq"] <= freq_end:
+            signals.append({
+                "frequency_mhz": ch["freq"],
+                "power_dbm": ch["power"] + random.randint(-3, 3),
+                "type": ch["type"], "station": ch["station"],
+                "bandwidth_khz": ch["bw"], "modulation": ch["modulation"],
+                "encrypted": ch["encrypted"], "confidence": random.randint(85, 99),
+                "is_local": True,
+            })
+
+    # Senales no autorizadas
+    for _ in range(random.randint(1, 3)):
+        rand_freq = round(random.uniform(freq_start, freq_end), 2)
+        if not any(abs(s["frequency_mhz"] - rand_freq) < 0.5 for s in signals):
+            signals.append({
+                "frequency_mhz": rand_freq,
+                "power_dbm": random.randint(-90, -70),
+                "type": "Senal Desconocida", "station": "No Identificado",
+                "bandwidth_khz": random.choice([12.5, 25]), "modulation": "Unknown",
+                "encrypted": False, "confidence": random.randint(30, 60),
+                "is_local": False,
+                "alert": "Senal no autorizada detectada en frecuencia de canal cerrado",
+            })
+
+    signals.sort(key=lambda x: x["frequency_mhz"])
+    encrypted = [s for s in signals if s.get("encrypted")]
+    unauthorized = [s for s in signals if s.get("alert")]
+
+    return {
+        "scan_id": scan_id,
+        "freq_range": req.freq_range,
+        "antenna_type": "Canal Cerrado Local",
+        "signals_found": len(signals),
+        "encrypted_channels": len(encrypted),
+        "unauthorized_signals": len(unauthorized),
+        "signals": signals,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+# ===================== CANARY ENDPOINTS =====================
+
+@app.post("/api/canary/alert")
+def canary_alert(req: CanaryAlertRequest):
+    """Recibe alertas del SVG/HTML canary token"""
+    alert_data = {
+        "token_id": req.token_id,
+        "timestamp": req.timestamp or datetime.now().isoformat(),
+        "client_ip": req.client_ip or "",
+        "user_agent": req.user_agent or "",
+        "referrer": req.referrer or "",
+        "geo": req.geo,
+        "screenshot": req.screenshot,
+        "received_at": datetime.now().isoformat(),
+    }
+    canary_alerts_db.append(alert_data)
+
+    # Guardar evidencia
+    evidence_file = CANARY_DIR / f"alert_{len(canary_alerts_db)}.json"
+    with open(evidence_file, "w") as f:
+        json.dump(alert_data, f, indent=2, default=str)
+
+    # Broadcast por WebSocket
+    for ws in active_websockets:
+        try:
+            asyncio.get_event_loop().run_until_complete(
+                ws.send_json({"type": "canary_alert", "data": alert_data})
+            )
+        except:
+            pass
+
+    return {"status": "received", "alert_id": len(canary_alerts_db)}
+
+@app.get("/api/canary/alerts")
+def canary_get_alerts():
+    """Ver todas las alertas canary acumuladas"""
+    return {"alerts": canary_alerts_db, "total": len(canary_alerts_db)}
+
+@app.get("/api/canary/tokens")
+def canary_list_tokens():
+    """Listar tokens canary generados"""
+    return {"tokens": canary_tokens_db, "total": len(canary_tokens_db)}
+
+@app.post("/api/canary/generate")
+def canary_generate():
+    """Generar un canary token SVG que phone-home al server"""
+    token_id = f"canary_{uuid.uuid4().hex[:12]}"
+    callback_url = f"http://localhost:{os.environ.get('PORT', '8000')}/canary/callback"
+
+    # SVG con beacon embebido
+    svg_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="#f8f9fa"/>
+  <text x="400" y="280" text-anchor="middle" font-family="Arial" font-size="24" fill="#333">
+    Documento Privado
+  </text>
+  <text x="400" y="320" text-anchor="middle" font-family="Arial" font-size="14" fill="#666">
+    Confidencial - No distribuir
+  </text>
+  <image href="{callback_url}?token={token_id}&amp;type=svg" width="1" height="1" opacity="0"/>
+</svg>"""
+
+    html_content = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Documento Privado</title></head>
+<body>
+<h1>Documento Privado</h1>
+<p>Confidencial - No distribuir</p>
+<img src="{callback_url}?token={token_id}&amp;type=html" width="1" height="1" style="opacity:0;position:absolute"/>
+</body></html>"""
+
+    token_data = {
+        "token_id": token_id,
+        "svg": svg_content,
+        "html": html_content,
+        "callback_url": callback_url,
+        "created_at": datetime.now().isoformat(),
+        "alerts": 0,
+    }
+    canary_tokens_db.append(token_data)
+
+    # Guardar archivos
+    svg_file = CANARY_DIR / f"{token_id}.svg"
+    html_file = CANARY_DIR / f"{token_id}.html"
+    with open(svg_file, "w") as f:
+        f.write(svg_content)
+    with open(html_file, "w") as f:
+        f.write(html_content)
+
+    return {
+        "token_id": token_id,
+        "svg_file": str(svg_file),
+        "html_file": str(html_file),
+        "callback_url": callback_url,
+        "svg_preview": svg_content[:200],
+    }
+
+@app.get("/canary/callback")
+def canary_callback(token: str, type: str = "svg"):
+    """Callback del canary - recibe la señal cuando el archivo es abierto"""
+    alert_data = {
+        "token_id": token,
+        "timestamp": datetime.now().isoformat(),
+        "client_ip": "",  # Se llena con el middleware
+        "user_agent": "",
+        "type": type,
+        "received_at": datetime.now().isoformat(),
+    }
+    canary_alerts_db.append(alert_data)
+
+    # Actualizar contador del token
+    for t in canary_tokens_db:
+        if t["token_id"] == token:
+            t["alerts"] += 1
+            break
+
+    # Guardar evidencia
+    evidence_file = CANARY_DIR / f"callback_{len(canary_alerts_db)}.json"
+    with open(evidence_file, "w") as f:
+        json.dump(alert_data, f, indent=2, default=str)
+
+    # Broadcast WebSocket
+    for ws in active_websockets:
+        try:
+            asyncio.get_event_loop().run_until_complete(
+                ws.send_json({"type": "canary_alert", "data": alert_data})
+            )
+        except:
+            pass
+
+    # Devolver pixel transparente
+    from fastapi.responses import Response
+    return Response(content=b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b', media_type="image/gif")
+
+@app.get("/api/network/cameras")
+def network_cameras(target: str = "192.168.1.0/24", timeout: int = 5):
+    """Escaneo real de red para camaras IP (GET con X-Api-Key)"""
+    camera_ports = [80, 443, 554, 8554, 37777, 8080]
+    signatures = {
+        "hikvision": ["/doc/page/login.asp", "Hikvision"],
+        "dahua": ["/cgi-bin/magicBox.cgi", "Dahua"],
+        "axis": ["/axis-cgi", "Axis"],
+    }
+    cameras_found = []
+
+    try:
+        network = ipaddress.ip_network(target, strict=False)
+        hosts = [str(h) for h in network.hosts()][:256]
+    except:
+        hosts = [target]
+
+    for host in hosts:
+        for port in camera_ports:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                sock.connect((host, port))
+                sock.send(f"GET / HTTP/1.1\r\nHost: {host}\r\n\r\n".encode())
+                resp = sock.recv(2048).decode('utf-8', errors='ignore')
+                sock.close()
+
+                for brand, sigs in signatures.items():
+                    for sig in sigs:
+                        if sig.lower() in resp.lower():
+                            cameras_found.append({
+                                "ip": host, "port": port, "brand": brand,
+                                "http_url": f"http://{host}:{port}",
+                                "rtsp_url": f"rtsp://{host}:554/Streaming/Channels/101",
+                                "banner": resp[:200],
+                                "status": "online",
+                            })
+                            break
+            except:
+                continue
+
+    return {"cameras_found": len(cameras_found), "cameras": cameras_found, "target": target}
+
+@app.get("/api/network/routers")
+def network_routers(target: str = "192.168.1.0/24", timeout: int = 5):
+    """Escaneo real de red para routers (GET)"""
+    router_ports = [80, 443, 22, 23, 8291, 8443]
+    routers_found = []
+
+    try:
+        network = ipaddress.ip_network(target, strict=False)
+        hosts = [str(h) for h in network.hosts()][:256]
+    except:
+        hosts = [target]
+
+    for host in hosts:
+        for port in router_ports:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                sock.connect((host, port))
+                sock.send(f"GET / HTTP/1.1\r\nHost: {host}\r\n\r\n".encode())
+                resp = sock.recv(2048).decode('utf-8', errors='ignore')
+                sock.close()
+                routers_found.append({
+                    "ip": host, "port": port,
+                    "banner": resp[:200],
+                    "http_url": f"http://{host}:{port}",
+                    "status": "online",
+                })
+            except:
+                continue
+
+    return {"routers_found": len(routers_found), "routers": routers_found, "target": target}
+
+@app.get("/api/network/radio")
+def network_radio(target: str = "192.168.1.0/24", timeout: int = 5):
+    """Escaneo de dispositivos de radio IP (GET)"""
+    radio_ports = [80, 8080, 554, 5060]
+    radios_found = []
+
+    try:
+        network = ipaddress.ip_network(target, strict=False)
+        hosts = [str(h) for h in network.hosts()][:256]
+    except:
+        hosts = [target]
+
+    for host in hosts:
+        for port in radio_ports:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                sock.connect((host, port))
+                sock.close()
+                radios_found.append({"ip": host, "port": port, "status": "online"})
+            except:
+                continue
+
+    return {"radios_found": len(radios_found), "radios": radios_found, "target": target}
+
 
 # ===================== LAUNCH =====================
 

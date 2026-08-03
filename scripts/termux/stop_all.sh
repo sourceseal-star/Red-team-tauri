@@ -1,12 +1,11 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# SourceSeal Red-team — Detener todos los servicios
+# SourceSeal Engine — Detener todos los servicios
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PID_DIR="$PROJECT_DIR/.pids"
 
 echo "🛑 Deteniendo servicios SourceSeal..."
 
-# Detener por PID files
 if [ -d "$PID_DIR" ]; then
     for pidfile in "$PID_DIR"/*.pid; do
         if [ -f "$pidfile" ]; then
@@ -21,7 +20,7 @@ if [ -d "$PID_DIR" ]; then
     done
 fi
 
-# Matar procesos huérfanos
+pkill -f "main.py" 2>/dev/null || true
 pkill -f "dashboard_server.py" 2>/dev/null || true
 pkill -f "canary_monitor.py" 2>/dev/null || true
 
