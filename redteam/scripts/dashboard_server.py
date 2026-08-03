@@ -34,6 +34,25 @@ try:
 except Exception as _geo_import_err:
     _GEO_INTEL_OK = False
     print(f"[WARN] geo_intel import falló: {_geo_import_err}", flush=True)
+
+# ── SVG Canary imports ───────────────────────────────────────────────────────
+CANARY_SVG_DIR = ROOT / "evidence" / "canary-svg-files"
+CANARY_SVG_DIR.mkdir(parents=True, exist_ok=True)
+_svg_canary_instance = None
+
+def _get_svg_canary():
+    global _svg_canary_instance
+    if _svg_canary_instance is None:
+        sys.path.insert(0, str(ROOT / "deception"))
+        try:
+            from svg_canary import SVGCanary
+            host = os.environ.get("SEALCTL_HOST", f"localhost:{PORT}")
+            _svg_canary_instance = SVGCanary(callback_host=host)
+        except Exception as ex:
+            print(f"[WARN] SVG canary no disponible: {ex}", flush=True)
+            _svg_canary_instance = False  # marker: not available
+    return _svg_canary_instance
+
 REPORTS   = ROOT / "reports"
 EVIDENCE  = ROOT / "evidence"
 LOGS_DIR  = ROOT / "logs"
@@ -989,6 +1008,223 @@ def _run_scan_thread(target_url):
 
 DIST_DIR = ROOT.parent / "tauri-frontend" / "dist"
 
+
+# ── Network scan by CIDR ─────────────────────────────────────────────────────
+def _expand_cidr(cidr: str, max_ips: int = 254) -> list:
+    """Expande un CIDR a lista de IPs. Limita a max_ips."""
+    try:
+        net = ipaddress.ip_network(cidr, strict=False)
+        return [str(ip) for ip in net.hosts()][:max_ips]
+    except Exception:
+        return []
+
+def _detect_local_network() -> dict:
+    """Detecta la IP local y máscara, retorna info de red."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        local_ip = "127.0.0.1"
+    parts = local_ip.split(".")
+    cidr = f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+    return {"ip": local_ip, "mask": "255.255.255.0", "cidr": cidr}
+
+# Camera web paths for video URL detection
+CAM_VIDEO_PATHS = [
+    ("/snapshot.cgi", "snapshot", "image/jpeg"),
+    ("/mjpg/video.mjpg", "mjpeg", "multipart/x-mixed-replace"),
+    ("/cgi-bin/viewer/video.jpg", "snapshot", "image/jpeg"),
+    ("/ISAPI/Streaming/channels/1/picture", "snapshot", "image/jpeg"),
+    ("/onvif/device_service", "onvif", "application/soap+xml"),
+    ("/live/cam.html", "html", "text/html"),
+    ("/video/mjpg.cgi", "mjpeg", "multipart/x-mixed-replace"),
+    ("/cgi-bin/magicBox.cgi?action=getVendor", "html", "text/html"),
+    ("/doc/page/index.asp", "html", "text/html"),
+]
+
+def _detect_video_urls(host: str, port: int = 80, timeout: float = 2.0) -> list:
+    """Detecta URLs de video disponibles en una cámara IP."""
+    sources = []
+    for path, vtype, expected_ct in CAM_VIDEO_PATHS:
+        try:
+            scheme = "https" if port in (443, 8443) else "http"
+            url = f"{scheme}://{host}:{port}{path}"
+            ctx = None
+            if scheme == "https":
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers={"User-Agent": "SourceSeal-VideoDetect/2.0"})
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPSHandler(context=ctx) if scheme == "https" else urllib.request.HTTPHandler()
+            )
+            try:
+                with opener.open(req, timeout=timeout) as resp:
+                    ct = resp.headers.get("Content-Type", "")
+                    status = resp.status
+                    # Determinar vendor
+                    vendor = _detect_camera_brand(resp.headers.get("Server", "") + " " + (resp.read(512).decode("utf-8", errors="replace")))
+                    stream_url = f"/api/iot/stream?ip={host}&port={port}&path={urllib.parse.quote(path, safe='')}"
+                    snap_url = f"/api/iot/snapshot?ip={host}&port={port}&path={urllib.parse.quote(path, safe='')}"
+                    rtsp_url = f"rtsp://{host}:554" if port != 554 else f"rtsp://{host}:{port}"
+                    sources.append({
+                        "path": path, "port": port, "type": vtype,
+                        "vendor": vendor,
+                        "available": True,
+                        "stream_url": stream_url if vtype in ("mjpeg",) else None,
+                        "snapshot_url": snap_url if vtype in ("snapshot",) else None,
+                        "rtsp_url": rtsp_url,
+                        "content_type": ct,
+                        "http_status": status,
+                    })
+            except urllib.error.HTTPError as e:
+                if e.code in (401, 403):
+                    sources.append({
+                        "path": path, "port": port, "type": vtype,
+                        "vendor": _detect_camera_brand(e.headers.get("Server", "") if e.headers else ""),
+                        "available": False,
+                        "stream_url": None,
+                        "snapshot_url": f"/api/iot/snapshot?ip={host}&port={port}&path={urllib.parse.quote(path, safe='')}",
+                        "rtsp_url": f"rtsp://{host}:554",
+                        "content_type": "auth-required",
+                        "http_status": e.code,
+                        "note": "Requiere autenticación (credenciales de cámara)",
+                    })
+        except Exception:
+            pass
+    return sources
+
+# WiFi scan real usando subprocess
+def _wifi_scan_real(interface: str = "wlan0", duration: int = 30) -> dict:
+    """Escaneo WiFi real usando iwlist/iw."""
+    networks = []
+    scan_method = None
+    connected_devices = []
+
+    # Intentar iwlist
+    try:
+        result = subprocess.run(
+            ["iwlist", interface, "scan"],
+            capture_output=True, text=True, timeout=duration
+        )
+        if result.returncode == 0 and "Cell" in result.stdout:
+            scan_method = "iwlist"
+            raw = result.stdout
+            cell_pattern = r'Cell \d+ - Address: ([0-9A-Fa-f:]{17})'
+            cells = re.split(cell_pattern, raw)
+            for i in range(1, len(cells), 2):
+                bssid = cells[i].strip()
+                cell_data = cells[i + 1] if i + 1 < len(cells) else ""
+                ssid_match = re.search(r'ESSID:"(.*?)"', cell_data)
+                ssid = ssid_match.group(1) if ssid_match else ""
+                is_hidden = (ssid == "" or ssid == "\x00")
+                sig_q = re.search(r'Signal level=(-?\d+) dBm', cell_data)
+                signal_dbm = int(sig_q.group(1)) if sig_q else -100
+                chan_match = re.search(r'Channel:(\d+)', cell_data)
+                channel = int(chan_match.group(1)) if chan_match else 0
+                security = "Unknown"
+                if "WPA3" in cell_data: security = "WPA3"
+                elif "WPA2" in cell_data: security = "WPA2"
+                elif "WPA" in cell_data: security = "WPA"
+                elif "WEP" in cell_data: security = "WEP"
+                elif "Encryption key:off" in cell_data: security = "Open"
+                networks.append({
+                    "ssid": ssid if not is_hidden else "<hidden>",
+                    "bssid": bssid, "security": security,
+                    "signal_dbm": signal_dbm, "channel": channel,
+                    "hidden": is_hidden, "wps": "WPS" in cell_data,
+                })
+    except (FileNotFoundError, Exception):
+        pass
+
+    # Intentar iw si iwlist falló
+    if not networks:
+        try:
+            result = subprocess.run(
+                ["iw", "dev", interface, "scan"],
+                capture_output=True, text=True, timeout=duration
+            )
+            if result.returncode == 0 and "BSS" in result.stdout:
+                scan_method = "iw"
+                raw = result.stdout
+                bss_blocks = re.split(r'^BSS ', raw, flags=re.MULTILINE)
+                for block in bss_blocks[1:]:
+                    bssid_match = re.match(r'([0-9a-fA-F:]{17})', block.strip())
+                    if not bssid_match: continue
+                    bssid = bssid_match.group(1)
+                    ssid_match = re.search(r'SSID: (.+)', block)
+                    ssid = ssid_match.group(1).strip() if ssid_match else ""
+                    is_hidden = (ssid == "" or ssid == "\x00")
+                    sig_match = re.search(r'signal: (-?\d+\.?\d*) dBm', block)
+                    signal_dbm = int(float(sig_match.group(1))) if sig_match else -100
+                    freq_match = re.search(r'freq: (\d+)', block)
+                    freq_mhz = int(freq_match.group(1)) if freq_match else 2412
+                    security = "Unknown"
+                    if "WPA3" in block: security = "WPA3"
+                    elif "WPA2" in block: security = "WPA2"
+                    elif "WPA" in block: security = "WPA"
+                    elif "WEP" in block: security = "WEP"
+                    networks.append({
+                        "ssid": ssid if not is_hidden else "<hidden>",
+                        "bssid": bssid, "security": security,
+                        "signal_dbm": signal_dbm, "frequency": round(freq_mhz / 1000, 1),
+                        "channel": round((freq_mhz - 5000) / 5) if freq_mhz >= 5000 else 0,
+                        "hidden": is_hidden, "wps": "WPS" in block,
+                    })
+        except (FileNotFoundError, Exception):
+            pass
+
+    # Dispositivos conectados (ARP table)
+    try:
+        arp_result = subprocess.run(["ip", "neigh"], capture_output=True, text=True, timeout=5)
+        for line in arp_result.stdout.strip().split("\n"):
+            parts = line.strip().split()
+            if len(parts) >= 4:
+                ip = parts[0]
+                mac = None
+                for p in parts:
+                    if re.match(r'[0-9a-fA-F:]{17}', p):
+                        mac = p.upper()
+                        break
+                if mac:
+                    hostname = ip
+                    try:
+                        hostname = socket.gethostbyaddr(ip)[0]
+                    except: pass
+                    connected_devices.append({
+                        "hostname": hostname, "ip": ip, "mac": mac,
+                        "vendor": "Unknown", "type": "unknown",
+                    })
+    except Exception:
+        pass
+
+    security_analysis = {
+        "open_networks": len([n for n in networks if n["security"] == "Open"]),
+        "wep_networks": len([n for n in networks if n["security"] == "WEP"]),
+        "wpa_networks": len([n for n in networks if n["security"] == "WPA"]),
+        "wpa2_networks": len([n for n in networks if n["security"] == "WPA2"]),
+        "wpa3_networks": len([n for n in networks if n["security"] == "WPA3"]),
+        "wps_enabled": len([n for n in networks if n.get("wps")]),
+        "hidden_networks": len([n for n in networks if n.get("hidden")]),
+        "risk_score": sum([
+            10 * len([n for n in networks if n["security"] == "Open"]),
+            8 * len([n for n in networks if n["security"] == "WEP"]),
+            5 * len([n for n in networks if n.get("wps")]),
+            3 * len([n for n in networks if n.get("hidden")]),
+        ]),
+    }
+
+    return {
+        "networks_found": len(networks), "networks": networks,
+        "connected_devices": connected_devices,
+        "security_analysis": security_analysis,
+        "scan_method": scan_method,
+        "interface": interface,
+        "warning": None if scan_method else f"No se pudo escanear con iwlist/iw en '{interface}'. En Termux: pkg install wireless-tools iw. Requiere root en algunos dispositivos.",
+    }
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] {fmt % args}", flush=True)
@@ -1096,6 +1332,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "/api/settings": lambda: self._json(_load_json(SETTINGS_FILE, {})),
             "/api/network/cameras": self._api_scan_cameras,
             "/api/network/radio":   self._api_scan_radio,
+            "/api/iot": self._api_iot_scan,
+            "/api/iot/video-urls": self._api_iot_video_urls,
+            "/api/iot/snapshot": self._api_iot_snapshot,
+            "/api/iot/stream": self._api_iot_stream,
+            "/api/canary/svg/list": self._api_canary_svg_list,
+            "/api/canary/svg/alerts": self._api_canary_svg_alerts,
+            "/api/canary/svg/download": self._api_canary_svg_download,
+
         }
 
         if p.startswith("/api/services/") and p.endswith("/logs"):
@@ -1104,6 +1348,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if p.startswith("/api/config/read"):
             return self._api_config_read(q.get("path",[""])[0])
+
+        # ── SVG Canary callback (no auth — anyone can trigger) ─────────────
+        if p == "/canary/svg":
+            canary = _get_svg_canary()
+            if canary:
+                canary.handle_callback(self)
+                return
 
         handler = routes.get(p)
         if handler:
@@ -1513,6 +1764,95 @@ class Handler(http.server.BaseHTTPRequestHandler):
             _save_json(SETTINGS_FILE, settings)
             return self._json({"ok": True})
 
+
+        if p == "/api/iot/scan-network":
+            cidr = body.get("cidr", body.get("network", body.get("range", ""))).strip()
+            if not cidr:
+                return self._json({"error": "cidr requerido (ej: 192.168.1.0/24)"}, 400)
+            ips = _expand_cidr(cidr)
+            if not ips:
+                return self._json({"error": "rango invalido"}, 400)
+            if len(ips) > 254:
+                return self._json({"error": "maximo 254 IPs por escaneo"}, 400)
+            t0 = time.time()
+            results = []
+            with ThreadPoolExecutor(max_workers=15) as pool:
+                futs = {pool.submit(_scan_single_ip_cameras, ip, 1.5): ip for ip in ips}
+                for fut in as_completed(futs):
+                    try: results.append(fut.result())
+                    except: pass
+            elapsed = round(time.time() - t0, 2)
+            active = [r for r in results if r.get("services")]
+            cameras = [r for r in active if r.get("is_camera")]
+            return self._json({
+                "network": cidr, "total_ips": len(ips), "total_scanned": len(results),
+                "cameras_found": len(cameras), "devices_with_open_ports": len(active),
+                "cameras": cameras, "all_devices": active, "full_results": results,
+                "elapsed_seconds": elapsed,
+            })
+
+        if p == "/api/iot/scan-local":
+            netinfo = _detect_local_network()
+            ips = _expand_cidr(netinfo["cidr"])
+            if not ips:
+                return self._json({"error": f"no se pudo expandir CIDR: {netinfo['cidr']}"}, 500)
+            t0 = time.time()
+            results = []
+            with ThreadPoolExecutor(max_workers=15) as pool:
+                futs = {pool.submit(_scan_single_ip_cameras, ip, 1.5): ip for ip in ips}
+                for fut in as_completed(futs):
+                    try: results.append(fut.result())
+                    except: pass
+            elapsed = round(time.time() - t0, 2)
+            active = [r for r in results if r.get("services")]
+            cameras = [r for r in active if r.get("is_camera")]
+            return self._json({
+                "detected_ip": netinfo["ip"], "detected_mask": netinfo["mask"],
+                "detected_cidr": netinfo["cidr"],
+                "total_ips": len(ips), "total_scanned": len(results),
+                "cameras_found": len(cameras), "devices_with_open_ports": len(active),
+                "cameras": cameras, "all_devices": active, "full_results": results,
+                "elapsed_seconds": elapsed,
+            })
+
+        if p == "/api/scan/wifi":
+            interface = body.get("interface", "wlan0")
+            duration = body.get("duration", 30)
+            result = _wifi_scan_real(interface, duration)
+            return self._json(result)
+
+        if p == "/api/canary/svg/generate":
+            canary = _get_svg_canary()
+            if not canary:
+                return self._json({"error": "SVG canary module not available"}, 500)
+            filename = body.get("filename", f"canary_{int(time.time())}.svg")
+            callback_host = body.get("callback_host", self.headers.get("Host", f"localhost:{PORT}"))
+            canary.callback_host = callback_host
+            output_path = str(CANARY_SVG_DIR / filename)
+            meta = canary.generate(output_path, filename=filename)
+            return self._json({
+                "ok": True, "token": meta["token"], "filename": meta["filename"],
+                "path": meta["path"], "callback_url": meta["callback_url"],
+                "sha256": meta.get("sha256"), "size": meta.get("size"),
+                "download_url": f"/api/canary/svg/download?filename={filename}",
+            })
+
+        if p == "/api/canary/svg/deploy":
+            canary = _get_svg_canary()
+            if not canary:
+                return self._json({"error": "SVG canary module not available"}, 500)
+            count = body.get("count", 5)
+            callback_host = body.get("callback_host", self.headers.get("Host", f"localhost:{PORT}"))
+            canary.callback_host = callback_host
+            results = canary.generate_decoy_set(str(CANARY_SVG_DIR), count=count)
+            return self._json({"ok": True, "deployed": len(results), "files": results})
+
+        if p == "/api/canary/svg/clear":
+            canary = _get_svg_canary()
+            if canary:
+                canary.clear_alerts()
+            return self._json({"ok": True, "cleared": True})
+
         self._json({"error": "not found", "path": p}, 404)
 
     def do_DELETE(self):
@@ -1533,6 +1873,161 @@ class Handler(http.server.BaseHTTPRequestHandler):
             _save_json(DEVICES_FILE, devices)
             return self._json({"ok": True})
         self._json({"error": "not found"}, 404)
+
+    def _api_iot_scan(self):
+        """GET /api/iot?target=IP — escaneo IoT de una IP individual."""
+        parsed = urlparse(self.path)
+        q = parse_qs(parsed.query)
+        target = q.get("target", q.get("ip", [""]))[0].strip()
+        if not target:
+            return self._json({"error": "target requerido (?target=IP)"}, 400)
+        try:
+            result = _scan_single_ip_cameras(target, timeout=2.0)
+            return self._json(result)
+        except Exception as e:
+            return self._json({"error": f"scan falló: {str(e)[:200]}"}, 500)
+
+    def _api_iot_video_urls(self):
+        """GET /api/iot/video-urls?ip=IP&port=N — detecta URLs de video."""
+        parsed = urlparse(self.path)
+        q = parse_qs(parsed.query)
+        ip = q.get("ip", [""])[0].strip()
+        port = int(q.get("port", ["80"])[0])
+        if not ip:
+            return self._json({"error": "ip requerida"}, 400)
+        try:
+            sources = _detect_video_urls(ip, port, timeout=2.0)
+            return self._json({"ip": ip, "video_sources": sources, "total": len(sources)})
+        except Exception as e:
+            return self._json({"error": str(e)[:200]}, 500)
+
+    def _api_iot_snapshot(self):
+        """GET /api/iot/snapshot?ip=IP&port=N&path=P — proxy de snapshot de cámara."""
+        parsed = urlparse(self.path)
+        q = parse_qs(parsed.query)
+        ip = q.get("ip", [""])[0].strip()
+        port = int(q.get("port", ["80"])[0])
+        snap_path = q.get("path", ["/snapshot.cgi"])[0]
+        if not ip:
+            return self._json({"error": "ip requerida"}, 400)
+        try:
+            scheme = "https" if port in (443, 8443) else "http"
+            url = f"{scheme}://{ip}:{port}{snap_path}"
+            ctx = None
+            if scheme == "https":
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers={"User-Agent": "SourceSeal-Snapshot/2.0"})
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPSHandler(context=ctx) if scheme == "https" else urllib.request.HTTPHandler()
+            )
+            with opener.open(req, timeout=5.0) as resp:
+                content_type = resp.headers.get("Content-Type", "image/jpeg")
+                data = resp.read()
+                self.send_response(200)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(data)
+                return
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                user = q.get("user", [""])[0]
+                pwd = q.get("pass", [""])[0]
+                if user:
+                    import base64
+                    auth = base64.b64encode(f"{user}:{pwd}".encode()).decode()
+                    req2 = urllib.request.Request(url, headers={
+                        "User-Agent": "SourceSeal-Snapshot/2.0",
+                        "Authorization": f"Basic {auth}"
+                    })
+                    try:
+                        with opener.open(req2, timeout=5.0) as resp2:
+                            data = resp2.read()
+                            self.send_response(200)
+                            self.send_header("Content-Type", resp2.headers.get("Content-Type", "image/jpeg"))
+                            self.end_headers()
+                            self.wfile.write(data)
+                            return
+                    except: pass
+            self._json({"error": f"camera returned {e.code}"}, e.code)
+        except Exception as e:
+            self._json({"error": f"snapshot falló: {str(e)[:200]}"}, 502)
+
+    def _api_iot_stream(self):
+        """GET /api/iot/stream?ip=IP&port=N&path=P — proxy de stream MJPEG."""
+        parsed = urlparse(self.path)
+        q = parse_qs(parsed.query)
+        ip = q.get("ip", [""])[0].strip()
+        port = int(q.get("port", ["80"])[0])
+        stream_path = q.get("path", ["/mjpg/video.mjpg"])[0]
+        if not ip:
+            return self._json({"error": "ip requerida"}, 400)
+        try:
+            scheme = "https" if port in (443, 8443) else "http"
+            url = f"{scheme}://{ip}:{port}{stream_path}"
+            ctx = None
+            if scheme == "https":
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers={"User-Agent": "SourceSeal-Stream/2.0"})
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPSHandler(context=ctx) if scheme == "https" else urllib.request.HTTPHandler()
+            )
+            with opener.open(req, timeout=30.0) as resp:
+                ct = resp.headers.get("Content-Type", "")
+                if "multipart" not in ct and "image/" not in ct and "video/" not in ct:
+                    return self._json({"error": f"endpoint no retorna video/stream (content-type: {ct})"}, 400)
+                self.send_response(200)
+                self.send_header("Content-Type", ct)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                while True:
+                    chunk = resp.read(4096)
+                    if not chunk: break
+                    try:
+                        self.wfile.write(chunk)
+                        self.wfile.flush()
+                    except Exception:
+                        break
+                return
+        except Exception as e:
+            self._json({"error": f"stream fallido: {str(e)[:200]}"}, 502)
+
+    def _api_canary_svg_list(self):
+        canary = _get_svg_canary()
+        if not canary:
+            return self._json({"tokens": {}, "alerts": [], "total_tokens": 0, "total_alerts": 0})
+        return self._json({
+            "tokens": canary.get_tokens(), "alerts": canary.get_alerts(),
+            "total_tokens": len(canary.get_tokens()),
+            "total_alerts": len(canary.get_alerts()),
+        })
+
+    def _api_canary_svg_alerts(self):
+        canary = _get_svg_canary()
+        if not canary:
+            return self._json({"alerts": [], "total": 0})
+        return self._json({"alerts": canary.get_alerts(), "total": len(canary.get_alerts())})
+
+    def _api_canary_svg_download(self):
+        parsed = urlparse(self.path)
+        q = parse_qs(parsed.query)
+        filename = q.get("filename", [""])[0]
+        if not filename:
+            return self._json({"error": "filename required"}, 400)
+        filepath = CANARY_SVG_DIR / filename
+        if not filepath.exists():
+            return self._json({"error": "file not found"}, 404)
+        content = filepath.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "image/svg+xml")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
 
 if __name__ == "__main__":
     print(f"[server] SourceSeal Console — Backend REAL en puerto {PORT}", flush=True)

@@ -381,5 +381,38 @@ export const api = {
 
   // Escaneo de red por CIDR o rango
   scanNetwork:     (cidr: string) => post<NetworkScanResult>('/iot/scan-network', { cidr }),
-  scanLocal:       () => post<LocalScanResult>('/iot/scan-local', {}),
+  scanLocal:       () => post<LocalScanResult>("/iot/scan-local", {}),
+  wifiScan:        (interface_name = "wlan0") => post<WiFiScanResult>("/scan/wifi", { interface: interface_name }),
+}
+
+// ── WiFi Scan ──────────────────────────────────────────────────────────────────
+export interface WiFiNetwork {
+  ssid: string
+  bssid: string
+  security: string
+  signal_dbm: number
+  frequency?: number
+  channel: number
+  hidden: boolean
+  wps?: boolean
+}
+
+export interface WiFiScanResult {
+  scan_id?: string
+  networks_found: number
+  networks: WiFiNetwork[]
+  connected_devices: { hostname: string; ip: string; mac: string; vendor: string; type: string }[]
+  security_analysis: {
+    open_networks: number
+    wep_networks: number
+    wpa_networks: number
+    wpa2_networks: number
+    wpa3_networks: number
+    wps_enabled: number
+    hidden_networks: number
+    risk_score: number
+  }
+  scan_method?: string | null
+  interface?: string
+  warning?: string | null
 }

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Progress } from '../components/ui/progress'
 import { useResourceStore } from '../stores/resourceStore'
 import { NetworkScanner } from '../components/NetworkScanner'
+import { CanarySVG } from '../components/CanarySVG'
 
 export default function Dashboard() {
   const { services, fetchStatus } = useServiceStore()
@@ -64,6 +65,12 @@ export default function Dashboard() {
       <div>
         <h3 className="text-sm font-semibold mb-2">Escaneo de red - Camaras IP / CCTV</h3>
         <NetworkScanner />
+      </div>
+
+      {/* ── SVG Canary Tokens ───────────────────────────────────────────── */}
+      <div>
+        <h3 className="text-sm font-semibold mb-2">SVG Canary - Tokens Camuflados</h3>
+        <CanarySVG />
       </div>
     </div>
   )
