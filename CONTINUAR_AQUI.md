@@ -104,8 +104,16 @@ bash scripts/install_replit.sh
 
 ### 4. Termux
 ```bash
-bash scripts/install_termux.sh
+bash scripts/install_termux.sh   # instalación completa (una sola vez)
+bash start-termux.sh             # arrancar backend actual (Python FastAPI, puerto 8000)
 ```
+
+⚠️ **IMPORTANTE — 3 generaciones de código coexisten en este repo:**
+- `backend/main.py` + `lib/` (Flutter) → **ACTUAL**, v2.0.0 Pro. Arranca con `start-termux.sh`.
+- `server.js` + `tauri-frontend/` → LEGACY (v1, Node.js). Arranca con `start-termux-legacy-nodejs.sh`. NO es el backend que debes usar salvo que sepas específicamente que lo necesitas.
+- `redteam/` → toolkit paralelo (XDR/NDR/RASP/SOAR), proyecto distinto, incluso referencia otro repo de GitHub (`Red-team`, sin `-tauri`). No confundir con este proyecto.
+
+Si algo "dejó de funcionar" después de que antes funcionaba, lo primero a verificar es cuál de los 3 backends se está ejecutando. El correcto siempre es `backend/main.py` en el puerto 8000 (Swagger en `/docs`).
 
 ---
 
