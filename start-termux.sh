@@ -1,79 +1,77 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # =====================================================
-# SourceSeal Console — Inicio para Termux
-# Modo: build estático (sin inotify, sin watchers)
+# SourceSeal / Red-team-tauri — Inicio para Termux
+# Backend ACTUAL: Python FastAPI (backend/main.py) — v2.0.0 Pro
+# =====================================================
+#
+# NOTA IMPORTANTE:
+# Este repo acumuló 3 generaciones de código durante su desarrollo:
+#   1. server.js + tauri-frontend/  → LEGACY (Node.js, versión anterior)
+#   2. redteam/                     → Toolkit paralelo, NO es esta app
+#   3. backend/main.py + lib/       → ACTUAL (v2.0.0 Pro) — esto es lo que arranca este script
+#
+# Si buscas el servidor Node.js legacy, usa: start-termux-legacy-nodejs.sh
 # =====================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FRONTEND_DIR="$SCRIPT_DIR/tauri-frontend"
 LOG_DIR="$SCRIPT_DIR/logs"
-
 mkdir -p "$LOG_DIR"
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║     SourceSeal Red-team Console          ║"
-echo "║     Modo Termux (Android)                ║"
+echo "║   SourceSeal Engine — Backend v2.0.0     ║"
+echo "║   Modo Termux (Android)                  ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
-# ── Pedir API key si no está seteada ──────────────
-if [ -z "$REDTEAM_API_KEY" ]; then
-  read -rp "🔑 API Key del backend: " REDTEAM_API_KEY
-  export REDTEAM_API_KEY
-fi
-
-echo "🔧 Arrancando backend..."
-
-# ── Matar procesos anteriores ──────────────────────
-pkill -f "node server.js" 2>/dev/null
+# ── Matar procesos anteriores del backend ──────────
+pkill -f "python.*main.py" 2>/dev/null
+pkill -f "python3.*main.py" 2>/dev/null
 sleep 1
 
-# ── Backend ────────────────────────────────────────
-cd "$SCRIPT_DIR"
-node server.js > "$LOG_DIR/backend.log" 2>&1 &
+# ── Instalar dependencias si falta algo ─────────────
+cd "$SCRIPT_DIR/backend"
+if ! python3 -c "import fastapi, uvicorn" 2>/dev/null; then
+  echo "📦 Instalando dependencias Python (primera vez)..."
+  pip install -r requirements.txt
+fi
+
+# ── Arrancar backend ─────────────────────────────────
+echo "🔧 Arrancando backend en http://127.0.0.1:8000 ..."
+PORT=8000 HOST=0.0.0.0 python3 main.py > "$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 echo "  PID backend: $BACKEND_PID"
 
 # Esperar que el backend responda
 echo -n "  Esperando backend"
-for i in $(seq 1 10); do
+READY=0
+for i in $(seq 1 15); do
   sleep 1
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 1 \
-    -H "Authorization: Bearer $REDTEAM_API_KEY" \
-    "http://127.0.0.1:3000/api/status" 2>/dev/null)
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 1 "http://127.0.0.1:8000/" 2>/dev/null)
   if [ "$CODE" = "200" ]; then
     echo " ✅"
+    READY=1
     break
   fi
   echo -n "."
 done
 
-# ── Frontend — build estático ──────────────────────
-cd "$FRONTEND_DIR"
-
-# Build si no existe o si el código cambió
-if [ ! -d "dist" ] || [ "$(find src -newer dist/index.html 2>/dev/null | wc -l)" -gt 0 ]; then
+if [ "$READY" != "1" ]; then
   echo ""
-  echo "🔨 Compilando frontend (primera vez o cambios detectados)..."
-  npx vite build 2>&1 | tail -5
-  echo "  Build completo ✅"
+  echo "❌ El backend no respondió a tiempo. Revisa el log:"
+  echo "   cat $LOG_DIR/backend.log"
+  exit 1
 fi
 
-# Servir el build con vite preview (sin watchers, sin inotify)
 echo ""
-echo "🌐 Sirviendo dashboard en http://localhost:5173"
-echo "   (también en http://$(hostname -I | awk '{print $1}'):5173)"
+echo "🌐 Backend operativo:"
+echo "   API:     http://127.0.0.1:8000"
+echo "   Swagger: http://127.0.0.1:8000/docs"
 echo ""
-echo "⚡ Abre Chrome y ve a: http://localhost:5173"
+echo "⚡ Abre Chrome y ve a: http://127.0.0.1:8000/docs"
 echo "   Presiona Ctrl+C para detener"
 echo ""
 
-# Asegurarse de que el BACKEND_URL llegue al frontend
-export VITE_API_URL="http://127.0.0.1:3000"
-
-npx vite preview --host 0.0.0.0 --port 5173
-
-# Al salir, matar backend
-kill $BACKEND_PID 2>/dev/null
-echo "Backend detenido."
+# Mantener el script vivo mostrando logs, hasta Ctrl+C
+trap "echo ''; echo 'Deteniendo backend...'; kill $BACKEND_PID 2>/dev/null; exit 0" INT TERM
+tail -f "$LOG_DIR/backend.log"
