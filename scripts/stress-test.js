@@ -1,147 +1,188 @@
-#!/usr/bin/env node
-/**
- * stress-test.js — Prueba de carga interna para el servidor Red-team-tauri.
- *
- * - 500 peticiones concurrentes a /api/healthz y /api/integrity/status
- * - Mide tiempo promedio de respuesta en ms
- * - Reporta errores 500 y 429 (Rate Limit)
- * - Se detiene automáticamente si el uso de memoria del servidor supera 80 %
- *
- * Uso:
- *   node scripts/stress-test.js [base_url]
- *   node scripts/stress-test.js http://localhost:8001
- *
- * Compatible con Node 22.
- */
-
 'use strict';
 
-// ── Config ────────────────────────────────────────────────────────────────────
-const BASE_URL      = process.argv[2] || process.env.TERMUX_API_URL || 'http://localhost:8001';
-const TOTAL_REQ     = 500;
-const CONCURRENCY   = 50;   // Peticiones en vuelo simultáneas
-const MEM_THRESHOLD = 0.80;  // 80 % del heap total → parar
-const ENDPOINTS     = ['/api/healthz', '/api/integrity/status'];
+/**
+ * stress-test.js
+ * ─────────────────────────────────────────────────────────────────────────
+ * Prueba de carga interna para el servidor local (Red-team-tauri / SealCtl).
+ *
+ * - Lanza 500 peticiones concurrentes contra los endpoints objetivo.
+ * - Mide el tiempo promedio de respuesta (ms).
+ * - Reporta si el servidor devuelve 500 (error interno) o 429 (rate limit).
+ * - Se detiene automáticamente si el uso de memoria del servidor (reportado
+ *   por /api/healthz) supera el 80%.
+ *
+ * Uso:
+ *   node scripts/stress-test.js
+ *   BASE_URL=http://127.0.0.1:8000 CONCURRENCY=500 node scripts/stress-test.js
+ *   STRESS_TARGETS=/api/healthz,/api/scan/port node scripts/stress-test.js
+ *
+ * Nota: '/api/integrity/status' es un endpoint del protocolo SourceSeal
+ * (proyecto 'origenprogreso', ledger de sellos). Este servidor Red-team-tauri
+ * no lo implementa — si lo incluyes en STRESS_TARGETS, el script lo reportará
+ * simplemente como 404, lo cual es información válida para el reporte.
+ */
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const { performance } = require('perf_hooks');
+const http = require('http');
+const https = require('https');
 
-async function fetchOne(url) {
-  const t0 = performance.now();
-  let status = 0;
-  let ok = false;
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5000);
-    const res = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(timer);
-    status = res.status;
-    ok = res.ok;
-    await res.text(); // Consumir body para liberar el socket
-  } catch (err) {
-    status = err.name === 'AbortError' ? 408 : 0;
-  }
-  const elapsed = performance.now() - t0;
-  return { status, ok, elapsed };
-}
+const BASE_URL = process.env.BASE_URL || process.env.TERMUX_API_URL || 'http://127.0.0.1:8000';
+const CONCURRENCY = parseInt(process.env.CONCURRENCY || '500', 10);
+const TARGETS = (process.env.STRESS_TARGETS || '/api/healthz,/api/integrity/status')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+const MEMORY_LIMIT_PERCENT = parseFloat(process.env.MEMORY_LIMIT_PERCENT || '80');
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '10000', 10);
+const API_KEY = process.env.REDTEAM_API_KEY || '';
 
-function checkLocalMemory() {
-  const mem = process.memoryUsage();
-  return mem.heapUsed / mem.heapTotal;
-}
+const client = BASE_URL.startsWith('https') ? https : http;
 
-function pickEndpoint(i) {
-  return ENDPOINTS[i % ENDPOINTS.length];
-}
+function get(path) {
+  return new Promise((resolve) => {
+    const url = new URL(path, BASE_URL);
+    if (API_KEY) url.searchParams.set('token', API_KEY);
 
-// ── Runner con pool de concurrencia ──────────────────────────────────────────
-async function runPool(total, concurrency) {
-  const results = [];
-  let launched = 0;
-  let stopped = false;
-
-  async function worker() {
-    while (launched < total && !stopped) {
-      const idx = launched++;
-      const url = `${BASE_URL}${pickEndpoint(idx)}`;
-
-      // Verificar memoria local antes de cada petición
-      const memRatio = checkLocalMemory();
-      if (memRatio > MEM_THRESHOLD) {
-        console.error(
-          `\n🛑  Memoria local >${(MEM_THRESHOLD * 100).toFixed(0)}%` +
-          ` (heap: ${(memRatio * 100).toFixed(1)}%) — deteniendo prueba.`
-        );
-        stopped = true;
-        break;
+    const start = process.hrtime.bigint();
+    const req = client.get(
+      url,
+      { timeout: REQUEST_TIMEOUT_MS },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => (body += chunk));
+        res.on('end', () => {
+          const end = process.hrtime.bigint();
+          const ms = Number(end - start) / 1e6;
+          resolve({ path, status: res.statusCode, ms, body });
+        });
       }
+    );
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ path, status: 0, ms: REQUEST_TIMEOUT_MS, error: 'timeout' });
+    });
+    req.on('error', (err) => {
+      const end = process.hrtime.bigint();
+      const ms = Number(end - start) / 1e6;
+      resolve({ path, status: 0, ms, error: err.message });
+    });
+  });
+}
 
-      const result = await fetchOne(url);
-      results.push({ idx, url, ...result });
+async function checkMemoryUsage() {
+  const res = await get('/api/healthz');
+  if (res.status === 200) {
+    try {
+      const data = JSON.parse(res.body);
+      // Preferir rssPercentOfSystem (medida real de presión de memoria);
+      // fallback a heapUsedPercent si el backend no lo reporta.
+      const pct = data?.memory?.rssPercentOfSystem ?? data?.memory?.heapUsedPercent;
+      if (typeof pct === 'number') return pct;
+    } catch (_) {
+      // ignore parse errors
+    }
+  }
+  return null;
+}
+
+async function runBatch(size) {
+  const promises = [];
+  for (let i = 0; i < size; i++) {
+    const target = TARGETS[i % TARGETS.length];
+    promises.push(get(target));
+  }
+  return Promise.all(promises);
+}
+
+function summarize(results) {
+  const byStatus = {};
+  let totalMs = 0;
+  let ok = 0;
+  const errors500 = [];
+  const errors429 = [];
+  const timeouts = [];
+
+  for (const r of results) {
+    byStatus[r.status] = (byStatus[r.status] || 0) + 1;
+    totalMs += r.ms;
+    if (r.status >= 200 && r.status < 300) ok++;
+    if (r.status === 500) errors500.push(r);
+    if (r.status === 429) errors429.push(r);
+    if (r.status === 0) timeouts.push(r);
+  }
+
+  return {
+    total: results.length,
+    ok,
+    avgMs: Number((totalMs / results.length).toFixed(2)),
+    byStatus,
+    errors500: errors500.length,
+    errors429: errors429.length,
+    timeouts: timeouts.length,
+  };
+}
+
+async function main() {
+  console.log('=== Stress Test — Red-team-tauri / SealCtl ===');
+  console.log(`Target base:   ${BASE_URL}`);
+  console.log(`Endpoints:     ${TARGETS.join(', ')}`);
+  console.log(`Concurrencia:  ${CONCURRENCY} peticiones`);
+  console.log(`Límite memoria: ${MEMORY_LIMIT_PERCENT}%`);
+  console.log('');
+
+  // Chequeo previo de memoria
+  const preMemory = await checkMemoryUsage();
+  if (preMemory !== null) {
+    console.log(`Memoria heap actual: ${preMemory}%`);
+    if (preMemory >= MEMORY_LIMIT_PERCENT) {
+      console.log(`⚠️  ABORTADO: el servidor ya está sobre el límite de memoria (${preMemory}% >= ${MEMORY_LIMIT_PERCENT}%).`);
+      process.exit(1);
+    }
+  } else {
+    console.log('⚠️  No se pudo leer el uso de memoria desde /api/healthz (¿servidor caído o ruta ausente?).');
+  }
+
+  const startedAt = Date.now();
+  const results = await runBatch(CONCURRENCY);
+  const elapsedMs = Date.now() - startedAt;
+
+  const summary = summarize(results);
+
+  console.log('');
+  console.log('=== Resultado ===');
+  console.log(`Peticiones totales:     ${summary.total}`);
+  console.log(`Exitosas (2xx):         ${summary.ok}`);
+  console.log(`Tiempo promedio:        ${summary.avgMs} ms`);
+  console.log(`Tiempo total del lote:  ${elapsedMs} ms`);
+  console.log(`Distribución de status: ${JSON.stringify(summary.byStatus)}`);
+  console.log(`Errores 500:            ${summary.errors500}`);
+  console.log(`Errores 429 (rate limit): ${summary.errors429}`);
+  console.log(`Timeouts / sin respuesta: ${summary.timeouts}`);
+
+  if (summary.errors500 > 0) {
+    console.log('');
+    console.log(`🔴 ALERTA: el servidor devolvió ${summary.errors500} errores 500 durante la carga.`);
+  }
+  if (summary.errors429 > 0) {
+    console.log(`🟡 El servidor aplicó rate limiting (429) ${summary.errors429} veces — comportamiento esperado bajo carga alta.`);
+  }
+
+  // Chequeo posterior de memoria
+  const postMemory = await checkMemoryUsage();
+  if (postMemory !== null) {
+    console.log('');
+    console.log(`Memoria heap tras la prueba: ${postMemory}%`);
+    if (postMemory >= MEMORY_LIMIT_PERCENT) {
+      console.log(`🔴 ALERTA: el servidor superó el ${MEMORY_LIMIT_PERCENT}% de uso de memoria heap tras la prueba.`);
+      process.exitCode = 2;
+      return;
     }
   }
 
-  const workers = Array.from({ length: concurrency }, () => worker());
-  await Promise.all(workers);
-  return results;
+  console.log('');
+  console.log('✅ Prueba de carga finalizada dentro de los límites de memoria.');
 }
 
-// ── Informe ───────────────────────────────────────────────────────────────────
-function report(results) {
-  const total = results.length;
-  const succeeded = results.filter(r => r.ok).length;
-  const err500    = results.filter(r => r.status === 500).length;
-  const err429    = results.filter(r => r.status === 429).length;
-  const err408    = results.filter(r => r.status === 408).length;
-  const connFail  = results.filter(r => r.status === 0).length;
-  const latencies = results.map(r => r.elapsed).sort((a, b) => a - b);
-  const avg   = latencies.reduce((s, v) => s + v, 0) / latencies.length;
-  const p50   = latencies[Math.floor(latencies.length * 0.50)];
-  const p95   = latencies[Math.floor(latencies.length * 0.95)];
-  const p99   = latencies[Math.floor(latencies.length * 0.99)];
-
-  console.log('\n══════════════════════════════════════════════');
-  console.log(' SourceSeal Stress Test — Resultados');
-  console.log('══════════════════════════════════════════════');
-  console.log(`  Destino:          ${BASE_URL}`);
-  console.log(`  Peticiones:       ${total} / ${TOTAL_REQ}`);
-  console.log(`  Concurrencia:     ${CONCURRENCY}`);
-  console.log(`  ✅  Exitosas (2xx): ${succeeded}`);
-  console.log(`  ❌  500 (Server):  ${err500}`);
-  console.log(`  🚦  429 (RateLimit):${err429}`);
-  console.log(`  ⏱   408 (Timeout): ${err408}`);
-  console.log(`  🔌  Sin conexión:  ${connFail}`);
-  console.log('──────────────────────────────────────────────');
-  console.log(`  Latencia media:   ${avg.toFixed(1)} ms`);
-  console.log(`  p50:              ${p50.toFixed(1)} ms`);
-  console.log(`  p95:              ${p95.toFixed(1)} ms`);
-  console.log(`  p99:              ${p99.toFixed(1)} ms`);
-  console.log('══════════════════════════════════════════════\n');
-
-  if (err500 > 0) {
-    console.warn(`⚠️  ${err500} respuestas 500 detectadas — el servidor está fallando bajo carga.`);
-  }
-  if (err429 > 0) {
-    console.warn(`⚠️  ${err429} respuestas 429 — rate limiting activado.`);
-  }
-  if (connFail > 0) {
-    console.error(`🛑  ${connFail} conexiones fallidas — verificar que el servidor está corriendo en ${BASE_URL}`);
-  }
-
-  const memAfter = process.memoryUsage();
-  console.log(`  Heap post-test:  ${(memAfter.heapUsed / 1024 / 1024).toFixed(1)} MB / ${(memAfter.heapTotal / 1024 / 1024).toFixed(1)} MB`);
-}
-
-// ── Main ──────────────────────────────────────────────────────────────────────
-(async () => {
-  console.log(`\n🚀  Iniciando stress test → ${BASE_URL}`);
-  console.log(`    ${TOTAL_REQ} peticiones · concurrencia ${CONCURRENCY} · endpoints: ${ENDPOINTS.join(', ')}`);
-  console.log(`    Se detiene si memoria heap > ${(MEM_THRESHOLD * 100).toFixed(0)}%\n`);
-
-  const t0 = performance.now();
-  const results = await runPool(TOTAL_REQ, CONCURRENCY);
-  const totalMs = performance.now() - t0;
-
-  console.log(`\n⏱   Tiempo total: ${(totalMs / 1000).toFixed(2)} s`);
-  report(results);
-})();
+main().catch((err) => {
+  console.error('Error ejecutando stress-test:', err);
+  process.exit(1);
+});
