@@ -156,13 +156,9 @@ export async function getPlaybooks(): Promise<Playbook[]> {
 }
 
 export async function triggerPlaybook(name: string): Promise<{ success: boolean; detail: string }> {
-  try {
-    const response = await apiClient.post('/trigger-playbook', { name });
-    return response.data;
-  } catch {
-    await new Promise(r => setTimeout(r, 1500));
-    return { success: true, detail: `Playbook ${name} ejecutado (modo offline)` };
-  }
+  // Sin fallback falso: si el backend no responde, falla de forma explícita.
+  const response = await apiClient.post('/trigger-playbook', { name });
+  return response.data;
 }
 
 export async function getIncidents(): Promise<Incident[]> {
@@ -185,6 +181,18 @@ export async function getDownloads(): Promise<DownloadItem[]> {
 
 // ─── Helpers ────────────────────────────────────────────
 
+/**
+ * Confianza determinista: deriva un valor estable [min, max] del hash del
+ * scenario sin usar Math.random() — resultados reproducibles por scan.
+ */
+function deterministicConfidence(scenario: string, min: number, max: number): number {
+  let hash = 0;
+  for (let i = 0; i < scenario.length; i++) {
+    hash = (hash * 31 + scenario.charCodeAt(i)) >>> 0;
+  }
+  return min + (hash % (max - min + 1));
+}
+
 function generateIncidentsFromReport(report: ScanReport): Incident[] {
   const critical = report.findings.filter(f => f.severity === 'critical');
   const high = report.findings.filter(f => f.severity === 'high');
@@ -198,7 +206,8 @@ function generateIncidentsFromReport(report: ScanReport): Incident[] {
       description: f.description,
       mitre_techniques: getMitreForScenario(f.scenario),
       kill_chain_phases: getKillChainForScenario(f.scenario),
-      confidence: 85 + Math.floor(Math.random() * 15),
+      // Confianza determinista basada en el hash del scenario — sin Math.random()
+      confidence: deterministicConfidence(f.scenario, 85, 99),
       timestamp: f.timestamp,
       status: 'open',
       related_findings: [f.scenario],
@@ -213,7 +222,8 @@ function generateIncidentsFromReport(report: ScanReport): Incident[] {
       description: f.description,
       mitre_techniques: getMitreForScenario(f.scenario),
       kill_chain_phases: getKillChainForScenario(f.scenario),
-      confidence: 70 + Math.floor(Math.random() * 20),
+      // Confianza determinista — sin Math.random()
+      confidence: deterministicConfidence(f.scenario, 70, 89),
       timestamp: f.timestamp,
       status: 'investigating',
       related_findings: [f.scenario],
@@ -269,7 +279,7 @@ function generateDownloadList(report: ScanReport): DownloadItem[] {
   
   items.push({ id: 'strings-sidechannel', name: 'sidechannel-strings.txt', type: 'strings', date: report.finished_at, size: '5 KB' });
   items.push({ id: 'strings-biometric', name: 'biometric-strings.txt', type: 'strings', date: report.finished_at, size: '3 KB' });
-  items.push({ id: 'apk-dummy', name: 'dummy.apk', type: 'apk', date: report.started_at, size: '0 KB' });
+  // dummy.apk eliminado — lista de descargas solo muestra artefactos reales
   
   return items;
 }

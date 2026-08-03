@@ -6,6 +6,7 @@ import { Text, TextInput, Button, useTheme, ActivityIndicator } from 'react-nati
 import { useAuth } from '../context/AuthContext';
 import { AppTheme } from '../theme/darkTheme';
 import { checkBiometricAvailability, authenticateBiometric } from '../core/biometric';
+import { apiClient } from '../core/apiClient';
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -27,10 +28,23 @@ export default function LoginScreen() {
     }
     setLoading(true);
     setError('');
-    setTimeout(() => {
-      login('mock-jwt-token-' + Date.now());
+    try {
+      // Autenticación real contra el backend — sin mock tokens
+      const response = await apiClient.post<{ token: string; ok: boolean }>(
+        '/api/auth/login',
+        { username, password }
+      );
+      if (response.data?.ok && response.data?.token) {
+        await login(response.data.token);
+      } else {
+        setError('Credenciales inválidas');
+      }
+    } catch (e: any) {
+      const detail = e?.response?.data?.error || e?.message || 'Error de conexión al backend';
+      setError(detail);
+    } finally {
       setLoading(false);
-    }, 800);
+    }
   };
 
   const handleBiometric = async () => {
@@ -39,12 +53,21 @@ export default function LoginScreen() {
     try {
       const result = await authenticateBiometric();
       if (result.success) {
-        login('biometric-jwt-' + Date.now());
+        // Biometría verifica identidad local; obtén token del backend igualmente
+        const response = await apiClient.post<{ token: string; ok: boolean }>(
+          '/api/auth/biometric',
+          { verified: true }
+        );
+        if (response.data?.ok && response.data?.token) {
+          await login(response.data.token);
+        } else {
+          setError('Backend rechazó la sesión biométrica');
+        }
       } else {
         setError(result.message);
       }
     } catch (e: any) {
-      setError(e.message || 'Error de autenticación biométrica');
+      setError(e?.response?.data?.error || e?.message || 'Error de autenticación biométrica');
     } finally {
       setLoading(false);
     }

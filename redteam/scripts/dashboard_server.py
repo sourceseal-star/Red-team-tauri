@@ -42,6 +42,55 @@ PORT = int(os.environ.get("PORT", "8001"))
 
 BACKEND = os.environ.get("SOURCESEAL_API", "")  # Se carga desde settings.json en runtime
 
+# ── Autenticación de sesión (dashboard mobile / Termux bridge) ───────────────
+import hashlib as _hashlib
+import hmac as _hmac
+import secrets as _secrets
+
+_SESSION_SECRET = os.environ.get("SESSION_SECRET", "").strip()
+_sessions: dict = {}          # token → {"username": ..., "created_at": ...}
+_sessions_lock = threading.Lock()
+
+def _session_token() -> str:
+    return _secrets.token_hex(32)
+
+def _verify_credentials(username: str, password: str) -> bool:
+    """
+    Verifica credenciales contra las variables de entorno.
+    Configura REDTEAM_USER y REDTEAM_PASS en el servidor.
+    Si no están configuradas, cualquier usuario con contraseña no vacía puede entrar
+    (modo desarrollo — se advierte en el log).
+    """
+    env_user = os.environ.get("REDTEAM_USER", "").strip()
+    env_pass = os.environ.get("REDTEAM_PASS", "").strip()
+    if not env_user or not env_pass:
+        print("[auth] ADVERTENCIA: REDTEAM_USER/REDTEAM_PASS no configurados — modo dev (acepta cualquier credencial no vacía)", flush=True)
+        return bool(username and password)
+    # Comparación constante para evitar timing attacks
+    user_ok = _hmac.compare_digest(username.encode(), env_user.encode())
+    pass_ok  = _hmac.compare_digest(password.encode(), env_pass.encode())
+    return user_ok and pass_ok
+
+def _create_session(username: str) -> str:
+    token = _session_token()
+    with _sessions_lock:
+        _sessions[token] = {"username": username, "created_at": time.time()}
+    return token
+
+def _validate_session(token: str) -> dict | None:
+    if not token:
+        return None
+    with _sessions_lock:
+        sess = _sessions.get(token)
+    if not sess:
+        return None
+    # Sesiones válidas por 24 horas
+    if time.time() - sess["created_at"] > 86400:
+        with _sessions_lock:
+            _sessions.pop(token, None)
+        return None
+    return sess
+
 # ── Autenticación para endpoints de escaneo de red ───────────────────────────
 # Se lee en tiempo de ejecución; puede cambiarse sin reiniciar.
 def _netscan_api_key() -> str:
@@ -205,6 +254,27 @@ def _fmt_uptime(since):
     h, rem = divmod(secs, 3600)
     m, s = divmod(rem, 60)
     return f"{h}h {m}m {s}s" if h else f"{m}m {s}s"
+
+def _get_memory_stats() -> dict:
+    """Uso de memoria real del proceso. psutil si disponible, /proc/self/status como fallback."""
+    if HAS_PSUTIL:
+        try:
+            proc = psutil.Process()
+            mem = proc.memory_info()
+            return {
+                "rss_mb":  round(mem.rss  / 1024 / 1024, 2),
+                "vms_mb":  round(mem.vms  / 1024 / 1024, 2),
+                "percent": round(proc.memory_percent(), 2),
+            }
+        except Exception:
+            pass
+    # Fallback: leer /proc/self/status (Linux)
+    try:
+        status = pathlib.Path("/proc/self/status").read_text()
+        vm_rss = next((int(l.split()[1]) for l in status.splitlines() if l.startswith("VmRSS:")), 0)
+        return {"rss_mb": round(vm_rss / 1024, 2), "vms_mb": None, "percent": None}
+    except Exception:
+        return {"rss_mb": None, "vms_mb": None, "percent": None}
 
 def _start_service(name):
     defn = SERVICE_DEFS.get(name)
@@ -1002,8 +1072,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         q = parse_qs(parsed.query)
 
         routes = {
-            "/health": lambda: self._json({"status": "ok", "uptime": _fmt_uptime(_SERVER_START)}),
-            "/healthz": lambda: self._json({"status": "ok"}),
+            "/health":      lambda: self._json({"status": "ok", "uptime": _fmt_uptime(_SERVER_START)}),
+            "/healthz":     lambda: self._json({"status": "ok"}),
+            "/api/healthz": lambda: self._json({
+                "status": "operational",
+                "uptime": {"human": _fmt_uptime(_SERVER_START),
+                           "seconds": int(time.time() - _SERVER_START)},
+                "memory": _get_memory_stats(),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            }),
             "/api/services": lambda: self._json(_all_services_status()),
             "/api/resources": self._api_resources,
             "/api/scan/status": lambda: self._json(_scan_state),
@@ -1225,6 +1302,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         p = self.path.rstrip("/")
         body = self._read_body()
+
+        # ── Autenticación real (para el dashboard mobile / Termux bridge) ────────
+        if p == "/api/auth/login":
+            username = str(body.get("username", "")).strip()
+            password = str(body.get("password", "")).strip()
+            if not username or not password:
+                return self._json({"ok": False, "error": "usuario y contraseña requeridos"}, 400)
+            if _verify_credentials(username, password):
+                token = _create_session(username)
+                print(f"[auth] Login OK: {username}", flush=True)
+                return self._json({"ok": True, "token": token, "username": username})
+            else:
+                print(f"[auth] Login FALLIDO: {username}", flush=True)
+                return self._json({"ok": False, "error": "Credenciales inválidas"}, 401)
+
+        if p == "/api/auth/biometric":
+            # Verificación biométrica: el cliente ya autenticó localmente (Touch ID / Face ID).
+            # El servidor emite un token de sesión si la verificación local fue exitosa.
+            verified = body.get("verified", False)
+            if not verified:
+                return self._json({"ok": False, "error": "Verificación biométrica fallida en el cliente"}, 401)
+            # Usamos "biometric" como username de sesión
+            token = _create_session("biometric")
+            print("[auth] Sesión biométrica creada", flush=True)
+            return self._json({"ok": True, "token": token, "username": "biometric"})
+
+        if p == "/api/auth/logout":
+            auth_header = self.headers.get("Authorization", "")
+            token = auth_header.replace("Bearer ", "").strip()
+            with _sessions_lock:
+                _sessions.pop(token, None)
+            return self._json({"ok": True})
 
         if p == "/api/scan":
             target = body.get("target", "") or _get_active_target()
