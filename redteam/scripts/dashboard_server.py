@@ -403,6 +403,22 @@ CAMERA_PORTS = [
     (9000, "HTTP-CAM"),
     (1935, "RTMP"),
     (8081, "HTTP-CAM2"),
+    # Puertos adicionales para 20 cámaras + repetidores
+    (8000, "HTTP-CAM3"),
+    (8443, "HTTPS-CAM"),
+    (8888, "HTTP-CAM4"),
+    (8889, "HTTP-CAM5"),
+    (5000, "RTSP-CAM"),
+    (5050, "RTSP-CAM2"),
+    (7447, "HTTPS-ONVIF"),
+    (8999, "ONVIF-ALT"),
+    (37000,"DVR-ALT"),
+    (38000,"DVR-ALT2"),
+    (10554,"RTSP-ALT2"),
+    (15554,"RTSP-ALT3"),
+    (25554,"RTSP-ALT4"),
+    (45554,"RTSP-ALT5"),
+    (65554,"RTSP-ALT6"),
 ]
 
 # Marcas conocidas por banner/respuesta HTTP
@@ -436,6 +452,16 @@ RADIO_PORTS = [
     (3000,  "HTTP-radio"),
     (9000,  "Icecast-alt"),
     (10000, "Webmin/radio"),
+    # Puertos adicionales para antena de radio de canal cerrado
+    (8002,  "Icecast-alt2"),
+    (8003,  "Icecast-alt3"),
+    (8090,  "HTTP-stream-alt"),
+    (1935,  "RTMP-audio"),
+    (8134,  "HTTP-radio-alt"),
+    (4000,  "HTTP-radio-4000"),
+    (5000,  "HTTP-radio-5000"),
+    (9001,  "Icecast-alt3"),
+    (2554,  "RTSP-audio-alt"),
 ]
 
 def _tcp_connect(host: str, port: int, timeout: float = 1.5) -> bool:
@@ -724,6 +750,168 @@ def _scan_subnet_radio(subnet: str, max_hosts: int = 254,
         t.join(timeout=timeout + 1)
 
     return sorted(results, key=lambda x: x.get("is_radio", False), reverse=True)
+
+
+# Puertos de routers / repetidores / access points
+ROUTER_PORTS = [
+    (23,    "Telnet"),
+    (22,    "SSH"),
+    (53,    "DNS"),
+    (80,    "HTTP-Admin"),
+    (443,   "HTTPS-Admin"),
+    (8080,  "HTTP-Admin-Alt"),
+    (8443,  "HTTPS-Admin-Alt"),
+    (161,   "SNMP"),
+    (162,   "SNMP-Trap"),
+    (8291,  "Winbox-Mikrotik"),
+    (7547,  "TR-069/CWMP"),
+    (1900,  "SSDP/UPnP"),
+    (5000,  "UPnP-Alt"),
+    (53,    "DNS-Alt"),
+    (123,   "NTP"),
+    (5353,  "mDNS"),
+    (1900,  "UPnP-Discovery"),
+    (49152, "UPnP-Data"),
+    (8081,  "HTTP-Admin2"),
+    (8888,  "HTTP-Admin3"),
+    (7548,  "TR-069-Alt"),
+    (2233,  "HTTP-Admin4"),
+    (4443,  "HTTPS-Admin2"),
+]
+
+ROUTER_BRANDS = [
+    (re.compile(r'mikrotik|routeros',     re.I), 'MikroTik'),
+    (re.compile(r'cisco|ios',             re.I), 'Cisco'),
+    (re.compile(r'huawei|hg8245|echolife', re.I), 'Huawei'),
+    (re.compile(r'tp.link|tplink',         re.I), 'TP-Link'),
+    (re.compile(r'asus|rt-ac|rt-n',        re.I), 'ASUS'),
+    (re.compile(r'netgear',               re.I), 'Netgear'),
+    (re.compile(r'linksys',               re.I), 'Linksys'),
+    (re.compile(r'd.link|dlink',           re.I), 'D-Link'),
+    (re.compile(r'arris|technicolor|thomson', re.I), 'ARRIS/Technicolor'),
+    (re.compile(r'ubiquiti|unifi|edgerouter', re.I), 'Ubiquiti'),
+    (re.compile(r'juniper|junos',          re.I), 'Juniper'),
+    (re.compile(r'fortinet|fortigate',     re.I), 'Fortinet'),
+    (re.compile(r'sophos|cyberoam',        re.I), 'Sophos'),
+    (re.compile(r'zte',                    re.I), 'ZTE'),
+    (re.compile(r'billion|alcatel|nokia',  re.I), 'Billion/Alcatel'),
+    (re.compile(r'openwrt|lede|dd.wrt',    re.I), 'OpenWrt/DD-WRT'),
+]
+
+def _detect_router_brand(banner_text: str) -> str:
+    for pattern, name in ROUTER_BRANDS:
+        if pattern.search(banner_text):
+            return name
+    return "Desconocida"
+
+def _scan_single_ip_router(host: str, timeout: float = 2.0) -> dict:
+    """Escanea una IP buscando routers/repetidores/access points. REAL."""
+    found_services = []
+    is_router = False
+    brand = "Desconocida"
+
+    for port, proto in ROUTER_PORTS:
+        if not _tcp_connect(host, port, timeout=min(timeout, 1.5)):
+            continue
+
+        svc = {"port": port, "proto": proto, "open": True,
+               "type": "unknown", "banner": ""}
+
+        if proto in ("HTTP-Admin", "HTTPS-Admin", "HTTP-Admin-Alt", "HTTPS-Admin-Alt",
+                      "HTTP-Admin2", "HTTP-Admin3", "HTTP-Admin4", "HTTPS-Admin2"):
+            use_https = (port == 443 or port == 8443 or port == 4443 or "HTTPS" in proto)
+            ban = _http_banner(host, port, "/", timeout=timeout, use_https=use_https)
+            svc["banner"] = ban.get("server", "")
+            svc["status"] = ban.get("status")
+            full_text = (ban.get("server", "") + " " + ban.get("body", ""))[:2000]
+
+            bd = _detect_router_brand(full_text)
+            if bd != "Desconocida":
+                brand = bd; is_router = True
+                svc["type"] = f"Router Admin ({bd})"
+            elif ban.get("status") in (200, 401, 403, 302):
+                is_router = True
+                svc["type"] = "HTTP (posible router/repetidor)"
+
+        elif proto == "Telnet":
+            svc["type"] = "Telnet"
+            is_router = True
+            ban = _http_banner(host, port, "/", timeout=timeout)
+            bd = _detect_router_brand(ban.get("body", "")[:200])
+            if bd != "Desconocida": brand = bd
+
+        elif proto == "SSH":
+            svc["type"] = "SSH"
+            is_router = True
+
+        elif proto == "SNMP":
+            svc["type"] = "SNMP"
+            is_router = True
+
+        elif proto in ("Winbox-Mikrotik",):
+            brand = "MikroTik"; is_router = True
+            svc["type"] = "MikroTik Winbox"
+
+        elif proto in ("TR-069/CWMP", "TR-069-Alt"):
+            svc["type"] = "TR-069/CWMP"
+            is_router = True
+
+        elif proto in ("SSDP/UPnP", "UPnP-Discovery", "UPnP-Data", "UPnP-Alt"):
+            svc["type"] = "UPnP/SSDP"
+            is_router = True
+
+        elif proto in ("DNS", "DNS-Alt", "NTP", "mDNS"):
+            svc["type"] = proto
+            is_router = True
+
+        found_services.append(svc)
+
+    return {
+        "host": host,
+        "is_router": is_router,
+        "brand": brand if is_router else None,
+        "services": found_services,
+        "open_ports": [s["port"] for s in found_services],
+        "scanned_at": datetime.datetime.utcnow().isoformat(),
+    }
+
+def _scan_subnet_routers(subnet: str, max_hosts: int = 254,
+                          timeout: float = 1.5) -> list:
+    """Escanea una subred buscando routers/repetidores. Paralelo."""
+    try:
+        net = ipaddress.ip_network(subnet, strict=False)
+    except ValueError as e:
+        return [{"error": f"Subred inválida: {e}"}]
+
+    hosts = list(net.hosts())[:max_hosts]
+    results = []
+    lock = threading.Lock()
+
+    def scan_host(ip_obj):
+        host = str(ip_obj)
+        quick_ports = [80, 22, 23, 8291, 7547, 8080, 443]
+        has_any = any(_tcp_connect(host, p, timeout=0.8) for p in quick_ports)
+        if not has_any:
+            return
+        r = _scan_single_ip_router(host, timeout=timeout)
+        if r["services"]:
+            with lock:
+                results.append(r)
+
+    threads = []
+    for ip_obj in hosts:
+        t = threading.Thread(target=scan_host, args=(ip_obj,), daemon=True)
+        threads.append(t)
+        t.start()
+        if len([tt for tt in threads if tt.is_alive()]) >= 32:
+            for tt in threads:
+                tt.join(timeout=0.05)
+
+    for t in threads:
+        t.join(timeout=timeout + 1)
+
+    return sorted(results, key=lambda x: x.get("is_router", False), reverse=True)
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1332,6 +1520,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "/api/settings": lambda: self._json(_load_json(SETTINGS_FILE, {})),
             "/api/network/cameras": self._api_scan_cameras,
             "/api/network/radio":   self._api_scan_radio,
+            "/api/network/routers": self._api_scan_routers,
             "/api/iot": self._api_iot_scan,
             "/api/iot/video-urls": self._api_iot_video_urls,
             "/api/iot/snapshot": self._api_iot_snapshot,
@@ -1349,8 +1538,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if p.startswith("/api/config/read"):
             return self._api_config_read(q.get("path",[""])[0])
 
-        # ── SVG Canary callback (no auth — anyone can trigger) ─────────────
-        if p == "/canary/svg":
+        # ── SVG/HTML Canary callback (no auth — anyone can trigger) ─────────
+        if p == "/canary/svg" or p == "/canary/html":
             canary = _get_svg_canary()
             if canary:
                 canary.handle_callback(self)
@@ -1546,6 +1735,53 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "elapsed_seconds": elapsed,
             "results": results,
             "scanner": "SourceSeal RadioScan/2.0 REAL",
+            "note": "Escaneo real. Cero simulaciones.",
+            "scanned_at": datetime.datetime.utcnow().isoformat(),
+        })
+
+    def _api_scan_routers(self):
+        """GET /api/network/routers?target=IP_o_subred&timeout=2
+        Requiere header X-Api-Key con el valor de REDTEAM_API_KEY.
+        """
+        if not self._check_netscan_auth():
+            return
+
+        parsed = urlparse(self.path)
+        q = parse_qs(parsed.query)
+        target = q.get("target", [""])[0].strip()
+
+        err = self._validate_scan_target(target)
+        if err:
+            return self._json_restricted({"error": err}, 400)
+
+        timeout = float(q.get("timeout", ["2.0"])[0])
+        timeout = max(0.5, min(timeout, 5.0))
+
+        if not _netscan_sem.acquire(blocking=False):
+            return self._json_restricted(
+                {"error": "Ya hay un escaneo de red en curso. Espera a que termine antes de lanzar otro."}, 429)
+        t0 = time.time()
+        try:
+            is_subnet = "/" in target
+            if is_subnet:
+                results = _scan_subnet_routers(target, max_hosts=254, timeout=timeout)
+            else:
+                results = [_scan_single_ip_router(target, timeout=timeout)]
+        except Exception as e:
+            return self._json_restricted({"error": str(e)[:300]}, 500)
+        finally:
+            _netscan_sem.release()
+
+        elapsed = round(time.time() - t0, 2)
+        routers = [r for r in results if r.get("is_router")]
+        return self._json_restricted({
+            "target": target,
+            "mode": "subnet" if is_subnet else "single",
+            "hosts_with_services": len([r for r in results if r.get("services")]),
+            "routers_found": len(routers),
+            "elapsed_seconds": elapsed,
+            "results": results,
+            "scanner": "SourceSeal RouterScan/2.0 REAL",
             "note": "Escaneo real. Cero simulaciones.",
             "scanned_at": datetime.datetime.utcnow().isoformat(),
         })
@@ -1852,6 +2088,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if canary:
                 canary.clear_alerts()
             return self._json({"ok": True, "cleared": True})
+
+        # ── HTML Canary POST callback (screenshot captura) ─────────────
+        if p == "/canary/html":
+            canary = _get_svg_canary()
+            if canary:
+                canary.handle_callback(self)
+                return
 
         self._json({"error": "not found", "path": p}, 404)
 

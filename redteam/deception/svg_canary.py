@@ -374,6 +374,145 @@ class AdvancedCanary:
         self.alerts = []
 
 
+
+# ──────────────────────── COMPATIBILITY WRAPPER ─────────────────────────────
+# El dashboard_server.py espera una clase "SVGCanary" con la API:
+#   generate(output_path, filename) -> dict
+#   generate_decoy_set(dir, count) -> list[dict]
+#   handle_callback(handler) -> None
+#   get_tokens() -> dict
+#   get_alerts() -> list[dict]
+#   clear_alerts() -> None
+# Esta clase envuelve AdvancedCanary para compatibilidad.
+
+class SVGCanary(AdvancedCanary):
+    """Wrapper compatible con dashboard_server.py."""
+    
+    def generate(self, output_path: str, filename: str = None) -> dict:
+        """Alias para generate_svg — lo que dashboard_server espera."""
+        return self.generate_svg(output_path, filename=filename)
+    
+    def generate_decoy_set(self, output_dir: str, count: int = 5) -> list:
+        """Genera un conjunto de decoys SVG con nombres aleatorios."""
+        import random
+        results = []
+        decoy_names = [
+            "informe_confidencial", "foto_privada", "documento_auditado",
+            "reporte_seguridad", "planos_arquitectura", "contrato_firmado",
+            "factura_proveedor", "acta_reunion", "protocolo_acceso",
+            "backup_configuracion", "credenciales_sistema", "mapa_red",
+        ]
+        pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
+        for i in range(count):
+            name = random.choice(decoy_names)
+            fname = f"{name}_{secrets.token_hex(4)}.svg"
+            fpath = str(pathlib.Path(output_dir) / fname)
+            meta = self.generate_svg(fpath, filename=fname)
+            results.append(meta)
+        return results
+    
+    def handle_callback(self, handler):
+        """Maneja callbacks HTTP desde SVG/HTML canary.
+        Recibe el handler HTTP (BaseHTTPRequestHandler) y procesa la petición."""
+        parsed = urllib.parse.urlparse(handler.path)
+        # SVG callback (GET)
+        if parsed.path.startswith("/canary/svg"):
+            params = urllib.parse.parse_qs(parsed.query)
+            token = params.get("token", [None])[0]
+            if token and token in self.tokens:
+                alert = {
+                    "type": "svg_canary",
+                    "severity": "high",
+                    "token": token,
+                    "triggered_by_ip": handler.client_address[0],
+                    "user_agent": handler.headers.get("User-Agent", ""),
+                    "referer": handler.headers.get("Referer", ""),
+                    "vector": params.get("v", ["unknown"])[0],
+                    "filename": self.tokens[token].get("filename", ""),
+                    "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
+                }
+                # Resolver hostname
+                try:
+                    hostname = socket.gethostbyaddr(handler.client_address[0])[0]
+                    alert["hostname"] = hostname
+                except Exception:
+                    alert["hostname"] = None
+                self.alerts.append(alert)
+                self._save_evidence(alert)
+            # Enviar pixel 1x1 transparente
+            self._send_pixel(handler)
+            return True
+        
+        # HTML callback (GET pasivo o POST con screenshot)
+        if parsed.path.startswith("/canary/html"):
+            params = urllib.parse.parse_qs(parsed.query)
+            token = params.get("token", [None])[0]
+            if handler.command == "POST":
+                content_length = int(handler.headers.get("Content-Length", 0))
+                body = handler.rfile.read(content_length).decode("utf-8") if content_length > 0 else ""
+                try:
+                    data = json.loads(body) if body else {}
+                except Exception:
+                    data = {"raw": body[:500]}
+                
+                # Guardar screenshot si viene
+                img_data = data.get("image", "")
+                if img_data and img_data.startswith("data:image"):
+                    b64 = img_data.split(",")[-1]
+                    ts = int(time.time() * 1000)
+                    screen_file = self._screenshot_dir / f"SCREEN_{token}_{ts}.png"
+                    try:
+                        with open(screen_file, "wb") as f:
+                            f.write(base64.b64decode(b64))
+                    except Exception:
+                        pass
+                
+                if token in self.tokens:
+                    alert = {
+                        "type": "html_canary_screenshot",
+                        "severity": "critical",
+                        "token": token,
+                        "triggered_by_ip": handler.client_address[0],
+                        "user_agent": handler.headers.get("User-Agent", ""),
+                        "referer": handler.headers.get("Referer", ""),
+                        "vector": params.get("v", ["unknown"])[0],
+                        "filename": self.tokens[token].get("filename", ""),
+                        "metadata": {
+                            "userAgent": data.get("userAgent", ""),
+                            "screenWidth": data.get("screenWidth", 0),
+                            "screenHeight": data.get("screenHeight", 0),
+                            "timezone": data.get("timezone", ""),
+                            "language": data.get("language", ""),
+                            "plugins": data.get("plugins", []),
+                            "screenshot_saved": bool(img_data),
+                        },
+                        "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
+                    }
+                    self.alerts.append(alert)
+                    self._save_evidence(alert)
+            else:  # GET pasivo
+                if token in self.tokens:
+                    alert = {
+                        "type": "html_canary_passive",
+                        "severity": "medium",
+                        "token": token,
+                        "triggered_by_ip": handler.client_address[0],
+                        "user_agent": handler.headers.get("User-Agent", ""),
+                        "filename": self.tokens[token].get("filename", ""),
+                        "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
+                    }
+                    self.alerts.append(alert)
+                    self._save_evidence(alert)
+            self._send_pixel(handler)
+            return True
+        
+        return False
+    
+    def get_tokens(self) -> dict:
+        """Retorna el dict de tokens (compatible con dashboard_server)."""
+        return self.tokens
+
+
 # ──────────────────────── EJEMPLO DE USO ─────────────────────────────
 if __name__ == "__main__":
     canary = AdvancedCanary(callback_host="192.168.1.100:8001")
