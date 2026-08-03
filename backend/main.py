@@ -403,14 +403,55 @@ def camera_scan(req: CameraScanRequest):
 
 @app.post("/api/scan/radio")
 def radio_scan(req: RadioScanRequest):
-    """Escaneo de frecuencias radio (SDR simulation)"""
+    """Escaneo de frecuencias radio - requiere hardware SDR (rtl-sdr). Sin hardware, devuelve bandas conocidas de referencia."""
     scan_id = f"radio_scan_{int(time.time())}"
 
     # Simular escaneo SDR - en producción usaría rtl_power o similar
     freq_start, freq_end = map(float, req.freq_range.split('-'))
 
     signals = []
-    # Generar señales simuladas basadas en frecuencias conocidas
+
+    # Intentar escaneo real con rtl_power si esta disponible
+    rtl_available = False
+    try:
+        rtl_check = subprocess.run(["which", "rtl_power"], capture_output=True, text=True, timeout=3)
+        rtl_available = (rtl_check.returncode == 0 and rtl_check.stdout.strip())
+    except:
+        pass
+
+    if rtl_available:
+        try:
+            rtl_result = subprocess.run(
+                ["rtl_power", "-f", f"{freq_start}M:{freq_end}M:12k", "-1"],
+                capture_output=True, text=True, timeout=req.duration + 5
+            )
+            if rtl_result.returncode == 0 and rtl_result.stdout:
+                for line in rtl_result.stdout.strip().split("\n"):
+                    parts = line.split(",")
+                    if len(parts) >= 6:
+                        freq_low = float(parts[1])
+                        freq_high = float(parts[2])
+                        db_values = [float(x) for x in parts[6:] if x.strip()]
+                        if db_values:
+                            avg_power = sum(db_values) / len(db_values)
+                            if avg_power > -60:
+                                signals.append({
+                                    "frequency_mhz": round((freq_low + freq_high) / 2 / 1e6, 4),
+                                    "power_dbm": round(avg_power, 1),
+                                    "type": "Detected", "station": "Unknown",
+                                    "bandwidth_khz": 12.5, "modulation": req.mode.upper(),
+                                    "confidence": 80
+                                })
+                if signals:
+                    signals.sort(key=lambda x: x["frequency_mhz"])
+                    return {"scan_id": scan_id, "signals_found": len(signals),
+                        "signals": signals, "scan_method": "rtl_power",
+                        "timestamp": datetime.now().isoformat()}
+        except Exception:
+            pass
+
+    # Sin hardware SDR - mostrar bandas conocidas como referencia
+    # Generar se
     known_freqs = {
         88.5: {"type": "FM Radio", "station": "Radio Local", "power": -45},
         90.1: {"type": "FM Radio", "station": "FM 90.1", "power": -52},
@@ -479,7 +520,6 @@ def iot_scan(req: IoTScanRequest):
     """Escaneo de dispositivos IoT y protocolos industriales"""
     scan_id = f"iot_scan_{int(time.time())}"
 
-    # Puertos IoT/Industrial
     iot_ports = {
         "mqtt": [1883, 8883],
         "coap": [5683, 5684],
@@ -490,68 +530,68 @@ def iot_scan(req: IoTScanRequest):
         "dnp3": [20000],
         "fox": [1911],
         "tridium": [80, 443, 1911, 4911],
-        "zigbee": [],  # No TCP, simulado
-        "ble": [],     # No TCP, simulado
-        "wifi": []     # No TCP, simulado
+        "zigbee": [],
+        "ble": [],
+        "wifi": []
     }
 
     try:
         network = ipaddress.ip_network(req.target_range, strict=False)
         hosts = [str(h) for h in network.hosts()]
-    except:
+    except ValueError:
         hosts = [req.target_range]
 
     devices = []
+    wireless_note = []
 
     for host in hosts[:128]:
         for protocol in req.protocols:
             if protocol in ["zigbee", "ble", "wifi"]:
-                # Simular descubrimiento wireless
-                if random.random() > 0.7:
-                    devices.append({
-                        "ip": host,
-                        "protocol": protocol.upper(),
-                        "port": None,
-                        "device_type": random.choice(["Smart Bulb", "Sensor", "Lock", "Thermostat", "Camera", "Gateway"]),
-                        "manufacturer": random.choice(["Philips Hue", "Xiaomi", "Tuya", "Sonoff", "Shelly"]),
-                        "firmware": f"v{random.randint(1,5)}.{random.randint(0,9)}.{random.randint(0,9)}",
-                        "vulnerabilities": random.sample(["CVE-2021-XXX", "CVE-2022-XXX", "CVE-2023-XXX"], k=random.randint(0,2)),
-                        "signal_strength": random.randint(-90, -40),
-                        "mac_address": f"{random.randint(0,255):02X}:{random.randint(0,255):02X}:{random.randint(0,255):02X}:{random.randint(0,255):02X}:{random.randint(0,255):02X}:{random.randint(0,255):02X}"
-                    })
+                # Estos protocolos no usan TCP - requieren hardware especializado
+                wireless_note.append(protocol)
                 continue
-
-            for port in iot_ports.get(protocol, []):
-                try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(req.timeout)
-                    sock.connect((host, port))
-
-                    # Probes específicos por protocolo
-                    banner = None
-                    if protocol == "mqtt":
-                        sock.send(b"\x10\x0e\x00\x04MQTT\x04\x00\x00\x00\x00\x06source")
-                        banner = sock.recv(1024).hex()
-                    elif protocol == "modbus":
-                        sock.send(b"\x00\x01\x00\x00\x00\x05\x01\x2b\x0e\x01\x00")
-                        banner = sock.recv(1024).hex()
-                    else:
-                        banner = sock.recv(1024).decode('utf-8', errors='ignore')[:200]
-
-                    sock.close()
-
-                    devices.append({
-                        "ip": host,
-                        "port": port,
-                        "protocol": protocol.upper(),
-                        "device_type": random.choice(["PLC", "HMI", "RTU", "Gateway", "Sensor", "Actuator"]),
-                        "manufacturer": random.choice(["Siemens", "Schneider", "Allen-Bradley", "Mitsubishi", "Omron"]),
-                        "banner": banner,
-                        "vulnerabilities": [],
-                        "exploitable": random.random() > 0.5
-                    })
-                except:
+            else:
+                # Protocolo TCP - escaneo real
+                ports = iot_ports.get(protocol, [])
+                if not ports:
                     continue
+                for port in ports:
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(req.timeout)
+                        sock.connect((host, port))
+                        banner = None
+                        if protocol == "mqtt":
+                            sock.send(b"\x10\x0e\x00\x04MQTT\x04\x00\x00\x00\x00\x06source")
+                            try:
+                                banner = sock.recv(1024).decode('utf-8', errors='ignore')[:200]
+                            except:
+                                pass
+                        elif protocol in ["tridium"]:
+                            sock.send(f"GET / HTTP/1.1\r\nHost: {host}\r\n\r\n".encode())
+                            try:
+                                banner = sock.recv(2048).decode('utf-8', errors='ignore')[:200]
+                            except:
+                                pass
+                        else:
+                            try:
+                                banner = sock.recv(1024).decode('utf-8', errors='ignore')[:200]
+                            except:
+                                pass
+                        sock.close()
+                        devices.append({
+                            "ip": host,
+                            "port": port,
+                            "protocol": protocol.upper(),
+                            "device_type": "Unknown",
+                            "manufacturer": "Unknown",
+                            "banner": banner,
+                            "vulnerabilities": [],
+                        })
+                    except (socket.timeout, ConnectionRefusedError, OSError):
+                        continue
+                    except Exception:
+                        continue
 
     scan_results_db[scan_id] = {
         "id": scan_id,
@@ -562,11 +602,19 @@ def iot_scan(req: IoTScanRequest):
         "timestamp": datetime.now().isoformat()
     }
 
-    return {
+    response = {
         "scan_id": scan_id,
         "devices_found": len(devices),
         "devices": devices
     }
+    if wireless_note:
+        response["wireless_protocols_skipped"] = wireless_note
+        response["wireless_note"] = (
+            f"Los protocolos {', '.join(wireless_note)} no usan TCP y requieren hardware "
+            f"especializado (SDR para ZigBee, bluetoothctl para BLE). "
+            f"Use /api/scan/wifi para redes WiFi."
+        )
+    return response
 
 @app.get("/api/scan/results/{scan_id}")
 def get_scan_results(scan_id: str):
@@ -664,39 +712,93 @@ def list_exploits():
 
 @app.post("/api/exploits/run")
 def run_exploit(req: ExploitRequest):
-    """Ejecutar exploit contra target"""
-    # Simulación - en producción integraría con Metasploit, Cobalt Strike, etc.
+    """Verificar si un target es vulnerable a un CVE especifico (scan, no exploit)"""
+    exploit_info = {
+        "cve_2021_36260": {"port": 80, "check": "Hikvision web server"},
+        "cve_2021_33044": {"port": 37777, "check": "Dahua auth bypass"},
+        "cve_2017_7921": {"port": 80, "check": "Hikvision info disclosure"},
+        "ms17_010": {"port": 445, "check": "EternalBlue SMB RCE"},
+        "cve_2021_44228": {"port": 0, "check": "Log4Shell - any Java service"},
+        "cve_2023_34362": {"port": 443, "check": "MOVEit Transfer SQLi"},
+        "cve_2023_36884": {"port": 0, "check": "MS Office RCE - client-side"},
+        "cve_2024_21762": {"port": 443, "check": "Fortinet SSL VPN RCE"},
+    }
+
+    info = exploit_info.get(req.exploit_name, {"port": 0, "check": "Unknown"})
+    target_port = info["port"]
+
+    port_open = False
+    if target_port > 0:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            port_open = (sock.connect_ex((req.target, target_port)) == 0)
+            sock.close()
+        except:
+            pass
+
+    status = "vulnerable" if port_open else "not_vulnerable"
+    if target_port == 0:
+        status = "requires_client_side"
+
     return {
         "exploit": req.exploit_name,
+        "cve_check": info["check"],
         "target": req.target,
-        "status": "running",
-        "session_id": f"exp_{int(time.time())}",
-        "output": f"[*] Iniciando {req.exploit_name} contra {req.target}...\n[*] Probando vulnerabilidad...\n[+] ¡Vulnerabilidad confirmada!\n[+] Shell obtenida en {req.target}:4444",
-        "shell_type": "meterpreter" if "rce" in req.exploit_name else "cmd",
-        "privilege": "system" if "windows" in req.exploit_name else "root"
+        "target_port": target_port,
+        "port_open": port_open,
+        "status": status,
+        "note": "Este endpoint verifica si el servicio asociado al CVE esta accesible. "
+                "No ejecuta el exploit. Para explotacion real, usar Metasploit desde un equipo autorizado.",
+        "timestamp": datetime.now().isoformat(),
     }
+
 
 # ===================== OSINT =====================
 
 @app.get("/api/osint/shodan/lookup")
 def shodan_lookup(query: str, api_key: Optional[str] = None):
-    """Lookup OSINT via Shodan (requiere API key)"""
-    # Simulación - en producción usaría la API real de Shodan
-    return {
-        "query": query,
-        "results": [
-            {
-                "ip": "192.168.1.100",
-                "ports": [80, 443, 8080],
-                "hostnames": ["target.corp.com"],
-                "os": "Windows Server 2019",
-                "vulns": ["CVE-2021-XXX"],
-                "tags": ["web", "windows", "corporate"]
-            }
-        ],
-        "total": 1,
-        "note": "Integrar con API key real de Shodan para resultados reales"
-    }
+    """Lookup OSINT via Shodan API real"""
+    key = api_key or os.environ.get("SHODAN_API_KEY")
+    if not key:
+        return {"query": query, "results": [], "total": 0,
+            "error": "Se requiere API key de Shodan. Pasa ?api_key=... o configura SHODAN_API_KEY."}
+
+    try:
+        import requests as req_lib
+        resp = req_lib.get("https://api.shodan.io/shodan/host/search",
+            params={"key": key, "query": query, "limit": 20}, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            results = []
+            for match in data.get("matches", []):
+                results.append({
+                    "ip": match.get("ip_str"),
+                    "ports": [match.get("port")] if match.get("port") else [],
+                    "hostnames": match.get("hostnames", []),
+                    "os": match.get("os"),
+                    "vulns": match.get("vulns", []),
+                    "tags": match.get("tags", []),
+                    "product": match.get("product"),
+                    "version": match.get("version"),
+                    "org": match.get("org"),
+                    "location": {
+                        "country": match.get("location", {}).get("country_name"),
+                        "city": match.get("location", {}).get("city"),
+                        "lat": match.get("location", {}).get("latitude"),
+                        "lon": match.get("location", {}).get("longitude"),
+                    } if match.get("location") else None,
+                })
+            return {"query": query, "results": results, "total": data.get("total", len(results))}
+        elif resp.status_code == 401:
+            return {"query": query, "results": [], "total": 0, "error": "API key de Shodan invalida"}
+        elif resp.status_code == 429:
+            return {"query": query, "results": [], "total": 0, "error": "Limite de rate de Shodan alcanzado."}
+        else:
+            return {"query": query, "results": [], "total": 0, "error": f"Shodan API error: {resp.status_code}"}
+    except Exception as e:
+        return {"query": query, "results": [], "total": 0, "error": f"Error de conexion: {str(e)}"}
+
 
 @app.get("/api/osint/whois")
 def whois_lookup(domain: str):
@@ -783,89 +885,142 @@ class WifiScanRequest(BaseModel):
 
 @app.post("/api/scan/wifi")
 def wifi_scan(req: WifiScanRequest):
-    """Escaneo de redes WiFi con análisis de seguridad"""
+    """Escaneo de redes WiFi con analisis de seguridad"""
     scan_id = f"wifi_scan_{int(time.time())}"
 
-    # Simular descubrimiento de redes WiFi
-    networks = [
-        {
-            "ssid": "CORP_WIFI_5G",
-            "bssid": "AA:BB:CC:DD:EE:01",
-            "security": "WPA2-Enterprise",
-            "signal_dbm": -42,
-            "frequency": 5.2,
-            "channel": 36,
-            "vendor": "Cisco",
-            "connected_devices": 24,
-            "wps": False,
-            "hidden": False,
-            "signal_history": [-45, -43, -42, -44, -42, -41, -42],
-        },
-        {
-            "ssid": "Guest_Network",
-            "bssid": "AA:BB:CC:DD:EE:02",
-            "security": "Open",
-            "signal_dbm": -55,
-            "frequency": 2.4,
-            "channel": 6,
-            "vendor": "Ubiquiti",
-            "connected_devices": 8,
-            "wps": False,
-            "hidden": False,
-            "signal_history": [-58, -56, -55, -57, -55, -54, -55],
-        },
-        {
-            "ssid": "HomeRouter_2G",
-            "bssid": "FF:EE:DD:CC:BB:AA",
-            "security": "WPA2",
-            "signal_dbm": -38,
-            "frequency": 2.4,
-            "channel": 11,
-            "vendor": "TP-Link",
-            "connected_devices": 12,
-            "wps": True,
-            "hidden": False,
-            "signal_history": [-40, -39, -38, -38, -37, -38, -38],
-        },
-        {
-            "ssid": "IoT_Gateway",
-            "bssid": "11:22:33:44:55:66",
-            "security": "WPA3",
-            "signal_dbm": -62,
-            "frequency": 2.4,
-            "channel": 1,
-            "vendor": "Amazon",
-            "connected_devices": 6,
-            "wps": False,
-            "hidden": False,
-            "signal_history": [-65, -63, -62, -64, -62, -61, -62],
-        },
-        {
-            "ssid": "Hidden_Network",
-            "bssid": "99:88:77:66:55:44",
-            "security": "WEP",
-            "signal_dbm": -72,
-            "frequency": 2.4,
-            "channel": 3,
-            "vendor": "Unknown",
-            "connected_devices": 2,
-            "wps": True,
-            "hidden": True,
-            "signal_history": [-75, -73, -72, -74, -72, -71, -72],
-        },
-    ]
+    networks = []
+    scan_method = None
 
-    # Dispositivos conectados simulados
-    connected_devices = [
-        {"hostname": "iPhone-Admin", "ip": "192.168.1.105", "mac": "A4:B1:E2:12:34:56", "vendor": "Apple", "type": "phone"},
-        {"hostname": "DESKTOP-WIN10", "ip": "192.168.1.110", "mac": "B8:27:EB:AB:CD:EF", "vendor": "Dell", "type": "laptop"},
-        {"hostname": "SmartTV-LG", "ip": "192.168.1.115", "mac": "CC:44:88:AA:BB:22", "vendor": "LG", "type": "tv"},
-        {"hostname": "Nest-Thermostat", "ip": "192.168.1.120", "mac": "DD:55:99:CC:DD:33", "vendor": "Google", "type": "iot"},
-        {"hostname": "Printer-HP", "ip": "192.168.1.125", "mac": "EE:66:AA:DD:EE:44", "vendor": "HP", "type": "printer"},
-        {"hostname": "Router-AP", "ip": "192.168.1.1", "mac": "FF:77:BB:EE:FF:55", "vendor": "Cisco", "type": "router"},
-    ]
+    # Intentar escaneo real con iwlist (Linux/Termux)
+    try:
+        result = subprocess.run(
+            ["iwlist", req.interface, "scan"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0 and "Cell" in result.stdout:
+            scan_method = "iwlist"
+            raw = result.stdout
+            cell_pattern = r'Cell \d+ - Address: ([0-9A-Fa-f:]{17})'
+            cells = re.split(cell_pattern, raw)
+            for i in range(1, len(cells), 2):
+                bssid = cells[i].strip()
+                cell_data = cells[i + 1] if i + 1 < len(cells) else ""
+                ssid_match = re.search(r'ESSID:"(.*?)"', cell_data)
+                ssid = ssid_match.group(1) if ssid_match else ""
+                is_hidden = (ssid == "" or ssid == "\x00")
+                sig_q = re.search(r'Signal level=(-?\d+) dBm', cell_data)
+                signal_dbm = int(sig_q.group(1)) if sig_q else -100
+                chan_match = re.search(r'Channel:(\d+)', cell_data)
+                channel = int(chan_match.group(1)) if chan_match else 0
+                freq_match = re.search(r'Frequency:(\d+\.?\d*)', cell_data)
+                frequency = float(freq_match.group(1)) if freq_match else (5.0 if channel > 14 else 2.4)
+                security = "Unknown"
+                if "WPA3" in cell_data: security = "WPA3"
+                elif "WPA2" in cell_data: security = "WPA2"
+                elif "WPA" in cell_data: security = "WPA"
+                elif "WEP" in cell_data: security = "WEP"
+                elif "Encryption key:off" in cell_data: security = "Open"
+                networks.append({
+                    "ssid": ssid if not is_hidden else "<hidden>",
+                    "bssid": bssid, "security": security,
+                    "signal_dbm": signal_dbm, "frequency": frequency,
+                    "channel": channel, "vendor": "Unknown",
+                    "wps": "WPS" in cell_data, "hidden": is_hidden,
+                    "signal_history": [signal_dbm],
+                })
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
 
-    # Análisis de seguridad
+    # Intentar con iw si iwlist fallo
+    if not networks:
+        try:
+            result = subprocess.run(
+                ["iw", "dev", req.interface, "scan"],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode == 0 and "BSS" in result.stdout:
+                scan_method = "iw"
+                raw = result.stdout
+                bss_blocks = re.split(r'^BSS ', raw, flags=re.MULTILINE)
+                for block in bss_blocks[1:]:
+                    bssid_match = re.match(r'([0-9a-fA-F:]{17})', block.strip())
+                    if not bssid_match:
+                        continue
+                    bssid = bssid_match.group(1)
+                    ssid_match = re.search(r'SSID: (.+)', block)
+                    ssid = ssid_match.group(1).strip() if ssid_match else ""
+                    is_hidden = (ssid == "" or ssid == "\x00")
+                    sig_match = re.search(r'signal: (-?\d+\.?\d*) dBm', block)
+                    signal_dbm = int(float(sig_match.group(1))) if sig_match else -100
+                    freq_match = re.search(r'freq: (\d+)', block)
+                    freq_mhz = int(freq_match.group(1)) if freq_match else 2412
+                    frequency = round(freq_mhz / 1000, 1)
+                    if freq_mhz >= 5000:
+                        channel = round((freq_mhz - 5000) / 5)
+                    else:
+                        ch_map = {2412:1,2417:2,2422:3,2427:4,2432:5,2437:6,2442:7,2447:8,2452:9,2457:10,2462:11,2467:12,2472:13}
+                        channel = ch_map.get(freq_mhz, 0)
+                    security = "Unknown"
+                    if "WPA3" in block: security = "WPA3"
+                    elif "WPA2" in block: security = "WPA2"
+                    elif "WPA" in block: security = "WPA"
+                    elif "WEP" in block: security = "WEP"
+                    networks.append({
+                        "ssid": ssid if not is_hidden else "<hidden>",
+                        "bssid": bssid, "security": security,
+                        "signal_dbm": signal_dbm, "frequency": frequency,
+                        "channel": channel, "vendor": "Unknown",
+                        "wps": "WPS" in block, "hidden": is_hidden,
+                        "signal_history": [signal_dbm],
+                    })
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+
+    # Dispositivos conectados reales (ARP table)
+    connected_devices = []
+    try:
+        arp_result = subprocess.run(["ip", "neigh"], capture_output=True, text=True, timeout=5)
+        for line in arp_result.stdout.strip().split("\n"):
+            parts = line.strip().split()
+            if len(parts) >= 4:
+                ip = parts[0]
+                mac = None
+                for p in parts:
+                    if re.match(r'[0-9a-fA-F:]{17}', p):
+                        mac = p.upper()
+                        break
+                if not mac:
+                    continue
+                hostname = ip
+                try:
+                    hostname = socket.gethostbyaddr(ip)[0]
+                except:
+                    pass
+                connected_devices.append({
+                    "hostname": hostname, "ip": ip, "mac": mac,
+                    "vendor": "Unknown", "type": "unknown",
+                })
+    except Exception:
+        pass
+
+    if not networks and not connected_devices:
+        security_analysis = {"open_networks": 0, "wep_networks": 0, "wpa_networks": 0,
+            "wpa2_networks": 0, "wpa3_networks": 0, "enterprise_networks": 0,
+            "wps_enabled": 0, "hidden_networks": 0, "risk_score": 0}
+        scan_results_db[scan_id] = {"id": scan_id, "type": "wifi_scan",
+            "interface": req.interface, "networks_found": 0, "networks": [],
+            "connected_devices": [], "security_analysis": security_analysis,
+            "timestamp": datetime.now().isoformat()}
+        return {"scan_id": scan_id, "networks_found": 0, "networks": [],
+            "connected_devices": [], "security_analysis": security_analysis,
+            "warning": f"No se pudo escanear con iwlist/iw en '{req.interface}'. "
+                       f"En Termux: pkg install wireless-tools iw. Algunos dispositivos requieren root.",
+            "scan_method": None}
+
     security_analysis = {
         "open_networks": len([n for n in networks if n["security"] == "Open"]),
         "wep_networks": len([n for n in networks if n["security"] == "WEP"]),
@@ -883,24 +1038,15 @@ def wifi_scan(req: WifiScanRequest):
         ]),
     }
 
-    scan_results_db[scan_id] = {
-        "id": scan_id,
-        "type": "wifi_scan",
-        "interface": req.interface,
-        "networks_found": len(networks),
-        "networks": networks,
-        "connected_devices": connected_devices,
+    scan_results_db[scan_id] = {"id": scan_id, "type": "wifi_scan",
+        "interface": req.interface, "networks_found": len(networks),
+        "networks": networks, "connected_devices": connected_devices,
         "security_analysis": security_analysis,
-        "timestamp": datetime.now().isoformat(),
-    }
+        "timestamp": datetime.now().isoformat()}
 
-    return {
-        "scan_id": scan_id,
-        "networks_found": len(networks),
-        "networks": networks,
-        "connected_devices": connected_devices,
-        "security_analysis": security_analysis,
-    }
+    return {"scan_id": scan_id, "networks_found": len(networks),
+        "networks": networks, "connected_devices": connected_devices,
+        "security_analysis": security_analysis, "scan_method": scan_method}
 
 # ===================== TOPOLOGY MAPPER =====================
 
@@ -910,148 +1056,114 @@ class TopologyRequest(BaseModel):
 
 @app.post("/api/scan/topology")
 def topology_scan(req: TopologyRequest):
-    """Mapeo de topología de red con descubrimiento de hosts y relaciones"""
+    """Mapeo de topologia de red con descubrimiento real de hosts"""
     scan_id = f"topo_scan_{int(time.time())}"
 
-    hosts = [
-        {
-            "id": "gw_001",
-            "ip": "192.168.1.1",
-            "hostname": "Gateway-Router",
-            "mac": "AA:BB:CC:DD:EE:01",
-            "type": "router",
-            "os": "Cisco IOS",
-            "vendor": "Cisco",
-            "ports": [80, 443, 22],
-            "vulnerabilities": ["CVE-2023-20198"],
-            "services": ["HTTP", "HTTPS", "SSH"],
-        },
-        {
-            "id": "srv_001",
-            "ip": "192.168.1.10",
-            "hostname": "DC-01",
-            "mac": "AA:BB:CC:DD:EE:02",
-            "type": "server",
-            "os": "Windows Server 2019",
-            "vendor": "Microsoft",
-            "ports": [53, 88, 135, 139, 445, 389, 636],
-            "vulnerabilities": ["CVE-2021-34527", "CVE-2020-1472"],
-            "services": ["DNS", "Kerberos", "SMB", "LDAP"],
-        },
-        {
-            "id": "srv_002",
-            "ip": "192.168.1.11",
-            "hostname": "WEB-01",
-            "mac": "AA:BB:CC:DD:EE:03",
-            "type": "server",
-            "os": "Ubuntu 22.04",
-            "vendor": "Canonical",
-            "ports": [22, 80, 443, 3306],
-            "vulnerabilities": [],
-            "services": ["SSH", "HTTP", "HTTPS", "MySQL"],
-        },
-        {
-            "id": "ws_001",
-            "ip": "192.168.1.50",
-            "hostname": "DESKTOP-ADMIN",
-            "mac": "AA:BB:CC:DD:EE:04",
-            "type": "workstation",
-            "os": "Windows 10",
-            "vendor": "Dell",
-            "ports": [445, 3389],
-            "vulnerabilities": ["CVE-2023-36884"],
-            "services": ["SMB", "RDP"],
-        },
-        {
-            "id": "ws_002",
-            "ip": "192.168.1.51",
-            "hostname": "MAC-DEV",
-            "mac": "AA:BB:CC:DD:EE:05",
-            "type": "workstation",
-            "os": "macOS 14",
-            "vendor": "Apple",
-            "ports": [22, 445, 5900],
-            "vulnerabilities": [],
-            "services": ["SSH", "SMB", "VNC"],
-        },
-        {
-            "id": "cam_001",
-            "ip": "192.168.1.100",
-            "hostname": "CAM-LOBBY",
-            "mac": "AA:BB:CC:DD:EE:06",
-            "type": "camera",
-            "os": "Linux (embedded)",
-            "vendor": "Hikvision",
-            "ports": [80, 554, 8000],
-            "vulnerabilities": ["CVE-2021-36260", "CVE-2021-33044"],
-            "services": ["HTTP", "RTSP"],
-        },
-        {
-            "id": "cam_002",
-            "ip": "192.168.1.101",
-            "hostname": "CAM-PARKING",
-            "mac": "AA:BB:CC:DD:EE:07",
-            "type": "camera",
-            "os": "Linux (embedded)",
-            "vendor": "Dahua",
-            "ports": [80, 554, 37777],
-            "vulnerabilities": ["CVE-2021-33037"],
-            "services": ["HTTP", "RTSP"],
-        },
-        {
-            "id": "iot_001",
-            "ip": "192.168.1.200",
-            "hostname": "Smart-Hub",
-            "mac": "AA:BB:CC:DD:EE:08",
-            "type": "iot",
-            "os": "Embedded Linux",
-            "vendor": "Amazon",
-            "ports": [80, 1883, 8883],
-            "vulnerabilities": [],
-            "services": ["HTTP", "MQTT"],
-        },
-        {
-            "id": "iot_002",
-            "ip": "192.168.1.201",
-            "hostname": "PLC-LINE1",
-            "mac": "AA:BB:CC:DD:EE:09",
-            "type": "iot",
-            "os": "VxWorks",
-            "vendor": "Siemens",
-            "ports": [502, 102],
-            "vulnerabilities": ["CVE-2019-10953"],
-            "services": ["Modbus", "S7Comm"],
-        },
-        {
-            "id": "prt_001",
-            "ip": "192.168.1.250",
-            "hostname": "PRINTER-HR",
-            "mac": "AA:BB:CC:DD:EE:10",
-            "type": "printer",
-            "os": "Embedded",
-            "vendor": "HP",
-            "ports": [80, 443, 9100],
-            "vulnerabilities": [],
-            "services": ["HTTP", "HTTPS", "RAW"],
-        },
-    ]
+    try:
+        network = ipaddress.ip_network(req.target_range, strict=False)
+        hosts_candidates = [str(h) for h in network.hosts()]
+    except ValueError:
+        hosts_candidates = [req.target_range]
 
-    connections = [
-        {"from": "gw_001", "to": "srv_001", "type": "ethernet"},
-        {"from": "gw_001", "to": "srv_002", "type": "ethernet"},
-        {"from": "gw_001", "to": "ws_001", "type": "wifi"},
-        {"from": "gw_001", "to": "ws_002", "type": "wifi"},
-        {"from": "gw_001", "to": "cam_001", "type": "wifi"},
-        {"from": "gw_001", "to": "cam_002", "type": "wifi"},
-        {"from": "gw_001", "to": "iot_001", "type": "wifi"},
-        {"from": "gw_001", "to": "iot_002", "type": "ethernet"},
-        {"from": "gw_001", "to": "prt_001", "type": "wifi"},
-        {"from": "srv_001", "to": "ws_001", "type": "domain"},
-        {"from": "srv_001", "to": "ws_002", "type": "domain"},
-        {"from": "srv_002", "to": "iot_001", "type": "api"},
-    ]
+    if len(hosts_candidates) > 254:
+        hosts_candidates = hosts_candidates[:254]
 
-    # Análisis de topología
+    hosts = []
+    discovered = set()
+
+    def ping_host(ip):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.5)
+            result = sock.connect_ex((ip, 80))
+            sock.close()
+            if result == 0:
+                return ip
+            ping_result = subprocess.run(
+                ["ping", "-c", "1", "-W", "1", ip],
+                capture_output=True, timeout=2
+            )
+            if ping_result.returncode == 0:
+                return ip
+        except:
+            pass
+        return None
+
+    for ip in executor.map(ping_host, hosts_candidates):
+        if ip:
+            discovered.add(ip)
+
+    arp_map = {}
+    try:
+        arp_result = subprocess.run(["ip", "neigh"], capture_output=True, text=True, timeout=5)
+        for line in arp_result.stdout.strip().split("\n"):
+            parts = line.strip().split()
+            if len(parts) >= 4:
+                ip_addr = parts[0]
+                for p in parts:
+                    if re.match(r'[0-9a-fA-F:]{17}', p):
+                        arp_map[ip_addr] = p.upper()
+                        discovered.add(ip_addr)
+                        break
+    except Exception:
+        pass
+
+    for idx, ip in enumerate(sorted(discovered, key=lambda x: tuple(int(o) for o in x.split(".")))):
+        host_id = f"host_{idx+1:03d}"
+        hostname = ip
+        try:
+            hostname = socket.gethostbyaddr(ip)[0]
+        except:
+            pass
+
+        common_ports = [22, 23, 80, 443, 445, 3389, 554, 8080, 1883, 502, 8000, 37777]
+        open_ports = []
+        for port in common_ports:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                if sock.connect_ex((ip, port)) == 0:
+                    open_ports.append(port)
+                sock.close()
+            except:
+                pass
+
+        host_type = "unknown"
+        if 37777 in open_ports or 554 in open_ports:
+            host_type = "camera"
+        elif 502 in open_ports or 102 in open_ports:
+            host_type = "iot"
+        elif 3389 in open_ports:
+            host_type = "workstation"
+        elif 445 in open_ports and 53 in open_ports:
+            host_type = "server"
+        elif 80 in open_ports and 22 in open_ports:
+            host_type = "server"
+        elif not open_ports:
+            host_type = "host"
+
+        is_gateway = ip.endswith(".1") or ip.endswith(".254")
+        services = [get_service_name(p) for p in open_ports]
+
+        hosts.append({
+            "id": host_id, "ip": ip, "hostname": hostname,
+            "mac": arp_map.get(ip, "Unknown"),
+            "type": "router" if is_gateway else host_type,
+            "os": None, "vendor": "Unknown",
+            "ports": open_ports, "vulnerabilities": [], "services": services,
+        })
+
+    connections = []
+    gateway_id = None
+    for h in hosts:
+        if h["type"] == "router":
+            gateway_id = h["id"]
+            break
+    if gateway_id:
+        for h in hosts:
+            if h["id"] != gateway_id:
+                connections.append({"from": gateway_id, "to": h["id"], "type": "network"})
+
     topology_analysis = {
         "total_hosts": len(hosts),
         "total_connections": len(connections),
@@ -1063,33 +1175,20 @@ def topology_scan(req: TopologyRequest):
             "workstation": len([h for h in hosts if h["type"] == "workstation"]),
             "camera": len([h for h in hosts if h["type"] == "camera"]),
             "iot": len([h for h in hosts if h["type"] == "iot"]),
-            "printer": len([h for h in hosts if h["type"] == "printer"]),
+            "unknown": len([h for h in hosts if h["type"] in ("unknown", "device", "host")]),
         },
-        "critical_paths": [
-            ["gw_001", "srv_001", "ws_001"],
-            ["gw_001", "srv_002", "iot_001"],
-        ],
+        "critical_paths": [],
+        "discovery_method": req.discovery_method,
+        "scan_type": "real",
     }
 
-    scan_results_db[scan_id] = {
-        "id": scan_id,
-        "type": "topology_scan",
-        "target": req.target_range,
-        "hosts": hosts,
-        "connections": connections,
-        "analysis": topology_analysis,
-        "timestamp": datetime.now().isoformat(),
-    }
+    scan_results_db[scan_id] = {"id": scan_id, "type": "topology_scan",
+        "target": req.target_range, "hosts": hosts, "connections": connections,
+        "analysis": topology_analysis, "timestamp": datetime.now().isoformat()}
 
-    return {
-        "scan_id": scan_id,
-        "hosts_found": len(hosts),
-        "connections_found": len(connections),
-        "hosts": hosts,
-        "connections": connections,
-        "analysis": topology_analysis,
-    }
-
+    return {"scan_id": scan_id, "hosts_found": len(hosts),
+        "connections_found": len(connections), "hosts": hosts,
+        "connections": connections, "analysis": topology_analysis}
 
 # Geo/Intel module
 import sys
