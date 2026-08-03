@@ -1,53 +1,43 @@
-/**
- * health.js — Endpoint GET /api/healthz para el servidor Express local (Termux).
- *
- * Devuelve estado operativo, uptime, uso de memoria y timestamp.
- * Compatible con Node 22 + Express 5.
- */
-
 'use strict';
 
-const { Router } = require('express');
+const express = require('express');
+const os = require('os');
 
-const router = Router();
-
-const _startTime = Date.now();
+const router = express.Router();
 
 /**
  * GET /api/healthz
- * Respuesta:
- *   { status, uptime, memory, timestamp }
+ * Health check público — sin autenticación.
+ * Reporta estado operacional, uptime, uso de memoria y timestamp.
  */
-router.get('/healthz', (_req, res) => {
-  const uptimeMs = Date.now() - _startTime;
-  const uptimeSec = Math.floor(uptimeMs / 1000);
-  const h = Math.floor(uptimeSec / 3600);
-  const m = Math.floor((uptimeSec % 3600) / 60);
-  const s = uptimeSec % 60;
-  const uptimeHuman = `${h}h ${m}m ${s}s`;
-
+router.get('/healthz', (req, res) => {
   const mem = process.memoryUsage();
+  const systemTotalBytes = os.totalmem();
+  const systemFreeBytes = os.freemem();
 
-  res.status(200).json({
+  // % de memoria RSS del proceso respecto a la RAM total del sistema.
+  // (heapUsed/heapTotal NO es fiable como gate de alarma: heapTotal es
+  // dinámico y crece bajo demanda, por lo que puede marcar >80% recién
+  // arrancado el proceso sin que haya presión de memoria real).
+  const rssPercentOfSystem = Number(((mem.rss / systemTotalBytes) * 100).toFixed(2));
+
+  res.json({
     status: 'operational',
-    uptime: {
-      ms: uptimeMs,
-      human: uptimeHuman,
-    },
+    uptime: process.uptime(),
     memory: {
-      rss_mb:         +(mem.rss / 1024 / 1024).toFixed(2),
-      heap_used_mb:   +(mem.heapUsed / 1024 / 1024).toFixed(2),
-      heap_total_mb:  +(mem.heapTotal / 1024 / 1024).toFixed(2),
-      external_mb:    +(mem.external / 1024 / 1024).toFixed(2),
+      rss: mem.rss,
+      heapTotal: mem.heapTotal,
+      heapUsed: mem.heapUsed,
+      external: mem.external,
+      arrayBuffers: mem.arrayBuffers,
+      heapUsedPercent: Number(((mem.heapUsed / mem.heapTotal) * 100).toFixed(2)),
+      // Métrica recomendada para gates de "% de memoria usado" (stress-test la usa)
+      rssPercentOfSystem,
+      systemFreeMemMB: Number((systemFreeBytes / 1024 / 1024).toFixed(2)),
+      systemTotalMemMB: Number((systemTotalBytes / 1024 / 1024).toFixed(2)),
     },
-    node_version: process.version,
     timestamp: new Date().toISOString(),
   });
 });
-
-/**
- * GET /api/health  (alias sin la z para compatibilidad)
- */
-router.get('/health', (_req, res) => res.redirect('/api/healthz'));
 
 module.exports = router;
