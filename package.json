@@ -5,11 +5,14 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "PORT=3000 node server.js"
+    "dev": "PORT=3000 node server.js",
+    "stress-test": "node scripts/stress-test.js"
   },
   "dependencies": {
     "express": "^4.22.2",
-    "ws": "^8.21.1"
+    "ws": "^8.21.1",
+    "axios": "^1.7.9",
+    "axios-retry": "^4.5.0"
   },
   "keywords": [
     "security",
