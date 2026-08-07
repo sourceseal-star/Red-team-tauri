@@ -8,20 +8,18 @@ channel = "stable-25_05"
 deploymentTarget = "autoscale"
 run = ["bash", "replit_start.sh"]
 
+# Puerto principal: el backend unificado corre en :8001
+# Este debe ser el primer puerto para que el webview de Replit lo muestre
 [[ports]]
-localPort = 5000
+localPort = 8001
 externalPort = 80
 
 [[ports]]
-localPort = 5001
+localPort = 5000
 externalPort = 3000
 
 [[ports]]
-localPort = 5002
-externalPort = 3002
-
-[[ports]]
-localPort = 8001
+localPort = 5001
 externalPort = 3001
 
 [workflows]
