@@ -22,8 +22,21 @@ elif command -v lsof >/dev/null 2>&1; then
 fi
 sleep 2
 
-# -- 2. Deps Python (tambien en replit.nix, pero backup) --
-pip install -q --no-cache-dir fastapi uvicorn httpx psutil 2>/dev/null || true
+# -- 2. IMPORTANTE: NO pip install fastapi/pydantic aqui --
+# Esas deps ya las provee replit.nix (python311Packages.fastapi, etc).
+# Si pip instala una version distinta encima, pydantic-core (extension
+# nativa compilada) queda en un estado roto/incompleto y el backend
+# muere con: ModuleNotFoundError: No module named 'pydantic_core._pydantic_core'
+# Si necesitas alguna dep que NO este en replit.nix, agregala ALLA, no aqui.
+PYSITE="$HOME/.local/lib/python3.11/site-packages"
+if [ -d "$PYSITE" ]; then
+  for pkg in pydantic pydantic_core fastapi; do
+    if ls "$PYSITE" 2>/dev/null | grep -qi "^${pkg}"; then
+      echo "[start] Limpiando ${pkg}* pip-instalado que pisa el de Nix..."
+      find "$PYSITE" -maxdepth 1 -iname "${pkg}*" -exec rm -rf {} + 2>/dev/null || true
+    fi
+  done
+fi
 
 # -- 3. Deps Node + build frontend --
 cd "$ROOT/tauri-frontend"
@@ -45,9 +58,6 @@ BACKEND_PID=$!
 echo "[start] Backend PID: $BACKEND_PID"
 
 # -- 5. Esperar y VERIFICAR (verificacion simplificada) --
-# FIX: Antes el script comparaba version con un grep que capturaba mal
-# ("3.0" en vez de "3.0-unified") y luego MATABA el backend recien arrancado.
-# Ahora solo verificamos HTTP 200 + que la respuesta contenga "unified".
 READY=0
 for i in $(seq 1 20); do
   if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
