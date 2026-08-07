@@ -1,0 +1,21 @@
+:root {
+  --ss-bg: #08090d;
+  --ss-bg-2: #0d1117;
+  --ss-bg-3: #161b22;
+  --ss-cyan: #00e5ff;
+  --ss-gold: #d4af37;
+  --ss-red: #ff3b5c;
+  --ss-green: #00ff88;
+  --ss-amber: #fbbf24;
+  --ss-border: #1f2937;
+}
+body { background: var(--ss-bg); }
+
+.ss-glow { box-shadow: 0 0 24px rgba(0,229,255,.15), inset 0 0 0 1px rgba(0,229,255,.25); }
+.ss-gold-glow { box-shadow: 0 0 20px rgba(212,175,55,.2); }
+
+/* Hexágono de fondo sutil */
+.ss-hex-bg::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .04;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='46' viewBox='0 0 40 46'><path d='M20 0 L40 11.5 L40 34.5 L20 46 L0 34.5 L0 11.5 Z' fill='none' stroke='%2300e5ff' stroke-width='0.5'/></svg>");
+}
