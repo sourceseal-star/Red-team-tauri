@@ -36,3 +36,7 @@ redteam/data/iocs.json
 redteam/reports/*.json
 redteam/reports/latest.json
 node_modules/
+
+# Build output — se regenera en cada start/sync, no versionar
+tauri-frontend/dist/
+tauri-frontend/node_modules/

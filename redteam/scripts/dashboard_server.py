@@ -1060,13 +1060,13 @@ async def auth_logout():
 @app.get("/api/network/stats")
 async def network_stats():
     return {"hosts": 0, "cameras": 0, "routers": 0, "alerts": 0,
-            "backend": "unified", "version": "3.0", "ts": int(time.time())}
+            "backend": "unified", "version": "3.0-unified", "ts": int(time.time())}
 
 @app.get("/api/health")
 @app.get("/health")
 @app.get("/healthz")
 async def health():
-    return {"status": "ok", "backend": "red-team-tauri-unified", "version": "3.0",
+    return {"status": "ok", "backend": "red-team-tauri-unified", "version": "3.0-unified",
             "dist_built": DIST.exists(), "ws_clients": len(ws_clients),
             "honeypot_running": bool(honeypot_proc and honeypot_proc.poll() is None),
             "psutil": HAS_PSUTIL, "geo_intel": _GEO_INTEL_OK, "ts": int(time.time())}
@@ -1076,7 +1076,7 @@ async def root():
     index = DIST / "index.html"
     if index.exists(): return FileResponse(index)
     return {
-        "status": "ok", "backend": "red-team-tauri-unified", "version": "3.0",
+        "status": "ok", "backend": "red-team-tauri-unified", "version": "3.0-unified",
         "dist_built": False,
         "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})",
         "endpoints": [
