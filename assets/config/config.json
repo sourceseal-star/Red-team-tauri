@@ -1,0 +1,6 @@
+{
+  "app_name": "SourceSeal Console",
+  "version": "2.0.0",
+  "default_scan_timeout": 5,
+  "max_threads": 200
+}

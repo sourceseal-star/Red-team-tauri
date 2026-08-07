@@ -117,7 +117,7 @@ class KillChainAnalyzer:
             return AttackPath()
 
         # 1. Ordenar incidentes cronológicamente
-        sorted_incidents = sorted(incidents, key=lambda x: x.timestamp)
+        sorted_incidents = sorted(incidents, key=lambda x: x.created_at or "")
         
         detected_phases_set = set()
         techniques_by_phase: Dict[KillChainPhase, List[str]] = {p: [] for p in self.phase_order}
@@ -130,7 +130,7 @@ class KillChainAnalyzer:
                 # Obtener la técnica de MITRE_TECHNIQUES si existe
                 tech_info = MITRE_TECHNIQUES.get(tech_id)
                 if tech_info:
-                    tactic = tech_info.get("tactic", "").lower()
+                    tactic = tech_info.get("tactic", "").lower().replace(" ", "-")
                     phase = TACTIC_TO_PHASE_MAP.get(tactic)
                     if phase:
                         detected_phases_set.add(phase)
@@ -144,7 +144,7 @@ class KillChainAnalyzer:
                     for tech_id in ev.mitre_techniques:
                         tech_info = MITRE_TECHNIQUES.get(tech_id)
                         if tech_info:
-                            tactic = tech_info.get("tactic", "").lower()
+                            tactic = tech_info.get("tactic", "").lower().replace(" ", "-")
                             phase = TACTIC_TO_PHASE_MAP.get(tactic)
                             if phase:
                                 detected_phases_set.add(phase)
@@ -154,10 +154,10 @@ class KillChainAnalyzer:
 
             # Añadir registro detallado a la línea de tiempo
             timeline.append({
-                "incident_id": inc.incident_id,
+                "incident_id": inc.id,
                 "title": inc.title,
                 "severity": inc.severity,
-                "timestamp": inc.timestamp.isoformat() if isinstance(inc.timestamp, datetime) else str(inc.timestamp),
+                "timestamp": inc.created_at.isoformat() if False else str(inc.created_at),
                 "phases": [p.value for p in inc_phases],
                 "techniques": inc.mitre_techniques
             })
@@ -303,7 +303,7 @@ class KillChainAnalyzer:
         for tech_id in set(techniques):
             tech_info = MITRE_TECHNIQUES.get(tech_id)
             if tech_info:
-                tactic = tech_info.get("tactic", "").lower()
+                tactic = tech_info.get("tactic", "").lower().replace(" ", "-")
                 phase = TACTIC_TO_PHASE_MAP.get(tactic)
                 if phase:
                     idx = self.phase_order.index(phase)

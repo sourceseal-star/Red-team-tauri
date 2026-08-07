@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#ffb000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="/manifest.json">
+  <title>sealctl · consola red-team</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#0a0e14; color:#cdd6e0; font-family:'IBM Plex Sans',sans-serif; padding:16px; }
+    .app { max-width:1600px; margin:0 auto; }
+    h1 { font-family:'Bricolage Grotesque',sans-serif; font-weight:800; font-size:2rem; letter-spacing:-0.02em; display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+    h1 small { font-weight:400; font-size:0.8rem; color:#7d8a99; }
+    .tabs { display:flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid #1d2733; padding-bottom:4px; margin-bottom:16px; }
+    .tabs button { background:transparent; border:none; padding:8px 14px; font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:0.9rem; color:#7d8a99; cursor:pointer; border-radius:6px 6px 0 0; transition:0.2s; }
+    .tabs button:hover { color:#cdd6e0; background:#111823; }
+    .tabs button.active { color:#ffb000; background:#111823; }
+    .panel { display:none; background:#0d131c; border-radius:12px; padding:16px; border:1px solid #1d2733; }
+    .panel.active { display:block; }
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media(max-width:800px){ .grid-2 { grid-template-columns:1fr; } }
+    .card { background:#111823; border-radius:10px; padding:12px 14px; border:1px solid #1d2733; }
+    .card h3 { font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:1.1rem; margin-bottom:6px; }
+    .mono { font-family:'JetBrains Mono',monospace; font-size:0.85rem; }
+    .badge { display:inline-block; background:#1d2733; padding:2px 10px; border-radius:20px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; }
+    .badge.amber { background:#ffb00030; color:#ffb000; }
+    .badge.red { background:#ff5d5230; color:#ff5d52; }
+    .badge.green { background:#7ee78730; color:#7ee787; }
+    .badge.cyan { background:#56d4dd30; color:#56d4dd; }
+    .badge.mag { background:#e07ad030; color:#e07ad0; }
+    .badge.violet { background:#9d8cff30; color:#9d8cff; }
+    .btn { background:#1d2733; border:none; color:#cdd6e0; padding:4px 12px; border-radius:6px; font-family:'IBM Plex Sans',sans-serif; font-weight:500; font-size:0.8rem; cursor:pointer; transition:0.2s; }
+    .btn:hover { background:#27323f; }
+    .btn.amber { background:#ffb00030; color:#ffb000; }
+    .btn.amber:hover { background:#ffb00050; }
+    .btn.red { background:#ff5d5230; color:#ff5d52; }
+    .btn.red:hover { background:#ff5d5250; }
+    .btn.green { background:#7ee78730; color:#7ee787; }
+    .btn.green:hover { background:#7ee78750; }
+    .btn.cyan { background:#56d4dd30; color:#56d4dd; }
+    .btn.cyan:hover { background:#56d4dd50; }
+    .btn.mag { background:#e07ad030; color:#e07ad0; }
+    .btn.mag:hover { background:#e07ad050; }
+    .btn.violet { background:#9d8cff30; color:#9d8cff; }
+    .btn.violet:hover { background:#9d8cff50; }
+    input, textarea { background:#0a0e14; border:1px solid #1d2733; color:#cdd6e0; padding:6px 10px; border-radius:6px; font-family:'IBM Plex Sans',sans-serif; width:100%; }
+    input:focus, textarea:focus { outline:1px solid #ffb000; border-color:#ffb000; }
+    .table-wrap { overflow-x:auto; margin-top:8px; }
+    table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+    th { text-align:left; padding:6px 8px; border-bottom:1px solid #1d2733; color:#7d8a99; font-weight:500; }
+    td { padding:6px 8px; border-bottom:1px solid #111823; vertical-align:middle; }
+    tr:hover td { background:#111823; }
+    .flex { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+    .flex-between { display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; }
+    .mt-8 { margin-top:8px; }
+    .mb-8 { margin-bottom:8px; }
+    #map { height:320px; border-radius:8px; border:1px solid #1d2733; background:#0a0e14; }
+    .score-bar { display:inline-block; height:6px; width:60px; background:#1d2733; border-radius:4px; overflow:hidden; }
+    .score-bar .fill { height:100%; background:#ffb000; }
+    .action-btns .btn { font-size:0.7rem; padding:2px 8px; }
+    .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#00000080; backdrop-filter:blur(4px); z-index:999; align-items:center; justify-content:center; }
+    .modal.active { display:flex; }
+    .modal-content { background:#0d131c; border:1px solid #1d2733; border-radius:12px; max-width:600px; width:90%; max-height:80vh; padding:20px; overflow-y:auto; }
+    .modal-content pre { background:#0a0e14; padding:12px; border-radius:6px; white-space:pre-wrap; word-break:break-all; max-height:400px; overflow:auto; font-size:0.8rem; }
+    .modal-close { float:right; background:none; border:none; color:#7d8a99; font-size:1.5rem; cursor:pointer; }
+    .modal-close:hover { color:#cdd6e0; }
+    .intc-ev { border-bottom:1px solid #111823; padding:6px 4px; font-size:0.78rem; }
+    .intc-ev .kind-pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:0.65rem; font-weight:700; text-transform:uppercase; }
+    .intc-ev .pill-crit { background:#ff5d5230; color:#ff5d52; }
+    .intc-ev .pill-low { background:#ffb00030; color:#ffb000; }
+    .intc-ev .pill-cam { background:#56d4dd30; color:#56d4dd; }
+    .intc-ev .pill-radio { background:#e07ad030; color:#e07ad0; }
+    .intc-ev .pill-unk { background:#1d2733; color:#7d8a99; }
+    .intc-ev .ev-detail { color:#7d8a99; margin-top:2px; }
+.disc-ring{width:11px;height:11px;border-radius:50%;border:2px solid currentColor;display:inline-block;margin-right:2px;opacity:.5}
+#disc-b.run .disc-ring{opacity:1;box-shadow:0 0 0 0 currentColor;animation:dring 1.3s infinite}
+@keyframes dring{0%{box-shadow:0 0 0 0 rgba(86,212,221,.5)}70%{box-shadow:0 0 0 7px rgba(86,212,221,0)}100%{box-shadow:0 0 0 0 rgba(86,212,221,0)}}
+.disc-chip{font-family:var(--mono);font-size:11px;border:1px solid var(--line2);background:var(--panel2);padding:7px 10px;opacity:0;transform:translateY(8px);transition:.4s}
+.disc-chip.in{opacity:1;transform:none}
+.disc-chip b{color:var(--cyan)} .disc-chip .v{color:var(--amber);font-size:9.5px;text-transform:uppercase;letter-spacing:1px;margin-left:6px}
+
+    .origin-panel { display:none; background:#0a0e14; border:1px solid #1d2733; border-radius:6px; padding:10px; margin-top:4px; font-size:0.78rem; }
+    .origin-panel.active { display:block; }
+    .origin-panel .bd-row { display:flex; justify-content:space-between; padding:2px 0; border-bottom:1px solid #111823; }
+    .origin-panel .bd-row .factor { color:#cdd6e0; }
+    .origin-panel .bd-row .weight { font-family:'JetBrains Mono',monospace; }
+    .origin-panel .bd-row .weight.pos { color:#ff5d52; }
+    .origin-panel .bd-row .weight.neg { color:#7ee787; }
+    .origin-panel .section-label { color:#7d8a99; font-size:0.7rem; text-transform:uppercase; margin-top:6px; margin-bottom:2px; letter-spacing:0.03em; }
+    .origin-panel .flag-row { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
+    .port-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); gap:4px; margin-top:6px; }
+    .port-cell { background:#111823; border-radius:4px; padding:4px 6px; text-align:center; font-size:0.72rem; }
+    .port-cell.open { border:1px solid #7ee78740; }
+    .port-cell.closed { border:1px solid #1d2733; opacity:0.5; }
+    .port-cell .port-num { font-family:'JetBrains Mono',monospace; font-weight:700; }
+    .port-cell .port-banner { font-size:0.65rem; color:#7d8a99; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .alrt-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--dim);border:1px solid var(--line2);padding:3px 9px}
+.alrt-badge.hot{color:var(--red);border-color:var(--red)}
+.alrt-dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.alrt-badge.hot .alrt-dot{background:var(--red);animation:p 1s infinite}
+.alrt-row{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line);opacity:0;transform:translateX(-8px);transition:.4s}
+.alrt-row.in{opacity:1;transform:none}
+.alrt-row .sv{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:1px;min-width:62px}
+.alrt-row.critical .sv{color:var(--red)} .alrt-row.high .sv{color:var(--amber)} .alrt-row.medium .sv{color:var(--mag)} .alrt-row.low .sv,.alrt-row.info .sv{color:var(--cyan)}
+.alrt-row .ms{font-family:var(--mono);font-size:11.5px;color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>sealctl <small>consola red-team</small></h1>
+  <div class="tabs" id="tabs">
+    <button class="active" data-tab="tab1">01 - operaciones</button>
+    <button data-tab="tab2">02 - escaneo</button>
+    <button data-tab="tab3">03 - hallazgos</button>
+    <button data-tab="tab4">04 - MITM</button>
+    <button data-tab="tab5">05 - reportes</button>
+    <button data-tab="tab6">06 - geo / intel</button>
+    <button data-tab="tab7">07 - interceptacion</button>
+    <span class="alrt-badge" id="alrt-badge" title="alertas activas"><span class="alrt-dot"></span><b id="alrt-n">0</b></span>
+  </div>
+
+  <div class="panel active" id="tab1">
+    <div class="grid-2">
+      <div class="card">
+        <h3>comandos</h3>
+        <div class="flex mb-8">
+          <input id="cmd-input" placeholder="ej. whoami, ls -la" style="flex:1;">
+          <button class="btn amber" id="cmd-run">ejecutar</button>
+        </div>
+        <pre id="cmd-output" class="mono" style="background:#0a0e14;padding:10px;border-radius:6px;max-height:200px;overflow:auto;font-size:0.8rem;border:1px solid #1d2733;">salida</pre>
+      </div>
+      <div class="card">
+        <h3>estado</h3>
+        <div id="status" class="mono" style="font-size:0.85rem;line-height:1.6;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="tab2">
+    <div class="card">
+      <h3>nmap</h3>
+      <div class="flex">
+        <input id="nmap-target" placeholder="ej. 192.168.1.0/24" style="flex:1;">
+        <button class="btn amber" id="nmap-run">escaneo</button>
+        <button class="btn red" id="nmap-stop">detener</button>
+      </div>
+      <pre id="nmap-output" class="mono" style="background:#0a0e14;padding:10px;border-radius:6px;max-height:300px;overflow:auto;font-size:0.8rem;border:1px solid #1d2733;margin-top:8px;"></pre>
+    </div>
+  </div>
+
+  <div class="panel" id="tab3">
+    <div class="card">
+      <h3>hallazgos</h3>
+      <div class="flex">
+        <input id="finding-ip" placeholder="IP origen (opcional)" style="flex:0.8;">
+        <input id="finding-desc" placeholder="descripcion" style="flex:2;">
+        <select id="finding-sev" style="background:#0a0e14;border:1px solid #1d2733;color:#cdd6e0;padding:6px 10px;border-radius:6px;">
+          <option value="critical">critico</option><option value="high">alto</option><option value="medium">medio</option><option value="low">bajo</option><option value="info">info</option>
+        </select>
+        <button class="btn mag" id="finding-add">agregar</button>
+      </div>
+      <div class="table-wrap"><table id="findings-table"><thead><tr><th>sev</th><th>IP origen</th><th>descripcion</th><th>acciones</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <div class="panel" id="tab4">
+    <div class="card">
+      <h3>MITM (proxy)</h3>
+      <div class="flex">
+        <button class="btn green" id="mitm-start">iniciar</button>
+        <button class="btn red" id="mitm-stop">detener</button>
+        <span id="mitm-status" class="badge">detenido</span>
+      </div>
+      <div class="flex mt-8"><span class="badge">cert</span><span id="mitm-cert">cargando...</span></div>
+      <pre id="mitm-output" class="mono" style="background:#0a0e14;padding:10px;border-radius:6px;max-height:200px;overflow:auto;font-size:0.8rem;border:1px solid #1d2733;margin-top:8px;"></pre>
+    </div>
+  </div>
+
+  <div class="panel" id="tab5">
+    <div class="card">
+      <h3>reportes</h3>
+      <div class="flex-between">
+        <div><button class="btn amber" id="report-gen">generar desde hallazgos</button></div>
+        <div><button class="btn cyan" id="report-refresh">refrescar lista</button></div>
+      </div>
+      <ul id="report-list" class="mono" style="list-style:none;padding:0;margin-top:8px;font-size:0.85rem;"></ul>
+    </div>
+  </div>
+
+  <div class="panel" id="tab6">
+    <div class="card">
+      <h3>geo / inteligencia</h3>
+      <div class="flex-between mb-8">
+        <span class="flex">
+          <input id="iot-range" placeholder="rango LAN: 192.168.1.1-40" style="width:200px;">
+          <button class="btn mag" id="iot-range-scan">IoT scan rango</button>
+        </span>
+        <span><button class="btn cyan" id="geo-refresh">actualizar tabla</button></span>
+        <span><button class="btn mag" id="geo-iot-scan">IoT scan en todas las IPs</button></span>
+      </div>
+      <div id="iot-range-results" style="margin-bottom:8px;"></div>
+      <div id="map"></div>
+      <div class="table-wrap mt-8">
+        <table id="geo-table">
+          <thead><tr><th>IP</th><th>pais</th><th>ciudad</th><th>coord</th><th>ISP / AS</th><th>score</th><th>confianza</th><th>acciones</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+  <div class="panel" id="tab7">
+    <div class="grid-2">
+      <div class="card">
+        <h3>tráfico interceptado (mi red)</h3>
+        <p style="font-size:0.78rem;color:#7d8a99;line-height:1.6;margin-bottom:10px;">solo ves lo que TU enrutas por el proxy. inicia mitm en <b>Operaciones</b>, apunta el wifi del dispositivo a este nodo:8080 con el CA instalado. el addon clasifica camara / radio / credencial-en-claro / token-en-query.</p>
+        <div class="flex mb-8">
+          <button class="btn red" id="intc-clear">limpiar feed</button>
+          <span class="badge" id="intc-st">0 eventos</span>
+          <span style="font-size:0.7rem;color:#7d8a99;">las contrasenas NO se guardan por defecto (SEALCTL_LOG_CREDS)</span>
+        </div>
+        <div id="intc-feed" style="max-height:340px;overflow:auto;border:1px solid #1d2733;border-radius:6px;padding:8px;background:#0a0e14;">
+          <div style="color:#7d8a99;font-size:0.8rem;">sin eventos. el jsonl esta vacio hasta que pase trafico.</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>auditar MI camara</h3>
+        <label style="font-size:0.72rem;color:#7d8a99;display:block;margin-bottom:4px;">ip de tu camara</label>
+        <input id="la-ip" placeholder="192.168.1.50" style="margin-bottom:8px;">
+        <label style="font-size:0.72rem;color:#7d8a99;display:block;margin-bottom:4px;">usuario (tuyo)</label>
+        <input id="la-u" placeholder="admin" style="margin-bottom:8px;">
+        <label style="font-size:0.72rem;color:#7d8a99;display:block;margin-bottom:4px;">contrasena (tuya)</label>
+        <input id="la-p" type="password" style="margin-bottom:10px;">
+        <button class="btn amber" id="la-b">auditar login</button>
+        <pre id="la-out" class="mono" style="display:none;margin-top:10px;background:#0a0e14;padding:10px;border-radius:6px;max-height:250px;overflow:auto;font-size:0.75rem;border:1px solid #1d2733;"></pre>
+      </div>
+    </div>
+    <div class="card wide"><div class="hd"><span class="ix">disc</span><h3>escucha pasiva · WS-Discovery</h3><span class="st" id="disc-st">inactivo</span></div><div class="bd">
+        <p style="font-size:12px;color:var(--dim);line-height:1.6;margin-bottom:12px">no toca ningún dispositivo: escucha cómo tus cámaras/NVR ONVIF se anuncian por multicast en <b>tu</b> LAN. sin root. desde Replit no verá tu casa (no estás en tu broadcast domain); desde Termux en tu wifi, sí.</p>
+        <div class="row" style="margin-bottom:14px">
+          <button class="btn" id="disc-b"><span class="disc-ring"></span><span class="lbl-btn">escuchar mi LAN</span></button>
+          <button class="btn sm" id="disc-stop">detener</button>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--faint)">probe → 239.255.255.250:3702</span>
+        </div>
+        <div id="disc-list" style="display:flex;flex-wrap:wrap;gap:8px;min-height:34px"><div class="empty" style="width:100%">sin anuncios todavía. pulsa escuchar.</div></div>
+      </div></div>
+  </div>
+
+    <div class="card wide"><div class="hd"><span class="ix">alrt</span><h3>motor de alertas</h3><span class="st" id="alrt-st">0 activas</span></div><div class="bd">
+        <p style="font-size:12px;color:var(--dim);line-height:1.6;margin-bottom:12px">reglas sobre el feed con cooldown por host. sin tráfico que dispare, sin alerta. credencial-en-claro y credenciales-por-defecto = <b style="color:var(--red)">critical</b>; auth-sobre-http y cámara-sin-tls = <b style="color:var(--amber)">high</b>.</p>
+        <div class="row" style="margin-bottom:12px"><button class="btn sm" id="alrt-clear">silenciar feed</button></div>
+        <div id="alrt-list" style="max-height:260px;overflow:auto"><div class="empty">sin alertas. el motor está escuchando.</div></div>
+      </div></div>
+
+<div class="modal" id="modal"><div class="modal-content"><button class="modal-close" id="modal-close">&times;</button><pre id="modal-body"></pre></div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+// ---- feed de interceptacion en vivo ----
+const feed = $('intc-feed'); let intcN = 0;
+function kindPill(k) {
+  const m = {'CRED_CLEARTEXT':'pill-crit','AUTH_OVER_HTTP':'pill-crit','TOKEN_IN_QUERY':'pill-low',
+             'CAMERA':'pill-cam','CAMERA_BANNER':'pill-cam','RADIO':'pill-radio'};
+  return '<span class="kind-pill '+(m[k]||'pill-unk')+'">'+(k||'?')+'</span>';
+}
+function pushInterc(ev) {
+  intcN++; $('intc-st').textContent = intcN + ' eventos';
+  if(feed.querySelector('div[style]')) feed.innerHTML = '';
+  const d = document.createElement('div');
+  d.className = 'intc-ev';
+  d.innerHTML = '<span style="color:#7d8a99;font-size:0.65rem;">'+(ev.dir||'')+'</span> ' +
+    kindPill(ev.kind) + ' <span class="mono" style="font-size:0.75rem;">'+(ev.host||'')+'</span>' +
+    '<span style="color:#7d8a99;"> '+(ev.method||'')+' '+(ev.path||'')+'</span>' +
+    '<div class="ev-detail">'+
+      (ev.vendor?'vendor '+ev.vendor+' · ':'')+
+      (ev.user?'user '+ev.user+' · ':'')+
+      (ev.cleartext?'<span style="color:#ff5d52;">EN CLARO</span> · ':'tls '+(ev.tls?'si':'NO'))+
+      (ev.snippet?'<br><span style="font-size:0.7rem;">'+ev.snippet.replace(/</g,'&lt;').slice(0,150)+'</span>':'')+
+      (ev.note?'<br><span style="color:#7d8a99;">'+ev.note+'</span>':'')+
+    '</div>';
+  feed.prepend(d);
+  while(feed.children.length > 200) feed.removeChild(feed.lastChild);
+}
+$('intc-clear').addEventListener('click', async ()=>{
+  await fetch(authUrl('/api/intercept/clear'), {method:'POST', headers: authHeaders()});
+  feed.innerHTML = '<div style="color:#7d8a99;font-size:0.8rem;">feed limpio.</div>';
+  intcN = 0; $('intc-st').textContent = '0 eventos';
+});
+
+// Parchear el WS handler existente para incluir intercept
+const _origConnectWS = connectWS;
+connectWS = function() {
+  _origConnectWS();
+  // Re-hook onmessage after connect
+  setTimeout(() => {
+    if(ws) {
+      const _origOnMsg = ws.onmessage;
+      ws.onmessage = function(e) {
+        if(_origOnMsg) { try { _origOnMsg(e); } catch(_){} }
+        try {
+          const m = JSON.parse(e.data);
+          if(m.type === 'intercept') pushInterc(m);
+        } catch(_){}
+      };
+    }
+  }, 100);
+};
+
+// ---- login-audit ----
+$('la-b').addEventListener('click', async ()=>{
+  const ip = $('la-ip').value.trim();
+  const u = $('la-u').value;
+  const p = $('la-p').value;
+  if(!ip) return;
+  $('la-b').textContent = 'auditando...';
+  $('la-b').disabled = true;
+  try {
+    const r = await fetch(authUrl('/api/iot/login'), {
+      method:'POST', headers: authHeaders(),
+      body: JSON.stringify({ip, user:u, pass:p})
+    }).then(x=>x.json());
+    $('la-out').style.display = 'block';
+    $('la-out').textContent = JSON.stringify(r, null, 2);
+  } catch(e) {
+    $('la-out').style.display = 'block';
+    $('la-out').textContent = 'Error: '+e.message;
+  }
+  $('la-b').textContent = 'auditar login';
+  $('la-b').disabled = false;
+});
+
+</script>
+<script>
+const $ = id => document.getElementById(id);
+const qs = sel => document.querySelector(sel);
+const ce = (tag, cls) => { const e=document.createElement(tag); if(cls) e.className=cls; return e; };
+
+// --- Auth: Bearer token para todas las peticiones ---
+const AUTH_TOKEN = localStorage.getItem('sealctl_token') || '';
+function authHeaders(extra = {}) {
+  return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + AUTH_TOKEN, ...extra };
+}
+function authUrl(url) {
+  return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(AUTH_TOKEN);
+}
+function wsUrl() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  return proto + '://' + location.host + '/?token=' + encodeURIComponent(AUTH_TOKEN);
+}
+
+const tabs = document.querySelectorAll('#tabs button');
+const panels = { tab1:$('tab1'), tab2:$('tab2'), tab3:$('tab3'), tab4:$('tab4'), tab5:$('tab5'), tab6:$('tab6') };
+tabs.forEach(b => b.addEventListener('click', ()=>{
+  tabs.forEach(t=>t.classList.remove('active'));
+  b.classList.add('active');
+  Object.keys(panels).forEach(k=>panels[k].classList.toggle('active', k===b.dataset.tab));
+  if(b.dataset.tab==='tab6') setTimeout(initMap, 100);
+}));
+
+let map = null, markers = [];
+function initMap() {
+  if(map) return;
+  map = L.map('map').setView([20,0],2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'OSM' }).addTo(map);
+}
+function updateMap(ips) {
+  if(!map) initMap();
+  markers.forEach(m=>map.removeLayer(m));
+  markers = [];
+  ips.forEach(ip=>{
+    if(ip.lat && ip.lon) {
+      const m = L.marker([ip.lat, ip.lon]).addTo(map)
+        .bindPopup('<b>'+ip.ip+'</b><br>'+(ip.city||'?')+', '+(ip.country||'?')+'<br>ISP: '+(ip.isp||'—'));
+      markers.push(m);
+    }
+  });
+  if(markers.length) map.fitBounds(L.featureGroup(markers).getBounds(), {padding:[20,20]});
+}
+
+let ws = null;
+function connectWS() {
+  const proto = location.protocol==='https:'?'wss':'ws';
+  ws = new WebSocket(wsUrl());
+  ws.onmessage = e => {
+    try {
+      const data = JSON.parse(e.data);
+      if(data.type === 'hosts') {
+        if(data.ips && data.ips.length) enrichIPs(data.ips);
+      }
+      if(data.type === 'stdout' || data.type === 'stderr') {
+        if(data.tag === 'nmap') {
+          $('nmap-output').textContent += data.line;
+          $('nmap-output').scrollTop = $('nmap-output').scrollHeight;
+        }
+        if(data.tag === 'mitm') {
+          $('mitm-output').textContent += data.line;
+          $('mitm-output').scrollTop = $('mitm-output').scrollHeight;
+        }
+      }
+      if(data.type === 'proc') {
+        if(data.tag === 'nmap') $('nmap-status').textContent = data.state;
+        if(data.tag === 'mitm') {
+          $('mitm-status').textContent = data.state;
+          $('mitm-status').className = 'badge ' + (data.state==='running'?'green':'');
+        }
+      }
+      if(data.type === 'report') { listReports(); }
+    } catch(err) { console.warn('ws parse', err); }
+  };
+  ws.onclose = () => setTimeout(connectWS, 3000);
+}
+
+// --- Solicitar token si no esta guardado ---
+if (!AUTH_TOKEN) {
+  const input = prompt('SealCtl: Ingrese su API Key (REDTEAM_API_KEY):');
+  if (input) localStorage.setItem('sealctl_token', input.trim());
+  location.reload();
+}
+connectWS();
+
+const geoCache = new Map();
+async function enrichIPs(ips) {
+  const table = document.querySelector('#geo-table tbody');
+  const rows = {};
+  ips.forEach(ip => {
+    if(rows[ip]) return;
+    const tr = ce('tr');
+    tr.dataset.ip = ip;
+    tr.innerHTML = '<td>'+ip+'</td><td colspan="7" style="color:#7d8a99;">cargando...</td>';
+    table.appendChild(tr);
+    rows[ip] = tr;
+  });
+  const concurrency = 5;
+  const queue = ips.slice();
+  async function worker() {
+    while(queue.length) {
+      const ip = queue.shift();
+      try {
+        const geo = await fetch(authUrl('/api/geo?ip='+encodeURIComponent(ip)), {headers: authHeaders()}).then(r=>r.json());
+        const intel = await fetch(authUrl('/api/intel?ip='+encodeURIComponent(ip)), {headers: authHeaders()}).then(r=>r.json());
+        const row = rows[ip];
+        if(!row) continue;
+        const lat = geo.lat, lon = geo.lon;
+        const coord = (lat && lon) ? lat.toFixed(4)+', '+lon.toFixed(4) : '—';
+        const score = intel.score ?? 0;
+        const label = intel.label || '—';
+        const labelClass = score <= 20 ? 'green' : (score <= 50 ? 'cyan' : (score <= 80 ? 'amber' : 'red'));
+        row.innerHTML =
+          '<td><span class="badge '+labelClass+'">'+ip+'</span></td>' +
+          '<td>'+(geo.country || '—')+'</td>' +
+          '<td>'+(geo.city || '—')+'</td>' +
+          '<td>'+coord+'</td>' +
+          '<td>'+(geo.isp||'—')+' <br><small>'+(geo.as||'')+'</small></td>' +
+          '<td><div class="score-bar"><div class="fill" style="width:'+score+'%;background:'+(score<=20?'#7ee787':score<=50?'#56d4dd':score<=80?'#ffb000':'#ff5d52')+'"></div></div></td>' +
+          '<td>'+label+'</td>' +
+          '<td class="action-btns">' +
+            '<button class="btn" data-action="geo" data-ip="'+ip+'">GEO</button>' +
+            '<button class="btn" data-action="intel" data-ip="'+ip+'">INTEL</button>' +
+            '<button class="btn" data-action="iot" data-ip="'+ip+'">IoT</button>' +
+          '</td>';
+        row._geo = geo;
+        row._intel = intel;
+        updateMap(Array.from(document.querySelectorAll('#geo-table tbody tr')).map(tr => {
+          const ip = tr.dataset.ip;
+          const geo = tr._geo || {};
+          return { ip, lat: geo.lat, lon: geo.lon, city: geo.city, country: geo.country, isp: geo.isp };
+        }).filter(x => x.lat && x.lon));
+      } catch(e) {
+        const row = rows[ip];
+        if(row) row.innerHTML = '<td>'+ip+'</td><td colspan="7" style="color:#ff5d52;">error</td>';
+      }
+    }
+  }
+  await Promise.all(Array.from({length: Math.min(concurrency, ips.length)}, worker));
+}
+
+document.querySelector('#geo-table').addEventListener('click', async e => {
+  const btn = e.target.closest('button[data-action]');
+  if(!btn) return;
+  const ip = btn.dataset.ip;
+  const action = btn.dataset.action;
+  const row = btn.closest('tr');
+  let data = {};
+  if(action === 'geo') data = row._geo || await fetch(authUrl('/api/geo?ip='+ip), {headers: authHeaders()}).then(r=>r.json());
+  else if(action === 'intel') {
+    data = row._intel || await fetch(authUrl('/api/intel?ip='+ip), {headers: authHeaders()}).then(r=>r.json());
+    // Desplegar panel inline con descomposicion
+    let nextRow = row.nextElementSibling;
+    if(nextRow && nextRow.classList.contains('origin-detail-row')) {
+      nextRow.remove();
+      return;
+    }
+    let detailRow = document.createElement('tr');
+    detailRow.classList.add('origin-detail-row');
+    let cell = document.createElement('td');
+    cell.colSpan = 8;
+    let panel = document.createElement('div');
+    panel.className = 'origin-panel active';
+    renderOriginPanel(panel, data);
+    cell.appendChild(panel);
+    detailRow.appendChild(cell);
+    row.parentNode.insertBefore(detailRow, row.nextSibling);
+    return;
+  }
+  else if(action === 'iot') {
+    data = await fetch(authUrl('/api/iot?target='+ip), {headers: authHeaders()}).then(r=>r.json());
+    // Mostrar resultados de IoT en panel inline con grid de puertos
+    let nextRow = row.nextElementSibling;
+    if(nextRow && nextRow.classList.contains('iot-detail-row')) {
+      nextRow.remove();
+      return;
+    }
+    let detailRow = document.createElement('tr');
+    detailRow.classList.add('iot-detail-row');
+    let cell = document.createElement('td');
+    cell.colSpan = 8;
+    renderIoTDetail(cell, data, ip);
+    detailRow.appendChild(cell);
+    row.parentNode.insertBefore(detailRow, row.nextSibling);
+    return;
+  }
+  showModal(JSON.stringify(data, null, 2));
+});
+
+function renderIoTDetail(container, data, ip) {
+  var ports = data.ports || [];
+  var anyOpen = ports.some(function(p) { return p.open; });
+  var html = '<div class="origin-panel active" style="font-size:0.78rem;">';
+  html += '<div class="section-label">IoT scan — '+ip+' — '+ports.length+' puertos probados</div>';
+  if(!anyOpen && ports.length > 0) {
+    html += '<div style="color:#7d8a99;padding:8px;">sin huella — ningun puerto responde en los puertos IoT probados (80,443,554,3702,8080,8000,8001,8088,37777,5060)</div>';
+  } else if(ports.length === 0) {
+    html += '<div style="color:#ff5d52;padding:8px;">error: sin resultados del probe</div>';
+  } else {
+    html += '<div class="port-grid">';
+    ports.forEach(function(p) {
+      var cls = p.open ? 'open' : 'closed';
+      var status = p.open ? 'ABIERTO' : 'cerrado';
+      var banner = p.banner ? p.banner.slice(0, 50).replace(/\n/g,' ') : '';
+      html += '<div class="port-cell '+cls+'"><div class="port-num">'+p.port+'</div><div style="font-size:0.65rem;color:'+(p.open?'#7ee787':'#7d8a99')+';">'+status+'</div><div class="port-banner">'+(banner||'—')+'</div></div>';
+    });
+    html += '</div>';
+  }
+  // RTSP / SIP / HTTP banner
+  if(data.rtsp && data.rtsp.ok) {
+    html += '<div class="section-label">RTSP (554)</div><div class="mono" style="font-size:0.7rem;color:#7ee787;">RTSP activo — banner: '+(data.rtsp.banner||'').slice(0,120)+'</div>';
+  }
+  if(data.sip && data.sip.ok) {
+    html += '<div class="section-label">SIP (5060)</div><div class="mono" style="font-size:0.7rem;color:#7ee787;">SIP activo — banner: '+(data.sip.banner||'').slice(0,120)+'</div>';
+  }
+  if(data.http) {
+    var found = false;
+    data.http.forEach(function(h) {
+      if(h && h.matched) {
+        found = true;
+        html += '<div class="section-label">HTTP — '+h.vendor+'</div><div class="mono" style="font-size:0.7rem;">path: '+h.path+' | status: '+(h.status||'—')+'</div>';
+      }
+    });
+  }
+  html += '<div class="section-label">JSON crudo</div><pre style="background:#0a0e14;padding:8px;border-radius:4px;font-size:0.68rem;white-space:pre-wrap;word-break:break-all;max-height:150px;overflow:auto;margin-top:4px;">'+JSON.stringify(data,null,2)+'</pre>';
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function showModal(text) {
+  $('modal-body').textContent = text;
+  $('modal').classList.add('active');
+}
+$('modal-close').addEventListener('click', ()=>$('modal').classList.remove('active'));
+$('modal').addEventListener('click', e=>{ if(e.target===$('modal')) $('modal').classList.remove('active'); });
+
+$('geo-refresh').addEventListener('click', ()=>{
+  const ips = Array.from(document.querySelectorAll('#geo-table tbody tr')).map(tr=>tr.dataset.ip).filter(Boolean);
+  if(ips.length) enrichIPs(ips);
+  else alert('No hay IPs en la tabla. Ejecuta un escaneo primero.');
+});
+
+$('geo-iot-scan').addEventListener('click', async ()=>{
+  const ips = Array.from(document.querySelectorAll('#geo-table tbody tr')).map(tr=>tr.dataset.ip).filter(Boolean);
+  if(!ips.length) return alert('No hay IPs.');
+  const resp = await fetch(authUrl('/api/iot/scan'), { method:'POST', headers: authHeaders(), body:JSON.stringify({ips}) });
+  const res = await resp.json();
+  showModal(JSON.stringify(res, null, 2));
+});
+
+// IoT scan por rango LAN (e.g. 192.168.1.1-40)
+function expandRange(rangeStr) {
+  var m = rangeStr.match(/^(\d+\.\d+\.\d+\.)(\d+)-(\d+)$/);
+  if(!m) {
+    // IP unica
+    if(/^\d+\.\d+\.\d+\.\d+$/.test(rangeStr)) return [rangeStr];
+    return null;
+  }
+  var prefix = m[1];
+  var start = parseInt(m[2]);
+  var end = parseInt(m[3]);
+  var ips = [];
+  for(var i = start; i <= end; i++) ips.push(prefix + i);
+  return ips;
+}
+
+$('iot-range-scan').addEventListener('click', async ()=>{
+  var rangeStr = $('iot-range').value.trim();
+  if(!rangeStr) return;
+  var ips = expandRange(rangeStr);
+  if(!ips || !ips.length) return alert('Formato invalido. Usa: 192.168.1.1-40 o 192.168.1.5');
+  var container = $('iot-range-results');
+  container.innerHTML = '<div style="color:#7d8a99;font-size:0.85rem;">Escaneando '+ips.length+' IPs (probes TCP reales por puerto)...</div>';
+  try {
+    var resp = await fetch(authUrl('/api/iot/scan'), { method:'POST', headers: authHeaders(), body:JSON.stringify({ips: ips}) });
+    var res = await resp.json();
+    var results = res.results || [];
+    var html = '<div class="section-label" style="color:#7d8a99;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:4px;">IoT scan rango '+rangeStr+' — '+results.length+' IPs</div>';
+    var anyFound = false;
+    results.forEach(function(r) {
+      var ports = r.ports || [];
+      var openPorts = ports.filter(function(p) { return p.open; });
+      var hasRtsp = r.rtsp && r.rtsp.ok;
+      var hasSip = r.sip && r.sip.ok;
+      var hasHttp = (r.http || []).some(function(h) { return h && h.matched; });
+      var hasAny = openPorts.length > 0 || hasRtsp || hasSip || hasHttp;
+      if(hasAny) anyFound = true;
+      var rowColor = hasAny ? '#cdd6e0' : '#7d8a99';
+      html += '<div style="border-bottom:1px solid #111823;padding:6px 0;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+      html += '<span class="mono" style="color:'+rowColor+';">'+r.ip+'</span>';
+      if(hasAny) {
+        html += '<span class="badge green">huella detectada</span>';
+      } else {
+        html += '<span class="badge" style="color:#7d8a99;">sin huella</span>';
+      }
+      html += '</div>';
+      if(hasAny) {
+        // Grid de puertos
+        html += '<div class="port-grid" style="margin-top:4px;">';
+        ports.forEach(function(p) {
+          if(p.open) {
+            var banner = p.banner ? p.banner.slice(0,40).replace(/\n/g,' ') : '';
+            html += '<div class="port-cell open"><div class="port-num">'+p.port+'</div><div style="font-size:0.65rem;color:#7ee787;">ABIERTO</div><div class="port-banner">'+banner+'</div></div>';
+          }
+        });
+        html += '</div>';
+        if(hasRtsp) html += '<div class="mono" style="font-size:0.7rem;color:#7ee787;margin-top:2px;">RTSP: '+(r.rtsp.banner||'').slice(0,80)+'</div>';
+        if(hasSip) html += '<div class="mono" style="font-size:0.7rem;color:#7ee787;margin-top:2px;">SIP: '+(r.sip.banner||'').slice(0,80)+'</div>';
+        (r.http||[]).forEach(function(h) {
+          if(h && h.matched) html += '<div class="mono" style="font-size:0.7rem;color:#56d4dd;margin-top:2px;">HTTP: '+h.vendor+' ('+h.path+')</div>';
+        });
+      }
+      html += '</div>';
+    });
+    if(!anyFound) {
+      html += '<div style="padding:10px;color:#7d8a99;font-size:0.85rem;">Ningun dispositivo IoT respondio en el rango. El resultado honesto es "sin huella" — es correcto si no hay camaras/radios en esa LAN.</div>';
+    }
+    html += '<details style="margin-top:6px;"><summary style="font-size:0.75rem;color:#7d8a99;cursor:pointer;">JSON crudo completo</summary><pre style="background:#0a0e14;padding:8px;border-radius:4px;font-size:0.7rem;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;margin-top:4px;">'+JSON.stringify(res,null,2)+'</pre></details>';
+    container.innerHTML = html;
+  } catch(err) {
+    container.innerHTML = '<div style="color:#ff5d52;">error: '+err.message+'</div>';
+  }
+});
+
+$('cmd-run').addEventListener('click', async ()=>{
+  const cmd = $('cmd-input').value.trim();
+  if(!cmd) return;
+  const res = await fetch('/api/exec', { method:'POST', headers: authHeaders(), body:JSON.stringify({action: cmd.includes('whoami')?'whoami':cmd.includes('df')?'disk_usage':cmd.includes('free')?'memory':cmd.includes('ps')?'processes':cmd.includes('uptime')?'uptime':cmd.includes('hostname')?'hostname':cmd.includes('uname')?'uname':'date') });
+  const data = await res.json();
+  $('cmd-output').textContent = data.output || data.error || 'sin salida';
+});
+
+async function updateStatus() {
+  try {
+    const r = await fetch(authUrl('/api/status'), {headers: authHeaders()});
+    const s = await r.json();
+    $('status').innerHTML =
+      '<div>host: '+s.node+' - '+s.platform+'/'+s.arch+'</div>' +
+      '<div>IP: '+s.ip+':'+s.port+'</div>' +
+      '<div>uptime '+Math.floor(s.uptime_s/3600)+'h '+Math.floor((s.uptime_s%3600)/60)+'m - load '+s.load.toFixed(2)+'</div>' +
+      '<div>mem '+s.mem_free_mb+'MB / '+s.mem_total_mb+'MB</div>' +
+      '<div>reportes: '+s.reports+' - nmap: '+(s.nmap?'+':'-')+' - mitm: '+(s.mitm?'+':'-')+'</div>';
+  } catch(e) {}
+}
+updateStatus(); setInterval(updateStatus, 10000);
+
+$('nmap-run').addEventListener('click', ()=>{
+  const target = $('nmap-target').value.trim();
+  if(!target) return;
+  $('nmap-output').textContent = '';
+  fetch(authUrl('/api/nmap?target='+encodeURIComponent(target)), {headers: authHeaders()}).then(r=>r.json());
+});
+$('nmap-stop').addEventListener('click', ()=>{
+  fetch(authUrl('/api/nmap/stop'), {method:'POST', headers: authHeaders()}).then(r=>r.json());
+});
+
+let findings = [];
+function renderFindings() {
+  const tbody = document.querySelector('#findings-table tbody');
+  tbody.innerHTML = findings.map((f, i) =>
+    '<tr data-idx="'+i+'">' +
+      '<td><span class="badge '+(f.severity==='critical'?'red':f.severity==='high'?'amber':f.severity==='medium'?'violet':'green')+'">'+f.severity+'</span></td>' +
+      '<td>'+(f.ip || '—')+'</td>' +
+      '<td>'+f.desc+'</td>' +
+      '<td class="action-btns">'+(f.ip?'<button class="btn cyan" data-origin="'+i+'">origen</button>':'')+'</td>' +
+    '</tr>' +
+    (f.ip ? '<tr class="origin-row" data-origin-row="'+i+'" style="display:none;"><td colspan="4"><div class="origin-panel" id="origin-'+i+'">cargando...</div></td></tr>' : '')
+  ).join('');
+}
+
+// Boton [origen] — despliega el JSON crudo de intel
+document.querySelector('#findings-table').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-origin]');
+  if(!btn) return;
+  const idx = btn.dataset.origin;
+  const row = document.querySelector('tr[data-origin-row="'+idx+'"]');
+  const panel = $('origin-'+idx);
+  if(!row) return;
+  const isVisible = row.style.display !== 'none';
+  if(isVisible) { row.style.display = 'none'; return; }
+  row.style.display = '';
+  if(!panel.dataset.loaded) {
+    panel.classList.add('active');
+    panel.textContent = 'consultando backend...';
+    try {
+      const ip = findings[idx].ip;
+      const resp = await fetch(authUrl('/api/intel?ip='+encodeURIComponent(ip)), {headers: authHeaders()});
+      const data = await resp.json();
+      panel.dataset.loaded = '1';
+      renderOriginPanel(panel, data);
+    } catch(err) {
+      panel.innerHTML = '<span style="color:#ff5d52;">error: '+err.message+'</span>';
+    }
+  }
+});
+
+function renderOriginPanel(panel, data) {
+  if(data.private) {
+    panel.innerHTML = '<div class="section-label">resultado</div>'+
+      '<div class="bd-row"><span class="factor">tipo</span><span class="weight">IP privada (LAN)</span></div>'+
+      '<div class="bd-row"><span class="factor">score</span><span class="weight neg">0 — confianza N/A</span></div>'+
+      '<div class="section-label">rDNS</div><div class="mono">'+(data.rdns||'—')+'</div>'+
+      '<div class="section-label">JSON crudo</div><pre style="background:#0a0e14;padding:8px;border-radius:4px;font-size:0.72rem;white-space:pre-wrap;word-break:break-all;margin-top:4px;">'+JSON.stringify(data,null,2)+'</pre>';
+    return;
+  }
+  var bd = (data.breakdown||[]).map(function(b) {
+    var cls = b.w > 0 ? 'pos' : 'neg';
+    var sign = b.w > 0 ? '+' : '';
+    return '<div class="bd-row"><span class="factor">'+b.f+'</span><span class="weight '+cls+'">'+sign+b.w+'</span></div>';
+  }).join('');
+  var flags = data.flags || {};
+  var flagHtml = '';
+  ['hosting','proxy','mobile'].forEach(function(f) {
+    if(flags[f]) flagHtml += '<span class="badge '+(f==='hosting'?'amber':f==='proxy'?'red':'cyan')+'">'+f+'</span>';
+  });
+  if(data.rdns && /tor|exit|relay/i.test(data.rdns)) flagHtml += '<span class="badge violet">tor?</span>';
+  var blStatus = data.blocklist ? '<span class="badge green">blocklist OK (abuse.ch activo)</span>' : '<span class="badge amber">blocklist N/A (feed no disponible)</span>';
+  var scoreColor = data.score <= 20 ? '#7ee787' : data.score <= 50 ? '#56d4dd' : data.score <= 80 ? '#ffb000' : '#ff5d52';
+  panel.innerHTML =
+    '<div class="section-label">score de confianza</div>'+
+    '<div class="bd-row"><span class="factor">'+data.label+'</span><span class="weight" style="color:'+scoreColor+';">'+data.score+'/100</span></div>'+
+    '<div class="section-label">descomposicion (flags + pesos)</div>'+bd+
+    '<div class="section-label">flags activos</div><div class="flag-row">'+flagHtml+'</div>'+
+    '<div class="section-label">blocklist</div>'+blStatus+
+    '<div class="section-label">rDNS</div><div class="mono" style="font-size:0.75rem;">'+(data.rdns||'—')+'</div>'+
+    '<div class="section-label">datos geo (flags completos)</div>'+
+    '<div class="mono" style="font-size:0.72rem;line-height:1.5;">'+
+      'pais: '+(flags.country||'—')+' | ciudad: '+(flags.city||'—')+'<br>'+
+      'ISP: '+(flags.isp||'—')+' | AS: '+(flags.as||'—')+'<br>'+
+      'coord: '+(flags.lat&&flags.lon?flags.lat.toFixed(2)+', '+flags.lon.toFixed(2):'—')+
+    '</div>'+
+    '<div class="section-label">nota del backend</div><div style="color:#7d8a99;font-size:0.72rem;">'+(data.note||'—')+'</div>'+
+    '<div class="section-label">JSON crudo del backend</div>'+
+    '<pre style="background:#0a0e14;padding:8px;border-radius:4px;font-size:0.7rem;white-space:pre-wrap;word-break:break-all;margin-top:4px;max-height:200px;overflow:auto;">'+JSON.stringify(data,null,2)+'</pre>';
+}
+
+$('finding-add').addEventListener('click', ()=>{
+  const desc = $('finding-desc').value.trim();
+  if(!desc) return;
+  const severity = $('finding-sev').value;
+  const ip = $('finding-ip').value.trim();
+  findings.push({severity, desc, ip: ip || null});
+  renderFindings();
+  $('finding-desc').value = '';
+  $('finding-ip').value = '';
+});
+
+$('mitm-start').addEventListener('click', ()=>{
+  fetch(authUrl('/api/mitm/start'), {method:'POST', headers: authHeaders()}).then(r=>r.json());
+  $('mitm-output').textContent = '';
+});
+$('mitm-stop').addEventListener('click', ()=>{
+  fetch(authUrl('/api/mitm/stop'), {method:'POST', headers: authHeaders()}).then(r=>r.json());
+});
+fetch(authUrl('/api/mitm/cert'), {headers: authHeaders()}).then(r=>r.json()).then(d=>{
+  $('mitm-cert').textContent = d.exists ? 'disponible' : 'no disponible';
+}).catch(()=>{ $('mitm-cert').textContent = 'error'; });
+
+$('report-gen').addEventListener('click', async ()=>{
+  const resp = await fetch('/api/report/generate', { method:'POST', headers: authHeaders(), body:JSON.stringify({ findings }) });
+  const data = await resp.json();
+  alert('Reporte generado: '+(data.file||''));
+  listReports();
+});
+
+async function listReports() {
+  try {
+    const r = await fetch(authUrl('/api/reports'), {headers: authHeaders()});
+    const reports = await r.json();
+    $('report-list').innerHTML = reports.map(rp =>
+      '<li style="padding:6px 0;border-bottom:1px solid #1d2733;"><button class="btn" data-file="'+rp.file+'">'+rp.file+'</button> <small style="color:#7d8a99;">'+rp.size+' bytes</small></li>'
+    ).join('');
+  } catch(e) {}
+}
+$('report-refresh').addEventListener('click', listReports);
+listReports();
+
+// ---- feed de interceptacion en vivo ----
+const feed = $('intc-feed'); let intcN = 0;
+function kindPill(k) {
+  const m = {'CRED_CLEARTEXT':'pill-crit','AUTH_OVER_HTTP':'pill-crit','TOKEN_IN_QUERY':'pill-low',
+             'CAMERA':'pill-cam','CAMERA_BANNER':'pill-cam','RADIO':'pill-radio'};
+  return '<span class="kind-pill '+(m[k]||'pill-unk')+'">'+(k||'?')+'</span>';
+}
+function pushInterc(ev) {
+  intcN++; $('intc-st').textContent = intcN + ' eventos';
+  if(feed.querySelector('div[style]')) feed.innerHTML = '';
+  const d = document.createElement('div');
+  d.className = 'intc-ev';
+  d.innerHTML = '<span style="color:#7d8a99;font-size:0.65rem;">'+(ev.dir||'')+'</span> ' +
+    kindPill(ev.kind) + ' <span class="mono" style="font-size:0.75rem;">'+(ev.host||'')+'</span>' +
+    '<span style="color:#7d8a99;"> '+(ev.method||'')+' '+(ev.path||'')+'</span>' +
+    '<div class="ev-detail">'+
+      (ev.vendor?'vendor '+ev.vendor+' · ':'')+
+      (ev.user?'user '+ev.user+' · ':'')+
+      (ev.cleartext?'<span style="color:#ff5d52;">EN CLARO</span> · ':'tls '+(ev.tls?'si':'NO'))+
+      (ev.snippet?'<br><span style="font-size:0.7rem;">'+ev.snippet.replace(/</g,'&lt;').slice(0,150)+'</span>':'')+
+      (ev.note?'<br><span style="color:#7d8a99;">'+ev.note+'</span>':'')+
+    '</div>';
+  feed.prepend(d);
+  while(feed.children.length > 200) feed.removeChild(feed.lastChild);
+}
+$('intc-clear').addEventListener('click', async ()=>{
+  await fetch(authUrl('/api/intercept/clear'), {method:'POST', headers: authHeaders()});
+  feed.innerHTML = '<div style="color:#7d8a99;font-size:0.8rem;">feed limpio.</div>';
+  intcN = 0; $('intc-st').textContent = '0 eventos';
+});
+
+// Parchear el WS handler existente para incluir intercept
+const _origConnectWS = connectWS;
+connectWS = function() {
+  _origConnectWS();
+  // Re-hook onmessage after connect
+  setTimeout(() => {
+    if(ws) {
+      const _origOnMsg = ws.onmessage;
+      ws.onmessage = function(e) {
+        if(_origOnMsg) { try { _origOnMsg(e); } catch(_){} }
+        try {
+          const m = JSON.parse(e.data);
+          if(m.type === 'intercept') pushInterc(m);
+        } catch(_){}
+      };
+    }
+  }, 100);
+};
+
+// ---- login-audit ----
+$('la-b').addEventListener('click', async ()=>{
+  const ip = $('la-ip').value.trim();
+  const u = $('la-u').value;
+  const p = $('la-p').value;
+  if(!ip) return;
+  $('la-b').textContent = 'auditando...';
+  $('la-b').disabled = true;
+  try {
+    const r = await fetch(authUrl('/api/iot/login'), {
+      method:'POST', headers: authHeaders(),
+      body: JSON.stringify({ip, user:u, pass:p})
+    }).then(x=>x.json());
+    $('la-out').style.display = 'block';
+    $('la-out').textContent = JSON.stringify(r, null, 2);
+  } catch(e) {
+    $('la-out').style.display = 'block';
+    $('la-out').textContent = 'Error: '+e.message;
+  }
+  $('la-b').textContent = 'auditar login';
+  $('la-b').disabled = false;
+});
+
+// ---- WS-Discovery pasivo en el tab 07 ----
+const discList=$('#disc-list');
+function paintDisc(devs){
+  if(!devs.length){discList.innerHTML='<div class="empty" style="width:100%">sin anuncios en tu LAN.</div>';return;}
+  discList.innerHTML=devs.map(d=>`<div class="disc-chip"><b>${d.addr}</b><span class="v">${/onvif|NetworkVideo/i.test(d.types)?'onvif':'ws-disc'}</span></div>`).join('');
+  setTimeout(()=>discList.querySelectorAll('.disc-chip').forEach((c,i)=>setTimeout(()=>c.classList.add('in'),i*70)),20);
+}
+async function discRefresh(){const r=await fetch(authUrl('/api/discovery/list'),{headers:authHeaders()}).then(x=>x.json());
+  $('#disc-st').textContent=r.running?('escuchando · '+r.devices.length):'inactivo';
+  $('#disc-b').classList.toggle('run',r.running);
+  $('#disc-b').querySelector('.lbl-btn').textContent=r.running?'escuchando…':'escuchar mi LAN';
+  paintDisc(r.devices);}
+$('#disc-b').onclick=async()=>{await fetch(authUrl('/api/discovery/start'),{method:'POST',headers:authHeaders()});discRefresh()};
+$('#disc-stop').onclick=async()=>{await fetch(authUrl('/api/discovery/stop'),{method:'POST',headers:authHeaders()});discRefresh();discList.innerHTML='<div class="empty" style="width:100%">detenido.</div>'};
+// enganche al WS: cuando llegue un 'discovery', refresca la lista
+const _discPatch=()=>{if(!ws)return;const om=ws.onmessage;ws.onmessage=e=>{try{om&&om(e)}catch(_){};try{const m=JSON.parse(e.data);if(m.type==='discovery')discRefresh()}catch(_){}}};
+const _discConn=connect;connect=function(){_discConn();setTimeout(_discPatch,60)};
+discRefresh();
+// ---- motor de alertas en tab 07 + badge cabecera ----
+const alrtList=$('#alrt-list');let alrtN=0;
+function paintAlerts(list){
+  $('#alrt-st').textContent=list.length+' activas';
+  if(!list.length){alrtList.innerHTML='<div class="empty">sin alertas. el motor está escuchando.</div>';return;}
+  alrtList.innerHTML=list.map(a=>`<div class="alrt-row ${a.severity}"><span class="sv">${a.severity}</span><span class="ms">${a.msg} <span style="color:var(--faint)">· ${new Date(a.ts).toLocaleTimeString()}</span></span></div>`).join('');
+  setTimeout(()=>alrtList.querySelectorAll('.alrt-row').forEach((r,i)=>setTimeout(()=>r.classList.add('in'),i*40)),20);
+}
+function bumpBadge(){alrtN++;$('#alrt-n').textContent=alrtN;const b=$('#alrt-badge');b.classList.add('hot');clearTimeout(b._t);b._t=setTimeout(()=>b.classList.remove('hot'),2500);}
+$('#alrt-clear').onclick=async()=>{await fetch(authUrl('/api/alerts/clear'),{method:'POST',headers:authHeaders()});alrtN=0;$('#alrt-n').textContent=0;paintAlerts([]);};
+(async()=>{paintAlerts(await fetch(authUrl('/api/alerts'),{headers:authHeaders()}).then(r=>r.json()).catch(()=>[]))})();
+// enganche WS robusto
+const _alConn=connect;connect=function(){_alConn();setTimeout(()=>{if(ws){const om=ws.onmessage;ws.onmessage=e=>{try{om&&om(e)}catch(_){};try{const m=JSON.parse(e.data);if(m.type==='alert'){bumpBadge();fetch(authUrl('/api/alerts'),{headers:authHeaders()}).then(r=>r.json()).then(paintAlerts)}}catch(_){}};}},60)};
+</script>
+</body>
+</html>

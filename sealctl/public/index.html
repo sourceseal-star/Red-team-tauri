@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SealCtl — Security Console</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --surface: #131826;
+    --surface2: #1a2138;
+    --border: #2a3450;
+    --text: #e1e8f0;
+    --muted: #6b7a99;
+    --primary: #00e5ff;
+    --success: #00c853;
+    --warning: #ffab00;
+    --danger: #ff3d71;
+    --critical: #ff1744;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  /* ─── Header ─── */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--primary), #0288d1);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .logo h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.5px; }
+  .logo span { font-size: 12px; color: var(--muted); }
+  .header-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 0 rgba(0,200,83,.4); animation: pulse 2s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(0,200,83,.4); } 70% { box-shadow: 0 0 0 8px rgba(0,200,83,0); } 100% { box-shadow: 0 0 0 0 rgba(0,200,83,0); } }
+
+  /* ─── Layout ─── */
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+
+  /* ─── Card ─── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+  }
+  .card-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+  /* ─── Input ─── */
+  .input-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  input[type="text"] {
+    flex: 1; padding: 12px 16px; border-radius: 8px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    font-size: 14px; outline: none; transition: border-color .2s;
+  }
+  input[type="text"]:focus { border-color: var(--primary); }
+  input[type="text"]::placeholder { color: var(--muted); }
+  .btn {
+    padding: 12px 20px; border-radius: 8px; border: none; cursor: pointer;
+    font-size: 14px; font-weight: 600; transition: all .2s;
+  }
+  .btn-primary { background: var(--primary); color: #000; }
+  .btn-primary:hover { background: #29b6f6; box-shadow: 0 0 12px rgba(0,229,255,.3); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--primary); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ─── Tabs ─── */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .tab { padding: 10px 20px; cursor: pointer; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; transition: all .2s; }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .tab:hover { color: var(--text); }
+
+  /* ─── Result display ─── */
+  .result { display: none; }
+  .result.active { display: block; }
+  .result-loading { text-align: center; padding: 40px; color: var(--muted); }
+  .result-loading .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Data rows ─── */
+  .data-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .data-row:last-child { border-bottom: none; }
+  .data-label { color: var(--muted); }
+  .data-value { font-weight: 500; }
+  .data-value.mono { font-family: 'Fira Code', 'Cascadia Code', monospace; }
+
+  /* ─── Badge ─── */
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .badge-success { background: rgba(0,200,83,.15); color: var(--success); }
+  .badge-warning { background: rgba(255,171,0,.15); color: var(--warning); }
+  .badge-danger { background: rgba(255,61,113,.15); color: var(--danger); }
+  .badge-critical { background: rgba(255,23,68,.15); color: var(--critical); }
+  .badge-info { background: rgba(0,229,255,.12); color: var(--primary); }
+
+  /* ─── Score bar ─── */
+  .score-bar { width: 100%; height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .score-fill { height: 100%; border-radius: 4px; transition: width .5s ease; }
+
+  /* ─── Evidence ─── */
+  .evidence-item { padding: 12px; background: var(--surface2); border-radius: 8px; margin-bottom: 8px; border-left: 3px solid var(--primary); }
+  .evidence-port { font-weight: 600; color: var(--primary); font-size: 13px; }
+  .evidence-banner { font-family: monospace; font-size: 12px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+
+  /* ─── Map placeholder ─── */
+  .map-box { width: 100%; height: 200px; background: var(--surface2); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; margin-top: 12px; position: relative; overflow: hidden; }
+
+  /* ─── Batch ─── */
+  .batch-results { margin-top: 16px; }
+  .batch-item { padding: 12px; background: var(--surface2); border-radius: 8px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+  .batch-item-type { font-size: 12px; padding: 2px 8px; border-radius: 4px; background: var(--surface); }
+
+  /* ─── JSON viewer ─── */
+  .json-view { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+
+  /* ─── Breakdown ─── */
+  .breakdown-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
+  .breakdown-w { margin-left: auto; font-weight: 600; }
+  .breakdown-w.pos { color: var(--danger); }
+  .breakdown-w.neg { color: var(--success); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">🛡️</div>
+    <div>
+      <h1>SealCtl Console</h1>
+      <span>Geo · Intel · IoT Detection</span>
+    </div>
+  </div>
+  <div class="header-status">
+    <div class="pulse"></div>
+    <span id="backend-status">Backend: OK</span>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Input -->
+  <div class="card" style="margin-bottom: 20px;">
+    <div class="card-title">🎯 Target IP</div>
+    <div class="input-row">
+      <input type="text" id="ip-input" placeholder="Ej: 8.8.8.8 o 190.147.200.1" />
+      <button class="btn btn-primary" id="btn-scan" onclick="runFullScan()">Analizar</button>
+      <button class="btn btn-secondary" id="btn-batch" onclick="showBatch()">Lote</button>
+    </div>
+    <div style="display:none; margin-top:12px;" id="batch-ui">
+      <div class="card-title" style="margin-bottom:8px;">Escaneo por lote (una IP por línea)</div>
+      <textarea id="batch-input" rows="5" style="width:100%; padding:12px; border-radius:8px; background:var(--surface2); border:1px solid var(--border); color:var(--text); font-family:monospace; font-size:13px;" placeholder="8.8.8.8&#10;1.1.1.1&#10;190.147.200.1"></textarea>
+      <button class="btn btn-primary" style="margin-top:8px;" onclick="runBatch()">Escanear lote</button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('overview')">Overview</div>
+    <div class="tab" onclick="switchTab('geo')">Geo</div>
+    <div class="tab" onclick="switchTab('intel')">Intel</div>
+    <div class="tab" onclick="switchTab('iot')">IoT</div>
+    <div class="tab" onclick="switchTab('raw')">JSON</div>
+  </div>
+
+  <!-- Overview -->
+  <div class="result active" id="tab-overview">
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">📍 Geolocalización</div>
+        <div id="overview-geo"><span style="color:var(--muted)">Esperando análisis...</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">🛡️ Inteligencia de Amenaza</div>
+        <div id="overview-intel"><span style="color:var(--muted)">Esperando análisis...</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📡 Detección IoT (Cámaras / Radio / VoIP)</div>
+      <div id="overview-iot"><span style="color:var(--muted)">Esperando análisis...</span></div>
+    </div>
+  </div>
+
+  <!-- Geo -->
+  <div class="result" id="tab-geo">
+    <div class="card">
+      <div class="card-title">📍 Geolocalización IP</div>
+      <div id="geo-result"><span style="color:var(--muted)">Esperando análisis...</span></div>
+    </div>
+  </div>
+
+  <!-- Intel -->
+  <div class="result" id="tab-intel">
+    <div class="card">
+      <div class="card-title">🛡️ Reputación y Score de Riesgo</div>
+      <div id="intel-result"><span style="color:var(--muted)">Esperando análisis...</span></div>
+    </div>
+  </div>
+
+  <!-- IoT -->
+  <div class="result" id="tab-iot">
+    <div class="card">
+      <div class="card-title">📡 Detección IoT</div>
+      <div id="iot-result"><span style="color:var(--muted)">Esperando análisis...</span></div>
+    </div>
+  </div>
+
+  <!-- JSON -->
+  <div class="result" id="tab-raw">
+    <div class="card">
+      <div class="card-title">📄 Respuesta JSON</div>
+      <div class="json-view" id="raw-result">{}</div>
+    </div>
+  </div>
+
+  <!-- Batch results -->
+  <div class="card" id="batch-card" style="display:none;">
+    <div class="card-title">📊 Resultados del Lote</div>
+    <div class="batch-results" id="batch-results"></div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin + '/api';
+let lastResult = null;
+
+// ─── Health check ────────────────────────────────────────────────────────────
+fetch(API + '/health').then(r => r.json()).then(d => {
+  if (d.status === 'ok') {
+    document.getElementById('backend-status').textContent = `Backend: ${d.version || 'OK'}`;
+  }
+}).catch(() => {
+  document.querySelector('.pulse').style.background = 'var(--danger)';
+  document.getElementById('backend-status').textContent = 'Backend: OFFLINE';
+});
+
+// ─── Tab switching ───────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.result').forEach(r => r.classList.remove('active'));
+  const tabs = ['overview', 'geo', 'intel', 'iot', 'raw'];
+  const idx = tabs.indexOf(name);
+  document.querySelectorAll('.tab')[idx].classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function badgeForScore(score) {
+  if (score <= 20) return `<span class="badge badge-success">ALTA (limpia)</span>`;
+  if (score <= 50) return `<span class="badge badge-warning">MEDIA</span>`;
+  if (score <= 80) return `<span class="badge badge-danger">BAJA</span>`;
+  return `<span class="badge badge-critical">CRÍTICA</span>`;
+}
+function scoreColor(score) {
+  if (score <= 20) return '#00c853';
+  if (score <= 50) return '#ffab00';
+  if (score <= 80) return '#ff3d71';
+  return '#ff1744';
+}
+function typeBadge(type, vendor) {
+  if (type === 'camera') return `<span class="badge badge-info">📷 Cámara${vendor ? ' · ' + vendor : ''}</span>`;
+  if (type === 'radio' || type === 'radio/voip') return `<span class="badge badge-info">📻 ${type}${vendor ? ' · ' + vendor : ''}</span>`;
+  if (type === 'unknown') return `<span class="badge" style="background:var(--surface2);color:var(--muted)">Sin huella</span>`;
+  return `<span class="badge badge-info">${type}</span>`;
+}
+
+// ─── Renderers ───────────────────────────────────────────────────────────────
+function renderGeo(g) {
+  if (g.error) return `<div class="data-row"><span class="data-label">Error</span><span class="data-value" style="color:var(--danger)">${g.error}</span></div>`;
+  if (g.private) return `<div class="data-row"><span class="data-label">Tipo</span><span class="data-value">Red privada / LAN</span></div><div class="data-row"><span class="data-label">Nota</span><span class="data-value" style="font-size:12px;color:var(--muted)">${g.note}</span></div>`;
+  return `
+    <div class="data-row"><span class="data-label">IP</span><span class="data-value mono">${g.ip}</span></div>
+    <div class="data-row"><span class="data-label">País</span><span class="data-value">${g.country || '—'}</span></div>
+    <div class="data-row"><span class="data-label">Ciudad</span><span class="data-value">${g.city || '—'}</span></div>
+    <div class="data-row"><span class="data-label">Coordenadas</span><span class="data-value mono">${g.lat}, ${g.lon}</span></div>
+    <div class="data-row"><span class="data-label">ISP</span><span class="data-value">${g.isp || '—'}</span></div>
+    <div class="data-row"><span class="data-label">AS</span><span class="data-value mono" style="font-size:12px">${g.as || '—'}</span></div>
+    <div class="data-row"><span class="data-label">Proxy/VPN</span><span class="data-value">${g.proxy ? '⚠️ Sí' : 'No'}</span></div>
+    <div class="data-row"><span class="data-label">Hosting</span><span class="data-value">${g.hosting ? '⚠️ Sí' : 'No'}</span></div>
+    <div class="data-row"><span class="data-label">Móvil/CGN</span><span class="data-value">${g.mobile ? 'Sí' : 'No'}</span></div>
+    ${g.lat && g.lon ? `<div class="map-box" onclick="window.open('https://www.openstreetmap.org/?mlat=${g.lat}&mlon=${g.lon}&zoom=12')" style="cursor:pointer">🗺️ Ver en mapa: ${g.lat}, ${g.lon}</div>` : ''}
+  `;
+}
+
+function renderIntel(i) {
+  if (i.private) return `<div class="data-row"><span class="data-label">Tipo</span><span class="data-value">Red privada — confianza N/A</span></div>`;
+  return `
+    <div class="data-row"><span class="data-label">IP</span><span class="data-value mono">${i.ip}</span></div>
+    <div class="data-row"><span class="data-label">Score de Riesgo</span><span class="data-value">${i.score}/100 ${badgeForScore(i.score)}</span></div>
+    <div class="score-bar"><div class="score-fill" style="width:${i.score}%; background:${scoreColor(i.score)}"></div></div>
+    <div class="data-row" style="margin-top:8px"><span class="data-label">rDNS</span><span class="data-value mono" style="font-size:12px">${i.rdns || '—'}</span></div>
+    <div class="data-row"><span class="data-label">Blocklist</span><span class="data-value">${i.blocklist ? '✅ Disponible' : '⚠️ No disponible'}</span></div>
+    <div style="margin-top:12px; padding-top:8px; border-top:1px solid var(--border)"><div style="font-size:12px; color:var(--muted); margin-bottom:8px">DESGLACE DEL SCORE</div>
+    ${i.breakdown.map(b => `<div class="breakdown-item"><span>${b.f}</span><span class="breakdown-w ${b.w > 0 ? 'pos' : 'neg'}">${b.w > 0 ? '+' : ''}${b.w}</span></div>`).join('')}
+    </div>
+    <div style="margin-top:8px; font-size:12px; color:var(--muted)">📋 ${i.note}</div>
+  `;
+}
+
+function renderIoT(t) {
+  let html = `
+    <div class="data-row"><span class="data-label">IP</span><span class="data-value mono">${t.ip}</span></div>
+    <div class="data-row"><span class="data-label">Tipo detectado</span><span class="data-value">${typeBadge(t.type, t.vendor)}</span></div>
+    <div class="data-row"><span class="data-label">Resumen</span><span class="data-value" style="font-size:13px">${t.summary}</span></div>
+    <div class="data-row"><span class="data-label">Puertos abiertos</span><span class="data-value mono" style="font-size:12px">${t.ports_open.length ? t.ports_open.join(', ') : '—'}</span></div>
+  `;
+  if (t.evidence && t.evidence.length) {
+    html += `<div style="margin-top:12px; padding-top:8px; border-top:1px solid var(--border)"><div style="font-size:12px; color:var(--muted); margin-bottom:8px">EVIDENCIA TÉCNICA</div>`;
+    t.evidence.forEach(e => {
+      html += `<div class="evidence-item">
+        <div class="evidence-port">${e.port}/${e.proto}${e.path ? ' ' + e.path : ''} ${e.status ? '→ ' + e.status : ''} ${e.vendor_hint ? '· ' + e.vendor_hint : ''}</div>
+        ${e.banner ? `<div class="evidence-banner">${e.banner.slice(0, 200)}</div>` : ''}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  return html;
+}
+
+// ─── Main scan ───────────────────────────────────────────────────────────────
+async function runFullScan() {
+  const ip = document.getElementById('ip-input').value.trim();
+  if (!ip) return;
+
+  const btn = document.getElementById('btn-scan');
+  btn.disabled = true; btn.textContent = 'Analizando...';
+
+  // Loading states
+  ['overview-geo', 'overview-intel', 'overview-iot', 'geo-result', 'intel-result', 'iot-result'].forEach(id => {
+    document.getElementById(id).innerHTML = '<div class="result-loading"><div class="spinner"></div><div style="margin-top:8px">Escaneando ' + ip + '...</div></div>';
+  });
+
+  try {
+    const res = await fetch(API + '/full?ip=' + encodeURIComponent(ip));
+    const data = await res.json();
+    lastResult = data;
+    document.getElementById('raw-result').textContent = JSON.stringify(data, null, 2);
+
+    const geoHtml = renderGeo(data.geo);
+    const intelHtml = renderIntel(data.intel);
+    const iotHtml = renderIoT(data.iot);
+
+    document.getElementById('overview-geo').innerHTML = geoHtml;
+    document.getElementById('overview-intel').innerHTML = intelHtml;
+    document.getElementById('overview-iot').innerHTML = iotHtml;
+    document.getElementById('geo-result').innerHTML = geoHtml;
+    document.getElementById('intel-result').innerHTML = intelHtml;
+    document.getElementById('iot-result').innerHTML = iotHtml;
+  } catch (e) {
+    document.getElementById('overview-geo').innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Analizar';
+  }
+}
+
+// ─── Batch ───────────────────────────────────────────────────────────────────
+function showBatch() {
+  const ui = document.getElementById('batch-ui');
+  ui.style.display = ui.style.display === 'none' ? 'block' : 'none';
+}
+
+async function runBatch() {
+  const text = document.getElementById('batch-input').value.trim();
+  if (!text) return;
+  const ips = text.split(/\n/).map(s => s.trim()).filter(Boolean);
+  const card = document.getElementById('batch-card');
+  const results = document.getElementById('batch-results');
+  card.style.display = 'block';
+  results.innerHTML = '<div class="result-loading"><div class="spinner"></div></div>';
+
+  try {
+    const res = await fetch(API + '/scan-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ips, concurrency: 6 })
+    });
+    const data = await res.json();
+    results.innerHTML = data.results.map(r => `
+      <div class="batch-item">
+        <div><span class="data-value mono" style="font-size:13px">${r.ip}</span></div>
+        <div style="display:flex; align-items:center; gap:8px">
+          <span class="batch-item-type">${r.type}</span>
+          ${r.vendor ? `<span style="font-size:12px; color:var(--muted)">${r.vendor}</span>` : ''}
+          <span style="font-size:12px; color:var(--muted)">${r.ports_open.length} puertos</span>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    results.innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
+  }
+}
+
+// Enter key triggers scan
+document.getElementById('ip-input').addEventListener('keypress', e => {
+  if (e.key === 'Enter') runFullScan();
+});
+</script>
+</body>
+</html>

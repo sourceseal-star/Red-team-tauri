@@ -1,0 +1,157 @@
+{
+  "started_at": "2026-07-31T12:15:57.338031",
+  "finished_at": "2026-07-31T12:15:57.421375",
+  "target": "build/app.apk",
+  "backend": "http://localhost:3000",
+  "total_findings": 14,
+  "by_severity": {
+    "critical": 1,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "info": 12
+  },
+  "skipped_count": 1,
+  "findings": [
+    {
+      "scenario": "rng",
+      "severity": "info",
+      "title": "Entropía del sistema OK",
+      "description": "Shannon entropy = 7.954 bits/byte",
+      "evidence_path": "/app/Red-team-tauri/evidence/rng-sample.bin",
+      "remediation": "N/A",
+      "timestamp": "2026-07-31T12:15:57.349980",
+      "status": "executed"
+    },
+    {
+      "scenario": "rng",
+      "severity": "info",
+      "title": "Auditar seeds en el binario",
+      "description": "Revisar manualmente el binario/app por uso de time/pid como seed. Detectado uso potencial de time.time(); Detectado uso potencial de os.getpid()",
+      "evidence_path": "build/app.apk",
+      "remediation": "Usar exclusivamente CSPRNG del SO (SecRandomCopyBytes, getrandom, BCryptGenRandom).",
+      "timestamp": "2026-07-31T12:15:57.349991",
+      "status": "executed"
+    },
+    {
+      "scenario": "pinning",
+      "severity": "critical",
+      "title": "Backend no presenta certificado TLS válido",
+      "description": "[SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:1016)",
+      "evidence_path": "",
+      "remediation": "Activar HTTPS en producción, configurar HSTS, deshabilitar HTTP plano.",
+      "timestamp": "2026-07-31T12:15:57.393323",
+      "status": "executed"
+    },
+    {
+      "scenario": "sidechannel",
+      "severity": "info",
+      "title": "Target no accesible para análisis estático",
+      "description": "build/app.apk no existe; saltando side-channel estático.",
+      "evidence_path": "",
+      "remediation": "Proporcionar APK/IPA o código fuente.",
+      "timestamp": "2026-07-31T12:15:57.394525",
+      "status": "skipped"
+    },
+    {
+      "scenario": "keyhandling",
+      "severity": "info",
+      "title": "Target no disponible para análisis",
+      "description": "build/app.apk no existe.",
+      "evidence_path": "",
+      "remediation": "Proporcionar artefacto para análisis.",
+      "timestamp": "2026-07-31T12:15:57.395318",
+      "status": "executed"
+    },
+    {
+      "scenario": "payments",
+      "severity": "info",
+      "title": "Target no disponible",
+      "description": "build/app.apk no existe; saltando análisis de pagos.",
+      "evidence_path": "",
+      "remediation": "Proporcionar artefacto.",
+      "timestamp": "2026-07-31T12:15:57.395650",
+      "status": "executed"
+    },
+    {
+      "scenario": "biometric",
+      "severity": "info",
+      "title": "Target no disponible",
+      "description": "build/app.apk no existe; saltando análisis biométrico.",
+      "evidence_path": "",
+      "remediation": "Proporcionar artefacto.",
+      "timestamp": "2026-07-31T12:15:57.395976",
+      "status": "executed"
+    },
+    {
+      "scenario": "business_logic",
+      "severity": "info",
+      "title": "Target no disponible",
+      "description": "build/app.apk no existe.",
+      "evidence_path": "",
+      "remediation": "Proporcionar artefacto.",
+      "timestamp": "2026-07-31T12:15:57.397660",
+      "status": "executed"
+    },
+    {
+      "scenario": "imei",
+      "severity": "info",
+      "title": "Target no disponible",
+      "description": "build/app.apk no existe.",
+      "evidence_path": "",
+      "remediation": "Proporcionar artefacto.",
+      "timestamp": "2026-07-31T12:15:57.397908",
+      "status": "executed"
+    },
+    {
+      "scenario": "multiplatform",
+      "severity": "info",
+      "title": "Target no disponible",
+      "description": "build/app.apk no existe.",
+      "evidence_path": "",
+      "remediation": "Proporcionar artefacto.",
+      "timestamp": "2026-07-31T12:15:57.400268",
+      "status": "executed"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "info",
+      "title": "Escenario sourcesealcorp no se ejecutó",
+      "description": "unknown url type: '/v1/regenerate'",
+      "evidence_path": "",
+      "remediation": "Revisar dependencias y configuración del runner.",
+      "timestamp": "2026-07-31T12:15:57.418558",
+      "status": "error"
+    },
+    {
+      "scenario": "recovery_page",
+      "severity": "info",
+      "title": "RECOVERY_PAGE no configurada",
+      "description": "Configurar la variable de entorno RECOVERY_PAGE para auditar la página de recuperación.",
+      "evidence_path": "",
+      "remediation": "Set RECOVERY_PAGE=https://recuperacion.tu-dominio.com",
+      "timestamp": "2026-07-31T12:15:57.419879",
+      "status": "executed"
+    },
+    {
+      "scenario": "pegasus",
+      "severity": "info",
+      "title": "Análisis ejecutado en Linux 4.19.0-gvisor",
+      "description": "Plataforma: Linux, versión: #1 SMP Sun Jan 10 15:06:54 PST 2016",
+      "evidence_path": "",
+      "remediation": "N/A",
+      "timestamp": "2026-07-31T12:15:57.421361",
+      "status": "executed"
+    },
+    {
+      "scenario": "pegasus",
+      "severity": "info",
+      "title": "Sin procesos sospechosos",
+      "description": "No se detectaron patrones conocidos en la lista de procesos.",
+      "evidence_path": "",
+      "remediation": "Mantener monitoreo continuo. Pegasus se esconde; análisis estático no es suficiente.",
+      "timestamp": "2026-07-31T12:15:57.421369",
+      "status": "executed"
+    }
+  ]
+}

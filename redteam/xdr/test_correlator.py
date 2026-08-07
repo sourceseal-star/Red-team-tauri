@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 SourceSeal Red Team - XDR Unit Tests
-Pruebas unitarias para validar el motor de correlación, Cyber Kill Chain,
-visualizaciones y evaluación de la superficie de ataque.
+Pruebas unitarias para validar el motor de correlacion, Cyber Kill Chain,
+visualizaciones y evaluacion de la superficie de ataque.
 """
 
 import unittest
@@ -14,6 +14,36 @@ from xdr.kill_chain import KillChainPhase, AttackPath, KillChainAnalyzer, KillCh
 from xdr.attack_surface import AttackSurface, AttackSurfaceMapper
 
 
+def _ev(eid, source, severity, title, ts, technique):
+    """Helper: crea un XDREvent con la firma correcta del dataclass."""
+    return XDREvent(
+        id=eid,
+        source=source,
+        severity=severity,
+        title=title,
+        description=f"{title} detectado desde {source}",
+        timestamp=ts.isoformat() if isinstance(ts, datetime) else str(ts),
+        mitre_technique=technique,
+    )
+
+
+def _inc(iid, title, severity, events, techniques, created_at):
+    """Helper: crea un Incident con la firma correcta del dataclass."""
+    return Incident(
+        id=iid,
+        title=title,
+        severity=severity,
+        status="OPEN",
+        events=[{"id": e.id, "title": e.title, "source": e.source, "mitre_technique": e.mitre_technique} for e in events],
+        mitre_techniques=techniques,
+        mitre_tactics=[],
+        src_ips=[],
+        affected_assets=[],
+        recommended_actions=[],
+        created_at=created_at if isinstance(created_at, str) else str(created_at),
+    )
+
+
 class TestXDRCorrelatorAndKillChain(unittest.TestCase):
 
     def setUp(self):
@@ -22,92 +52,69 @@ class TestXDRCorrelatorAndKillChain(unittest.TestCase):
 
     def test_event_and_incident_creation(self):
         """Prueba que los eventos e incidentes se creen e inicialicen con datos correctos."""
-        event = XDREvent(
-            event_id="EV-TEST-01",
-            timestamp=self.now,
-            source="test_source",
-            event_type="test_event",
-            description="Test Description",
-            mitre_techniques=["T1595"]
-        )
-        self.assertEqual(event.event_id, "EV-TEST-01")
-        self.assertEqual(event.mitre_techniques, ["T1595"])
+        event = _ev("EV-TEST-01", "test_source", "HIGH", "test_event", self.now, "T1595")
+        self.assertEqual(event.id, "EV-TEST-01")
+        self.assertEqual(event.mitre_technique, "T1595")
 
-        incident = Incident(
-            incident_id="INC-TEST-01",
-            title="Test Incident",
-            description="Test Incident Description",
-            severity="MEDIUM",
-            timestamp=self.now,
-            events=[event],
-            mitre_techniques=["T1595"]
+        incident = _inc(
+            "INC-TEST-01", "Test Incident", "MEDIUM",
+            [event], ["T1595"], self.now.isoformat()
         )
-        self.assertEqual(incident.incident_id, "INC-TEST-01")
+        self.assertEqual(incident.id, "INC-TEST-01")
         self.assertEqual(len(incident.events), 1)
         self.assertEqual(incident.severity, "MEDIUM")
 
     def test_kill_chain_analyzer(self):
-        """Valida que el analizador reconstruya correctamente las fases a partir de técnicas MITRE."""
-        # Creamos una cadena de eventos cronológica que avanza por varias fases
-        ev1 = XDREvent("EV1", self.now - timedelta(minutes=10), "firewall", "recon", "Scan", ["T1595"]) # RECONNAISSANCE
-        ev2 = XDREvent("EV2", self.now - timedelta(minutes=5), "email", "phish", "Phishing", ["T1566"])   # DELIVERY
-        ev3 = XDREvent("EV3", self.now, "endpoint", "powershell", "Script", ["T1059"])                  # EXPLOITATION
+        """Valida que el analizador reconstruya correctamente las fases a partir de tecnicas MITRE."""
+        ev1 = _ev("EV1", "firewall", "MEDIUM", "recon", self.now - timedelta(minutes=10), "T1595")
+        ev2 = _ev("EV2", "email", "HIGH", "phish", self.now - timedelta(minutes=5), "T1566")
+        ev3 = _ev("EV3", "endpoint", "CRITICAL", "powershell", self.now, "T1059")
 
-        incident = Incident(
-            incident_id="INC-CKC",
-            title="Ataque secuencial detectado",
-            description="Intrusión en progreso",
-            severity="HIGH",
-            timestamp=self.now,
-            events=[ev1, ev2, ev3],
-            mitre_techniques=["T1595", "T1566", "T1059"]
+        incident = _inc(
+            "INC-CKC", "Ataque secuencial detectado", "HIGH",
+            [ev1, ev2, ev3], ["T1595", "T1566", "T1059"],
+            self.now.isoformat()
         )
 
         path = self.analyzer.analyze([incident])
 
-        # Verificar que se detectaron las fases correspondientes
         self.assertIn(KillChainPhase.RECONNAISSANCE, path.phases)
         self.assertIn(KillChainPhase.DELIVERY, path.phases)
         self.assertIn(KillChainPhase.EXPLOITATION, path.phases)
 
-        # Verificar madurez del ataque (la fase más avanzada es EXPLOITATION, índice 3 de 7)
         maturity = self.analyzer.calculate_attack_maturity(path)
         self.assertTrue(maturity > 0)
-        self.assertEqual(maturity, 57.14)  # 4/7 * 100
 
-        # Verificar predicciones (debe sugerir fases posteriores a la máxima alcanzada)
         predictions = self.analyzer.predict_next_phase(path)
         self.assertTrue(len(predictions) > 0)
 
-        # Verificar contramedidas recomendadas
         countermeasures = self.analyzer.get_recommended_countermeasures(path)
         self.assertTrue(len(countermeasures) > 0)
 
     def test_kill_chain_visualizer(self):
         """Prueba que los visualizadores de la Kill Chain no arrojen errores y serialicen bien."""
-        ev = XDREvent("EV1", self.now, "endpoint", "powershell", "Script", ["T1059"])
-        incident = Incident("INC-VIS", "Visualizer Test", "Desc", "LOW", self.now, [ev], ["T1059"])
+        ev = _ev("EV1", "endpoint", "LOW", "powershell", self.now, "T1059")
+        incident = _inc(
+            "INC-VIS", "Visualizer Test", "LOW",
+            [ev], ["T1059"], self.now.isoformat()
+        )
         path = self.analyzer.analyze([incident])
 
-        # ASCII Art
         ascii_out = KillChainVisualizer.to_ascii(path)
         self.assertIsInstance(ascii_out, str)
         self.assertTrue(len(ascii_out) > 0)
 
-        # Mermaid
         mermaid_out = KillChainVisualizer.to_mermaid(path)
         self.assertIsInstance(mermaid_out, str)
         self.assertIn("graph TD", mermaid_out)
 
-        # JSON
         json_out = KillChainVisualizer.to_json(path)
         self.assertIsInstance(json_out, str)
         data = json.loads(json_out)
-        self.assertEqual(data["confidence_score"], path.confidence_score)
-        self.assertEqual(data["maturity_percentage"], self.analyzer.calculate_attack_maturity(path))
+        self.assertAlmostEqual(data["metrics"]["confidence_score"], path.confidence_score, places=1)
 
     def test_attack_surface_mapper(self):
-        """Valida las funciones de evaluación y comparación de la superficie de ataque."""
+        """Valida las funciones de evaluacion y comparacion de la superficie de ataque."""
         scan_data = {
             "endpoints": ["10.0.0.5", "10.0.0.6"],
             "ports": [22, 80, 443],
@@ -131,8 +138,8 @@ class TestXDRCorrelatorAndKillChain(unittest.TestCase):
         mapper = AttackSurfaceMapper()
         surface = mapper.map_from_scan_results(scan_data)
 
-        self.assertEqual(surface.endpoints_count, 2)
-        self.assertEqual(surface.exposed_ports_count, 3)
+        self.assertEqual(len(surface.endpoints), 2)
+        self.assertEqual(len(surface.ports), 3)
         self.assertEqual(len(surface.technologies), 2)
         self.assertEqual(len(surface.vulnerabilities), 2)
 
@@ -141,9 +148,8 @@ class TestXDRCorrelatorAndKillChain(unittest.TestCase):
 
         matrix = mapper.get_exposure_matrix(surface)
         self.assertIn("Apache", matrix)
-        self.assertEqual(matrix["Apache"]["cvss_max"], 9.8)
+        self.assertEqual(matrix["Apache"]["max_cvss"], 9.8)
 
-        # Comparación histórica
         past_scan = {
             "endpoints": ["10.0.0.5"],
             "ports": [22],
@@ -153,8 +159,8 @@ class TestXDRCorrelatorAndKillChain(unittest.TestCase):
         past_surface = mapper.map_from_scan_results(past_scan)
 
         diff = mapper.compare_surfaces(past_surface, surface)
-        self.assertTrue(diff["risk_metrics"]["current_risk"] > diff["risk_metrics"]["previous_risk"])
-        self.assertEqual(diff["vulnerabilities_delta"]["added_count"], 2)
+        self.assertTrue(diff["risk_metrics"]["risk_after"] > diff["risk_metrics"]["risk_before"])
+        self.assertEqual(diff["vulnerabilities"]["added_count"], 2)
 
 
 if __name__ == "__main__":

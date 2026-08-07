@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, Shield, Bug, Workflow,
-  Globe, Smartphone, Terminal, Settings, Info
+  Globe, Smartphone, Terminal, Settings, Info, MapPin
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -12,6 +12,7 @@ const items = [
   { to: '/honeypot', label: 'Deception',   icon: Bug },
   { to: '/soar',     label: 'SOAR',        icon: Workflow },
   { to: '/tip',      label: 'Threat Intel',icon: Globe },
+  { to: '/geo',      label: 'Geo / Intel', icon: MapPin },
   { to: '/rasp',     label: 'RASP',        icon: Smartphone },
   { to: '/terminal', label: 'Terminal',    icon: Terminal },
   { to: '/settings', label: 'Settings',    icon: Settings },

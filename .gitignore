@@ -18,3 +18,21 @@ __pycache__/
 signing/
 *.keystore
 *.jks
+
+# Archivos generados en runtime — NO subir al repo
+redteam/reports/
+redteam/evidence/
+redteam/logs/
+
+# Data files con estado en runtime (causan conflictos)
+redteam/data/latest.json
+redteam/data/honeypot.json
+redteam/data/rasp_devices.json
+redteam/data/settings.json
+redteam/data/soar_dags.json
+redteam/data/iocs.json
+
+# Reports de scans
+redteam/reports/*.json
+redteam/reports/latest.json
+node_modules/

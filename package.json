@@ -1,0 +1,31 @@
+{
+  "name": "sealctl",
+  "version": "1.0.0",
+  "description": "SealCtl Console — Geo + Intel + IoT Detection + Nmap + MITM (Express + WebSocket)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "PORT=3000 node server.js",
+    "stress-test": "node scripts/stress-test.js"
+  },
+  "dependencies": {
+    "express": "^4.22.2",
+    "ws": "^8.21.1",
+    "axios": "^1.7.9",
+    "axios-retry": "^4.5.0"
+  },
+  "keywords": [
+    "security",
+    "iot",
+    "geo",
+    "intel",
+    "recon",
+    "nmap",
+    "mitm",
+    "sealctl"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}

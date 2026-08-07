@@ -43,7 +43,10 @@ router.get('/status', (req, res) => {
 // ── CONSULTAR ATAQUES ─────────────────────────────────────────────────────────
 router.get('/attacks', async (req, res) => {
   try {
-    const token = req.query.token || honeypot.getStatus().token;
+    const token = req.query.token;
+    if (!token || token !== honeypot.getStatus().token) {
+      return res.status(401).json({ error: 'Token de honeypot invalido o no proporcionado' });
+    }
     const limit = Math.min(parseInt(req.query.limit) || 100, 1000);
     const offset = parseInt(req.query.offset) || 0;
     
@@ -64,6 +67,10 @@ router.get('/attacks', async (req, res) => {
 // ── TOP IPs MÁS ACTIVAS ──────────────────────────────────────────────────────
 router.get('/attacks/top-ips', async (req, res) => {
   try {
+    const token = req.query.token;
+    if (!token || token !== honeypot.getStatus().token) {
+      return res.status(401).json({ error: 'Token de honeypot invalido' });
+    }
     const hours = parseInt(req.query.hours) || 24;
     const limit = parseInt(req.query.limit) || 20;
     const ips = await db.getTopIPs(hours, limit);
@@ -80,7 +87,10 @@ router.get('/attacks/top-ips', async (req, res) => {
 // ── EXPORTAR ATAQUES (CSV / JSON / TXT) ───────────────────────────────────────
 router.get('/attacks/export', async (req, res) => {
   try {
-    const token = req.query.token || honeypot.getStatus().token;
+    const token = req.query.token;
+    if (!token || token !== honeypot.getStatus().token) {
+      return res.status(401).json({ error: 'Token de honeypot invalido o no proporcionado' });
+    }
     const format = req.query.format || 'json';
     
     if (!token) {
@@ -107,7 +117,10 @@ router.get('/attacks/export', async (req, res) => {
 // ── ESTADÍSTICAS ──────────────────────────────────────────────────────────────
 router.get('/stats', async (req, res) => {
   try {
-    const token = req.query.token || honeypot.getStatus().token;
+    const token = req.query.token;
+    if (!token || token !== honeypot.getStatus().token) {
+      return res.status(401).json({ error: 'Token de honeypot invalido o no proporcionado' });
+    }
     const stats = await db.getStats(token);
     res.json(stats);
   } catch (e) {
@@ -118,7 +131,10 @@ router.get('/stats', async (req, res) => {
 // ── ATAQUES POR PAÍS ──────────────────────────────────────────────────────────
 router.get('/attacks/by-country', async (req, res) => {
   try {
-    const token = req.query.token || honeypot.getStatus().token;
+    const token = req.query.token;
+    if (!token || token !== honeypot.getStatus().token) {
+      return res.status(401).json({ error: 'Token de honeypot invalido o no proporcionado' });
+    }
     const data = await db.getByCountry(token);
     res.json(data);
   } catch (e) {
@@ -129,7 +145,10 @@ router.get('/attacks/by-country', async (req, res) => {
 // ── LIMPIAR ATAQUES ───────────────────────────────────────────────────────────
 router.delete('/attacks', async (req, res) => {
   try {
-    const token = req.query.token || honeypot.getStatus().token;
+    const token = req.query.token;
+    if (!token || token !== honeypot.getStatus().token) {
+      return res.status(401).json({ error: 'Token de honeypot invalido o no proporcionado' });
+    }
     const result = await db.clearAttacks(token);
     res.json(result);
   } catch (e) {

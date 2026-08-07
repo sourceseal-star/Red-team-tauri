@@ -8,6 +8,7 @@ import Reports from './routes/Reports'
 import Honeypot from './routes/Honeypot'
 import SOAR from './routes/SOAR'
 import ThreatIntel from './routes/ThreatIntel'
+import GeoIntel from './routes/GeoIntel'
 import RASP from './routes/RASP'
 import Terminal from './routes/Terminal'
 import Settings from './routes/Settings'
@@ -28,6 +29,7 @@ function App() {
               <Route path="/honeypot" element={<Honeypot />} />
               <Route path="/soar" element={<SOAR />} />
               <Route path="/tip" element={<ThreatIntel />} />
+        <Route path="/geo" element={<GeoIntel />} />
               <Route path="/rasp" element={<RASP />} />
               <Route path="/terminal" element={<Terminal />} />
               <Route path="/settings" element={<Settings />} />
