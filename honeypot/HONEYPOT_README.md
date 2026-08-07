@@ -1,6 +1,6 @@
 # 🐝 SourceSeal Honeypot
 
-Honeypot HTTP funcional para captura y análisis de ataques reales contra sourceseal.co.
+Honeypot HTTP funcional para captura y análisis de ataques reales contra cualquier dominio objetivo.
 
 ## Inicio rápido
 
@@ -85,34 +85,34 @@ socket.on('honeypot.attack', (attack) => {
 
 ```bash
 # Activar
-curl -X POST http://sourceseal.co:8080/api/honeypot/activate
+curl -X POST http://localhost:8080/api/honeypot/activate
 
 # Ver estado
-curl http://sourceseal.co:8080/api/honeypot/status
+curl http://localhost:8080/api/honeypot/status
 
 # Ver últimos 50 ataques
-curl "http://sourceseal.co:8080/api/honeypot/attacks?token=ss_hp_XXX&limit=50" | jq .
+curl "http://localhost:8080/api/honeypot/attacks?token=ss_hp_XXX&limit=50" | jq .
 
 # Top IPs en últimas 24h
-curl "http://sourceseal.co:8080/api/honeypot/attacks/top-ips?hours=24" | jq .
+curl "http://localhost:8080/api/honeypot/attacks/top-ips?hours=24" | jq .
 
 # Exportar a CSV
-curl "http://sourceseal.co:8080/api/honeypot/attacks/export?format=csv&token=ss_hp_XXX" > attacks.csv
+curl "http://localhost:8080/api/honeypot/attacks/export?format=csv&token=ss_hp_XXX" > attacks.csv
 
 # Analizar en Termux
 cat attacks.csv | grep "192.168" | sort | uniq -c | sort -rn
 
 # Estadísticas
-curl "http://sourceseal.co:8080/api/honeypot/stats?token=ss_hp_XXX" | jq .
+curl "http://localhost:8080/api/honeypot/stats?token=ss_hp_XXX" | jq .
 
 # Por país
-curl "http://sourceseal.co:8080/api/honeypot/attacks/by-country?token=ss_hp_XXX" | jq .
+curl "http://localhost:8080/api/honeypot/attacks/by-country?token=ss_hp_XXX" | jq .
 
 # Limpiar
-curl -X DELETE "http://sourceseal.co:8080/api/honeypot/attacks?token=ss_hp_XXX"
+curl -X DELETE "http://localhost:8080/api/honeypot/attacks?token=ss_hp_XXX"
 
 # Documentación
-curl http://sourceseal.co:8080/api/honeypot/docs | jq .
+curl http://localhost:8080/api/honeypot/docs | jq .
 ```
 
 ## Arquitectura

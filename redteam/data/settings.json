@@ -1,7 +1,3 @@
 {
-  "api_url": "https://sourceseal.co",
-  "interval": 15,
-  "scan_on_startup": false,
-  "notify_slack": false,
-  "slack_webhook": ""
+  "api_url": "https://ads.tiktok.com/business/en/industries/retail?attr_source=google&attr_medium=pmax-ad&attr_campaign_id=23996941894&funnel=prospecting&targeting=all&creative=pmaxad&gad_source=1&gad_campaignid=23996982193&gbraid=0AAAAACeGRgTmw2rrW6HnzI901lcOFaxh7&gclid=CjwKCAjw7KvTBhA6EiwAWnutYQou6f54Ta4KcS-Xyd8jyZOkT-JFFDHOu5PoiNTh6mVG6b5WOlyhiRoCZKMQAvD_BwE"
 }

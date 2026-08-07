@@ -24,7 +24,7 @@ export default function SettingsPage() {
 
   const reset = async () => {
     if (!confirm('¿Resetear configuración a valores por defecto?')) return
-    const defaults: Settings = { api_url: 'https://api.sourcesealcorp.local', interval: 15, scan_on_startup: false, notify_slack: false, slack_webhook: '' }
+    const defaults: Settings = { api_url: '', interval: 15, scan_on_startup: false, notify_slack: false, slack_webhook: '' }
     await api.saveSettings(defaults)
     setSettings(defaults)
     setMsg('✓ Configuración reseteada')
@@ -46,7 +46,7 @@ export default function SettingsPage() {
         <CardHeader><CardTitle>Conexión al backend</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div>
-            <label className="text-xs text-muted-foreground">API URL</label>
+            <label className="text-xs text-muted-foreground">Target URL (dominio a escanear — ej: https://midominio.com)</label>
             <input className="mt-1 w-full bg-muted border border-border rounded px-2 py-1.5 text-sm font-mono"
               value={settings.api_url ?? ''}
               onChange={e => setSettings(s => ({ ...s, api_url: e.target.value }))} />

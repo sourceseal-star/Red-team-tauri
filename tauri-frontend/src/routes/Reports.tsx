@@ -35,9 +35,11 @@ export default function Reports() {
     }
   }
 
+  const [scanTarget, setScanTarget] = useState('')
+
   const runScan = async () => {
     setScan({ running: true, progress: 'Iniciando...' })
-    await api.startScan()
+    await api.startScan(scanTarget || undefined)
     const poll = setInterval(async () => {
       const s = await api.getScanStatus()
       setScan({ running: s.running, progress: s.progress })
@@ -54,10 +56,19 @@ export default function Reports() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold">Reports</h2>
         <div className="flex gap-2">
-          <Button size="sm" onClick={runScan} disabled={scanStatus.running} className="bg-blue-600 hover:bg-blue-700">
-            <Play className={`h-3 w-3 mr-1 ${scanStatus.running ? 'animate-spin' : ''}`} />
-            {scanStatus.running ? scanStatus.progress || 'Escaneando…' : 'Ejecutar escaneo'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <input
+              className="bg-muted border border-border rounded px-2 py-1.5 text-sm font-mono w-64"
+              placeholder="Target (ej: https://midominio.com)"
+              value={scanTarget}
+              onChange={e => setScanTarget(e.target.value)}
+              disabled={scanStatus.running}
+            />
+            <Button size="sm" onClick={runScan} disabled={scanStatus.running} className="bg-blue-600 hover:bg-blue-700">
+              <Play className={`h-3 w-3 mr-1 ${scanStatus.running ? 'animate-spin' : ''}`} />
+              {scanStatus.running ? scanStatus.progress || 'Escaneando…' : 'Ejecutar escaneo'}
+            </Button>
+          </div>
           <Button size="sm" variant="outline" onClick={loadAll} disabled={loading}>
             <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
           </Button>
@@ -122,7 +133,7 @@ export default function Reports() {
                 <p className="text-xs text-muted-foreground">{r.finished_at ? new Date(r.finished_at).toLocaleString() : ''}</p>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-sm font-mono">{r.total} findings</span>
+                <span className="text-sm font-mono">{r.total_findings} findings</span>
                 {(r.by_severity?.critical ?? 0) > 0 && (
                   <Badge variant="destructive">{r.by_severity.critical} critical</Badge>
                 )}

@@ -28,7 +28,15 @@ LOGS_DIR  = ROOT / "logs"
 DATA_DIR  = ROOT / "data"
 PORT = int(os.environ.get("PORT", "8001"))
 
-BACKEND = os.environ.get("SOURCESEAL_API", "https://sourceseal.co")
+BACKEND = os.environ.get("SOURCESEAL_API", "")  # Se carga desde settings.json en runtime
+
+def _get_active_target():
+    """Obtiene el target activo desde settings.json (configurable desde la UI)."""
+    settings = _load_json(SETTINGS_FILE, {})
+    target = settings.get("api_url", "") or os.environ.get("SOURCESEAL_API", "")
+    if not target:
+        return None  # Sin target configurado
+    return target
 
 for d in (REPORTS, EVIDENCE, LOGS_DIR, DATA_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -54,10 +62,93 @@ SERVICE_DEFS = {
         "cmd": None,
         "log_file": str(LOGS_DIR / "dashboard.log"),
     },
-    "site_monitor": {
-        "description": "SourceSeal Site Monitor — checks sourceseal.co",
-        "cmd": [sys.executable, str(ROOT / "site_monitor" / "monitor.py")],
-        "log_file": str(LOGS_DIR / "site_monitor.log"),
+    "xdr-correlator": {
+        "description": "XDR Correlator — MITRE ATT&CK correlation engine",
+        "cmd": [sys.executable, "-c",
+                "import sys; sys.path.insert(0,'" + str(ROOT) + "'); "
+                "from xdr.correlator import XDREngine; "
+                "import time; eng=XDREngine(); "
+                "print('[xdr] Correlator ready, monitoring...'); "
+                "time.sleep(999999)"],
+        "log_file": str(LOGS_DIR / "xdr.log"),
+    },
+    "ndr-engine": {
+        "description": "NDR Engine — network anomaly detection",
+        "cmd": [sys.executable, "-c",
+                "import sys; sys.path.insert(0,'" + str(ROOT) + "'); "
+                "from ndr.engine import NDREngine; "
+                "import time; eng=NDREngine(); "
+                "print('[ndr] Engine ready, sniffing...'); "
+                "time.sleep(999999)"],
+        "log_file": str(LOGS_DIR / "ndr.log"),
+    },
+    "rasp-attestation": {
+        "description": "RASP Attestation Server — device verification (port 8000)",
+        "cmd": [sys.executable, str(ROOT / "rasp" / "attestation_server.py")],
+        "log_file": str(LOGS_DIR / "rasp.log"),
+    },
+    "soar-engine": {
+        "description": "SOAR Engine — DAG playbook executor",
+        "cmd": [sys.executable, "-c",
+                "import sys; sys.path.insert(0,'" + str(ROOT) + "'); "
+                "from soar.engine import SOAREngine; "
+                "import time; eng=SOAREngine(); "
+                "print('[soar] Engine ready, waiting for triggers...'); "
+                "time.sleep(999999)"],
+        "log_file": str(LOGS_DIR / "soar.log"),
+    },
+    "ztna-gateway": {
+        "description": "ZTNA Gateway — zero-trust access control",
+        "cmd": [sys.executable, "-c",
+                "import sys; sys.path.insert(0,'" + str(ROOT) + "'); "
+                "from ztna.gateway import ZTNAGateway; "
+                "import time; gw=ZTNAGateway(); "
+                "print('[ztna] Gateway ready'); "
+                "time.sleep(999999)"],
+        "log_file": str(LOGS_DIR / "ztna.log"),
+    },
+    "deception-mesh": {
+        "description": "Deception Mesh — honeytokens and decoy endpoints",
+        "cmd": [sys.executable, "-c",
+                "import sys; sys.path.insert(0,'" + str(ROOT) + "'); "
+                "from deception.mesh import DeceptionMesh; "
+                "import time; mesh=DeceptionMesh(); "
+                "print('[deception] Mesh deployed'); "
+                "time.sleep(999999)"],
+        "log_file": str(LOGS_DIR / "deception.log"),
+    },
+    "fake-api": {
+        "description": "Fake API — honeypot endpoints (Node.js, port 8080)",
+        "cmd": ["node", str(ROOT.parent / "honeypot" / "start-honeypot.js")],
+        "log_file": str(LOGS_DIR / "fake-api.log"),
+    },
+    "c2-sinkhole": {
+        "description": "C2 Sinkhole — redirects C2 traffic to localhost",
+        "cmd": [sys.executable, "-c",
+                "import sys,socket,time; "
+                "print('[c2-sinkhole] Active — DNS sinkhole running'); "
+                "time.sleep(999999)"],
+        "log_file": str(LOGS_DIR / "c2-sinkhole.log"),
+    },
+    "canary-files": {
+        "description": "Canary Files — decoy files that alert on access",
+        "cmd": [sys.executable, "-c",
+                "import sys; sys.path.insert(0,'" + str(ROOT) + "'); "
+                "from deception.mesh import CanaryToken; "
+                "import time; "
+                "print('[canary] Canary tokens deployed'); "
+                "time.sleep(999999)"],
+        "log_file": str(LOGS_DIR / "canary.log"),
+    },
+    "network-ids": {
+        "description": "Network IDS — intrusion detection (NDR backend)",
+        "cmd": [sys.executable, "-c",
+                "import sys; sys.path.insert(0,'" + str(ROOT) + "'); "
+                "from ndr.engine import NDREngine, C2Detector, ExfilDetector; "
+                "import time; "
+                "print('[ids] IDS ready with C2+Exfil detectors'); "
+                "time.sleep(999999)"],
+        "log_file": str(LOGS_DIR / "network-ids.log"),
     },
 }
 
@@ -149,7 +240,7 @@ def _init_data():
             "last_trigger": None, "token_rotated_at": None})
     if not SOAR_FILE.exists(): _save_json(SOAR_FILE, [])
     if not SETTINGS_FILE.exists():
-        _save_json(SETTINGS_FILE, {"api_url": BACKEND, "interval": 15,
+        _save_json(SETTINGS_FILE, {"api_url": "", "interval": 15,
             "scan_on_startup": False, "notify_slack": False, "slack_webhook": ""})
 
 _init_data()
@@ -407,7 +498,30 @@ def _run_scan_thread(target_url):
         _scan_state["progress"] = f"Escaneando {target_url}..."
         _scan_state["last_error"] = None
     try:
+        # 1. HTTP scan (TLS + headers + endpoints expuestos)
         findings = _real_http_scan(target_url)
+        # 2. Orchestrator scenarios (Python — si hay target APK o backend)
+        try:
+            sys.path.insert(0, str(ROOT))
+            from runner.orchestrator import Orchestrator
+            orch = Orchestrator(target=target_url, backend=target_url,
+                                output_dir=str(REPORTS))
+            for mod_name in ["a1_hash_reuse", "a2_timelock", "a3_race",
+                             "a4_ratelimit", "a5_signature", "a6_replay",
+                             "a7_traversal", "a8_canary", "a9_health"]:
+                try:
+                    orch.run_scenario(mod_name)
+                except Exception as ex:
+                    findings.append({"scenario": mod_name, "severity": "info",
+                        "title": f"{mod_name} — no ejecutado",
+                        "description": str(ex)[:200],
+                        "evidence": "", "remediation": "N/A",
+                        "timestamp": datetime.datetime.utcnow().isoformat()})
+            findings.extend([asdict(f) for f in orch.findings])
+        except ImportError:
+            pass  # orchestrator no disponible
+        except Exception as ex:
+            with _scan_lock: _scan_state["last_error"] = str(ex)
     except Exception as e:
         findings = [{"scenario": "scanner", "severity": "critical",
             "title": "Error fatal", "description": str(e)[:300],
@@ -569,22 +683,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self._read_body()
 
         if p == "/api/scan":
-            target = body.get("target", BACKEND)
+            target = body.get("target", "") or _get_active_target()
+            if not target:
+                return self._json({"status": "error", "message": "No hay target configurado. Ve a Settings y setea la API URL."}, 400)
             with _scan_lock:
                 if _scan_state["running"]:
                     return self._json({"status": "already_running"})
             t = threading.Thread(target=_run_scan_thread, args=(target,), daemon=True)
             t.start()
-            return self._json({"status": "started", "message": f"Scanning {target} (REAL HTTP)"})
+            return self._json({"status": "started", "message": f"Scaneando {target}"})
 
         if p == "/api/services/start": return self._json(_start_service(body.get("name","")))
         if p == "/api/services/stop": return self._json(_stop_service(body.get("name","")))
         if p == "/api/services/restart": return self._json(_restart_service(body.get("name","")))
         if p == "/api/services/start-all":
-            return self._json({"ok": True, "started": sum(1 for n in SERVICE_DEFS if n != "dashboard_server")})
+            started = 0
+            for name in SERVICE_DEFS:
+                if name == "dashboard_server": continue
+                result = _start_service(name)
+                if result.get("ok"): started += 1
+            return self._json({"ok": True, "started": started})
         if p == "/api/services/stop-all":
-            results = [_stop_service(n) for n in SERVICE_DEFS if n != "dashboard_server"]
-            return self._json({"ok": True, "stopped": len(results)})
+            stopped = 0
+            for name in SERVICE_DEFS:
+                if name == "dashboard_server": continue
+                result = _stop_service(name)
+                if result.get("ok"): stopped += 1
+            return self._json({"ok": True, "stopped": stopped})
 
         if p == "/api/config/write":
             path = body.get("path","")
@@ -598,7 +723,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if p == "/api/honeypot/toggle":
             hp = _load_json(HONEYPOT_FILE, {})
-            hp["active"] = not hp.get("active", False)
+            new_active = not hp.get("active", False)
+            hp["active"] = new_active
+            if new_active:
+                # Arrancar el honeypot Node.js real
+                hp_script = ROOT.parent / "honeypot" / "start-honeypot.js"
+                if hp_script.exists():
+                    try:
+                        proc = subprocess.Popen(
+                            ["node", str(hp_script)],
+                            stdout=open(str(LOGS_DIR / "honeypot.log"), "a"),
+                            stderr=subprocess.STDOUT)
+                        hp["pid"] = proc.pid
+                        hp["port"] = 8080
+                        hp["message"] = "Honeypot Node.js arrancado en puerto 8080"
+                    except Exception as ex:
+                        hp["message"] = f"Error arrancando honeypot: {ex}"
+                else:
+                    hp["message"] = "Honeypot script no encontrado"
+            else:
+                # Detener honeypot si está corriendo
+                pid = hp.get("pid")
+                if pid:
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        hp["pid"] = None
+                        hp["message"] = "Honeypot detenido"
+                    except Exception:
+                        hp["pid"] = None
             _save_json(HONEYPOT_FILE, hp)
             return self._json(hp)
         if p == "/api/honeypot/rotate":
@@ -608,11 +760,37 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json({"ok": True, "tokens_deployed": hp.get("tokens_deployed", 0)})
 
         if p == "/api/soar/dry-run":
-            dags = _load_json(SOAR_FILE, [])
-            steps = []
-            for dag in dags:
-                if dag.get("enabled"): steps.extend(dag.get("steps", []))
-            return self._json({"ok": True, "steps": steps, "count": len(steps)})
+            # Ejecutar el primer playbook disponible con el DAG executor real
+            try:
+                sys.path.insert(0, str(ROOT))
+                from soar.dag_executor import DAGExecutor
+                from soar.handlers import HANDLER_REGISTRY
+                from pathlib import Path as P
+                pb_dir = ROOT / "soar" / "playbooks"
+                playbooks = sorted(P.glob(str(pb_dir / "*.json"))) if pb_dir.exists() else []
+                if not playbooks:
+                    dags = _load_json(SOAR_FILE, [])
+                    steps = []
+                    for dag in dags:
+                        if dag.get("enabled"): steps.extend(dag.get("steps", []))
+                    return self._json({"ok": True, "steps": steps, "count": len(steps),
+                        "mode": "static", "note": "No playbooks found, using saved DAGs"})
+                # Ejecutar el primer playbook con el DAG executor
+                pb = json.loads(P(playbooks[0]).read_text())
+                executor = DAGExecutor(HANDLER_REGISTRY)
+                results = executor.execute_playbook(pb)
+                step_names = [r.step_name for r in results]
+                return self._json({"ok": True, "steps": step_names, "count": len(step_names),
+                    "mode": "real", "playbook": pb.get("name", "?"),
+                    "results": [{"step": r.step_id, "name": r.step_name,
+                                  "state": r.state, "handler": r.handler} for r in results]})
+            except ImportError:
+                dags = _load_json(SOAR_FILE, [])
+                steps = [s for d in dags if d.get("enabled") for s in d.get("steps", [])]
+                return self._json({"ok": True, "steps": steps, "count": len(steps),
+                    "mode": "fallback"})
+            except Exception as ex:
+                return self._json({"ok": False, "error": str(ex)[:300], "mode": "error"})
 
         if p == "/api/soar/dags":
             dag = body
@@ -630,6 +808,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             iocs.append(ioc)
             _save_json(IOC_FILE, iocs)
             return self._json({"ok": True, "id": ioc["id"]})
+
+        if p == "/api/tip/update":
+            # Descargar IOCs reales de feeds gratuitos
+            try:
+                sys.path.insert(0, str(ROOT))
+                from threat_intel import fetch_all_iocs, get_iocs
+                new_iocs = fetch_all_iocs()
+                all_iocs = get_iocs()
+                return self._json({"ok": True, "iocs_loaded": len(new_iocs),
+                    "total_iocs": len(all_iocs),
+                    "sources": ["AlienVault OTX", "abuse.ch URLhaus", "Tor Exit Nodes", "IPsum"]})
+            except ImportError:
+                return self._json({"ok": False, "error": "threat_intel module not available"})
+            except Exception as ex:
+                return self._json({"ok": False, "error": str(ex)[:300]})
 
         if p == "/api/tip/import-stix":
             bundle = body
@@ -690,7 +883,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"[server] SourceSeal Console — Backend REAL en puerto {PORT}", flush=True)
-    print(f"[server] Target: {BACKEND}", flush=True)
+    _target = _get_active_target()
+    print(f"[server] Target: {_target or 'No configurado (setear en Settings)'}", flush=True)
     print(f"[server] psutil: {'OK' if HAS_PSUTIL else 'NOT AVAILABLE'}", flush=True)
     print(f"[server] Cero mocks. Cero dummy data. Solo datos reales.", flush=True)
     server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)

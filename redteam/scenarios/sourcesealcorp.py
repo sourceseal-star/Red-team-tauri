@@ -46,7 +46,7 @@ import secrets
 from typing import List, Dict, Any
 from collections import Counter
 
-DEFAULT_SOURCESEAL_API = os.environ.get("SOURCESEAL_API", "https://sourceseal.co")
+DEFAULT_SOURCESEAL_API = os.environ.get("SOURCESEAL_API", "")  # Configurable via Settings
 DEFAULT_SOURCESEAL_KEY = os.environ.get("SOURCESEAL_KEY", "")
 DEFAULT_SOURCESEAL_NODE = os.environ.get("SOURCESEAL_NODE", "")
 DEFAULT_RECOVERY_PAGE = os.environ.get("RECOVERY_PAGE", "")

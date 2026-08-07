@@ -74,7 +74,7 @@ export default function SettingsScreen() {
             style={styles.input}
             value={apiUrl}
             onChangeText={setApiUrl}
-            placeholder="https://api.sourceseal.corp"
+            placeholder="http://localhost:8001"
             placeholderTextColor="#484f58"
             autoCapitalize="none"
           />

@@ -1,0 +1,109 @@
+{
+  "started_at": "2026-07-31T08:28:58.969156",
+  "finished_at": "2026-07-31T08:29:11.368551",
+  "elapsed_seconds": 12.4,
+  "total_findings": 10,
+  "by_severity": {
+    "critical": 2,
+    "high": 1,
+    "medium": 3,
+    "low": 4,
+    "info": 0
+  },
+  "findings": [
+    {
+      "scenario": "headers",
+      "severity": "low",
+      "title": "Server header expone tecnologia",
+      "description": "Server: cloudflare",
+      "evidence": "Server: cloudflare",
+      "remediation": "Ocultar o ofuscar el header Server",
+      "timestamp": "2026-07-31T08:28:59.709745"
+    },
+    {
+      "scenario": "headers",
+      "severity": "high",
+      "title": "Missing: content-security-policy",
+      "description": "El header 'content-security-policy' no esta presente",
+      "evidence": "Headers: ['Date', 'Content-Type', 'Transfer-Encoding', 'Connection', 'CF-Ray', 'CF-Cache-Status', 'Accept-Ranges', 'Cache-Control', 'Expires', 'Last-Modified', 'Server', 'Set-Cookie', 'Strict-Transport-Security', 'Via', 'alt-svc', 'x-cloud-trace-context', 'Server-Timing', 'Report-To', 'Nel']",
+      "remediation": "Agregar header 'content-security-policy'",
+      "timestamp": "2026-07-31T08:28:59.709830"
+    },
+    {
+      "scenario": "headers",
+      "severity": "medium",
+      "title": "Missing: x-frame-options",
+      "description": "El header 'x-frame-options' no esta presente",
+      "evidence": "Headers: ['Date', 'Content-Type', 'Transfer-Encoding', 'Connection', 'CF-Ray', 'CF-Cache-Status', 'Accept-Ranges', 'Cache-Control', 'Expires', 'Last-Modified', 'Server', 'Set-Cookie', 'Strict-Transport-Security', 'Via', 'alt-svc', 'x-cloud-trace-context', 'Server-Timing', 'Report-To', 'Nel']",
+      "remediation": "Agregar header 'x-frame-options'",
+      "timestamp": "2026-07-31T08:28:59.709851"
+    },
+    {
+      "scenario": "headers",
+      "severity": "medium",
+      "title": "Missing: x-content-type-options",
+      "description": "El header 'x-content-type-options' no esta presente",
+      "evidence": "Headers: ['Date', 'Content-Type', 'Transfer-Encoding', 'Connection', 'CF-Ray', 'CF-Cache-Status', 'Accept-Ranges', 'Cache-Control', 'Expires', 'Last-Modified', 'Server', 'Set-Cookie', 'Strict-Transport-Security', 'Via', 'alt-svc', 'x-cloud-trace-context', 'Server-Timing', 'Report-To', 'Nel']",
+      "remediation": "Agregar header 'x-content-type-options'",
+      "timestamp": "2026-07-31T08:28:59.709865"
+    },
+    {
+      "scenario": "headers",
+      "severity": "low",
+      "title": "Missing: referrer-policy",
+      "description": "El header 'referrer-policy' no esta presente",
+      "evidence": "Headers: ['Date', 'Content-Type', 'Transfer-Encoding', 'Connection', 'CF-Ray', 'CF-Cache-Status', 'Accept-Ranges', 'Cache-Control', 'Expires', 'Last-Modified', 'Server', 'Set-Cookie', 'Strict-Transport-Security', 'Via', 'alt-svc', 'x-cloud-trace-context', 'Server-Timing', 'Report-To', 'Nel']",
+      "remediation": "Agregar header 'referrer-policy'",
+      "timestamp": "2026-07-31T08:28:59.709875"
+    },
+    {
+      "scenario": "headers",
+      "severity": "low",
+      "title": "Missing: permissions-policy",
+      "description": "El header 'permissions-policy' no esta presente",
+      "evidence": "Headers: ['Date', 'Content-Type', 'Transfer-Encoding', 'Connection', 'CF-Ray', 'CF-Cache-Status', 'Accept-Ranges', 'Cache-Control', 'Expires', 'Last-Modified', 'Server', 'Set-Cookie', 'Strict-Transport-Security', 'Via', 'alt-svc', 'x-cloud-trace-context', 'Server-Timing', 'Report-To', 'Nel']",
+      "remediation": "Agregar header 'permissions-policy'",
+      "timestamp": "2026-07-31T08:28:59.709883"
+    },
+    {
+      "scenario": "headers",
+      "severity": "low",
+      "title": "Missing: x-xss-protection",
+      "description": "El header 'x-xss-protection' no esta presente",
+      "evidence": "Headers: ['Date', 'Content-Type', 'Transfer-Encoding', 'Connection', 'CF-Ray', 'CF-Cache-Status', 'Accept-Ranges', 'Cache-Control', 'Expires', 'Last-Modified', 'Server', 'Set-Cookie', 'Strict-Transport-Security', 'Via', 'alt-svc', 'x-cloud-trace-context', 'Server-Timing', 'Report-To', 'Nel']",
+      "remediation": "Agregar header 'x-xss-protection'",
+      "timestamp": "2026-07-31T08:28:59.709891"
+    },
+    {
+      "scenario": "exposure",
+      "severity": "critical",
+      "title": "Archivo .env EXPUESTO",
+      "description": "https://sourceseal.co/.env devuelve 200",
+      "evidence": "<!DOCTYPE html>\n<html lang=\"es\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1\" />\n\n    <!-- Primary Meta -->\n    <tit",
+      "remediation": "Bloquear acceso a /.env",
+      "timestamp": "2026-07-31T08:29:03.225857"
+    },
+    {
+      "scenario": "exposure",
+      "severity": "critical",
+      "title": "Git config EXPUESTO",
+      "description": "https://sourceseal.co/.git/config devuelve 200",
+      "evidence": "<!DOCTYPE html>\n<html lang=\"es\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1\" />\n\n    <!-- Primary Meta -->\n    <tit",
+      "remediation": "Bloquear acceso a /.git/",
+      "timestamp": "2026-07-31T08:29:03.511389"
+    },
+    {
+      "scenario": "ratelimit",
+      "severity": "medium",
+      "title": "Sin rate limiting",
+      "description": "10 requests consecutivas sin 429 (10 x 200)",
+      "evidence": "Statuses: [200, 200, 200, 200, 200, 200, 200, 200, 200, 200]",
+      "remediation": "Implementar rate limiting",
+      "timestamp": "2026-07-31T08:29:11.341227"
+    }
+  ],
+  "errors": [],
+  "target": "https://sourceseal.co",
+  "scanner": "SourceSeal HTTP Scanner v2.0 REAL",
+  "scenarios_run": 10
+}
