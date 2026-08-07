@@ -19,4 +19,22 @@
 
   * { @apply border-border; }
   body { @apply bg-background text-foreground; font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+
+  /* FIX: Chrome/Android y otros navegadores aplican su propio color de texto
+     (normalmente negro) a inputs/textareas/selects, ignorando el color heredado
+     del body. Sobre nuestros fondos oscuros (bg-muted, bg-background) eso vuelve
+     el texto invisible. Forzamos el color en todos los controles de formulario. */
+  input, textarea, select {
+    color: hsl(var(--foreground));
+    background-color: transparent;
+  }
+  input::placeholder, textarea::placeholder {
+    color: hsl(var(--muted-foreground));
+    opacity: 1;
+  }
+  input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus {
+    -webkit-text-fill-color: hsl(var(--foreground));
+    -webkit-box-shadow: 0 0 0 1000px hsl(var(--muted)) inset;
+    caret-color: hsl(var(--foreground));
+  }
 }
