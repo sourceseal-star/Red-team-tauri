@@ -243,7 +243,7 @@ SERVICE_DEFS = {
         "cmd": [sys.executable, "-c", f"import sys; sys.path.insert(0,'{ROOT}'); from deception.mesh import DeceptionMesh; import time; m=DeceptionMesh(); print('[deception] ready'); time.sleep(999999)"],
         "log_file": str(LOGS_DIR / "deception.log")},
     "fake-api": {"description": "Fake API — deceptive API endpoints",
-        "cmd": [sys.executable, str(ROOT / "defense" / "fake_api.py")], "log_file": str(LOGS_DIR / "fake-api.log")},
+        "cmd": [sys.executable, str(ROOT / "honeypot" / "fake-api" / "server.py")], "log_file": str(LOGS_DIR / "fake-api.log")},
     "c2-sinkhole": {"description": "C2 Sinkhole — DNS sinkhole for C2 traffic",
         "cmd": [sys.executable, str(ROOT / "honeypot" / "c2-sinkhole" / "sinkhole.py")], "log_file": str(LOGS_DIR / "c2-sinkhole.log")},
     "canary-monitor": {"description": "Canary Monitor — canary token alerting",
@@ -664,14 +664,13 @@ async def honeypot_start(port: int = 8888):
     async with honeypot_lock:
         if honeypot_proc and honeypot_proc.poll() is None:
             return {"status": "already_running", "pid": honeypot_proc.pid}
-        script = ROOT / "scripts" / "honeypot.py"
+        script = ROOT / "honeypot" / "fake-api" / "server.py"
         if not script.exists():
-            script = ROOT / "honeypot" / "start-honeypot.js"
-            if not script.exists():
-                return JSONResponse({"error": "honeypot.py no encontrado"}, status_code=404)
+            return JSONResponse({"error": "honeypot server.py no encontrado"}, status_code=404)
         try:
-            cmd = ["node" if str(script).endswith(".js") else sys.executable, str(script), str(port)]
-            honeypot_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            env = {**os.environ, "PORT": str(port)}
+            honeypot_proc = subprocess.Popen([sys.executable, str(script)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
     await broadcast({"type": "alert", "payload": f"Honeypot iniciado en puerto {port} (PID {honeypot_proc.pid})"})
@@ -760,15 +759,27 @@ async def services_list():
     return [_svc_status(n) for n in SERVICE_DEFS]
 
 @app.post("/api/services/start")
-async def services_start(name: str = Query(...)):
+async def services_start(request: Request, name: str = Query(None)):
+    if not name:
+        try: body = await request.json(); name = body.get("name", "")
+        except: pass
+    if not name: return JSONResponse({"error": "name required"}, status_code=400)
     return _start_service(name)
 
 @app.post("/api/services/stop")
-async def services_stop(name: str = Query(...)):
+async def services_stop(request: Request, name: str = Query(None)):
+    if not name:
+        try: body = await request.json(); name = body.get("name", "")
+        except: pass
+    if not name: return JSONResponse({"error": "name required"}, status_code=400)
     return _stop_service(name)
 
 @app.post("/api/services/restart")
-async def services_restart(name: str = Query(...)):
+async def services_restart(request: Request, name: str = Query(None)):
+    if not name:
+        try: body = await request.json(); name = body.get("name", "")
+        except: pass
+    if not name: return JSONResponse({"error": "name required"}, status_code=400)
     return _restart_service(name)
 
 @app.post("/api/services/start-all")
@@ -813,7 +824,14 @@ async def resources():
 # ═════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/scan")
-async def run_scan(target: str = Query(None)):
+async def run_scan(request: Request, target: str = Query(None)):
+    # Accept target from query param OR JSON body (frontend sends body)
+    if not target:
+        try:
+            body = await request.json()
+            target = body.get("target", "").strip() if body else ""
+        except Exception:
+            pass
     if not target: target = _get_active_target()
     if not target:
         return JSONResponse({"error": "No target configured. Set in Settings."}, status_code=400)
@@ -827,7 +845,7 @@ async def run_scan(target: str = Query(None)):
         orchestrator = ROOT / "runner" / "orchestrator.py"
         if orchestrator.exists():
             result = subprocess.run(
-                [sys.executable, str(orchestrator), "--target", target, "--output", str(REPORTS)],
+                [sys.executable, str(orchestrator), "--target", target, "--backend", target, "--output", str(REPORTS)],
                 capture_output=True, text=True, timeout=180, cwd=str(ROOT))
             _scan_state["last_result"] = result.stdout[:4000]
             _scan_state["progress"] = "completed"
