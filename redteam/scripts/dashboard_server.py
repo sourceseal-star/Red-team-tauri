@@ -1,4 +1,4 @@
-@!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 SourceSeal Console — Backend REAL
 Todos los datos son reales: HTTP scanning, procesos reales, filesystem real.
@@ -61,8 +61,6 @@ PORT = int(os.environ.get("PORT", "8001"))
 
 BACKEND = os.environ.get("SOURCESEAL_API", "")  # Se carga desde settings.json en runtime
 
-<<<<<<< HEAD
-=======
 # ── Autenticación de sesión (dashboard mobile / Termux bridge) ───────────────
 import hashlib as _hashlib
 import hmac as _hmac
@@ -121,7 +119,6 @@ def _netscan_api_key() -> str:
 # Semáforo: un solo escaneo de red activo a la vez (evita DoS por saturación)
 _netscan_sem = threading.Semaphore(1)
 
->>>>>>> 6efcc68de4dd577dcd86cb92d5ff6f75f5d2bff3
 def _get_active_target():
     """Obtiene el target activo desde settings.json (configurable desde la UI)."""
     settings = _load_json(SETTINGS_FILE, {})
