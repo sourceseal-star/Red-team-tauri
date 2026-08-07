@@ -6,8 +6,6 @@ import CommandPalette from './CommandPalette';
 import HostDetailDrawer from './HostDetailDrawer';
 import { useWebSocket } from '../../hooks/useWebSocket';
 
-const API = '/api';
-
 export default function DashboardProV2() {
   const hosts = useScanStore(s => s.hosts);
   const loading = useScanStore(s => s.loading);
@@ -19,19 +17,18 @@ export default function DashboardProV2() {
   const runScan = async (label: string, path: string, method = 'POST', body?: any) => {
     setLoading(true); setError(null); pushLog(`⏳ ${label}...`);
     try {
-      const res = await fetch(`${API}${path}`, {
+      const res = await fetch(path, {
         method,
         headers: body ? { 'Content-Type': 'application/json' } : {},
         body: body ? JSON.stringify(body) : undefined,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      // Normalizar: los endpoints devuelven { results: Host[] }
       const items = (data.results || data.hosts || []).map((h: any) => ({
         ip: h.ip || h.host,
         mac: h.mac, vendor: h.vendor,
         ports: h.ports || [],
-        first_seen: new Date().toISOString(),
+        first_seen: h.first_seen || new Date().toISOString(),
         type: h.type || 'unknown',
       }));
       setHosts(items);
@@ -42,44 +39,45 @@ export default function DashboardProV2() {
     } finally { setLoading(false); }
   };
 
-  // WebSocket: alertas
   useEffect(() => {
     if (!ws) return;
     ws.onmessage = (ev) => {
       try {
         const m = JSON.parse(ev.data);
         if (m.type === 'alert') pushLog(`🚨 ${m.payload}`);
+        if (m.type === 'progress') pushLog(`📊 ${m.payload}`);
       } catch {}
     };
   }, [ws, pushLog]);
 
-  // Escaneo inicial
-  useEffect(() => { runScan('Topología inicial', '/scan/topology'); }, []);
+  useEffect(() => { runScan('Topología', '/api/scan/topology'); }, []);
 
   const actions = [
-    { id: 'topo',   label: '🗺️ Escanear topología', run: () => runScan('Topología', '/scan/topology') },
-    { id: 'cam',    label: '📹 Escanear cámaras',    run: () => runScan('Cámaras', '/scan/cameras') },
-    { id: 'rou',    label: '📡 Escanear routers',    run: () => runScan('Routers', '/scan/routers') },
-    { id: 'iot',    label: '🔌 Escanear IoT',        run: () => runScan('IoT', '/scan/iot') },
-    { id: 'wifi',   label: '📶 Escanear WiFi',       run: () => runScan('WiFi', '/scan/wifi') },
-    { id: 'radio',  label: '📻 Escanear espectro',   run: () => runScan('Radio', '/scan/radio') },
-    { id: 'shodan', label: '🔍 Shodan global',       run: () => runScan('Shodan', '/osint/shodan', 'GET') },
-    { id: 'canary', label: '🪤 Generar canary',      run: () => runScan('Canary', '/canary/generate') },
+    { id: 'topo',   label: '🗺️ Topología', run: () => runScan('Topología', '/api/scan/topology') },
+    { id: 'cam',    label: '📹 Cámaras',    run: () => runScan('Cámaras',   '/api/scan/cameras') },
+    { id: 'rou',    label: '📡 Routers',    run: () => runScan('Routers',   '/api/scan/routers') },
+    { id: 'iot',    label: '🔌 IoT',        run: () => runScan('IoT',       '/api/scan/iot') },
+    { id: 'wifi',   label: '📶 WiFi',       run: () => runScan('WiFi',      '/api/scan/wifi') },
+    { id: 'shodan', label: '🔍 Shodan',     run: () => runScan('Shodan',    '/api/osint/shodan?ip=8.8.8.8', 'GET') },
+    { id: 'honey',  label: '🪤 Honeypot',   run: async () => {
+        await fetch('/api/honeypot/start', { method: 'POST' });
+        pushLog('🪤 Honeypot iniciado');
+    }},
+    { id: 'canary', label: '🎯 Canary',     run: () => runScan('Canary', '/api/canary/generate') },
   ];
 
   const shodanLookup = async (ip: string) => {
-    await runScan(`Shodan → ${ip}`, `/osint/shodan?ip=${ip}`, 'GET');
+    await runScan(`Shodan → ${ip}`, `/api/osint/shodan?ip=${ip}`, 'GET');
   };
 
   return (
     <div className="min-h-screen bg-[var(--ss-bg)] text-gray-200 font-mono p-4">
-      {/* Header */}
       <header className="flex justify-between items-center pb-3 mb-4 border-b border-[var(--ss-border)]">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-gradient-to-br from-cyan-400 to-amber-400 rotate-45" />
           <div>
             <div className="text-lg font-bold tracking-wider">RED-TEAM <span className="text-cyan-400">TAURI</span></div>
-            <div className="text-[10px] text-gray-500 tracking-widest">SOBERANÍA OPERATIVA · SSP-ZKP-2048-L4</div>
+            <div className="text-[10px] text-gray-500 tracking-widest">SOBERANÍA OPERATIVA · UNIFIED :8001</div>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -97,7 +95,6 @@ export default function DashboardProV2() {
         </div>
       )}
 
-      {/* Stats rápidas */}
       <div className="grid grid-cols-4 gap-3 mb-4">
         {[
           { k: 'HOSTS', v: hosts.length, c: 'cyan' },
@@ -113,13 +110,11 @@ export default function DashboardProV2() {
         ))}
       </div>
 
-      {/* Grid principal */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
         <div className="lg:col-span-2"><NetworkGraph /></div>
         <div><RiskPanel /></div>
       </div>
 
-      {/* Acciones rápidas */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
         {actions.map(a => (
           <button key={a.id} onClick={a.run} disabled={loading}
@@ -129,7 +124,6 @@ export default function DashboardProV2() {
         ))}
       </div>
 
-      {/* Log */}
       <div className="bg-[var(--ss-bg-3)] border border-[var(--ss-border)] p-3">
         <h3 className="text-[10px] uppercase tracking-widest text-amber-400 mb-2">Registro operativo</h3>
         <div className="h-40 overflow-y-auto text-[10px] space-y-0.5">
@@ -137,7 +131,6 @@ export default function DashboardProV2() {
         </div>
       </div>
 
-      {/* Drawer lateral */}
       <HostDetailDrawer onShodan={shodanLookup} />
     </div>
   );

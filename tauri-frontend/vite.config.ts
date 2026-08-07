@@ -1,5 +1,5 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
@@ -19,25 +19,15 @@ export default defineConfig({
       ],
     },
     proxy: {
-      '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-      '/health': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-      '/healthz': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-      '/ws': {
-        target: 'ws://localhost:3000',
-        ws: true,
-      },
+      '/api':      { target: 'http://127.0.0.1:8001', changeOrigin: true },
+      '/canary':   { target: 'http://127.0.0.1:8001', changeOrigin: true },
+      '/ws':       { target: 'ws://127.0.0.1:8001',   ws: true },
+      '/assets':   { target: 'http://127.0.0.1:8001', changeOrigin: true },
     },
   },
   build: {
+    outDir: 'dist',
+    emptyOutDir: true,
     sourcemap: false,
     rollupOptions: {
       output: {
@@ -51,4 +41,4 @@ export default defineConfig({
   optimizeDeps: {
     force: false,
   },
-})
+});
