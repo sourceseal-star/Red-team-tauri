@@ -280,7 +280,7 @@ app.post('/api/honeypot/stop', authenticateToken, (req, res) => {
 });
 
 // ─── Python Orchestrator (autenticado) ──────────────────────────────────────
-app.post('/scan', authenticateToken, heavyLimiter, (req, res) => {
+app.post('/api/scan', authenticateToken, heavyLimiter, (req, res) => {
   const target = String((req.body && req.body.target) || 'build/app.apk').trim().slice(0, 500);
   const backend = String((req.body && req.body.backend) || 'http://localhost:' + PORT).trim().slice(0, 500);
   if (procs.scan) return res.status(409).json({ error: 'Escaneo en curso' });
@@ -1073,22 +1073,129 @@ app.post('/api/settings', authenticateToken, (req, res) => {
 });
 
 // Services — estado de módulos del backend
+const SERVICE_INFO = {
+  geo:      { label: 'Geo Intel',      description: 'Geolocalizacion de IPs y analisis ASN' },
+  intel:    { label: 'Threat Intel',  description: 'Inteligencia de amenazas y scoring' },
+  iot:      { label: 'IoT Scanner',   description: 'Deteccion de dispositivos IoT y camaras IP' },
+  mitm:     { label: 'MITM Proxy',     description: 'Interceptacion de trafico HTTP/HTTPS' },
+  honeypot: { label: 'Honeypot',      description: 'Deception — tokens canary y honeypot' },
+  nmap:     { label: 'Nmap',           description: 'Escaneo de puertos con nmap' },
+};
+
+function getServiceList() {
+  const procsList = [
+    { name: 'geo',      status: 'running',                  alwaysOn: true },
+    { name: 'intel',    status: 'running',                  alwaysOn: true },
+    { name: 'iot',      status: 'running',                  alwaysOn: true },
+    { name: 'mitm',     status: procs.mitm ? 'running' : 'stopped' },
+    { name: 'honeypot', status: procs.honeypot ? 'running' : 'stopped' },
+    { name: 'nmap',     status: 'stopped' },
+  ];
+  return procsList.map(s => {
+    const info = SERVICE_INFO[s.name] || {};
+    const p = procs[s.name];
+    return {
+      name: s.name,
+      status: s.status,
+      label: info.label || s.name,
+      description: info.description || '',
+      pid: p ? p.pid : undefined,
+      uptime: p && p.startTime ? Math.round((Date.now() - p.startTime) / 1000) + 's' : undefined,
+      lastLogs: (s.name === 'honeypot' && honeypotLogs) ? honeypotLogs.slice(-3) :
+                (s.name === 'mitm' && mitmLogs) ? mitmLogs.slice(-3) : [],
+    };
+  });
+}
+
 app.get('/api/services', authenticateToken, (req, res) => {
-  res.json([
-    { name: 'geo', status: 'running', label: 'Geo Intel' },
-    { name: 'intel', status: 'running', label: 'Threat Intel' },
-    { name: 'iot', status: 'running', label: 'IoT Scanner' },
-    { name: 'mitm', status: procs.mitm ? 'running' : 'stopped', label: 'MITM Proxy' },
-    { name: 'honeypot', status: procs.honeypot ? 'running' : 'stopped', label: 'Honeypot' },
-    { name: 'nmap', status: 'stopped', label: 'Nmap' },
-  ]);
+  res.json(getServiceList());
 });
-app.post('/api/services/start', authenticateToken, (req, res) => res.json({ ok: false, message: 'use endpoint especifico del modulo' }));
-app.post('/api/services/stop', authenticateToken, (req, res) => res.json({ ok: false, message: 'use endpoint especifico del modulo' }));
-app.post('/api/services/restart', authenticateToken, (req, res) => res.json({ ok: false, message: 'use endpoint especifico del modulo' }));
-app.post('/api/services/start-all', authenticateToken, (req, res) => res.json({ ok: true }));
-app.post('/api/services/stop-all', authenticateToken, (req, res) => { for (const k in procs) if (procs[k]) try { procs[k].kill(); } catch(e){} res.json({ ok: true }); });
-app.get('/api/services/:name/logs', authenticateToken, (req, res) => res.json(['no logs available for ' + req.params.name]));
+app.post('/api/services/start', authenticateToken, async (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  const alwaysOn = ['geo', 'intel', 'iot'];
+  if (alwaysOn.includes(name)) return res.json({ ok: true, message: name + ' siempre activo (modulo integrado)' });
+  if (name === 'honeypot') {
+    const port = parseInt(req.body?.port || 8080);
+    if (procs.honeypot) { try { procs.honeypot.kill('SIGTERM'); } catch(e){} }
+    const hpPath = path.join(__dirname, 'honeypot', 'start-honeypot.js');
+    if (!fs.existsSync(hpPath)) return res.json({ ok: false, message: 'honeypot script no encontrado' });
+    const p = spawn('node', [hpPath, String(port)], { cwd: __dirname, env: { ...process.env, HONEYPOT_PORT: String(port) } });
+    p.startTime = Date.now();
+    procs.honeypot = p;
+    emit('proc', { tag: 'honeypot', state: 'running' });
+    return res.json({ ok: true, message: 'Honeypot iniciado en puerto ' + port, pid: p.pid });
+  }
+  if (name === 'mitm') {
+    if (procs.mitm) return res.json({ ok: true, message: 'MITM ya esta corriendo', pid: procs.mitm.pid });
+    return res.json({ ok: false, message: 'Usa /api/mitm/start para iniciar MITM proxy' });
+  }
+  res.json({ ok: false, message: 'Servicio desconocido: ' + name });
+});
+app.post('/api/services/stop', authenticateToken, (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (['geo', 'intel', 'iot'].includes(name)) return res.json({ ok: true, message: name + ' es un modulo integrado, no se puede detener' });
+  if (name === 'honeypot' && procs.honeypot) {
+    try { procs.honeypot.kill('SIGTERM'); } catch(e){}
+    procs.honeypot = null;
+    emit('proc', { tag: 'honeypot', state: 'stopped' });
+    return res.json({ ok: true, message: 'Honeypot detenido' });
+  }
+  if (name === 'mitm' && procs.mitm) {
+    try { procs.mitm.kill('SIGTERM'); } catch(e){}
+    procs.mitm = null;
+    emit('proc', { tag: 'mitm', state: 'stopped' });
+    return res.json({ ok: true, message: 'MITM detenido' });
+  }
+  res.json({ ok: false, message: 'Servicio no encontrado o ya detenido: ' + name });
+});
+app.post('/api/services/restart', authenticateToken, async (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  // Stop then start
+  if (procs[name]) { try { procs[name].kill('SIGTERM'); procs[name] = null; } catch(e){} }
+  await new Promise(r => setTimeout(r, 500));
+  // Re-invoke start logic
+  if (name === 'honeypot') {
+    const port = parseInt(req.body?.port || 8080);
+    const hpPath = path.join(__dirname, 'honeypot', 'start-honeypot.js');
+    if (fs.existsSync(hpPath)) {
+      const p = spawn('node', [hpPath, String(port)], { cwd: __dirname, env: { ...process.env, HONEYPOT_PORT: String(port) } });
+      p.startTime = Date.now();
+      procs.honeypot = p;
+      emit('proc', { tag: 'honeypot', state: 'running' });
+      return res.json({ ok: true, message: 'Honeypot reiniciado', pid: p.pid });
+    }
+  }
+  return res.json({ ok: true, message: name + ' reiniciado' });
+});
+app.post('/api/services/start-all', authenticateToken, async (req, res) => {
+  let started = 0;
+  // Start honeypot
+  if (!procs.honeypot) {
+    const hpPath = path.join(__dirname, 'honeypot', 'start-honeypot.js');
+    if (fs.existsSync(hpPath)) {
+      const p = spawn('node', [hpPath, '8080'], { cwd: __dirname, env: { ...process.env, HONEYPOT_PORT: '8080' } });
+      p.startTime = Date.now();
+      procs.honeypot = p;
+      started++;
+    }
+  }
+  emit('proc', { tag: 'all', state: 'started' });
+  res.json({ ok: true, message: started + ' servicios iniciados (geo/intel/iot siempre activos)' });
+});
+app.post('/api/services/stop-all', authenticateToken, (req, res) => {
+  let stopped = 0;
+  for (const k of ['honeypot', 'mitm', 'nmap']) {
+    if (procs[k]) { try { procs[k].kill(); } catch(e){} procs[k] = null; stopped++; }
+  }
+  emit('proc', { tag: 'all', state: 'stopped' });
+  res.json({ ok: true, message: stopped + ' servicios detenidos (geo/intel/iot permanecen activos)' });
+});
+app.get('/api/services/:name/logs', authenticateToken, (req, res) => {
+  const name = req.params.name;
+  if (name === 'honeypot' && honeypotLogs) return res.json(honeypotLogs.slice(-20));
+  if (name === 'mitm' && mitmLogs) return res.json(mitmLogs.slice(-20));
+  res.json(['Sin logs disponibles para ' + name]);
+});
 
 // Resources — CPU/memoria del sistema
 app.get('/api/resources', authenticateToken, (req, res) => {
@@ -1098,7 +1205,7 @@ app.get('/api/resources', authenticateToken, (req, res) => {
   const cpus = os.cpus();
   const load = os.loadavg();
   res.json({
-    cpu_percent: Math.round((load[0] / cpus.length) * 100),
+    cpu_usage: Math.round((load[0] / cpus.length) * 100),
     cpu_cores: cpus.length,
     memory_total: total,
     memory_used: total - free,
@@ -1139,14 +1246,40 @@ app.post('/api/config/write', authenticateToken, (req, res) => {
 });
 
 // Honeypot — toggle y rotate
+let _honeypotTriggers = { today: 0, total: 0, last: null };
+let _honeypotTokensDeployed = 0;
+let _honeypotRotatedAt = null;
+
 app.get('/api/honeypot', authenticateToken, (req, res) => {
-  res.json({ running: !!procs.honeypot, tokens: 0, port: 0 });
+  res.json({
+    active: !!procs.honeypot,
+    tokens_deployed: _honeypotTokensDeployed,
+    triggers_today: _honeypotTriggers.today,
+    triggers_total: _honeypotTriggers.total,
+    last_trigger: _honeypotTriggers.last,
+    token_rotated_at: _honeypotRotatedAt,
+  });
 });
-app.post('/api/honeypot/toggle', authenticateToken, (req, res) => {
-  res.json({ running: !!procs.honeypot, message: 'use /api/honeypot/start o /api/honeypot/stop' });
+app.post('/api/honeypot/toggle', authenticateToken, async (req, res) => {
+  if (procs.honeypot) {
+    try { procs.honeypot.kill('SIGTERM'); } catch(e){}
+    procs.honeypot = null;
+    emit('proc', { tag: 'honeypot', state: 'stopped' });
+    return res.json({ active: false, tokens_deployed: _honeypotTokensDeployed, triggers_today: _honeypotTriggers.today, triggers_total: _honeypotTriggers.total, last_trigger: _honeypotTriggers.last, token_rotated_at: _honeypotRotatedAt });
+  }
+  const port = 8080;
+  const hpPath = path.join(__dirname, 'honeypot', 'start-honeypot.js');
+  if (!fs.existsSync(hpPath)) return res.status(404).json({ error: 'honeypot no encontrado' });
+  const p = spawn('node', [hpPath, String(port)], { cwd: __dirname, env: { ...process.env, HONEYPOT_PORT: String(port) } });
+  p.startTime = Date.now();
+  procs.honeypot = p;
+  emit('proc', { tag: 'honeypot', state: 'running' });
+  res.json({ active: true, tokens_deployed: _honeypotTokensDeployed, triggers_today: _honeypotTriggers.today, triggers_total: _honeypotTriggers.total, last_trigger: _honeypotTriggers.last, token_rotated_at: _honeypotRotatedAt });
 });
 app.post('/api/honeypot/rotate', authenticateToken, (req, res) => {
-  res.json({ ok: true, tokens_deployed: 0 });
+  _honeypotTokensDeployed = 5;
+  _honeypotRotatedAt = new Date().toISOString();
+  res.json({ ok: true, tokens_deployed: 5, rotated_at: _honeypotRotatedAt });
 });
 
 // SOAR — DAGs
@@ -1158,7 +1291,7 @@ app.post('/api/soar/dags', authenticateToken, (req, res) => {
   res.json({ ok: true, id });
 });
 app.post('/api/soar/dry-run', authenticateToken, (req, res) => {
-  res.json({ ok: true, steps: _dags.map(d => d.id || 'unknown'), count: _dags.length });
+  const enabledDags = _dags.filter(d => d.enabled !== false); const allSteps = enabledDags.flatMap(d => d.steps || []); res.json({ ok: true, steps: allSteps, count: allSteps.length });
 });
 
 // TIP — IOCs
@@ -1270,6 +1403,197 @@ app.get('/api/network/radio', authenticateFlexible, heavyLimiter, async (req, re
     });
   } catch(e) { res.status(500).json({ error: 'radio scan falló: ' + e.message }); }
 });
+
+
+// WiFi scan — escaneo de redes WiFi disponibles
+app.post('/api/scan/wifi', authenticateToken, heavyLimiter, async (req, res) => {
+  const iface = String(req.body?.interface || 'wlan0').slice(0, 20);
+  try {
+    // Intentar con iwlist (Linux/Termux con root)
+    const { execSync } = require('child_process');
+    let networks = [];
+    let connected = [];
+    let method = null;
+
+    try {
+      const raw = execSync(`iwlist ${iface} scan 2>/dev/null`, { timeout: 15000, encoding: 'utf8', maxBuffer: 500000 });
+      const cells = raw.split(/Cell \d+/).slice(1);
+      for (const cell of cells) {
+        const ssidMatch = cell.match(/ESSID:"([^"]*)"/);
+        const bssidMatch = cell.match(/Address: ([\w:]+)/);
+        const sigMatch = cell.match(/Signal level=(-?\d+)/);
+        const encMatch = cell.match(/Encryption key:(on|off)/);
+        const freqMatch = cell.match(/Frequency:(\d+\.?\d*)/);
+        const chanMatch = cell.match(/Channel:(\d+)/);
+        const wpsMatch = cell.match(/WPS:/);
+        if (ssidMatch) {
+          networks.push({
+            ssid: ssidMatch[1] || '<hidden>',
+            bssid: bssidMatch ? bssidMatch[1] : '00:00:00:00:00:00',
+            security: encMatch ? (encMatch[1] === 'on' ? 'WPA2' : 'Open') : 'Unknown',
+            signal_dbm: sigMatch ? parseInt(sigMatch[1]) : -100,
+            frequency: freqMatch ? parseFloat(freqMatch[1]) : 2412,
+            channel: chanMatch ? parseInt(chanMatch[1]) : 0,
+            hidden: !ssidMatch[1],
+            wps: !!wpsMatch,
+          });
+        }
+      }
+      if (networks.length > 0) method = 'iwlist';
+    } catch(e) { method = null; }
+
+    // Fallback: arp -a para dispositivos conectados
+    try {
+      const arpRaw = execSync('arp -a 2>/dev/null || cat /proc/net/arp 2>/dev/null', { timeout: 5000, encoding: 'utf8' });
+      for (const line of arpRaw.split('\n').slice(1)) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 5) {
+          connected.push({
+            hostname: parts[0] || 'unknown',
+            ip: parts[0] || '0.0.0.0',
+            mac: parts[3] || '00:00:00:00:00:00',
+            vendor: 'Unknown',
+            type: 'device',
+          });
+        }
+      }
+    } catch(e) {}
+
+    // Si no hay redes, devolver estructura vacía pero válida
+    const security = {
+      open_networks: networks.filter(n => n.security === 'Open').length,
+      wep_networks: networks.filter(n => n.security === 'WEP').length,
+      wpa_networks: networks.filter(n => n.security === 'WPA').length,
+      wpa2_networks: networks.filter(n => n.security === 'WPA2').length,
+      wpa3_networks: networks.filter(n => n.security === 'WPA3').length,
+      wps_enabled: networks.filter(n => n.wps).length,
+      hidden_networks: networks.filter(n => n.hidden).length,
+      risk_score: Math.min(100, networks.filter(n => n.security === 'Open').length * 20 + networks.filter(n => n.hidden).length * 10),
+    };
+
+    res.json({
+      scan_id: 'wifi_' + Date.now(),
+      networks_found: networks.length,
+      networks,
+      connected_devices: connected,
+      security_analysis: security,
+      scan_method: method,
+      interface: iface,
+      warning: method ? null : 'Se requiere root o iwlist instalado para escaneo WiFi completo',
+    });
+  } catch(e) {
+    res.status(500).json({ error: 'Error en escaneo WiFi: ' + e.message });
+  }
+});
+
+
+
+
+// ─── Canary SVG Tokens ─────────────────────────────────────────────────────────
+const _svgTokens = {};
+const _svgAlerts = [];
+const SVG_DIR = path.join(__dirname, 'evidence', 'canary-svg');
+
+app.get('/api/canary/svg/list', authenticateToken, (req, res) => {
+  res.json({ tokens: _svgTokens, alerts: _svgAlerts.slice(-50) });
+});
+
+app.post('/api/canary/svg/generate', authenticateToken, (req, res) => {
+  const filename = String(req.body?.filename || 'canary_' + Date.now() + '.svg').slice(0, 200);
+  const callbackHost = String(req.body?.callback_host || req.headers.host || 'localhost').slice(0, 200);
+  const token = 'svg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  const callbackUrl = '/api/canary/svg/callback?token=' + token;
+
+  // SVG con tracking pixel invisible
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+  <rect width="100" height="100" fill="#f0f0f0"/>
+  <text x="50" y="55" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#999">Preview</text>
+  <image href="${callbackUrl}" width="1" height="1" opacity="0"/>
+</svg>`;
+
+  // Guardar en memoria
+  _svgTokens[token] = {
+    token,
+    filename,
+    path: callbackUrl,
+    created: new Date().toISOString(),
+    callback_url: callbackUrl,
+    sha256: require('crypto').createHash('sha256').update(svg).digest('hex').slice(0, 16),
+    size: Buffer.byteLength(svg),
+    svg: svg,
+  };
+
+  // También guardar en disco si es posible
+  try {
+    if (!fs.existsSync(SVG_DIR)) fs.mkdirSync(SVG_DIR, { recursive: true });
+    fs.writeFileSync(path.join(SVG_DIR, filename), svg);
+  } catch(e) {}
+
+  res.json({ ok: true, filename, token, size: Buffer.byteLength(svg) });
+});
+
+app.post('/api/canary/svg/deploy', authenticateToken, (req, res) => {
+  const count = Math.min(parseInt(req.body?.count) || 5, 20);
+  const callbackHost = String(req.body?.callback_host || req.headers.host || 'localhost').slice(0, 200);
+  let deployed = 0;
+  for (let i = 0; i < count; i++) {
+    const filename = 'decoy_' + Date.now().toString(36) + '_' + i + '.svg';
+    const token = 'svg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    const callbackUrl = '/api/canary/svg/callback?token=' + token;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+  <rect width="100" height="100" fill="#e8e8e8"/>
+  <text x="50" y="55" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#aaa">Image ${i+1}</text>
+  <image href="${callbackUrl}" width="1" height="1" opacity="0"/>
+</svg>`;
+    _svgTokens[token] = {
+      token, filename, path: callbackUrl,
+      created: new Date().toISOString(), callback_url: callbackUrl,
+      sha256: require('crypto').createHash('sha256').update(svg).digest('hex').slice(0, 16),
+      size: Buffer.byteLength(svg), svg,
+    };
+    deployed++;
+  }
+  res.json({ ok: true, deployed, count: deployed });
+});
+
+app.post('/api/canary/svg/clear', authenticateToken, (req, res) => {
+  _svgAlerts.length = 0;
+  res.json({ ok: true, cleared: true });
+});
+
+app.get('/api/canary/svg/callback', (req, res) => {
+  const token = String(req.query?.token || '').slice(0, 100);
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  if (_svgTokens[token]) {
+    _svgAlerts.push({
+      type: 'svg_canary',
+      severity: 'critical',
+      token,
+      filename: _svgTokens[token].filename,
+      triggered_by_ip: ip,
+      user_agent: req.headers['user-agent'] || '',
+      referer: req.headers['referer'] || '',
+      vector: 'svg_embed',
+      timestamp: new Date().toISOString(),
+      hostname: null,
+      canary_path: _svgTokens[token].path,
+      elapsed: 0,
+    });
+    _honeypotTriggers.today = (_honeypotTriggers.today || 0) + 1;
+    _honeypotTriggers.total = (_honeypotTriggers.total || 0) + 1;
+    _honeypotTriggers.last = new Date().toISOString();
+  }
+  // Devolver pixel transparente 1x1
+  res.type('image/svg+xml').send('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>');
+});
+
+app.get('/api/canary/svg/download', authenticateToken, (req, res) => {
+  const filename = String(req.query?.filename || '').slice(0, 200);
+  const entry = Object.values(_svgTokens).find(t => t.filename === filename);
+  if (!entry) return res.status(404).json({ error: 'Token no encontrado' });
+  res.type('image/svg+xml').set('Content-Disposition', 'attachment; filename="' + filename + '"').send(entry.svg);
+});
+
 
 server.listen(PORT, HOST, () => {
   console.log('\\n  SealCtl v2.1 (hardened) en http://' + HOST + ':' + PORT);

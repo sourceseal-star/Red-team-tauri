@@ -11,7 +11,6 @@ export default defineConfig({
     watch: {
       usePolling: true,
       interval: 2000,
-      // ignorar directorios pesados que no cambian
       ignored: [
         '**/node_modules/**',
         '**/.git/**',
@@ -21,16 +20,20 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8001',
+        target: 'http://localhost:3000',
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:8001',
+        target: 'http://localhost:3000',
         changeOrigin: true,
       },
       '/healthz': {
-        target: 'http://localhost:8001',
+        target: 'http://localhost:3000',
         changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:3000',
+        ws: true,
       },
     },
   },
@@ -45,7 +48,6 @@ export default defineConfig({
       },
     },
   },
-  // Optimizaciones para entornos con pocos recursos
   optimizeDeps: {
     force: false,
   },

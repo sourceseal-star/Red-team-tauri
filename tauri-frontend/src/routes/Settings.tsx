@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button'
 import { Save, RefreshCw, Trash2 } from 'lucide-react'
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<Settings>({ api_url: '', interval: 15 })
+  const [settings, setSettings] = useState<Settings>({ api_url: '', backend_url: '', interval: 15 })
   const [loading, setLoading]   = useState(false)
   const [msg, setMsg]           = useState('')
 
@@ -24,7 +24,7 @@ export default function SettingsPage() {
 
   const reset = async () => {
     if (!confirm('¿Resetear configuración a valores por defecto?')) return
-    const defaults: Settings = { api_url: '', interval: 15, scan_on_startup: false, notify_slack: false, slack_webhook: '' }
+    const defaults: Settings = { api_url: '', backend_url: '', interval: 15, scan_on_startup: false, notify_slack: false, slack_webhook: '' }
     await api.saveSettings(defaults)
     setSettings(defaults)
     setMsg('✓ Configuración reseteada')
@@ -43,16 +43,27 @@ export default function SettingsPage() {
       {msg && <div className="text-sm text-green-400 bg-green-900/20 border border-green-800 rounded px-3 py-2">{msg}</div>}
 
       <Card>
-        <CardHeader><CardTitle>Conexión al backend</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Configuración de Red y Backend</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div>
-            <label className="text-xs text-muted-foreground">Target URL (dominio a escanear — ej: https://midominio.com)</label>
+            <label className="text-xs text-muted-foreground font-medium block">Target de escaneo (dominio o IP a escanear)</label>
             <input className="mt-1 w-full bg-muted border border-border rounded px-2 py-1.5 text-sm font-mono"
+              placeholder="https://midominio.com o 192.168.1.1"
               value={settings.api_url ?? ''}
               onChange={e => setSettings(s => ({ ...s, api_url: e.target.value }))} />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Nota: Este es el objetivo para el escaneo de Reports, no la URL de conexión al backend.
+            </p>
           </div>
           <div>
-            <label className="text-xs text-muted-foreground">Intervalo de polling (segundos)</label>
+            <label className="text-xs text-muted-foreground font-medium block">URL del Backend API</label>
+            <input className="mt-1 w-full bg-muted border border-border rounded px-2 py-1.5 text-sm font-mono"
+              placeholder="http://localhost:8000 o /api"
+              value={settings.backend_url ?? ''}
+              onChange={e => setSettings(s => ({ ...s, backend_url: e.target.value }))} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground font-medium block">Intervalo de polling (segundos)</label>
             <input type="number" min="5" max="300"
               className="mt-1 w-full bg-muted border border-border rounded px-2 py-1.5 text-sm"
               value={settings.interval ?? 15}

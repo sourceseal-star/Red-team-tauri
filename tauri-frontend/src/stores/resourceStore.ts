@@ -13,8 +13,9 @@ export const useResourceStore = create<ResourceStore>((set) => ({
   fetchResources: async () => {
     try {
       const res = await api.getResources()
+      const cpuVal = res.cpu_usage ?? res.cpu_percent ?? 0
       set({
-        cpu: res.cpu_usage,
+        cpu: cpuVal,
         memory: { used: res.memory_used, total: res.memory_total, percent: res.memory_percent },
       })
     } catch (e) {

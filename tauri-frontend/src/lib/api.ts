@@ -86,6 +86,9 @@ export interface Service {
 
 export interface Resources {
   cpu_usage: number
+  cpu_percent?: number
+  cpu_cores?: number
+  uptime?: string | number
   memory_used: number
   memory_total: number
   memory_percent: number
@@ -162,6 +165,7 @@ export interface ConfigFile {
 
 export interface Settings {
   api_url: string
+  backend_url?: string
   interval: number
   scan_on_startup?: boolean
   notify_slack?: boolean

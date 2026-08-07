@@ -23,7 +23,7 @@ export default function SOAR() {
   const dryRun = async () => {
     const r = await api.dryRun()
     setDryResult(r.steps)
-    setMsg(`Dry run: ${r.count} pasos simulados`)
+    setMsg(`Dry run: ${r.count} pasos evaluados`)
     setTimeout(() => setMsg(''), 5000)
   }
 
@@ -62,7 +62,7 @@ export default function SOAR() {
 
       {dryResult && dryResult.length > 0 && (
         <Card>
-          <CardHeader><CardTitle className="flex items-center gap-2"><Play className="h-4 w-4 text-green-400" />Simulación — {dryResult.length} pasos</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Play className="h-4 w-4 text-green-400" />Evaluación — {dryResult.length} pasos</CardTitle></CardHeader>
           <CardContent>
             <ol className="space-y-1">
               {dryResult.map((step, i) => (
