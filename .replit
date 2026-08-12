@@ -10,31 +10,43 @@ run = ["bash", "replit_start.sh"]
 
 [[ports]]
 localPort = 5000
-externalPort = 80
-
-[[ports]]
-localPort = 5001
 externalPort = 3000
 
 [[ports]]
-localPort = 5002
-externalPort = 3002
+localPort = 5001
+externalPort = 3001
 
 [[ports]]
 localPort = 8001
-externalPort = 3001
+externalPort = 80
 
 [workflows]
 runButton = "Project"
 
 [[workflows.workflow]]
 name = "Project"
-mode = "sequential"
+mode = "parallel"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "bash replit_start.sh"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "SourceSeal Dashboard"
+
+[[workflows.workflow]]
+name = "SourceSeal Dashboard"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash replit_start.sh"
+waitForPort = 8001
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [rules]
 
