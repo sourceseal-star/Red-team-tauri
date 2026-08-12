@@ -144,6 +144,45 @@ PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback"}
 # ── CORS lockdown ───────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 
+# == CORSET + TRIAGE + OSINT INTEGRATION ====================================
+# Auto-detect environment and load modules
+import sys as _sys
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPT_DIR not in _sys.path:
+    _sys.path.insert(0, _SCRIPT_DIR)
+
+# -- Corset Scope Validator (auto-detect Termux vs Replit) --
+_corset = None
+try:
+    if os.environ.get("REPL_ID") or os.environ.get("REPL_SLUG"):
+        from corset_replit import CorsetReplit
+        _corset = CorsetReplit()
+        print(f"[CORSET] Replit mode activado. Scope: {_corset.status()}")
+    else:
+        from corset_termux import CorsetTermux
+        _corset = CorsetTermux()
+        print(f"[CORSET] Termux mode activado. Scope: {_corset.status()}")
+except Exception as e:
+    print(f"[CORSET] WARNING: No se pudo activar: {e}")
+    print("[CORSET] El sistema operara SIN restriccion de scope.")
+
+# -- Triage Module --
+_triage_report = None
+try:
+    from triage_module import get_triage_report
+    _triage_report = get_triage_report
+except Exception as e:
+    print(f"[TRIAGE] No cargado: {e}")
+
+# -- OSINT Module --
+_osint_extract = None
+try:
+    from osint_module import extract_from_text
+    _osint_extract = extract_from_text
+except Exception as e:
+    print(f"[OSINT] No cargado: {e}")
+# == END CORSET + TRIAGE + OSINT INTEGRATION ================================"
+
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
                    allow_methods=["GET", "POST", "DELETE", "PATCH"], allow_headers=["X-API-Key", "Content-Type"])
 
@@ -1261,6 +1300,33 @@ else:
 # ═════════════════════════════════════════════════════════════════════════════
 #  MAIN
 # ═════════════════════════════════════════════════════════════════════════════
+
+# == CORSET + TRIAGE + OSINT ENDPOINTS ====================================
+@app.get("/api/corset/status")
+async def corset_status():
+    if _corset is None:
+        return {"active": False, "error": "Corset not initialized"}
+    return _corset.status()
+
+@app.get("/api/triage")
+async def triage_scan():
+    if _triage_report is None:
+        return {"error": "Triage module not available"}
+    return _triage_report()
+
+@app.post("/api/osint/extract")
+async def osint_extract(request: Request):
+    if _osint_extract is None:
+        return {"error": "OSINT module not available"}
+    try:
+        data = await request.json()
+        text = data.get("text", "")
+        if not text:
+            return {"error": "No text provided"}
+        return _osint_extract(text)
+    except Exception as e:
+        return {"error": str(e)}
+# == END CORSET + TRIAGE + OSINT ENDPOINTS ================================
 
 if __name__ == "__main__":
     import uvicorn
