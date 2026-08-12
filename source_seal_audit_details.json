@@ -1,0 +1,135 @@
+{
+  "assets": [],
+  "attached_assets": [],
+  "backend": [],
+  "build": [],
+  "evidence": [],
+  "honeypot": [],
+  "lib": [
+    {
+      "file": "lib/mitm_addon.py",
+      "type": "weak_hash_sha1",
+      "line": 49,
+      "severity": "ALTO",
+      "evidence": "rec[\"id\"] = hashlib.sha1(f\"{rec['ts']}{rec.get('host')}{rec.get('kind')}\".encode",
+      "pattern": "hashlib\\.sha1"
+    },
+    {
+      "file": "lib/casefile.js",
+      "type": "command_injection",
+      "line": 114,
+      "severity": "CRITICO",
+      "evidence": "const out = execSync(`unzip -l \"${safePath}\" 2>/dev/null | head -30`, { encoding",
+      "pattern": "execSync\\("
+    },
+    {
+      "file": "lib/casefile.js",
+      "type": "command_injection",
+      "line": 117,
+      "severity": "CRITICO",
+      "evidence": "const dexData = execSync(`unzip -p \"${safePath}\" ${dexMatch[0]} 2>/dev/null`, { ",
+      "pattern": "execSync\\("
+    },
+    {
+      "file": "lib/iot.js",
+      "type": "weak_hash_md5",
+      "line": 80,
+      "severity": "CRITICO",
+      "evidence": "const md5 = s => crypto.createHash('md5').update(s, 'latin1').digest('hex');",
+      "pattern": "crypto\\.createHash\\(['\\\"]md5['\\\"]\\)"
+    },
+    {
+      "file": "lib/iot.js",
+      "type": "weak_hash_md5",
+      "line": 119,
+      "severity": "CRITICO",
+      "evidence": "const HA1 = md5(`${user}:${c.realm}:${pass}`), HA2 = md5(`GET:${path}`);",
+      "pattern": "md5\\("
+    },
+    {
+      "file": "lib/iot.js",
+      "type": "weak_hash_md5",
+      "line": 120,
+      "severity": "CRITICO",
+      "evidence": "const response = c.qop ? md5(`${HA1}:${c.nonce}:${nc}:${cnonce}:auth:${HA2}`) : ",
+      "pattern": "md5\\("
+    },
+    {
+      "file": "lib/iot.js",
+      "type": "command_injection",
+      "line": 111,
+      "severity": "CRITICO",
+      "evidence": "const get = k => { const r = new RegExp(k + '=\"([^\"]*)\"').exec(m); return r ? r[",
+      "pattern": "exec\\("
+    },
+    {
+      "file": "lib/iot.js",
+      "type": "command_injection",
+      "line": 212,
+      "severity": "CRITICO",
+      "evidence": "const loc = /LOCATION: (.+)/i.exec(text);",
+      "pattern": "exec\\("
+    },
+    {
+      "file": "lib/iot.js",
+      "type": "command_injection",
+      "line": 213,
+      "severity": "CRITICO",
+      "evidence": "const st = /ST: (.+)/i.exec(text);",
+      "pattern": "exec\\("
+    },
+    {
+      "file": "lib/iot.js",
+      "type": "command_injection",
+      "line": 214,
+      "severity": "CRITICO",
+      "evidence": "const server = /SERVER: (.+)/i.exec(text);",
+      "pattern": "exec\\("
+    }
+  ],
+  "mobile": [],
+  "public": [],
+  "redteam-dashboard": [],
+  "redteam": [
+    {
+      "file": "redteam/defense/deception.py",
+      "type": "secrets_exposure",
+      "line": 152,
+      "severity": "CRITICO",
+      "evidence": "('AWS_KEY', 'AKIADECOYPLACEHOLDER'),",
+      "pattern": "AKIA[0-9A-Z]{16}"
+    },
+    {
+      "file": "redteam/tip/test_stix_export.py",
+      "type": "hardcoded_key",
+      "line": 207,
+      "severity": "CRITICO",
+      "evidence": "client = TaxiiClient(server_url=\"https://taxii.example.com\", api_key=\"test-key\",",
+      "pattern": "(?:SECRET_KEY|API_KEY|PASSWORD|PRIVATE_KEY)\\s*=\\s*"
+    }
+  ],
+  "scripts": [],
+  "sealctl": [],
+  "src-tauri": [],
+  "src": [],
+  "tauri-app-src": [],
+  "tauri-frontend": [
+    {
+      "file": "tauri-frontend/src/components/dashboard/NetworkGraph.tsx",
+      "type": "weak_crypto_des",
+      "line": 41,
+      "severity": "CRITICO",
+      "evidence": "{nodes.slice(1).map((n, i) => (",
+      "pattern": "des\\."
+    },
+    {
+      "file": "tauri-frontend/src/components/dashboard/NetworkGraph.tsx",
+      "type": "weak_crypto_des",
+      "line": 46,
+      "severity": "CRITICO",
+      "evidence": "{nodes.map((n, i) => (",
+      "pattern": "des\\."
+    }
+  ],
+  "workflows": []
+}

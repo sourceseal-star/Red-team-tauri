@@ -36,7 +36,7 @@ class HoneyTokenGenerator:
         """
         Genera un token JWT sintáctico y semánticamente correcto, firmado de forma simulada.
         """
-        secret_key = "sourceseal_deception_hmac_secret_key"
+        secret_key = os.environ.get("DECEPTION_HMAC_KEY", "decoy_" + os.environ.get("HOSTNAME", "local") + "_key")
         header = {"alg": "HS256", "typ": "JWT"}
         
         now = int(time.time())

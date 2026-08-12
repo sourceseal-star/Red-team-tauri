@@ -23,7 +23,7 @@ from collections import defaultdict
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFIGURACIÓN — AJUSTA ESTA RUTA A TUS REPOSITORIOS
 # ═══════════════════════════════════════════════════════════════════════════════
-REPOS_DIR = Path("~/Red-team-tauri").expanduser()
+REPOS_DIR = Path(".")
 
 TARGET_PATTERNS = ["*.py", "*.js", "*.ts", "*.jsx", "*.tsx"]
 EXCLUDE_DIRS = {'node_modules', '.git', '__pycache__', 'venv', '.venv', 'dist', 'build', '.replit'}
