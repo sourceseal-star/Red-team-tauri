@@ -44,3 +44,5 @@ tauri-frontend/node_modules/
 *.bak2
 source_seal_audit_report.json
 *.log
+manual_operaciones.enc
+manual_operaciones.md
