@@ -451,7 +451,19 @@ def run_unified_scan(target: str, backend: str, output_dir: str) -> dict:
         "stix": {"objects": len(stix_bundle["objects"]), "valid": stix_valid},
         "mitre_heatmap": heatmap,
         "taxii": taxii_result,
-        "stix_bundle_file": stix_filename
+        "stix_bundle_file": stix_filename,
+        # Aliases para compatibilidad con tests
+        "xdr": {
+            "total_events": len(xdr.events) if hasattr(xdr, 'events') else 0,
+            "incidents": len(incidents),
+            "enriched_incidents": enriched_incidents
+        },
+        "soar": {
+            "executed_actions": len(soar_audit_logs),
+            "audit_trail": soar_audit_logs
+        },
+        "TLSProxy": {"alerts": len(tls_proxy.alerts)},
+        "incidents_detail": enriched_incidents
     }
 
     # Guardar reporte JSON

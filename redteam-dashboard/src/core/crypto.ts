@@ -177,11 +177,14 @@ export function hmacSHA256(data: string, key: string): string {
  * @param length The length of the nonce in bytes.
  */
 export function generateNonce(length: number = 16): string {
-  const arr = [];
-  for (let i = 0; i < length; i++) {
-    arr.push(Math.floor(Math.random() * 256));
+  // CSPRNG — crypto.getRandomValues en vez de Math.random (no criptográficamente seguro)
+  const arr = new Uint8Array(length);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(arr);
+  } else {
+    throw new Error('crypto.getRandomValues no disponible — CSPRNG requerido para nonce');
   }
-  return arr.map(byte => byte.toString(16).padStart(2, '0')).join('');
+  return Array.from(arr, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /**

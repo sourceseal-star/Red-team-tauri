@@ -40,3 +40,7 @@ node_modules/
 # Build output — se regenera en cada start/sync, no versionar
 tauri-frontend/dist/
 tauri-frontend/node_modules/
+*.bak
+*.bak2
+source_seal_audit_report.json
+*.log

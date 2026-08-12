@@ -38,6 +38,7 @@ import os
 import re
 import shlex
 import socket
+import ipaddress
 import ssl
 import subprocess
 import sys
@@ -51,7 +52,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query, Depends, HTTPException, Security
+from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, Response, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -68,6 +70,7 @@ EVIDENCE  = ROOT / "evidence"
 LOGS_DIR  = ROOT / "logs"
 DATA_DIR  = ROOT / "data"
 CANARY_SVG_DIR = ROOT / "evidence" / "canary-svg-files"
+CANARY_ALERTS = []  # Alertas recibidas, persistidas en runtime
 
 for d in (REPORTS, EVIDENCE, LOGS_DIR, DATA_DIR, CANARY_SVG_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -125,8 +128,85 @@ app = FastAPI(
     version="3.0-unified",
     description="Backend único: escaneo + servicios + SOAR + TIP + RASP + terminal + canary + honeypot + dist/",
 )
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
-                   allow_methods=["*"], allow_headers=["*"])
+# ═════════════════════════════════════════════════════════════════════════════
+#  BLOQUE DE SEGURIDAD — Hardening completo
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ── API Key (obligatoria) ────────────────────────────────────────────────────
+API_KEY = os.environ.get("REDTEAM_API_KEY", "").strip()
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+# Endpoints PÚBLICOS (no requieren API key):
+#   /api/health, /health, /healthz  → health checks
+#   /canary/callback               → intruso phone-home (debe ser accesible)
+PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback"}
+
+# ── CORS lockdown ───────────────────────────────────────────────────────────
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
+
+app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
+                   allow_methods=["GET", "POST", "DELETE", "PATCH"], allow_headers=["X-API-Key", "Content-Type"])
+
+# ── Rate limiting (simple, en memoria) ───────────────────────────────────────
+RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "60"))  # requests por minuto por IP
+_rate_store: dict[str, list[float]] = {}
+
+def _rate_check(client_ip: str) -> bool:
+    now = time.time()
+    bucket = _rate_store.get(client_ip, [])
+    bucket = [t for t in bucket if now - t < 60]
+    if len(bucket) >= RATE_LIMIT:
+        return False
+    bucket.append(now)
+    _rate_store[client_ip] = bucket
+    return True
+
+# ── Validación de IP ─────────────────────────────────────────────────────────
+def _valid_ip(ip: str) -> bool:
+    """Validación de IP usando ipaddress.ip_address() de la stdlib.
+    Robusto contra bypass por all() sobre iterable vacío y caracteres de inyección."""
+    if not ip or len(ip) > 45:
+        return False
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
+
+# ── Path traversal protection ────────────────────────────────────────────────
+def _safe_path(path: str) -> bool:
+    if not path:
+        return False
+    if ".." in path or path.startswith("/"):
+        return False
+    resolved = (ROOT / path).resolve()
+    return str(resolved).startswith(str(ROOT.resolve()))
+
+# ── Middleware de autenticación ─────────────────────────────────────────────
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    path = request.url.path
+
+    # Rate limiting en TODAS las rutas
+    client_ip = request.client.host if request.client else "unknown"
+    if not _rate_check(client_ip):
+        return JSONResponse({"error": "Rate limit exceeded"}, status_code=429)
+
+    # Health checks y canary callback son públicos
+    if path in PUBLIC_PATHS or path == "/" or path.startswith("/assets/"):
+        return await call_next(request)
+
+    # Todo lo demás requiere API key
+    if not API_KEY:
+        # Si no hay API key configurada, permitir solo desde localhost
+        if client_ip not in ("127.0.0.1", "::1", "localhost"):
+            return JSONResponse({"error": "Unauthorized — API key required"}, status_code=401)
+    else:
+        key = request.headers.get("X-API-Key", "")
+        if key != API_KEY:
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    return await call_next(request)
 
 # ── WebSocket hub ────────────────────────────────────────────────────────────
 ws_clients: set[WebSocket] = set()
@@ -210,18 +290,22 @@ ALLOWED_CMDS = {"ls","cat","pwd","whoami","date","uptime","ps","top","grep",
     "openssl","netstat","ss","df","free","uname","id","env"}
 
 def _run_terminal(command: str) -> dict:
-    parts = command.strip().split()
-    if not parts: return {"stdout": "", "stderr": "Comando vacío", "code": 1}
+    # Sanitizar: usar shlex para parsear sin shell
+    try:
+        parts = shlex.split(command.strip())
+    except ValueError:
+        return {"stdout": "", "stderr": "invalid command", "code": 1}
+    if not parts: return {"stdout": "", "stderr": "empty command", "code": 1}
     base = parts[0].lstrip("/").split("/")[-1]
     if base not in ALLOWED_CMDS:
-        return {"stdout": "", "stderr": f"Comando '{base}' no permitido. Permitidos: {', '.join(sorted(ALLOWED_CMDS))}", "code": 1}
+        return {"stdout": "", "stderr": f"command '{base}' not allowed", "code": 1}
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=10, cwd=str(ROOT))
+        result = subprocess.run(parts, shell=False, capture_output=True, text=True, timeout=10, cwd=str(ROOT))
         return {"stdout": result.stdout[:8192], "stderr": result.stderr[:2048], "code": result.returncode}
     except subprocess.TimeoutExpired:
-        return {"stdout": "", "stderr": "Timeout (10s)", "code": 124}
-    except Exception as e:
-        return {"stdout": "", "stderr": str(e), "code": 1}
+        return {"stdout": "", "stderr": "timeout (10s)", "code": 124}
+    except Exception:
+        return {"stdout": "", "stderr": "execution error", "code": 1}
 
 # ── Services ──────────────────────────────────────────────────────────────────
 SERVICE_DEFS = {
@@ -606,17 +690,19 @@ async def iot_stream(ip: str = Query(...), port: int = Query(80), path: str = Qu
 
 @app.get("/api/osint/shodan")
 async def shodan_lookup(ip: str = Query("8.8.8.8")):
+    if not _valid_ip(ip):
+        return JSONResponse({"error": "invalid IP"}, status_code=400)
     key = os.environ.get("SHODAN_API_KEY", "")
     if not key:
-        return JSONResponse({"error": "SHODAN_API_KEY no configurada", "ip": ip}, status_code=503)
+        return JSONResponse({"error": "SHODAN_API_KEY not configured"}, status_code=503)
     try:
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.get(f"https://api.shodan.io/shodan/host/{ip}?key={key}")
             if r.status_code != 200:
-                return JSONResponse({"error": f"HTTP {r.status_code}", "ip": ip}, status_code=r.status_code)
+                return JSONResponse({"error": f"HTTP {r.status_code}"}, status_code=r.status_code)
             return r.json()
-    except Exception as e:
-        return JSONResponse({"error": str(e)[:200], "ip": ip}, status_code=502)
+    except Exception:
+        return JSONResponse({"error": "lookup failed"}, status_code=502)
 
 @app.get("/api/exploits/list")
 async def exploits_list():
@@ -627,14 +713,18 @@ async def exploits_list():
 # ── Geo + Intel ───────────────────────────────────────────────────────────────
 @app.get("/api/geo")
 async def api_geo(ip: str = Query(...)):
+    if not _valid_ip(ip):
+        return JSONResponse({"error": "invalid IP"}, status_code=400)
     try:
         if _GEO_INTEL_OK: return _geo_lookup(ip)
         from geo_intel import lookup; return lookup(ip)
-    except Exception as e:
-        return JSONResponse({"error": f"geo falló: {e}", "ip": ip}, status_code=500)
+    except Exception:
+        return JSONResponse({"error": "geo lookup failed"}, status_code=500)
 
 @app.get("/api/intel")
 async def api_intel(ip: str = Query(...)):
+    if not _valid_ip(ip):
+        return JSONResponse({"error": "invalid IP"}, status_code=400)
     try:
         if _GEO_INTEL_OK: return _intel_assess(ip)
         from geo_intel import assess; return assess(ip)
@@ -718,8 +808,13 @@ async def canary_generate():
     return {"canary_id": cid, "file": str(html), "callback": cb_url}
 
 @app.get("/canary/callback")
-async def canary_callback(id: str):
-    await broadcast({"type": "alert", "payload": f"Canary triggered: {id}"})
+async def canary_callback(id: str, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "unknown")
+    alert = {"token_id": id, "client_ip": client_ip, "user_agent": ua,
+             "type": "callback", "received_at": datetime.now().isoformat()}
+    CANARY_ALERTS.append(alert)
+    await broadcast({"type": "alert", "payload": f"Canary triggered: {id}", "data": alert})
     gif_bytes = (b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00"
                  b"!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00"
                  b"\x02\x02D\x01\x00;")
@@ -732,6 +827,7 @@ async def canary_alert(request: Request):
     alert_data = {"token_id": body.get("token_id", ""), "timestamp": body.get("timestamp", datetime.now().isoformat()),
                   "client_ip": body.get("client_ip", ""), "user_agent": body.get("user_agent", ""),
                   "received_at": datetime.now().isoformat()}
+    CANARY_ALERTS.append(alert_data)
     await broadcast({"type": "canary_alert", "data": alert_data})
     return {"status": "received"}
 
@@ -742,7 +838,7 @@ async def canary_list():
     files = []
     for f in CANARY_SVG_DIR.glob("canary_*.html"):
         files.append({"id": f.stem.replace("canary_", ""), "file": f.name, "size": f.stat().st_size})
-    return {"tokens": files, "alerts": []}
+    return {"tokens": files, "alerts": CANARY_ALERTS[-100:]}
 
 @app.get("/api/canary/svg/download")
 async def canary_download(id: str = Query(...)):
@@ -902,12 +998,14 @@ async def config_list():
 
 @app.get("/api/config/read")
 async def config_read(path: str = Query(...)):
+    if not _safe_path(path):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
     full = ROOT / path
     if not full.exists(): return JSONResponse({"error": "not found"}, status_code=404)
     try:
-        return {"content": full.read_text(errors="replace"), "path": path}
+        return {"content": full.read_text(errors="replace")[:8192], "path": path}
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "read error"}, status_code=500)
 
 @app.post("/api/config/write")
 async def config_write(request: Request):
@@ -915,13 +1013,14 @@ async def config_write(request: Request):
     except: body = {}
     path = body.get("path", "")
     content = body.get("content", "")
-    if not path: return JSONResponse({"error": "path required"}, status_code=400)
+    if not path or not _safe_path(path):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
     full = ROOT / path
     try:
-        full.write_text(content)
+        full.write_text(content[:65536])
         return {"ok": True}
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "write error"}, status_code=500)
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  ENDPOINTS — SOAR
@@ -1137,8 +1236,14 @@ if DIST.exists() and DIST.is_dir():
     async def spa_fallback(full_path: str):
         if not full_path:
             index = DIST / "index.html"
-            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ vacío"}, status_code=404)
-        if full_path.startswith(("api/", "canary/", "ws", "health", "assets/")):
+            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
+        # NUNCA servir el SPA para rutas API — devuelve 404 JSON
+        if full_path.startswith(("api/", "canary/", "ws")):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if full_path.startswith("assets/"):
+            candidate = DIST / full_path
+            if candidate.exists() and candidate.is_file():
+                return FileResponse(candidate)
             return JSONResponse({"error": "not found"}, status_code=404)
         candidate = DIST / full_path
         if candidate.exists() and candidate.is_file():

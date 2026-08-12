@@ -25,7 +25,8 @@ const HONEYPOT_PORT = parseInt(process.env.HONEYPOT_PORT || 8080);
 // ── Express app (API server) ──────────────────────────────────────────────────
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: '*' }));
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173').split(',');
+app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -40,7 +41,7 @@ app.get('/health', (req, res) => {
 
 // ── HTTP server + Socket.io ──────────────────────────────────────────────────
 const server = http.createServer(app);
-const io = new SocketServer(server, { cors: { origin: '*' } });
+const io = new SocketServer(server, { cors: { origin: ALLOWED_ORIGINS } });
 
 io.on('connection', (socket) => {
   console.log(`[socket] Cliente conectado: ${socket.id}`);
