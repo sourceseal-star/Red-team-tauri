@@ -13,6 +13,8 @@ import RASP from './routes/RASP'
 import Terminal from './routes/Terminal'
 import Settings from './routes/Settings'
 import About from './routes/About'
+import CameraCommandCenter from './components/CameraCommandCenter'
+import TopologyMapFixed from './components/TopologyMapFixed'
 
 function App() {
   return (
@@ -34,6 +36,8 @@ function App() {
               <Route path="/terminal" element={<Terminal />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/about" element={<About />} />
+              <Route path="/cameras" element={<CameraCommandCenter />} />
+              <Route path="/topology" element={<TopologyMapFixed nodes={[]} />} />
             </Routes>
           </main>
         </div>

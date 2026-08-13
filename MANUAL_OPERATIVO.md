@@ -1426,3 +1426,69 @@ tauri-frontend/src/styles/source-seal.css
 ---
 
 *Documentado: 2026-08-13 · SourceSeal / Red-Team-Tauri v3.2*
+
+
+---
+
+## 21. CREDENCIALES CIFRADAS — ACCESO AL SISTEMA
+
+> **Sección de credenciales con cifrado XOR-SHA256.**  
+> Las claves NO se almacenan en texto plano en este manual.  
+> Para descifrar, usar el script `acceder_manual.py` o `acceder_manual.sh`.
+
+### Clave de cifrado (fija, no cambia)
+
+```
+SourceSeal-RedTeam-Tauri-v3.2.1
+```
+
+### Bloque cifrado (Base64 XOR-SHA256)
+
+```
+eTGM3NbklcA33akUO6jUq9a1iDiR9uIVZ3jXBxzApOVsWoGfmNem4U75hDwFneuQ4J/gAMK5qxUsF5lCTObM3kdp7ai9+Z7bINWse17Jpo35m6MSwKDiRWFz3UJDyezoIgmY3ti88KRB3aYPO6/Nrszc90GR4qdZdj+VaE6Bq9hHeui5pumexS7dymNEy9zPyK6ETPipuxUsF5lCTPHc0k5y76Ox+JTULNGmDTfLvsLS9O1Bk+zgGGFt0E0GxOj8dlOO0P6W8KRDuscxAYjoluHc4WuT7OIXIjLaAwDA++ktWM2QmNSx5wi64nlEtKjoqd7vL/yYhxU6PZsuD4Hq/GNNydyH0/DjBvaNKwXJ543n3qIR1qKxRGw9ywMAxam9al7U3MaC8OENuJw8FoTxmtaNqBXGvOxEaD+zHw==
+```
+
+### Cómo descifrar
+
+```bash
+# Opción 1: Script Python
+python3 acceder_manual_py.py
+
+# Opción 2: Script Bash  
+bash acceder_manual.sh
+
+# Opción 3: Manual en Python
+import hashlib, base64, json
+
+CIPHER_KEY = hashlib.sha256(b"SourceSeal-RedTeam-Tauri-v3.2.1").digest()
+ENCRYPTED = "eTGM3NbklcA33akUO6jUq9a1iDiR9uIVZ3jXBxzApOVsWoGfmNem4U75hDwFneuQ4J/gAMK5qxUsF5lCTObM3kdp7ai9+Z7bINWse17Jpo35m6MSwKDiRWFz3UJDyezoIgmY3ti88KRB3aYPO6/Nrszc90GR4qdZdj+VaE6Bq9hHeui5pumexS7dymNEy9zPyK6ETPipuxUsF5lCTPHc0k5y76Ox+JTULNGmDTfLvsLS9O1Bk+zgGGFt0E0GxOj8dlOO0P6W8KRDuscxAYjoluHc4WuT7OIXIjLaAwDA++ktWM2QmNSx5wi64nlEtKjoqd7vL/yYhxU6PZsuD4Hq/GNNydyH0/DjBvaNKwXJ543n3qIR1qKxRGw9ywMAxam9al7U3MaC8OENuJw8FoTxmtaNqBXGvOxEaD+zHw=="
+
+raw = base64.b64decode(ENCRYPTED)
+result = bytearray()
+for i, b in enumerate(raw):
+    result.append(b ^ CIPHER_KEY[i % len(CIPHER_KEY)])
+creds = json.loads(result.decode('utf-8'))
+print(creds['REDTEAM_API_KEY'])
+```
+
+### Variables de entorno del sistema
+
+| Variable | Estado | Método de generación |
+|---|---|---|
+| `REDTEAM_API_KEY` | Cifrada en este manual | `openssl rand -hex 24` (termux_setup.sh) |
+| `DECEPTION_HMAC_KEY` | Generada en runtime | `openssl rand -hex 32` (termux_setup.sh) |
+| `ABUSEIPDB_KEY` | Opcional, no cifrada | Manual (abuseipdb.com) |
+| `SHODAN_API_KEY` | Opcional, no cifrada | Manual (shodan.io) |
+| `HUNTER_API_KEY` | Opcional, no cifrada | Manual (hunter.io) |
+
+### Notas de seguridad
+
+- **La clave actual NO se modifica** — este es un registro cifrado de referencia.
+- El `.env` real se genera con `termux_setup.sh` en la primera instalación.
+- Si pierdes la clave, regenera con `openssl rand -hex 24` y actualiza `.env`.
+- El cifrado XOR-SHA256 es de **obfuscación**, no seguridad criptográfica fuerte.
+  Para comunicación segura entre nodos, usar los endpoints TLS del backend.
+
+---
+
+*Última actualización del cifrado: 2026-08-13 11:29 UTC*

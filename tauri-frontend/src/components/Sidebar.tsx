@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, Shield, Bug, Workflow,
-  Globe, Smartphone, Terminal, Settings, Info, MapPin
+  Globe, Smartphone, Terminal, Settings, Info, MapPin, Camera, Network
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -16,6 +16,8 @@ const items = [
   { to: '/rasp',     label: 'RASP',        icon: Smartphone },
   { to: '/terminal', label: 'Terminal',    icon: Terminal },
   { to: '/settings', label: 'Settings',    icon: Settings },
+  { to: '/cameras',  label: 'Cameras',     icon: Camera },
+  { to: '/topology', label: 'Topology',    icon: Network },
   { to: '/about',    label: 'About',       icon: Info },
 ]
 

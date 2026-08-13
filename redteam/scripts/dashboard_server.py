@@ -122,12 +122,28 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
+
+# ── Enhanced Recon Module (ONVIF, SSDP, SNMP, NetBIOS, mDNS) ────────────────
+try:
+    sys.path.insert(0, str(BASE.parent / "backend"))
+    from modules.enhanced_recon import router as enhanced_recon_router
+    _ENHANCED_RECON_OK = True
+    print("[ENHANCED-RECON] Módulo cargado: ONVIF + SSDP + SNMP + NetBIOS + mDNS")
+except Exception as _er_err:
+    _ENHANCED_RECON_OK = False
+    print(f"[WARN] enhanced_recon import falló: {_er_err}", flush=True)
+
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Red-Team Tauri · Unified Dashboard Backend",
     version="3.0-unified",
     description="Backend único: escaneo + servicios + SOAR + TIP + RASP + terminal + canary + honeypot + dist/",
 )
+
+# ── Include Enhanced Recon router ──────────────────────────────────────────
+if _ENHANCED_RECON_OK:
+    app.include_router(enhanced_recon_router)
+    print("[ENHANCED-RECON] Router montado en /api/enhanced/*")
 # ═════════════════════════════════════════════════════════════════════════════
 #  BLOQUE DE SEGURIDAD — Hardening completo
 # ═════════════════════════════════════════════════════════════════════════════
