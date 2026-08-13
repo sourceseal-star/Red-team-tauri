@@ -4,6 +4,7 @@
 mod commands;
 mod state;
 
+#[cfg_attr(target_os = "android", tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
 
