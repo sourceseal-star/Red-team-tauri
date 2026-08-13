@@ -83,12 +83,15 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > /tmp/sourceseal.keystore
 
-      - name: Sign APK with apksigner
+      - name: Zipalign + Sign APK
         run: |
           BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/34.0.0"
           APK_DIR="src-tauri/gen/android/app/build/outputs/apk"
-          # Tauri genera *-unsigned.apk — los firmamos directamente
+          # 1) Zipalign ANTES de firmar (Android 11+ rechaza APKs no alineados)
           find "$APK_DIR" -name "*-unsigned.apk" | while read -r unsigned; do
+            aligned="${unsigned%-unsigned.apk}-aligned.apk"
+            "$BUILD_TOOLS/zipalign" -f -v 4 "$unsigned" "$aligned"
+            echo "Alineado: $aligned"
             signed="${unsigned%-unsigned.apk}.apk"
             "$BUILD_TOOLS/apksigner" sign \
               --ks /tmp/sourceseal.keystore \
@@ -96,12 +99,14 @@ jobs:
               --ks-pass "pass:${{ secrets.STORE_PASSWORD }}" \
               --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
               --out "$signed" \
-              "$unsigned"
+              "$aligned"
             echo "Firmado: $signed"
+            # Verificar firma
+            "$BUILD_TOOLS/apksigner" verify --verbose "$signed"
           done
           # Listar APKs firmados para verificacion
           echo "=== APKs firmados ==="
-          find "$APK_DIR" -name "*.apk" ! -name "*-unsigned.apk" -exec ls -lh {} \;
+          find "$APK_DIR" -name "*.apk" ! -name "*-unsigned.apk" ! -name "*-aligned.apk" -exec ls -lh {} \;
 
       - name: Get version
         id: version
