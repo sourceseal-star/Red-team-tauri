@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useScanStore } from '../../hooks/useScanStore';
-import NetworkGraph from './NetworkGraph';
+const TopologyMap = lazy(() => import('./TopologyMap'));
 import RiskPanel from './RiskPanel';
 import CommandPalette from './CommandPalette';
 import HostDetailDrawer from './HostDetailDrawer';
@@ -113,7 +113,7 @@ export default function DashboardProV2() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-        <div className="lg:col-span-2"><NetworkGraph /></div>
+        <div className="lg:col-span-2"><Suspense fallback={<div className="h-[400px] flex items-center justify-center text-cyan-400 animate-pulse text-sm font-mono">Cargando topología...</div>}><TopologyMap /></Suspense></div>
         <div><RiskPanel /></div>
       </div>
 
