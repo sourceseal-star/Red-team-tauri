@@ -1,5 +1,5 @@
 # 🛡️ MANUAL OPERATIVO — Red-Team-Tauri / SourceSeal
-## Sala de Guerra Unificada v3.2
+## Sala de Guerra Unificada v3.2.1
 
 > **Consola de operaciones de seguridad ofensiva y defensiva.**  
 > Topología + Cámaras + Comunicaciones Ultrasónicas + Threat Intel + Exploits + Captura de tráfico — todo en un dashboard.
@@ -102,31 +102,87 @@ cd Red-team-tauri
 bash termux_setup.sh
 ```
 
-Esto ejecuta automáticamente:
-1. `pkg update && pkg upgrade`
-2. Instala Python, Node.js, Git, OpenSSL, jq, curl, termux-api
-3. Instala nmap, whois (opcionales)
-4. `pip install fastapi uvicorn pydantic httpx qrcode reportlab numpy`
-5. `npm install` en `tauri-frontend/`
-6. `npm run build` (genera `dist/`)
+Esto ejecuta automáticamente 8 pasos en orden:
+1. `pkg update && pkg upgrade` — actualizar paquetes base
+2. Instalar core: Python, Node.js, Git, OpenSSL, jq, curl, wget
+3. Instalar herramientas por módulo (ver tabla abajo)
+4. Instalar dependencias Python (fastapi, uvicorn, httpx, reportlab, numpy, etc.)
+5. Sincronizar con GitHub (git fetch + reset --hard origin/main)
+6. Build frontend (`npm install` + `npm run build`)
+7. Aplicar permisos de ejecución + crear `.env` con API key
+8. Verificación final con checklist de cada herramienta
 
 ### Paso 4: Instalación manual (si el script falla)
 
 ```bash
-# Paquetes del sistema
+# 1. Paquetes base (obligatorios)
 pkg update -y && pkg upgrade -y
-pkg install -y python python-pip nodejs-lts git openssl-tool jq curl wget termux-api
-pkg install -y nmap whois ffmpeg tcpdump
+pkg install -y python python-pip nodejs-lts git openssl-tool jq curl wget
 
-# Python deps
-pip install fastapi==0.115.0 "uvicorn[standard]==0.32.0" pydantic==2.9.0 httpx
-pip install "qrcode[pil]==7.4.2" reportlab==4.2.5 numpy
+# 2. Paquetes por modulo (instalar los que necesites)
+# ESCANEO
+pkg install -y nmap traceroute tcpdump
 
-# Frontend
+# OSINT ENGINE
+pkg install -y whois bind-utils exiftool
+
+# WIFI SCANNER (sin root)
+pkg install -y termux-api
+# WIFI SCANNER (con root — avanzado)
+pkg install -y aircrack-ng
+
+# BLACK MIRROR
+pkg install -y netcat-openbsd
+
+# EVIDENCIA
+pkg install -y qrencode ffmpeg
+
+# MURCIELAGO
+pkg install -y termux-api  # + permiso de microfono
+
+# 3. Dependencias Python
+pip install fastapi==0.115.0 "uvicorn[standard]==0.32.0" pydantic==2.9.0
+pip install httpx==0.27.0 psutil==6.1.0 requests==2.32.0
+pip install aiofiles==24.1.0 python-multipart==0.0.17 websockets==13.1
+pip install python-whois==0.9.5 python-nmap==0.7.1
+pip install "qrcode[pil]==7.4.2" reportlab==4.2.5 numpy==2.1.0
+
+# 4. Frontend
 cd tauri-frontend
 npm install
 npm run build
 cd ..
+```
+
+### Orden recomendado de instalacion por modulo
+
+Si el script automatico falla o quieres instalar por partes, este es el orden
+optimizado (de mas critico a opcional):
+
+| Orden | Modulo | Paquete | Comando | Obligatorio? |
+|---|---|---|---|---|
+| 1 | **Core** | Python + Node + Git | `pkg install python python-pip nodejs-lts git` | SI |
+| 2 | **Backend** | FastAPI + uvicorn | `pip install fastapi uvicorn httpx pydantic` | SI |
+| 3 | **Frontend** | npm build | `cd tauri-frontend && npm install && npm run build` | SI |
+| 4 | **Escaneo** | nmap + traceroute | `pkg install nmap traceroute` | Recomendado |
+| 5 | **Murcielago** | termux-api + permiso micro | `pkg install termux-api` | Recomendado |
+| 6 | **OSINT** | whois + dig + exiftool | `pkg install whois bind-utils exiftool` | Recomendado |
+| 7 | **WiFi** | termux-api + aircrack-ng | `pkg install termux-api aircrack-ng` | Opcional |
+| 8 | **Black Mirror** | netcat | `pkg install netcat-openbsd` | Opcional |
+| 9 | **Captura** | tcpdump | `pkg install tcpdump` | Opcional |
+| 10 | **Evidencia** | qrencode + ffmpeg | `pkg install qrencode ffmpeg` | Opcional |
+
+### Permisos de Android (despues de instalar)
+
+```bash
+# Almacenamiento
+termux-setup-storage
+
+# Microfono (MURCIÉLAGO + grabacion de evidencia)
+# Ajustes → Apps → Termux → Permisos → Microfono → Permitir
+
+# Ubicacion (WiFi Scanner sin root)
+# Ajustes → Apps → Termux → Permisos → Ubicacion → Permitir
 ```
 
 ---
