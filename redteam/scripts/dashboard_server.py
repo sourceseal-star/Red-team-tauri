@@ -2559,8 +2559,9 @@ def _stop_capture_internal(session_id: str):
 
     del _active_captures[session_id]
     if stats["anomalies"]:
+        loop = asyncio.get_event_loop()
         for a in stats["anomalies"]:
-            await asyncio.create_task(broadcast({"type": "alert", "payload": f"🚨 {a['type']}: {a['description']}"}))
+            asyncio.ensure_future(broadcast({"type": "alert", "payload": f"🚨 {a['type']}: {a['description']}"}), loop=loop)
 
     return {
         "session_id": session_id, "status": "completed",
