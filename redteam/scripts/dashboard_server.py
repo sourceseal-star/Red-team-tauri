@@ -1448,3 +1448,137 @@ if __name__ == "__main__":
     print(f"  → Sin mocks. Sin dummy data. Solo datos reales.", flush=True)
     print("═" * 60, flush=True)
     uvicorn.run(app, host=host, port=port, log_level="info")
+
+# ============================================================
+# ENDPOINTS — VIDEO EN VIVO (MJPEG + RTSP → HLS)
+# ============================================================
+
+import shutil as _shutil
+import signal as _signal
+
+HLS_CACHE_DIR = str(DATA_DIR / "hls_cache")
+os.makedirs(HLS_CACHE_DIR, exist_ok=True)
+
+# Diccionario para rastrear procesos ffmpeg activos
+active_ffmpeg_processes: dict = {}
+
+
+@app.get("/api/iot/mjpeg-proxy")
+async def mjpeg_proxy(url: str = Query(...)):
+    """
+    Proxy para streams MJPEG.
+    Uso: /api/iot/mjpeg-proxy?url=http://camara/mjpg/video.mjpg
+    Devuelve el stream en formato multipart/x-mixed-replace para el navegador.
+    """
+    try:
+        client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+        req = await client.get(url)
+        return StreamingResponse(
+            req.aiter_bytes(),
+            media_type="multipart/x-mixed-replace; boundary=--myboundary"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/iot/rtsp-to-hls")
+async def rtsp_to_hls(rtsp_url: str = Query(...), duration: int = 60):
+    """
+    Convierte un stream RTSP a HLS usando ffmpeg.
+    duration: tiempo en segundos que estará activo (default 60).
+    Devuelve la URL del archivo .m3u8 para reproducir con hls.js.
+    """
+    try:
+        session_id = str(uuid.uuid4())[:8]
+        output_dir = os.path.join(HLS_CACHE_DIR, session_id)
+        os.makedirs(output_dir, exist_ok=True)
+        m3u8_path = os.path.join(output_dir, "index.m3u8")
+
+        # Comando ffmpeg optimizado para baja latencia
+        cmd = [
+            "ffmpeg",
+            "-rtsp_transport", "tcp",
+            "-i", rtsp_url,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-f", "hls",
+            "-hls_time", "2",
+            "-hls_list_size", "5",
+            "-hls_flags", "delete_segments+omit_endlist",
+            m3u8_path
+        ]
+
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=os.setsid
+        )
+
+        active_ffmpeg_processes[session_id] = {
+            "process": process,
+            "m3u8_path": m3u8_path,
+            "created_at": asyncio.get_event_loop().time()
+        }
+
+        # Programar auto-destrucción después de 'duration' segundos
+        async def auto_kill():
+            await asyncio.sleep(duration)
+            await kill_rtsp_session(session_id)
+        asyncio.create_task(auto_kill())
+
+        return {
+            "stream_url": f"/hls/{session_id}/index.m3u8",
+            "session_id": session_id,
+            "expires_in": duration
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/iot/rtsp-stop/{session_id}")
+async def kill_rtsp_session(session_id: str):
+    """Detiene un proceso ffmpeg y elimina los archivos HLS."""
+    if session_id in active_ffmpeg_processes:
+        process_info = active_ffmpeg_processes[session_id]
+        proc = process_info["process"]
+        try:
+            os.killpg(os.getpgid(proc.pid), _signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+        output_dir = os.path.join(HLS_CACHE_DIR, session_id)
+        if os.path.exists(output_dir):
+            _shutil.rmtree(output_dir, ignore_errors=True)
+
+        del active_ffmpeg_processes[session_id]
+        return {"status": "stopped", "session_id": session_id}
+    else:
+        return {"status": "not_found", "session_id": session_id}
+
+
+@app.get("/api/iot/rtsp-active")
+async def list_active_streams():
+    """Devuelve las sesiones RTSP→HLS activas."""
+    sessions = []
+    for sid, info in active_ffmpeg_processes.items():
+        sessions.append({
+            "session_id": sid,
+            "m3u8_path": info["m3u8_path"],
+            "created_at": info["created_at"]
+        })
+    return {"active_streams": sessions, "total": len(sessions)}
+
+
+# Servir archivos HLS estáticos
+try:
+    app.mount("/hls", StaticFiles(directory=HLS_CACHE_DIR, html=True), name="hls")
+except RuntimeError:
+    pass  # Ya montado
+
+# == END VIDEO EN VIVO ================================================

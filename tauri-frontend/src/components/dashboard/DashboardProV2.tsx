@@ -1,10 +1,14 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { useScanStore } from '../../hooks/useScanStore';
 const TopologyMap = lazy(() => import('./TopologyMap'));
+const CameraGrid = lazy(() => import('../CameraGrid'));
 import RiskPanel from './RiskPanel';
 import CommandPalette from './CommandPalette';
 import HostDetailDrawer from './HostDetailDrawer';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import type { CameraWithSnapshot } from '../../types/camera';
+
+type ViewMode = 'topology' | 'cameras';
 
 export default function DashboardProV2() {
   const hosts = useScanStore(s => s.hosts);
@@ -13,6 +17,8 @@ export default function DashboardProV2() {
   const log = useScanStore(s => s.log);
   const { setHosts, setLoading, setError, pushLog } = useScanStore();
   const ws = useWebSocket('/ws');
+  const [view, setView] = useState<ViewMode>('topology');
+  const [cameras, setCameras] = useState<CameraWithSnapshot[]>([]);
 
   const runScan = async (label: string, path: string, method = 'POST', body?: any) => {
     setLoading(true); setError(null); pushLog(`⏳ ${label}...`);
@@ -35,9 +41,33 @@ export default function DashboardProV2() {
       }));
       setHosts(items);
       pushLog(`✔ ${label}: ${items.length} hosts`);
+      return items;
     } catch (e: any) {
       setError(e.message);
       pushLog(`✘ ${label}: ${e.message}`);
+      return [];
+    } finally { setLoading(false); }
+  };
+
+  const runCameras = async () => {
+    setView('cameras');
+    setLoading(true); setError(null); pushLog('⏳ Escaneando cámaras...');
+    try {
+      const res = await fetch('/api/scan/cameras', { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const cams = (data.results || []).map((c: any) => ({
+        ip: c.ip,
+        rtsp: c.rtsp,
+        ports: c.ports,
+        type: c.type || 'camera',
+        first_seen: c.first_seen,
+      }));
+      setCameras(cams);
+      pushLog(`✔ Cámaras: ${cams.length} detectadas`);
+    } catch (e: any) {
+      setError(e.message);
+      pushLog(`✘ Cámaras: ${e.message}`);
     } finally { setLoading(false); }
   };
 
@@ -55,8 +85,8 @@ export default function DashboardProV2() {
   useEffect(() => { runScan('Topología', '/api/scan/topology'); }, []);
 
   const actions = [
-    { id: 'topo',   label: '🗺️ Topología', run: () => runScan('Topología', '/api/scan/topology') },
-    { id: 'cam',    label: '📹 Cámaras',    run: () => runScan('Cámaras',   '/api/scan/cameras') },
+    { id: 'topo',   label: '🗺️ Topología', run: () => { setView('topology'); runScan('Topología', '/api/scan/topology'); } },
+    { id: 'cam',    label: '📹 Cámaras',    run: runCameras },
     { id: 'rou',    label: '📡 Routers',    run: () => runScan('Routers',   '/api/scan/routers') },
     { id: 'iot',    label: '🔌 IoT',        run: () => runScan('IoT',       '/api/scan/iot') },
     { id: 'wifi',   label: '📶 WiFi',       run: () => runScan('WiFi',      '/api/scan/wifi') },
@@ -101,7 +131,7 @@ export default function DashboardProV2() {
         {[
           { k: 'HOSTS', v: hosts.length, c: 'cyan' },
           { k: 'CRÍTICOS', v: hosts.filter(h => h.risk === 'critical').length, c: 'red' },
-          { k: 'ALERTAS', v: log.filter(l => l.includes('🚨')).length, c: 'amber' },
+          { k: 'CÁMARAS', v: cameras.length, c: 'amber' },
           { k: 'OPERACIONES', v: log.length, c: 'green' },
         ].map(s => (
           <div key={s.k} className="bg-[var(--ss-bg-2)] border border-[var(--ss-border)] p-3 border-l-4"
@@ -112,19 +142,35 @@ export default function DashboardProV2() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-        <div className="lg:col-span-2"><Suspense fallback={<div className="h-[400px] flex items-center justify-center text-cyan-400 animate-pulse text-sm font-mono">Cargando topología...</div>}><TopologyMap /></Suspense></div>
-        <div><RiskPanel /></div>
-      </div>
-
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
         {actions.map(a => (
           <button key={a.id} onClick={a.run} disabled={loading}
-                  className="px-2 py-2 border border-cyan-500/30 text-cyan-300 text-[10px] uppercase tracking-wider hover:bg-cyan-500/10 hover:border-cyan-400 disabled:opacity-50 transition">
+                  className={`px-2 py-2 border text-[10px] uppercase tracking-wider disabled:opacity-50 transition font-mono
+                    ${view === a.id || (a.id === 'topo' && view === 'topology') || (a.id === 'cam' && view === 'cameras')
+                      ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
+                      : 'border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10 hover:border-cyan-400'}`}>
             {loading ? '⏳' : a.label}
           </button>
         ))}
       </div>
+
+      {/* Vista dinámica: topología o cámaras */}
+      {view === 'cameras' ? (
+        <div className="mb-4">
+          <Suspense fallback={<div className="h-[400px] flex items-center justify-center text-cyan-400 animate-pulse text-sm font-mono">Cargando visor de cámaras...</div>}>
+            <CameraGrid cameras={cameras} onRefresh={runCameras} />
+          </Suspense>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+          <div className="lg:col-span-2">
+            <Suspense fallback={<div className="h-[400px] flex items-center justify-center text-cyan-400 animate-pulse text-sm font-mono">Cargando topología...</div>}>
+              <TopologyMap />
+            </Suspense>
+          </div>
+          <div><RiskPanel /></div>
+        </div>
+      )}
 
       <div className="bg-[var(--ss-bg-3)] border border-[var(--ss-border)] p-3">
         <h3 className="text-[10px] uppercase tracking-widest text-amber-400 mb-2">Registro operativo</h3>
