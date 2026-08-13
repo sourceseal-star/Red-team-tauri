@@ -2584,3 +2584,463 @@ async def list_active_captures():
     ]}
 
 # == END PACKET ANALYZER ==============================================
+
+# ============================================================
+# MÓDULO 4: OSINT ENGINE (crt.sh + brute force + WHOIS + emails)
+# ============================================================
+
+OSINT_DB = str(DATA_DIR / "osint_cache.db")
+WORDLIST_PATH = str(DATA_DIR / "wordlists" / "subdomains.txt")
+_hunter_key = os.environ.get("HUNTER_API_KEY", "")
+
+def _init_osint_db():
+    conn = _sqlite3.connect(OSINT_DB)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS osint_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target TEXT, type TEXT, data TEXT, timestamp TEXT
+    )''')
+    conn.commit()
+    conn.close()
+
+_init_osint_db()
+
+def _osint_cache_result(target: str, rtype: str, data: dict):
+    conn = _sqlite3.connect(OSINT_DB)
+    c = conn.cursor()
+    c.execute("INSERT INTO osint_cache (target, type, data, timestamp) VALUES (?, ?, ?, ?)",
+              (target, rtype, json.dumps(data), datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+
+def _osint_get_cache(target: str, rtype: str, hours: int = 24):
+    conn = _sqlite3.connect(OSINT_DB)
+    c = conn.cursor()
+    since = (datetime.now() - timedelta(hours=hours)).isoformat()
+    c.execute("SELECT data FROM osint_cache WHERE target = ? AND type = ? AND timestamp > ?",
+              (target, rtype, since))
+    rows = c.fetchall()
+    conn.close()
+    return [json.loads(r[0]) for r in rows] if rows else None
+
+async def _fetch_crtsh(domain: str) -> list:
+    """Subdominios via crt.sh — 100% gratis, sin API key."""
+    url = f"https://crt.sh/?q=%.{domain}&output=json"
+    results = []
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=30)
+            if resp.status_code == 200:
+                data = resp.json()
+                seen = set()
+                for entry in data:
+                    name = entry.get("name_value", "").strip()
+                    if name and name not in seen and "*" not in name:
+                        seen.add(name)
+                        results.append({"subdomain": name, "source": "crt.sh", "ip": None, "status": "active"})
+    except Exception as e:
+        print(f"[crt.sh error] {e}")
+    return results
+
+async def _brute_subdomains(domain: str, max_concurrent: int = 50) -> list:
+    """Brute force de subdominios con dig."""
+    os.makedirs(os.path.dirname(WORDLIST_PATH), exist_ok=True)
+    if not os.path.exists(WORDLIST_PATH):
+        default_words = ["www","mail","ftp","admin","api","app","blog","dev","staging","test",
+                         "vpn","ns1","ns2","portal","shop","cdn","media","static","assets",
+                         "secure","login","dashboard","panel","cpanel","webmail","smtp","pop",
+                         "imap","mx","support","help","docs","wiki","git","gitlab","github",
+                         "jenkins","jira","confluence","grafana","prometheus","kibana","elastic",
+                         "db","database","sql","mysql","postgres","redis","mongo","backup",
+                         "old","beta","alpha","demo","internal","intranet","extranet","private"]
+        with open(WORDLIST_PATH, "w") as f:
+            f.write("\n".join(default_words))
+
+    with open(WORDLIST_PATH, "r") as f:
+        wordlist = [line.strip() for line in f if line.strip()]
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+    found = []
+
+    async def check_one(sub: str):
+        full = f"{sub}.{domain}"
+        async with semaphore:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "dig", "+short", full,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                ip = stdout.decode().strip().split("\n")[0]
+                if ip and not ip.startswith(";") and ip:
+                    found.append({"subdomain": full, "source": "brute-force", "ip": ip, "status": "resolved"})
+            except Exception:
+                pass
+
+    await asyncio.gather(*[check_one(w) for w in wordlist])
+    return found
+
+@app.get("/api/osint/whois/{domain}")
+async def osint_whois(domain: str):
+    cached = _osint_get_cache(domain, "whois")
+    if cached:
+        return cached[0]
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "whois", domain,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+        output = stdout.decode()
+
+        parsed = {}
+        for line in output.split("\n"):
+            if ":" in line and not line.startswith("%"):
+                key, val = line.split(":", 1)
+                key = key.strip()
+                val = val.strip()
+                if key and val and key not in parsed:
+                    parsed[key] = val
+
+        result = {"domain": domain, "raw": output[:5000], "parsed": parsed}
+        _osint_cache_result(domain, "whois", result)
+        return result
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="whois no instalado. Instala: pkg install whois (Termux) o apt install whois (Linux)")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/osint/subdomains/{domain}")
+async def osint_subdomains(domain: str, brute: bool = False):
+    cached = _osint_get_cache(domain, "subdomains")
+    if cached and not brute:
+        return {"domain": domain, "subdomains": cached[0], "cached": True}
+
+    crt_results = await _fetch_crtsh(domain)
+
+    brute_results = []
+    if brute:
+        brute_results = await _brute_subdomains(domain)
+
+    seen = {s["subdomain"] for s in crt_results}
+    all_results = crt_results[:]
+    for b in brute_results:
+        if b["subdomain"] not in seen:
+            all_results.append(b)
+            seen.add(b["subdomain"])
+
+    _osint_cache_result(domain, "subdomains", all_results)
+    await broadcast({"type": "osint", "payload": f"Subdominios de {domain}: {len(all_results)} encontrados"})
+    return {"domain": domain, "subdomains": all_results, "cached": False}
+
+@app.get("/api/osint/emails/{domain}")
+async def osint_emails(domain: str):
+    cached = _osint_get_cache(domain, "emails")
+    if cached:
+        return {"domain": domain, "emails": cached[0].get("emails", []), "cached": True}
+
+    results = []
+
+    # Hunter.io si hay key
+    if _hunter_key:
+        try:
+            url = f"https://api.hunter.io/v2/domain-search?domain={domain}&api_key={_hunter_key}"
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for e in data.get("data", {}).get("emails", []):
+                        results.append({"email": e["value"], "source": "hunter.io", "confidence": e.get("confidence")})
+        except Exception as e:
+            print(f"[Hunter error] {e}")
+
+    # Fallback: pattern guess
+    if not results:
+        common_patterns = ["info", "admin", "support", "contact", "sales", "webmaster", "security"]
+        for pat in common_patterns:
+            results.append({"email": f"{pat}@{domain}", "source": "pattern-guess", "confidence": None})
+
+    _osint_cache_result(domain, "emails", {"emails": results})
+    return {"domain": domain, "emails": results, "cached": False}
+
+@app.post("/api/osint/metadata")
+async def osint_metadata(file_path: str = Query(...)):
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+
+    suspicious_fields = ["Author", "Creator", "Producer", "Company", "Template",
+                        "LastModifiedBy", "Manager", "Software"]
+    fields = {}
+    suspicious = []
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "exiftool", "-json", file_path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        data = json.loads(stdout.decode())
+        if data and len(data) > 0:
+            meta = data[0]
+            for k, v in meta.items():
+                if v and str(v).strip():
+                    fields[k] = str(v)
+                    if any(s.lower() in k.lower() for s in suspicious_fields):
+                        suspicious.append(f"{k}: {v}")
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="exiftool no instalado. Instala: pkg install exiftool (Termux) o apt install libimage-exiftool-perl (Linux)")
+    except Exception as e:
+        fields["error"] = str(e)
+
+    return {"filename": os.path.basename(file_path), "fields": fields, "suspicious": suspicious}
+
+@app.get("/api/osint/history/{target}")
+async def osint_history(target: str):
+    conn = _sqlite3.connect(OSINT_DB)
+    c = conn.cursor()
+    c.execute("SELECT type, data, timestamp FROM osint_cache WHERE target = ? ORDER BY timestamp DESC", (target,))
+    rows = c.fetchall()
+    conn.close()
+    return {"target": target, "history": [{"type": r[0], "data": json.loads(r[1]), "timestamp": r[2]} for r in rows]}
+
+# == END OSINT ENGINE =================================================
+
+
+# ============================================================
+# MÓDULO 5: WIFI SCANNER (termux-api / iw / airodump-ng)
+# ============================================================
+
+WIFI_CAPTURES_DIR = str(DATA_DIR / "wifi_captures")
+os.makedirs(WIFI_CAPTURES_DIR, exist_ok=True)
+_wifi_active_captures = {}
+
+@app.get("/api/wifi/scan")
+async def wifi_scan():
+    """Escaneo de redes WiFi — intenta termux-api, luego iw, luego airodump-ng."""
+    networks = []
+
+    # Intento 1: termux-wifi-scaninfo (no requiere root)
+    try:
+        result = subprocess.run(["termux-wifi-scaninfo"], capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            for net in data:
+                networks.append({
+                    "bssid": net.get("bssid", "unknown"),
+                    "ssid": net.get("ssid", "Hidden"),
+                    "channel": int(net.get("channel", 0)),
+                    "encryption": net.get("capabilities", "Unknown"),
+                    "signal": int(net.get("rssi", -100)),
+                    "vendor": net.get("operatorFriendlyName", "Unknown"),
+                    "wps": False
+                })
+            return {"networks": networks, "method": "termux-api"}
+    except Exception:
+        pass
+
+    # Intento 2: iw (Linux/Kali, requiere root en Android)
+    try:
+        result = subprocess.run(["iw", "dev", "wlan0", "scan"], capture_output=True, text=True, timeout=20)
+        if result.returncode == 0:
+            current = {}
+            for line in result.stdout.split("\n"):
+                line = line.strip()
+                if line.startswith("BSS "):
+                    if current and "bssid" in current:
+                        networks.append({
+                            "bssid": current.get("bssid", "unknown"),
+                            "ssid": current.get("ssid", "Hidden"),
+                            "channel": current.get("channel", 0),
+                            "encryption": current.get("encryption", "Open"),
+                            "signal": current.get("signal", -100),
+                            "vendor": "Unknown", "wps": False
+                        })
+                    current = {"bssid": line.split()[1].strip("()")}
+                elif "SSID:" in line and "Extended" not in line:
+                    current["ssid"] = line.split(":", 1)[1].strip()
+                elif "signal:" in line:
+                    import re as _re
+                    match = _re.search(r"(-\d+\.\d+)", line)
+                    current["signal"] = int(float(match.group(1))) if match else -100
+                elif "DS Parameter set:" in line:
+                    import re as _re
+                    match = _re.search(r"channel (\d+)", line)
+                    current["channel"] = int(match.group(1)) if match else 0
+                elif "RSN:" in line:
+                    current["encryption"] = "WPA2"
+                elif "WPA:" in line:
+                    current["encryption"] = "WPA"
+                elif "Privacy" in line and "encryption" not in current:
+                    current["encryption"] = "WEP"
+
+            if current and "bssid" in current:
+                networks.append({
+                    "bssid": current.get("bssid", "unknown"),
+                    "ssid": current.get("ssid", "Hidden"),
+                    "channel": current.get("channel", 0),
+                    "encryption": current.get("encryption", "Open"),
+                    "signal": current.get("signal", -100),
+                    "vendor": "Unknown", "wps": False
+                })
+            return {"networks": networks, "method": "iw"}
+    except Exception:
+        pass
+
+    # Intento 3: airodump-ng (requiere modo monitor + root)
+    try:
+        subprocess.run(["which", "airodump-ng"], capture_output=True, check=True)
+        csv_file = os.path.join(WIFI_CAPTURES_DIR, "scan-01.csv")
+        for f in os.listdir(WIFI_CAPTURES_DIR):
+            if f.startswith("scan-"):
+                os.remove(os.path.join(WIFI_CAPTURES_DIR, f))
+
+        proc = subprocess.Popen(
+            ["airodump-ng", "wlan0mon", "-w", os.path.join(WIFI_CAPTURES_DIR, "scan"),
+             "--write-interval", "1", "--output-format", "csv"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        await asyncio.sleep(10)
+        proc.terminate()
+        try: proc.wait(timeout=5)
+        except: proc.kill()
+
+        if os.path.exists(csv_file):
+            with open(csv_file, "r") as f:
+                lines = f.readlines()
+            for line in lines[2:]:
+                if not line.strip() or "BSSID" in line:
+                    continue
+                parts = line.strip().split(",")
+                if len(parts) >= 14:
+                    networks.append({
+                        "bssid": parts[0].strip(),
+                        "ssid": parts[13].strip() if len(parts) > 13 else "Hidden",
+                        "channel": int(parts[3].strip()) if parts[3].strip().isdigit() else 0,
+                        "encryption": parts[5].strip() if parts[5].strip() else "Open",
+                        "signal": int(parts[8].strip()) if parts[8].strip().lstrip("-").isdigit() else -100,
+                        "vendor": "Unknown", "wps": False
+                    })
+            return {"networks": networks, "method": "airodump-ng"}
+    except Exception:
+        pass
+
+    if not networks:
+        return {
+            "networks": [], "method": "none",
+            "note": "Ningun metodo funciono. Termux: instala termux-api + permisos de ubicacion. Kali: iw o airodump-ng (root + modo monitor)."
+        }
+    return {"networks": networks, "method": "unknown"}
+
+@app.post("/api/wifi/capture/{bssid}")
+async def wifi_capture_handshake(bssid: str, ssid: str = "", channel: int = 1, duration: int = 30):
+    """Captura handshake WPA/WPA2 con airodump-ng. Requiere modo monitor + root."""
+    capture_id = f"{bssid.replace(':', '')}_{datetime.now().strftime('%H%M%S')}"
+    cap_file = os.path.join(WIFI_CAPTURES_DIR, capture_id)
+
+    # Verificar modo monitor
+    try:
+        result = subprocess.run(["iwconfig"], capture_output=True, text=True, timeout=5)
+        if "wlan0mon" not in result.stdout:
+            return JSONResponse({
+                "error": "Interfaz wlan0mon no encontrada",
+                "fix": "airmon-ng start wlan0 (requiere root)"
+            }, status_code=503)
+    except Exception:
+        pass
+
+    try:
+        cmd = ["airodump-ng", "wlan0mon", "--bssid", bssid, "-c", str(channel),
+               "-w", cap_file, "--output-format", "pcap"]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _wifi_active_captures[bssid] = {"process": proc, "capture_id": capture_id, "start_time": datetime.now()}
+
+        await asyncio.sleep(duration)
+
+        proc.terminate()
+        try: proc.wait(timeout=10)
+        except: proc.kill()
+
+        cap_file_real = cap_file + "-01.cap"
+        has_handshake = False
+        if os.path.exists(cap_file_real):
+            check = subprocess.run(["aircrack-ng", cap_file_real], capture_output=True, text=True)
+            has_handshake = "handshake" in check.stdout.lower()
+
+        if bssid in _wifi_active_captures:
+            del _wifi_active_captures[bssid]
+
+        await broadcast({"type": "wifi", "payload": f"Handshake {ssid}: {'capturado' if has_handshake else 'no capturado'}"})
+        return {
+            "bssid": bssid, "ssid": ssid,
+            "capture_file": cap_file_real,
+            "has_handshake": has_handshake,
+            "duration": duration,
+            "status": "handshake_captured" if has_handshake else "no_handshake"
+        }
+    except Exception as e:
+        if bssid in _wifi_active_captures:
+            _wifi_active_captures[bssid]["process"].kill()
+            del _wifi_active_captures[bssid]
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/wifi/crack/{bssid}")
+async def wifi_crack(bssid: str, wordlist: str = "/usr/share/wordlists/rockyou.txt"):
+    """Crackea handshake con aircrack-ng."""
+    bssid_clean = bssid.replace(":", "")
+    matching_caps = []
+
+    for f in os.listdir(WIFI_CAPTURES_DIR):
+        if f.startswith(bssid_clean) and f.endswith(".cap"):
+            matching_caps.append(os.path.join(WIFI_CAPTURES_DIR, f))
+
+    if not matching_caps:
+        raise HTTPException(status_code=404, detail="No se encontro captura para este BSSID")
+
+    cap_file = max(matching_caps, key=os.path.getctime)
+
+    if not os.path.exists(wordlist):
+        return JSONResponse({
+            "error": f"Wordlist no encontrada: {wordlist}",
+            "suggestion": "Descarga rockyou.txt"
+        }, status_code=404)
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "aircrack-ng", cap_file, "-w", wordlist, "-b", bssid,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=300)
+        output = stdout.decode()
+
+        import re as _re
+        key_match = _re.search(r"KEY FOUND!\s*\[\s*(.*?)\s*\]", output)
+        if key_match:
+            await broadcast({"type": "wifi", "payload": f"WiFi crackeado: {ssid} key={key_match.group(1)}"})
+            return {"bssid": bssid, "status": "cracked", "key": key_match.group(1), "capture_file": cap_file}
+        else:
+            return {"bssid": bssid, "status": "failed", "reason": "Key no encontrada en wordlist", "capture_file": cap_file}
+    except asyncio.TimeoutError:
+        return {"status": "timeout", "message": "Crackeo excedio 5 minutos. Usa hashcat en GPU."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/wifi/captures")
+async def wifi_list_captures():
+    files = []
+    for f in os.listdir(WIFI_CAPTURES_DIR):
+        if f.endswith(".cap"):
+            path = os.path.join(WIFI_CAPTURES_DIR, f)
+            stat = os.stat(path)
+            files.append({"file": f, "size": stat.st_size, "created": datetime.fromtimestamp(stat.st_mtime).isoformat()})
+    return {"captures": files}
+
+@app.delete("/api/wifi/captures/{filename}")
+async def wifi_delete_capture(filename: str):
+    path = os.path.join(WIFI_CAPTURES_DIR, filename)
+    if os.path.exists(path):
+        os.remove(path)
+        return {"deleted": filename}
+    raise HTTPException(status_code=404, detail="Archivo no encontrado")
+
+# == END WIFI SCANNER =================================================

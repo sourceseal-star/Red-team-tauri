@@ -4,6 +4,8 @@ import { Wifi, Camera, Send, Mic, Radio, Sliders, Activity } from 'lucide-react'
 import IntelPanel from '../IntelPanel';
 import ExploitMatrix from '../ExploitMatrix';
 import TrafficMonitor from '../TrafficMonitor';
+import OSINTPanel from '../OSINTPanel';
+import WiFiPanel from '../WiFiPanel';
 
 const TopologyMap = lazy(() => import('./TopologyMap'));
 
@@ -21,7 +23,7 @@ interface CameraItem {
   rtsp?: boolean;
 }
 
-type BottomView = 'comms' | 'intel';
+type BottomView = 'comms' | 'intel' | 'recon';
 
 export default function WarRoom() {
   // ---- Topología ----
@@ -407,6 +409,13 @@ export default function WarRoom() {
           >
             🌐 Threat Intel
           </button>
+          <button
+            onClick={() => setBottomView('recon')}
+            className={`px-3 py-1 text-[10px] border rounded-t font-mono transition
+              ${bottomView === 'recon' ? 'bg-purple-500/20 border-purple-400 text-purple-200' : 'border-[var(--ss-border)] text-gray-400 hover:text-purple-300'}`}
+          >
+            🔍 Recon OSINT
+          </button>
         </div>
 
         {bottomView === 'comms' ? (
@@ -480,13 +489,18 @@ export default function WarRoom() {
               </div>
             </div>
           </div>
-        ) : (
+        ) : bottomView === 'intel' ? (
           <div className="h-56 grid grid-cols-3 gap-3">
             <IntelPanel />
             <ExploitMatrix />
             <TrafficMonitor />
           </div>
-        )}
+        ) : bottomView === 'recon' ? (
+          <div className="h-56 grid grid-cols-2 gap-3">
+            <OSINTPanel />
+            <WiFiPanel />
+          </div>
+        ) : null}
       </div>
     </div>
   );
