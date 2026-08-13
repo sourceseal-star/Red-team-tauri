@@ -2012,3 +2012,213 @@ async def murcielago_status():
     }
 
 # == END PROTOCOLO MURCIÉLAGO =========================================
+
+# ============================================================
+# SALA DE GUERRA — Traceroute + Comms Ultrasónicas
+# ============================================================
+
+@app.get("/api/topology/traceroute")
+async def traceroute_route(target_ip: str = Query(...)):
+    """Traceroute real a una IP objetivo."""
+    try:
+        cmd = ["traceroute", "-n", "-m", "15", "-w", "2", target_ip]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
+        hops = []
+        for line in proc.stdout.split('\n'):
+            parts = line.strip().split()
+            if len(parts) >= 2 and parts[0].isdigit():
+                hop_num = int(parts[0])
+                ip = parts[1] if parts[1] != '*' else None
+                rtt_values = []
+                for p in parts[2:]:
+                    if 'ms' in p:
+                        try:
+                            rtt_values.append(float(p.replace('ms', '')))
+                        except ValueError:
+                            pass
+                avg_rtt = round(sum(rtt_values) / len(rtt_values), 2) if rtt_values else None
+                hops.append({
+                    "hop": hop_num,
+                    "ip": ip,
+                    "rtt_avg_ms": avg_rtt,
+                    "rtt_samples": rtt_values
+                })
+        await broadcast({"type": "progress", "payload": f"Traceroute a {target_ip}: {len(hops)} saltos"})
+        return {"target": target_ip, "hops": hops, "total_hops": len(hops)}
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail=f"Traceroute timeout a {target_ip}")
+    except FileNotFoundError:
+        # Fallback: usar nmap --traceroute si traceroute no está instalado
+        try:
+            cmd = ["nmap", "-sn", "--traceroute", target_ip]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
+            hops = []
+            for line in proc.stdout.split('\n'):
+                if 'traceroute' in line.lower() or 'hop' in line.lower():
+                    hops.append({"hop": len(hops) + 1, "ip": line.strip(), "rtt_avg_ms": None, "rtt_samples": []})
+            return {"target": target_ip, "hops": hops, "total_hops": len(hops), "method": "nmap"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Ni traceroute ni nmap disponibles: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/comms/ultrasonic-receive")
+async def ultrasonic_receive(duration: int = 6):
+    """Graba audio y decodifica mensaje ultrasonico ejecutando murcielago_receiver.py."""
+    receiver_script = str(ROOT / "murcielago" / "murcielago_receiver.py")
+    if not os.path.exists(receiver_script):
+        # Fallback a ruta alternativa
+        receiver_script = str(Path(__file__).parent / "murcielago_receiver.py")
+    if not os.path.exists(receiver_script):
+        return JSONResponse(
+            {"error": "Receptor no encontrado. Instala murcielago_receiver.py"},
+            status_code=503
+        )
+
+    try:
+        result = subprocess.run(
+            ["python3", receiver_script, "--duration", str(duration)],
+            capture_output=True, text=True, timeout=duration + 10
+        )
+        message = None
+        for line in result.stdout.split('\n'):
+            if "Mensaje recibido:" in line:
+                message = line.split("Mensaje recibido:")[-1].strip()
+                break
+        await broadcast({"type": "ultrasonic", "payload": f"Recibido: {message or 'sin señal'}"})
+        return {"message": message, "raw": result.stdout[-500:] if result.stdout else ""}
+    except subprocess.TimeoutExpired:
+        return {"message": None, "error": "Timeout en grabación"}
+    except Exception as e:
+        return {"message": None, "error": str(e)}
+
+
+@app.post("/api/comms/ultrasonic-send")
+async def ultrasonic_send(request: Request):
+    """Envía un mensaje por ultrasonidos con offset de frecuencia opcional."""
+    try:
+        data = await request.json()
+        message = data.get("message", "").strip()
+        freq_offset = data.get("freq_offset", 0)
+
+        if not message:
+            raise HTTPException(status_code=400, detail="Mensaje vacío")
+        if len(message) > 200:
+            raise HTTPException(status_code=400, detail="Mensaje demasiado largo (máx 200 chars)")
+
+        # Generar WAV usando el módulo existente
+        symbols = _murc_encode_symbols(message)
+        wav_bytes = _murc_build_wav(symbols, repeat=1)
+
+        # Aplicar offset de frecuencia al WAV (re-generar con frecuencias ajustadas)
+        if freq_offset != 0:
+            adjusted_table = {k: (f1 + freq_offset, f2 + freq_offset) for k, (f1, f2) in _MURC_FREQ_TABLE.items()}
+            adjusted_sync = _MURC_SYNC_FREQ + freq_offset
+            full = b''
+            full += _murc_generate_tone(adjusted_sync, 0.3)
+            full += _murc_generate_silence(0.05)
+            for sym in symbols:
+                if sym in adjusted_table:
+                    f1, f2 = adjusted_table[sym]
+                    n = int(_MURC_SAMPLE_RATE * _MURC_DURATION_SYMBOL)
+                    pcm = [int((0.5 * _math.sin(2 * _math.pi * f1 * (i / _MURC_SAMPLE_RATE)) +
+                                0.5 * _math.sin(2 * _math.pi * f2 * (i / _MURC_SAMPLE_RATE))) * 20000)
+                           for i in range(n)]
+                    full += _struct.pack(f'<{n}h', *pcm)
+                else:
+                    full += _murc_generate_silence(_MURC_DURATION_SYMBOL)
+                full += _murc_generate_silence(_MURC_SILENCE_BETWEEN)
+            full += _murc_generate_tone(adjusted_sync, 0.2)
+            data_len = len(full)
+            header = b'RIFF' + _struct.pack('<I', data_len + 36) + b'WAVE'
+            header += b'fmt ' + _struct.pack('<IHHIIHH', 16, 1, 1, _MURC_SAMPLE_RATE, _MURC_SAMPLE_RATE * 2, 2, 16)
+            header += b'data' + _struct.pack('<I', data_len)
+            wav_bytes = header + full
+
+        # Guardar WAV
+        wav_filename = f"war_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.wav"
+        wav_path = os.path.join(MURCIELAGO_WAV_CACHE, wav_filename)
+        with open(wav_path, 'wb') as f:
+            f.write(wav_bytes)
+
+        # Reproducir en background
+        player = None
+        for cmd in (['ffplay', '-nodisp', '-autoexit', '-volume', '80', wav_path],
+                    ['aplay', '-q', wav_path]):
+            try:
+                player = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                break
+            except FileNotFoundError:
+                continue
+
+        freq_base = 18000 + freq_offset
+        await broadcast({"type": "ultrasonic", "payload": f"Enviado: {message} @ {freq_base} Hz"})
+
+        return {
+            "status": "sent",
+            "message": message,
+            "freq_base": freq_base,
+            "symbols": ''.join(symbols),
+            "wav_url": f"/api/murcielago/download/{wav_filename}",
+            "playing": player is not None,
+            "duration_sec": round(len(symbols) * (_MURC_DURATION_SYMBOL + _MURC_SILENCE_BETWEEN) + 0.7, 2)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/vision/motion-detect")
+async def motion_detect(rtsp_url: str = Query(...), threshold: float = 0.02, duration: int = 6):
+    """Detección de movimiento en stream RTSP usando ffmpeg + diferencia de frames."""
+    import tempfile as _tmpdir
+    frames_dir = _tmpdir.mkdtemp(prefix="motion_")
+    try:
+        # Extraer frames del stream
+        cmd = [
+            "ffmpeg", "-i", rtsp_url, "-frames:v", "2",
+            "-vf", f"select='gte(scene,{threshold}')", "-vsync", "vfr",
+            "-frame_pts", "1", f"{frames_dir}/frame_%04d.png",
+            "-t", str(duration), "-y"
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=duration + 5)
+
+        captures = []
+        for fname in sorted(os.listdir(frames_dir)) if os.path.exists(frames_dir) else []:
+            if fname.endswith('.png'):
+                fpath = os.path.join(frames_dir, fname)
+                with open(fpath, 'rb') as f:
+                    file_hash = _hashlib.sha256(f.read()).hexdigest()
+                captures.append({
+                    "filename": fname,
+                    "hash": file_hash,
+                    "timestamp": datetime.now().isoformat()
+                })
+
+        motion_detected = len(captures) > 0
+
+        # Broadcast alert si hay movimiento
+        if motion_detected:
+            await broadcast({"type": "alert", "payload": f"🚨 Movimiento detectado en {rtsp_url}: {len(captures)} capturas"})
+
+        return {
+            "rtsp_url": rtsp_url,
+            "motion_detected": motion_detected,
+            "captures": captures,
+            "threshold": threshold,
+            "duration": duration
+        }
+    except subprocess.TimeoutExpired:
+        return {"rtsp_url": rtsp_url, "motion_detected": False, "captures": [], "error": "Timeout"}
+    except Exception as e:
+        return {"rtsp_url": rtsp_url, "motion_detected": False, "captures": [], "error": str(e)}
+    finally:
+        # Limpiar frames temporales
+        if os.path.exists(frames_dir):
+            for f in os.listdir(frames_dir):
+                os.unlink(os.path.join(frames_dir, f))
+            os.rmdir(frames_dir)
+
+# == END SALA DE GUERRA ===============================================
