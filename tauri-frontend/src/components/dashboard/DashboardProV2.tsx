@@ -5,10 +5,11 @@ const CameraGrid = lazy(() => import('../CameraGrid'));
 import RiskPanel from './RiskPanel';
 import CommandPalette from './CommandPalette';
 import HostDetailDrawer from './HostDetailDrawer';
+import { EvidenceExporter } from '../EvidenceExporter';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import type { CameraWithSnapshot } from '../../types/camera';
 
-type ViewMode = 'topology' | 'cameras';
+type ViewMode = 'topology' | 'cameras' | 'evidence';
 
 export default function DashboardProV2() {
   const hosts = useScanStore(s => s.hosts);
@@ -87,6 +88,7 @@ export default function DashboardProV2() {
   const actions = [
     { id: 'topo',   label: '🗺️ Topología', run: () => { setView('topology'); runScan('Topología', '/api/scan/topology'); } },
     { id: 'cam',    label: '📹 Cámaras',    run: runCameras },
+    { id: 'evid',   label: '📤 Evidencia',  run: () => setView('evidence') },
     { id: 'rou',    label: '📡 Routers',    run: () => runScan('Routers',   '/api/scan/routers') },
     { id: 'iot',    label: '🔌 IoT',        run: () => runScan('IoT',       '/api/scan/iot') },
     { id: 'wifi',   label: '📶 WiFi',       run: () => runScan('WiFi',      '/api/scan/wifi') },
@@ -95,7 +97,6 @@ export default function DashboardProV2() {
         await fetch('/api/honeypot/start', { method: 'POST' });
         pushLog('🪤 Honeypot iniciado');
     }},
-    { id: 'canary', label: '🎯 Canary',     run: () => runScan('Canary', '/api/canary/generate') },
   ];
 
   const shodanLookup = async (ip: string) => {
@@ -146,20 +147,24 @@ export default function DashboardProV2() {
         {actions.map(a => (
           <button key={a.id} onClick={a.run} disabled={loading}
                   className={`px-2 py-2 border text-[10px] uppercase tracking-wider disabled:opacity-50 transition font-mono
-                    ${view === a.id || (a.id === 'topo' && view === 'topology') || (a.id === 'cam' && view === 'cameras')
+                    ${(a.id === 'topo' && view === 'topology') || (a.id === 'cam' && view === 'cameras') || (a.id === 'evid' && view === 'evidence')
                       ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
                       : 'border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10 hover:border-cyan-400'}`}>
-            {loading ? '⏳' : a.label}
+            {loading && a.id !== 'evid' ? '⏳' : a.label}
           </button>
         ))}
       </div>
 
-      {/* Vista dinámica: topología o cámaras */}
+      {/* Vista dinámica: topología, cámaras o evidencia */}
       {view === 'cameras' ? (
         <div className="mb-4">
           <Suspense fallback={<div className="h-[400px] flex items-center justify-center text-cyan-400 animate-pulse text-sm font-mono">Cargando visor de cámaras...</div>}>
             <CameraGrid cameras={cameras} onRefresh={runCameras} />
           </Suspense>
+        </div>
+      ) : view === 'evidence' ? (
+        <div className="mb-4 max-w-2xl">
+          <EvidenceExporter />
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">

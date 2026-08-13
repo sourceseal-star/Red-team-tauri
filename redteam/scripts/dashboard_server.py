@@ -1582,3 +1582,258 @@ except RuntimeError:
     pass  # Ya montado
 
 # == END VIDEO EN VIVO ================================================
+
+# ============================================================
+# FASE 3: EVIDENCIA BLINDADA (Hash + Blockchain + QR + PDF)
+# ============================================================
+
+import hashlib as _hashlib
+import csv as _csv
+import io as _io
+import base64 as _b64
+
+try:
+    import qrcode as _qrcode
+    from reportlab.lib.pagesizes import letter as _letter_size
+    from reportlab.pdfgen import canvas as _rl_canvas
+    from reportlab.lib.utils import ImageReader as _rl_img_reader
+    _HAS_PDF_DEPS = True
+except ImportError:
+    _HAS_PDF_DEPS = False
+
+# Configuración
+SOURCESEAL_API = os.environ.get("SOURCESEAL_API", "https://source.coal/api/v1/seal")
+SOURCESEAL_VERIFY = os.environ.get("SOURCESEAL_VERIFY", "https://source.coal/api/v1/verify")
+PENDING_SEALS_FILE = str(DATA_DIR / "pending_seals.txt")
+EVIDENCE_CACHE_DIR = str(DATA_DIR / "evidence_cache")
+os.makedirs(EVIDENCE_CACHE_DIR, exist_ok=True)
+
+
+async def _get_topology_data():
+    """Obtiene los datos reales de topología reutilizando scan_topology."""
+    subnet = subnet_from_iface()
+    ok, out = _nmap_or_empty(["nmap", "-sn", "-T3", subnet], timeout=60)
+    if not ok:
+        return {"devices": [], "subnet": subnet, "error": out, "timestamp": datetime.now().isoformat()}
+
+    hosts, current = [], None
+    for line in out.splitlines():
+        if "Nmap scan report for" in line:
+            ip = line.split()[-1].strip("()")
+            current = {"ip": ip, "hostname": "", "type": "unknown", "ports": [], "mac": None, "vendor": None}
+            hosts.append(current)
+        elif current and "MAC Address" in line:
+            parts = line.split()
+            if len(parts) >= 3:
+                current["mac"] = parts[2]
+                if len(parts) > 3:
+                    current["vendor"] = " ".join(parts[3:]).strip("()")
+
+    if hosts:
+        fp_results = await asyncio.gather(*[_fingerprint_host(h["ip"]) for h in hosts])
+        for h, fp in zip(hosts, fp_results):
+            h["type"] = fp["type"]
+            h["ports"] = fp["ports"]
+            h["risk"] = fp["risk"]
+            if fp["vendor"] and not h.get("vendor"):
+                h["vendor"] = fp["vendor"]
+
+    return {"devices": hosts, "subnet": subnet, "timestamp": datetime.now().isoformat()}
+
+
+@app.get("/api/export/sealed-json")
+async def export_sealed_json():
+    """Exporta la topología completa con hash SHA-256 y anclaje blockchain."""
+    data = await _get_topology_data()
+    data_json = json.dumps(data, default=str)
+    file_hash = _hashlib.sha256(data_json.encode('utf-8')).hexdigest()
+
+    tx_id = None
+    try:
+        import requests as _requests
+        response = _requests.post(
+            SOURCESEAL_API,
+            json={"hash": file_hash, "metadata": {"source": "RedTeam_Topology", "timestamp": datetime.now().isoformat()}},
+            timeout=10
+        )
+        if response.status_code == 200:
+            tx_id = response.json().get("tx_id")
+    except Exception:
+        with open(PENDING_SEALS_FILE, "a") as f:
+            f.write(f"{file_hash}|{datetime.now().isoformat()}\n")
+        tx_id = "offline_pending"
+
+    sealed_package = {
+        "seal": {
+            "hash": file_hash,
+            "timestamp": datetime.now().isoformat(),
+            "blockchain_tx": tx_id,
+            "verification_url": f"https://source.coal/verify/{file_hash}",
+            "instructions": "Verifica este hash en la blockchain para validar la integridad."
+        },
+        "data": data
+    }
+
+    filename = f"evidence_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    return StreamingResponse(
+        iter([json.dumps(sealed_package, indent=2)]),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "X-Evidence-Hash": file_hash,
+            "X-Blockchain-Tx": str(tx_id or "pending")
+        }
+    )
+
+
+@app.get("/api/export/paper-evidence")
+async def export_paper_evidence():
+    """Genera un PDF imprimible con resumen, hash SHA-256 y código QR."""
+    if not _HAS_PDF_DEPS:
+        raise HTTPException(status_code=503, detail="Dependencias no instaladas: pip install qrcode reportlab")
+
+    data = await _get_topology_data()
+    data_json = json.dumps(data, default=str)
+    file_hash = _hashlib.sha256(data_json.encode('utf-8')).hexdigest()
+
+    # Código QR
+    qr = _qrcode.QRCode(box_size=8, border=3)
+    qr.add_data(f"https://source.coal/verify/{file_hash}")
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+
+    qr_buffer = _io.BytesIO()
+    qr_img.save(qr_buffer, format="PNG")
+    qr_buffer.seek(0)
+    qr_reader = _rl_img_reader(qr_buffer)
+
+    # PDF
+    pdf_buffer = _io.BytesIO()
+    c = _rl_canvas.Canvas(pdf_buffer, pagesize=_letter_size)
+    width, height = _letter_size
+
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(50, height - 50, "EVIDENCIA DE AUDITORIA DE RED")
+    c.setFont("Helvetica", 10)
+    c.drawString(50, height - 70, f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    c.drawString(50, height - 85, f"Hash SHA-256: {file_hash}")
+
+    devices = data.get('devices', [])
+    c.drawString(50, height - 115, f"Dispositivos detectados: {len(devices)}")
+    c.drawString(50, height - 130, f"Subred: {data.get('subnet', 'N/A')}")
+    y_pos = height - 150
+    for idx, d in enumerate(devices[:15]):
+        c.drawString(60, y_pos, f"{idx+1}. {d.get('ip', '')} ({d.get('type', 'unknown')}) risk={d.get('risk', 'N/A')}")
+        y_pos -= 15
+        if idx == 14 and len(devices) > 15:
+            c.drawString(60, y_pos, f"... y {len(devices)-15} mas")
+            break
+
+    c.drawImage(qr_reader, width - 200, height - 300, width=140, height=140)
+
+    c.setFont("Helvetica-Oblique", 8)
+    c.drawString(50, 80, "Instrucciones:")
+    c.drawString(50, 65, "1. Escanea el codigo QR o visita la URL.")
+    c.drawString(50, 50, "2. Verifica que el hash coincida con el de la blockchain.")
+    c.drawString(50, 35, "3. Este documento tiene validez internacional si el hash esta registrado.")
+    c.drawString(50, 20, "4. Guarda este papel en un lugar seguro. Es tu prueba fisica.")
+
+    c.save()
+    pdf_buffer.seek(0)
+
+    filename = f"paper_evidence_{datetime.now().strftime('%Y%m%d')}.pdf"
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "X-Evidence-Hash": file_hash
+        }
+    )
+
+
+@app.post("/api/export/process-pending")
+async def process_pending_seals():
+    """Procesa sellos guardados offline y los ancla en blockchain."""
+    if not os.path.exists(PENDING_SEALS_FILE):
+        return {"status": "no_pending", "message": "No hay sellos pendientes"}
+
+    with open(PENDING_SEALS_FILE, "r") as f:
+        lines = f.readlines()
+
+    results, new_pending = [], []
+    for line in lines:
+        parts = line.strip().split("|")
+        if len(parts) < 2:
+            continue
+        file_hash, timestamp = parts[0], parts[1]
+        try:
+            import requests as _requests
+            resp = _requests.post(SOURCESEAL_API, json={"hash": file_hash, "metadata": {"offline_recovery": timestamp}}, timeout=10)
+            if resp.status_code == 200:
+                results.append({"hash": file_hash, "status": "sealed", "tx": resp.json().get("tx_id")})
+            else:
+                new_pending.append(line.strip())
+        except Exception:
+            new_pending.append(line.strip())
+
+    with open(PENDING_SEALS_FILE, "w") as f:
+        if new_pending:
+            f.write("\n".join(new_pending) + "\n")
+
+    return {
+        "processed": len(results),
+        "still_pending": len(new_pending),
+        "details": results
+    }
+
+
+@app.get("/api/export/verify/{hash_value}")
+async def verify_hash(hash_value: str):
+    """Consulta si un hash esta registrado en SourceSeal."""
+    try:
+        import requests as _requests
+        response = _requests.get(f"{SOURCESEAL_VERIFY}/{hash_value}", timeout=10)
+        if response.status_code == 200:
+            return {"verified": True, "data": response.json()}
+        else:
+            return {"verified": False, "message": "Hash no encontrado en blockchain"}
+    except Exception:
+        return {"verified": False, "message": "No se pudo conectar con SourceSeal"}
+
+
+@app.get("/api/export/sealed-csv")
+async def export_sealed_csv():
+    """Exporta la topología a CSV con hash SHA-256 en headers."""
+    data = await _get_topology_data()
+    devices = data.get('devices', [])
+
+    output = _io.StringIO()
+    writer = _csv.writer(output)
+    writer.writerow(['IP', 'Type', 'Ports', 'MAC', 'Vendor', 'Risk', 'Timestamp'])
+    for d in devices:
+        ports_str = ';'.join(str(p) if isinstance(p, int) else str(p.get('port', '')) for p in d.get('ports', []))
+        writer.writerow([
+            d.get('ip', ''),
+            d.get('type', 'unknown'),
+            ports_str,
+            d.get('mac', ''),
+            d.get('vendor', ''),
+            d.get('risk', ''),
+            data.get('timestamp', '')
+        ])
+    csv_content = output.getvalue()
+    file_hash = _hashlib.sha256(csv_content.encode('utf-8')).hexdigest()
+
+    filename = f"topology_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([csv_content]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "X-Evidence-Hash": file_hash,
+            "X-Verification-URL": f"https://source.coal/verify/{file_hash}"
+        }
+    )
+
+# == END FASE 3: EVIDENCIA BLINDADA ==================================
