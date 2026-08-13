@@ -3080,7 +3080,7 @@ _init_bm_db()
 # ─── 1. CANARY FORGE ─────────────────────────────────────────────
 
 def _bm_canary_token(recipient: str, doc_id: str) -> str:
-    return hashlib.sha256(f"{recipient}:{doc_id}:{os.urandom(16).hex()}".encode()).hexdigest()[:32]
+    return _hashlib.sha256(f"{recipient}:{doc_id}:{os.urandom(16).hex()}".encode()).hexdigest()[:32]
 
 def _create_canary_pdf(recipient: str, title: str, content: str, token: str, doc_id: str) -> str:
     try:
