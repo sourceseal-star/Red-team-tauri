@@ -20,6 +20,11 @@ externalPort = 3001
 localPort = 8001
 externalPort = 80
 
+
+[[ports]]
+localPort = 8000
+externalPort = 8080
+
 [workflows]
 runButton = "Project"
 
@@ -44,6 +49,19 @@ author = "agent"
 task = "shell.exec"
 args = "bash replit_start.sh"
 waitForPort = 8001
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+
+[[workflows.workflow]]
+name = "Motor de Cierre"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash motor_cierre/start.sh"
+waitForPort = 8000
 
 [workflows.workflow.metadata]
 outputType = "console"

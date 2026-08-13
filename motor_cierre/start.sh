@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================================
-# MOTOR DE CIERRE AUTÓNOMO v2.0 — Arranque independiente
+# MOTOR DE CIERRE AUTÓNOMO v2.1 — Arranque independiente
 # Backend FastAPI en puerto 8000 (separado del dashboard principal :8001)
 # =====================================================================
 set -e
@@ -19,16 +19,16 @@ fi
 echo "[motor_cierre] Instalando dependencias..."
 pip install -r requirements.txt -q 2>&1 | tail -3
 
-# Puerto
+# Puerto ( configurable via env )
 PORT="${MOTOR_CIERRE_PORT:-8000}"
 
 # Matar procesos zombie en el puerto
-pkill -f "uvicorn.*8000" 2>/dev/null || true
+pkill -f "uvicorn.*${PORT}" 2>/dev/null || true
 
 echo ""
 echo "============================================"
-echo "  MOTOR DE CIERRE AUTÓNOMO v2.0"
-echo "  Puerto: $PORT"
+echo "  MOTOR DE CIERRE AUTÓNOMO v2.1"
+echo "  Multi-Producto | Puerto: $PORT"
 echo "  Independiente del dashboard principal"
 echo "============================================"
 echo ""
