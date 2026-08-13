@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
@@ -18,13 +19,15 @@ import TopologyMapFixed from './components/TopologyMapFixed'
 import SalesCommandCenter from './routes/SalesCommandCenter'
 
 function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
   return (
     <BrowserRouter>
       <div className="flex flex-col h-screen">
-        <TopBar />
+        <TopBar onMenuClick={() => setSidebarOpen(true)} />
         <div className="flex flex-1 overflow-hidden">
-          <Sidebar />
-          <main className="flex-1 overflow-y-auto p-4 bg-background">
+          <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+          <main className="flex-1 overflow-y-auto p-2 sm:p-4 bg-background">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/config" element={<ConfigEditor />} />

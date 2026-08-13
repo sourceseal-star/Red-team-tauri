@@ -273,9 +273,9 @@ export default function WarRoom() {
   return (
     <div className="h-full w-full flex flex-col gap-3 font-mono">
       {/* FILA SUPERIOR: Topología + Cámaras */}
-      <div className="flex-1 grid grid-cols-2 gap-3 min-h-0">
+      <div className="grid grid-cols-1 gap-3 lg:flex-1 lg:grid-cols-2 lg:min-h-0">
         {/* ── Topología ── */}
-        <div className="bg-[var(--ss-bg-2)] border border-[var(--ss-border)] rounded-lg overflow-hidden flex flex-col">
+        <div className="h-[360px] lg:h-auto bg-[var(--ss-bg-2)] border border-[var(--ss-border)] rounded-lg overflow-hidden flex flex-col">
           <div className="p-2 bg-[var(--ss-bg-3)] border-b border-[var(--ss-border)] flex items-center justify-between">
             <span className="text-xs text-cyan-400 flex items-center gap-2">
               <Wifi size={14} /> TOPOLOGÍA
@@ -333,7 +333,7 @@ export default function WarRoom() {
         </div>
 
         {/* ── Cámaras ── */}
-        <div className="bg-[var(--ss-bg-2)] border border-[var(--ss-border)] rounded-lg overflow-hidden flex flex-col">
+        <div className="h-[360px] lg:h-auto bg-[var(--ss-bg-2)] border border-[var(--ss-border)] rounded-lg overflow-hidden flex flex-col">
           <div className="p-2 bg-[var(--ss-bg-3)] border-b border-[var(--ss-border)] flex items-center justify-between">
             <span className="text-xs text-amber-400 flex items-center gap-2">
               <Camera size={14} /> CÁMARAS
@@ -393,9 +393,9 @@ export default function WarRoom() {
       </div>
 
       {/* FILA INFERIOR: Comms / Intel / Exploits / Traffic */}
-      <div className="h-64 shrink-0">
+      <div className="shrink-0 lg:h-64">
         {/* Tabs */}
-        <div className="flex gap-1 mb-2">
+        <div className="flex flex-wrap gap-1 mb-2">
           <button
             onClick={() => setBottomView('comms')}
             className={`px-3 py-1 text-[10px] border rounded-t font-mono transition
@@ -427,13 +427,13 @@ export default function WarRoom() {
         </div>
 
         {bottomView === 'comms' ? (
-          <div className="h-56 bg-[var(--ss-bg-2)] border border-[var(--ss-border)] rounded-lg overflow-hidden flex flex-col">
-            <div className="p-2 bg-[var(--ss-bg-3)] border-b border-[var(--ss-border)] flex items-center justify-between">
-              <span className="text-xs text-cyan-400 flex items-center gap-2">
+          <div className="h-auto lg:h-56 bg-[var(--ss-bg-2)] border border-[var(--ss-border)] rounded-lg overflow-hidden flex flex-col">
+            <div className="p-2 bg-[var(--ss-bg-3)] border-b border-[var(--ss-border)] flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+              <span className="text-xs text-cyan-400 flex items-center gap-2 flex-wrap">
                 <Radio size={14} /> COMUNICACIONES ULTRASÓNICAS
                 <span className="text-[9px] text-gray-500">18-20 kHz · Web Audio API + Backend</span>
               </span>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2">
                   <Sliders size={14} className="text-gray-400" />
                   <input
@@ -455,7 +455,7 @@ export default function WarRoom() {
                 </button>
               </div>
             </div>
-            <div className="flex-1 flex min-h-0">
+            <div className="flex-1 flex flex-col lg:flex-row min-h-0">
               <div className="flex-1 p-3 flex flex-col gap-2">
                 <div className="flex items-center gap-2">
                   <input
@@ -483,7 +483,7 @@ export default function WarRoom() {
                   <span className="text-green-400">{ultraLog.filter(l => l.type === 'sent').length} enviados · {ultraLog.filter(l => l.type === 'received').length} recibidos</span>
                 </div>
               </div>
-              <div className="w-80 p-2 border-l border-[var(--ss-border)] overflow-y-auto">
+              <div className="w-full max-h-32 lg:max-h-none lg:w-80 p-2 border-t lg:border-t-0 lg:border-l border-[var(--ss-border)] overflow-y-auto">
                 <div className="text-[9px] uppercase tracking-widest text-gray-500 mb-1">Historial</div>
                 {ultraLog.length === 0 ? (
                   <div className="text-[9px] text-gray-600">Esperando actividad...</div>
@@ -498,18 +498,18 @@ export default function WarRoom() {
             </div>
           </div>
         ) : bottomView === 'intel' ? (
-          <div className="h-56 grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 lg:h-56 lg:grid-cols-3">
             <IntelPanel />
             <ExploitMatrix />
             <TrafficMonitor />
           </div>
         ) : bottomView === 'recon' ? (
-          <div className="h-56 grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 lg:h-56 lg:grid-cols-2">
             <OSINTPanel />
             <WiFiPanel />
           </div>
         ) : bottomView === 'mirror' ? (
-          <div className="h-56 grid grid-cols-1 gap-3">
+          <div className="min-h-[224px] lg:h-56 grid grid-cols-1 gap-3">
             <BlackMirrorPanel />
           </div>
         ) : null}
