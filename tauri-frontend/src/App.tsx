@@ -15,6 +15,7 @@ import Settings from './routes/Settings'
 import About from './routes/About'
 import CameraCommandCenter from './components/CameraCommandCenter'
 import TopologyMapFixed from './components/TopologyMapFixed'
+import SalesCommandCenter from './routes/SalesCommandCenter'
 
 function App() {
   return (
@@ -38,6 +39,8 @@ function App() {
               <Route path="/about" element={<About />} />
               <Route path="/cameras" element={<CameraCommandCenter />} />
               <Route path="/topology" element={<TopologyMapFixed nodes={[]} />} />
+              {/* Motor de Cierre — independiente */}
+              <Route path="/ventas" element={<SalesCommandCenter />} />
             </Routes>
           </main>
         </div>
