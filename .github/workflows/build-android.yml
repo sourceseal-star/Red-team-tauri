@@ -87,10 +87,9 @@ jobs:
         run: |
           BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/34.0.0"
           APK_DIR="src-tauri/gen/android/app/build/outputs/apk"
-          find "$APK_DIR" -name "*.apk" ! -name "*-unsigned.apk" | while read -r apk; do
-            unsigned="${apk%.apk}-unsigned.apk"
-            signed="${apk%.apk}-signed.apk"
-            mv "$apk" "$unsigned"
+          # Tauri genera *-unsigned.apk — los firmamos directamente
+          find "$APK_DIR" -name "*-unsigned.apk" | while read -r unsigned; do
+            signed="${unsigned%-unsigned.apk}.apk"
             "$BUILD_TOOLS/apksigner" sign \
               --ks /tmp/sourceseal.keystore \
               --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
@@ -100,9 +99,9 @@ jobs:
               "$unsigned"
             echo "Firmado: $signed"
           done
-          # Renombra los firmados quitando el sufijo -signed
-          find "$APK_DIR" -name "*-signed.apk" -exec bash -c \
-            'mv "$1" "${1/-signed/}"' _ {} \;
+          # Listar APKs firmados para verificacion
+          echo "=== APKs firmados ==="
+          find "$APK_DIR" -name "*.apk" ! -name "*-unsigned.apk" -exec ls -lh {} \;
 
       - name: Get version
         id: version
