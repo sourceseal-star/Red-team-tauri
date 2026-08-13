@@ -2222,3 +2222,365 @@ async def motion_detect(rtsp_url: str = Query(...), threshold: float = 0.02, dur
             os.rmdir(frames_dir)
 
 # == END SALA DE GUERRA ===============================================
+
+# ============================================================
+# MÓDULO 1: THREAT INTELLIGENCE (AbuseIPDB + Cache SQLite)
+# ============================================================
+
+import sqlite3 as _sqlite3
+import ipaddress as _ipaddr_check
+
+INTEL_CACHE_DB = str(DATA_DIR / "intel_cache.db")
+_abuseipdb_key = os.environ.get("ABUSEIPDB_KEY", "")
+
+def _init_intel_db():
+    conn = _sqlite3.connect(INTEL_CACHE_DB)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS ip_cache (
+        ip TEXT PRIMARY KEY, data TEXT, timestamp TEXT, abuse_score INTEGER
+    )''')
+    conn.commit()
+    conn.close()
+
+_init_intel_db()
+
+async def _check_abuseipdb(ip: str) -> dict:
+    if not _abuseipdb_key:
+        return {"error": "API key no configurada. Regístrate gratis en abuseipdb.com y setea ABUSEIPDB_KEY"}
+    url = f"https://api.abuseipdb.com/api/v2/check?ipAddress={ip}&maxAgeInDays=90&verbose="
+    headers = {"Key": _abuseipdb_key, "Accept": "application/json"}
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                return resp.json().get("data", {})
+            return {"error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+def _get_cached_ip(ip: str) -> Optional[dict]:
+    conn = _sqlite3.connect(INTEL_CACHE_DB)
+    c = conn.cursor()
+    c.execute("SELECT data, timestamp FROM ip_cache WHERE ip = ?", (ip,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        try:
+            cache_time = datetime.fromisoformat(row[1])
+            if datetime.now() - cache_time < timedelta(hours=24):
+                return json.loads(row[0])
+        except Exception:
+            pass
+    return None
+
+def _cache_ip(ip: str, data: dict):
+    conn = _sqlite3.connect(INTEL_CACHE_DB)
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO ip_cache VALUES (?, ?, ?, ?)",
+              (ip, json.dumps(data), datetime.now().isoformat(), data.get("abuseConfidenceScore", 0)))
+    conn.commit()
+    conn.close()
+
+@app.get("/api/intel/ip/{ip}")
+async def get_ip_reputation(ip: str):
+    try:
+        _ipaddr_check.ip_address(ip)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="IP inválida")
+
+    cached = _get_cached_ip(ip)
+    if cached:
+        score = cached.get("abuseConfidenceScore", 0)
+        return {
+            "ip": ip, "abuse_score": score,
+            "country": cached.get("countryCode", "Unknown"),
+            "isp": cached.get("isp", "Unknown"),
+            "total_reports": cached.get("totalReports", 0),
+            "last_reported": cached.get("lastReportedAt", "Never"),
+            "is_tor": cached.get("isTor", False),
+            "verdict": "MALICIOUS" if score > 75 else "SUSPICIOUS" if score > 25 else "CLEAN",
+            "cached": True
+        }
+
+    data = await _check_abuseipdb(ip)
+    if "error" in data:
+        raise HTTPException(status_code=503, detail=data["error"])
+
+    _cache_ip(ip, data)
+    score = data.get("abuseConfidenceScore", 0)
+    return {
+        "ip": ip, "abuse_score": score,
+        "country": data.get("countryCode", "Unknown"),
+        "isp": data.get("isp", "Unknown"),
+        "total_reports": data.get("totalReports", 0),
+        "last_reported": data.get("lastReportedAt", "Never"),
+        "is_tor": data.get("isTor", False),
+        "verdict": "MALICIOUS" if score > 75 else "SUSPICIOUS" if score > 25 else "CLEAN",
+        "cached": False
+    }
+
+@app.post("/api/intel/bulk-check")
+async def bulk_check_ips(request: Request):
+    """Consulta masiva con rate limiting (max 5 concurrentes)."""
+    try:
+        ips = await request.json()
+        if not isinstance(ips, list):
+            raise HTTPException(status_code=400, detail="Se esperaba una lista de IPs")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    semaphore = asyncio.Semaphore(5)
+
+    async def check_one(ip):
+        async with semaphore:
+            try:
+                return await get_ip_reputation(ip)
+            except Exception as e:
+                return {"ip": ip, "error": str(e), "verdict": "UNKNOWN"}
+
+    results = await asyncio.gather(*[check_one(ip) for ip in ips[:20]])
+    malicious = sum(1 for r in results if isinstance(r, dict) and r.get("verdict") == "MALICIOUS")
+    return {"results": results, "total": len(results), "malicious": malicious}
+
+# == END THREAT INTEL =================================================
+
+
+# ============================================================
+# MÓDULO 2: EXPLOIT MATCHER (ExploitDB)
+# ============================================================
+
+EXPLOIT_DB_DIR = str(DATA_DIR / "exploitdb")
+EXPLOIT_CSV = os.path.join(EXPLOIT_DB_DIR, "files_exploits.csv")
+
+def _init_exploit_db():
+    os.makedirs(EXPLOIT_DB_DIR, exist_ok=True)
+    if not os.path.exists(EXPLOIT_CSV):
+        try:
+            import requests as _req
+            r = _req.get("https://raw.githubusercontent.com/offensive-security/exploitdb/master/files_exploits.csv", timeout=60)
+            if r.status_code == 200 and len(r.content) > 1000:
+                with open(EXPLOIT_CSV, "wb") as f:
+                    f.write(r.content)
+                print("[+] ExploitDB descargado")
+        except Exception as e:
+            print(f"[!] Error descargando ExploitDB: {e}")
+
+def _search_exploits(service: str, version: str = None) -> list:
+    if not os.path.exists(EXPLOIT_CSV):
+        _init_exploit_db()
+    if not os.path.exists(EXPLOIT_CSV):
+        return []
+
+    exploits = []
+    with open(EXPLOIT_CSV, "r", encoding="utf-8", errors="ignore") as f:
+        next(f)  # skip header
+        for line in f:
+            parts = line.strip().split(",")
+            if len(parts) < 7:
+                continue
+            eid, file_path, title = parts[0], parts[1], parts[2]
+            platform = parts[5] if len(parts) > 5 else "unknown"
+            etype = parts[6] if len(parts) > 6 else "unknown"
+
+            title_lower = title.lower()
+            service_lower = service.lower()
+
+            confidence = None
+            if service_lower in title_lower:
+                if version and version in title:
+                    confidence = "HIGH"
+                else:
+                    confidence = "MEDIUM"
+            elif any(k in title_lower for k in service_lower.split()):
+                confidence = "LOW"
+
+            if confidence:
+                exploits.append({
+                    "id": eid, "title": title, "platform": platform,
+                    "type": etype, "verified": "verified" in title_lower,
+                    "url": f"https://www.exploit-db.com/exploits/{eid}",
+                    "match_confidence": confidence
+                })
+
+    priority = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+    exploits.sort(key=lambda x: priority.get(x.get("match_confidence", "LOW"), 3))
+    return exploits[:25]
+
+@app.post("/api/exploits/match")
+async def match_exploits(request: Request):
+    try:
+        fingerprints = await request.json()
+        if not isinstance(fingerprints, list):
+            raise HTTPException(status_code=400, detail="Se esperaba una lista de fingerprints")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    all_matches = []
+    for fp in fingerprints:
+        name = fp.get("name", "")
+        version = fp.get("version")
+        matches = _search_exploits(name, version)
+        for m in matches:
+            all_matches.append({"service": name, "version": version, "exploit": m})
+
+    return {
+        "total_matches": len(all_matches),
+        "high_confidence": sum(1 for m in all_matches if m["exploit"]["match_confidence"] == "HIGH"),
+        "medium_confidence": sum(1 for m in all_matches if m["exploit"]["match_confidence"] == "MEDIUM"),
+        "exploits": all_matches
+    }
+
+@app.get("/api/exploits/search")
+async def search_exploit(query: str = Query(...)):
+    return {"query": query, "results": _search_exploits(query)}
+
+@app.post("/api/exploits/init-db")
+async def init_exploit_db_endpoint():
+    _init_exploit_db()
+    if os.path.exists(EXPLOIT_CSV):
+        size = os.path.getsize(EXPLOIT_CSV)
+        return {"status": "ok", "csv_size": size}
+    return {"status": "failed", "message": "No se pudo descargar ExploitDB"}
+
+# == END EXPLOIT MATCHER ==============================================
+
+
+# ============================================================
+# MÓDULO 3: PACKET ANALYZER (tcpdump + detección de anomalías)
+# ============================================================
+
+CAPTURE_DIR = str(DATA_DIR / "captures")
+os.makedirs(CAPTURE_DIR, exist_ok=True)
+_active_captures = {}
+
+@app.post("/api/capture/start")
+async def start_capture(interface: str = "any", bpf_filter: str = "", duration: int = 15):
+    session_id = uuid.uuid4().hex[:8]
+    pcap_file = os.path.join(CAPTURE_DIR, f"{session_id}.pcap")
+
+    cmd = ["tcpdump", "-i", interface, "-w", pcap_file, "-G", str(duration), "-W", "1", "-q"]
+    if bpf_filter:
+        cmd.extend(bpf_filter.split())
+
+    try:
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _active_captures[session_id] = {
+            "process": process, "start_time": datetime.now(),
+            "interface": interface, "pcap_file": pcap_file
+        }
+
+        # Auto-stop thread
+        def auto_stop():
+            time.sleep(duration + 2)
+            if session_id in _active_captures:
+                _stop_capture_internal(session_id)
+        threading.Thread(target=auto_stop, daemon=True).start()
+
+        await broadcast({"type": "capture", "payload": f"Captura iniciada en {interface} ({session_id})"})
+        return {
+            "session_id": session_id, "status": "capturing",
+            "interface": interface, "duration": duration, "pcap_file": pcap_file
+        }
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="tcpdump no instalado. Instala: pkg install tcpdump (Termux) o apt install tcpdump")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+def _stop_capture_internal(session_id: str):
+    if session_id not in _active_captures:
+        return None
+
+    session = _active_captures[session_id]
+    process = session["process"]
+
+    try:
+        process.send_signal(_signal.SIGTERM)
+        process.wait(timeout=5)
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+    pcap_file = session["pcap_file"]
+    stats = {"total_packets": 0, "protocols": {}, "anomalies": []}
+
+    if os.path.exists(pcap_file):
+        try:
+            result = subprocess.run(["tcpdump", "-r", pcap_file, "-n"],
+                                     capture_output=True, text=True, timeout=30)
+            for line in result.stderr.split('\n'):
+                if "packets captured" in line:
+                    try:
+                        stats["total_packets"] = int(line.split()[0])
+                    except ValueError:
+                        pass
+        except Exception:
+            pass
+
+        try:
+            result = subprocess.run(["tcpdump", "-r", pcap_file, "-n", "-tttt"],
+                                     capture_output=True, text=True, timeout=30)
+            arp_count, syn_count = 0, 0
+            port_scan_ips = {}
+
+            for line in result.stdout.split('\n'):
+                if "ARP" in line:
+                    arp_count += 1
+                if "Flags [S]" in line and "length 0" in line:
+                    syn_count += 1
+                    parts = line.split()
+                    if len(parts) > 2:
+                        src_ip = parts[2].split('.')[0:4]
+                        src_ip_str = '.'.join(src_ip)
+                        port_scan_ips[src_ip_str] = port_scan_ips.get(src_ip_str, 0) + 1
+
+            if arp_count > 50:
+                stats["anomalies"].append({
+                    "type": "ARP_STORM", "severity": "HIGH",
+                    "description": f"Detectados {arp_count} paquetes ARP. Posible ARP Spoofing.",
+                    "count": arp_count
+                })
+
+            for ip, count in port_scan_ips.items():
+                if count > 20:
+                    stats["anomalies"].append({
+                        "type": "PORT_SCAN", "severity": "MEDIUM",
+                        "description": f"Posible port scan desde {ip}: {count} SYN",
+                        "source": ip, "count": count
+                    })
+
+            stats["protocols"] = {
+                "ARP": arp_count, "TCP_SYN": syn_count,
+                "OTHER": max(0, stats["total_packets"] - arp_count - syn_count)
+            }
+        except Exception as e:
+            stats["error"] = str(e)
+
+    del _active_captures[session_id]
+    if stats["anomalies"]:
+        for a in stats["anomalies"]:
+            await asyncio.create_task(broadcast({"type": "alert", "payload": f"🚨 {a['type']}: {a['description']}"}))
+
+    return {
+        "session_id": session_id, "status": "completed",
+        "analysis": stats, "pcap_file": pcap_file,
+        "duration": (datetime.now() - session["start_time"]).seconds
+    }
+
+@app.post("/api/capture/stop/{session_id}")
+async def stop_capture(session_id: str):
+    result = _stop_capture_internal(session_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    return result
+
+@app.get("/api/capture/active")
+async def list_active_captures():
+    return {"active": [
+        {"session_id": sid, "interface": s["interface"],
+         "running_for": (datetime.now() - s["start_time"]).seconds}
+        for sid, s in _active_captures.items()
+    ]}
+
+# == END PACKET ANALYZER ==============================================
