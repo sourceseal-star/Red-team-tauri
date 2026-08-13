@@ -55,11 +55,9 @@ jobs:
         run: |
           cd tauri-frontend
           rm -rf node_modules package-lock.json
-          npm install
-          npm install @types/react@18.2.43 @types/react-dom@18.2.17
-          npm install react-router-dom@6.21.0 lucide-react@0.309.0 zustand@4.4.7 recharts@2.10.3
+          npm install --legacy-peer-deps
 
-      - name: Build frontend
+      - name: Build frontend (vite build sin tsc)
         run: |
           cd tauri-frontend
           npm run build
