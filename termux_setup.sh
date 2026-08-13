@@ -62,6 +62,14 @@ echo -e "${G}  OK Herramientas de sistema instaladas${N}"
 
 # ── 5. DEPENDENCIAS PYTHON ───────────────────────────────────────────
 echo -e "${C}[4/8] Instalando dependencias Python...${N}"
+
+# numpy: instalar via pkg (binario precompilado) — pip compila desde fuente
+# y falla en Termux/aarch64 con Python 3.13 (faltan wheels). pkg lo evita.
+if ! python3 -c "import numpy" 2>/dev/null; then
+    echo -e "${C}  Instalando numpy nativo (pkg, sin compilar)...${N}"
+    pkg install -y python-numpy 2>/dev/null || true
+fi
+
 pip install --upgrade pip 2>/dev/null || true
 pip install -q \
     fastapi==0.115.0 \
@@ -77,8 +85,14 @@ pip install -q \
     python-nmap==0.7.1 \
     "qrcode[pil]==7.4.2" \
     reportlab==4.2.5 \
-    numpy==2.1.0 \
     2>/dev/null || echo -e "${Y}[!] Algunos paquetes pip pueden no haberse instalado${N}"
+
+# Fallback: si pkg no tenia numpy, intentar pip SIN version fija
+# (deja que pip elija un wheel compatible en vez de forzar compilacion)
+if ! python3 -c "import numpy" 2>/dev/null; then
+    echo -e "${Y}  numpy no disponible via pkg, probando pip (puede tardar)...${N}"
+    pip install -q numpy 2>/dev/null || echo -e "${R}  [!] numpy no se pudo instalar. Ghostprint heatmap puede fallar.${N}"
+fi
 
 echo -e "${G}  OK Dependencias Python instaladas${N}"
 
@@ -156,6 +170,7 @@ echo -ne "  aircrack:   "; which aircrack-ng >/dev/null 2>&1 && echo -e "  ${G}O
 echo -ne "  netcat:     "; which nc >/dev/null 2>&1 && echo -e "  ${G}OK${N}" || echo -e "  ${Y}NO (Shadow Twin)${N}"
 echo -ne "  tcpdump:    "; which tcpdump >/dev/null 2>&1 && echo -e "  ${G}OK${N}" || echo -e "  ${Y}NO (captura)${N}"
 echo -ne "  reportlab:  "; python3 -c "import reportlab" 2>/dev/null && echo -e "  ${G}OK${N}" || echo -e "  ${Y}NO (Canary PDF)${N}"
+echo -ne "  numpy:      "; python3 -c "import numpy" 2>/dev/null && echo -e "  ${G}OK${N}" || echo -e "  ${Y}NO (Ghostprint heatmap)${N}"
 
 echo -e "${B}+---------------------------------------------------+${N}"
 

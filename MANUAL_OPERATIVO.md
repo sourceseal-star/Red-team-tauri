@@ -141,11 +141,17 @@ pkg install -y qrencode ffmpeg
 pkg install -y termux-api  # + permiso de microfono
 
 # 3. Dependencias Python
+# numpy: SIEMPRE via pkg primero (binario, sin compilar). pip compila desde
+# fuente y falla en Termux/aarch64 (Python 3.13 no tiene wheels de numpy).
+pkg install -y python-numpy
+
 pip install fastapi==0.115.0 "uvicorn[standard]==0.32.0" pydantic==2.9.0
 pip install httpx==0.27.0 psutil==6.1.0 requests==2.32.0
 pip install aiofiles==24.1.0 python-multipart==0.0.17 websockets==13.1
 pip install python-whois==0.9.5 python-nmap==0.7.1
-pip install "qrcode[pil]==7.4.2" reportlab==4.2.5 numpy==2.1.0
+pip install "qrcode[pil]==7.4.2" reportlab==4.2.5
+# Solo si pkg no instalo numpy:
+python3 -c "import numpy" || pip install numpy
 
 # 4. Frontend
 cd tauri-frontend
@@ -1302,6 +1308,46 @@ curl -L -o /usr/share/wordlists/rockyou.txt \
 
 ```bash
 pip install reportlab
+```
+
+### "numpy metadata-generation-failed" / "ninja: build stopped: subcommand failed"
+
+**Causa:** `pip install numpy==2.1.0` intenta compilar numpy desde codigo fuente
+en Termux (Python 3.13, aarch64) porque no existe wheel precompilado para esa
+combinacion. La compilacion falla con decenas de errores de C++ template.
+
+**Solucion — usar el paquete nativo de Termux (sin compilar):**
+```bash
+pkg install -y python-numpy
+```
+
+Esto instala numpy ya compilado para tu arquitectura, evitando el build desde
+fuente por completo. Verificar que funciono:
+```bash
+python3 -c "import numpy; print(numpy.__version__)"
+```
+
+Si `pkg install python-numpy` no esta disponible o falla, como ultimo recurso:
+```bash
+pip install numpy   # SIN version fija — deja que pip elija un wheel compatible
+```
+
+`termux_setup.sh` ya aplica este orden automaticamente (pkg primero, pip como
+fallback sin pin de version).
+
+### "bash: cd: tauri-frontend: No such file or directory"
+
+**Causa:** Estas ejecutando el comando desde un directorio que no es la raiz
+del repositorio. `tauri-frontend/` solo existe dentro de `Red-team-tauri/`.
+
+**Solucion:** Verificar donde estas y moverte a la raiz del repo:
+```bash
+pwd                              # ver directorio actual
+ls                                # deberia mostrar: tauri-frontend, redteam, termux_setup.sh, etc.
+
+# Si no estas en la raiz, moverte ahi (ajusta la ruta si clonaste en otro lugar):
+cd ~/Red-team-tauri              # o donde hayas clonado el repo
+cd tauri-frontend && npm install && npm run build && cd ..
 ```
 
 ### Black Mirror: Ghostprint dice "insufficient_data"
