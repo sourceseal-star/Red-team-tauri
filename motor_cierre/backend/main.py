@@ -521,7 +521,7 @@ async def handle_email_reply(reply: EmailReply, background_tasks: BackgroundTask
 
 @app.post("/checkout/manual", status_code=200)
 @limiter.limit("20/minute")
-async def manual_checkout(req: CheckoutRequest, api_key: str = Depends(verify_api_key)):
+async def manual_checkout(req: CheckoutRequest, request: Request, api_key: str = Depends(verify_api_key)):
     product = None
     if req.product_id:
         product = ProductService.get_product(req.product_id)
@@ -542,7 +542,7 @@ async def manual_checkout(req: CheckoutRequest, api_key: str = Depends(verify_ap
 
 @app.get("/leads", status_code=200)
 @limiter.limit("30/minute")
-async def list_leads(status: Optional[LeadStatus] = None, product_id: Optional[str] = None,
+async def list_leads(request: Request, status: Optional[LeadStatus] = None, product_id: Optional[str] = None,
                      limit: int = 50, offset: int = 0, api_key: str = Depends(verify_api_key)):
     with get_db() as conn:
         c = conn.cursor()
