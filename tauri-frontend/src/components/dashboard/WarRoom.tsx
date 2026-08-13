@@ -6,6 +6,7 @@ import ExploitMatrix from '../ExploitMatrix';
 import TrafficMonitor from '../TrafficMonitor';
 import OSINTPanel from '../OSINTPanel';
 import WiFiPanel from '../WiFiPanel';
+import BlackMirrorPanel from '../BlackMirrorPanel';
 
 const TopologyMap = lazy(() => import('./TopologyMap'));
 
@@ -23,7 +24,7 @@ interface CameraItem {
   rtsp?: boolean;
 }
 
-type BottomView = 'comms' | 'intel' | 'recon';
+type BottomView = 'comms' | 'intel' | 'recon' | 'mirror';
 
 export default function WarRoom() {
   // ---- Topología ----
@@ -416,6 +417,13 @@ export default function WarRoom() {
           >
             🔍 Recon OSINT
           </button>
+          <button
+            onClick={() => setBottomView('mirror')}
+            className={`px-3 py-1 text-[10px] border rounded-t font-mono transition
+              ${bottomView === 'mirror' ? 'bg-pink-500/20 border-pink-400 text-pink-200' : 'border-[var(--ss-border)] text-gray-400 hover:text-pink-300'}`}
+          >
+            🌑 Black Mirror
+          </button>
         </div>
 
         {bottomView === 'comms' ? (
@@ -499,6 +507,10 @@ export default function WarRoom() {
           <div className="h-56 grid grid-cols-2 gap-3">
             <OSINTPanel />
             <WiFiPanel />
+          </div>
+        ) : bottomView === 'mirror' ? (
+          <div className="h-56 grid grid-cols-1 gap-3">
+            <BlackMirrorPanel />
           </div>
         ) : null}
       </div>

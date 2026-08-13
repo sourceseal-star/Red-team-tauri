@@ -3044,3 +3044,389 @@ async def wifi_delete_capture(filename: str):
     raise HTTPException(status_code=404, detail="Archivo no encontrado")
 
 # == END WIFI SCANNER =================================================
+
+# ============================================================
+# MÓDULO 6: BLACK MIRROR (Canary Forge + Shadow Twin + Ghostprint + Chaos)
+# ============================================================
+
+BM_DB = str(DATA_DIR / "blackmirror.db")
+CANARY_DIR = str(DATA_DIR / "canary_docs")
+SHADOW_DIR = str(DATA_DIR / "shadow_configs")
+os.makedirs(CANARY_DIR, exist_ok=True)
+os.makedirs(SHADOW_DIR, exist_ok=True)
+
+def _init_bm_db():
+    conn = _sqlite3.connect(BM_DB)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS bm_canaries (
+        id TEXT PRIMARY KEY, recipient TEXT, doc_type TEXT,
+        token TEXT, created TEXT, triggered TEXT, trigger_ip TEXT, trigger_ua TEXT
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS ghostprints (
+        host TEXT, hour INTEGER, day_of_week INTEGER,
+        seen INTEGER, avg_rtt REAL, last_seen TEXT,
+        PRIMARY KEY (host, hour, day_of_week)
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS chaos_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        real_service TEXT, fake_banner TEXT, fake_os TEXT,
+        port INTEGER, active INTEGER DEFAULT 1
+    )''')
+    conn.commit()
+    conn.close()
+
+_init_bm_db()
+
+# ─── 1. CANARY FORGE ─────────────────────────────────────────────
+
+def _bm_canary_token(recipient: str, doc_id: str) -> str:
+    return hashlib.sha256(f"{recipient}:{doc_id}:{os.urandom(16).hex()}".encode()).hexdigest()[:32]
+
+def _create_canary_pdf(recipient: str, title: str, content: str, token: str, doc_id: str) -> str:
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.units import inch
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Instala: pip install reportlab")
+
+    filepath = os.path.join(CANARY_DIR, f"canary_{doc_id}.pdf")
+    c = canvas.Canvas(filepath, pagesize=letter)
+    width, height = letter
+
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(1*inch, height - 1*inch, title)
+    c.setFont("Helvetica", 11)
+    text_obj = c.beginText(1*inch, height - 1.5*inch)
+    for line in content.split('\n'):
+        text_obj.textLine(line)
+    c.drawText(text_obj)
+
+    # Watermark invisible
+    c.setFont("Helvetica", 1)
+    c.setFillColorRGB(0.999, 0.999, 0.999)
+    c.drawString(0.1*inch, 0.1*inch, f"BM-{token}")
+
+    # Metadatos unicos
+    c.setAuthor(f"{recipient} - {token[:8]}")
+    c.setTitle(title)
+    c.setSubject(f"BM:{token}")
+    c.setKeywords(f"canary,{recipient},{doc_id}")
+    c.setCreator(f"BlackMirror/1.0/{token}")
+    c.save()
+    return filepath
+
+def _create_canary_html(recipient: str, title: str, content: str, token: str, doc_id: str) -> str:
+    filepath = os.path.join(CANARY_DIR, f"canary_{doc_id}.html")
+    bug_url = f"/api/blackmirror/canary/ping/{token}"
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{title}</title>
+    <meta name="author" content="{recipient}">
+    <meta name="generator" content="BM-{token}">
+</head>
+<body>
+    <h1>{title}</h1>
+    <p>{content.replace(chr(10), '</p><p>')}</p>
+    <img src="{bug_url}" width="1" height="1" style="display:none" alt="" />
+    <!-- {token} -->
+</body>
+</html>"""
+    with open(filepath, "w") as f:
+        f.write(html)
+    return filepath
+
+@app.post("/api/blackmirror/canary/forge")
+async def bm_forge_canary(recipient: str = Query(...), doc_type: str = Query("html"),
+                          title: str = Query("Documento Confidencial"),
+                          content: str = Query("Este documento contiene informacion sensible.")):
+    doc_id = str(uuid.uuid4())[:12]
+    token = _bm_canary_token(recipient, doc_id)
+
+    if doc_type == "pdf":
+        path = _create_canary_pdf(recipient, title, content, token, doc_id)
+    elif doc_type == "html":
+        path = _create_canary_html(recipient, title, content, token, doc_id)
+    else:
+        raise HTTPException(status_code=400, detail="Tipo soportado: pdf, html")
+
+    conn = _sqlite3.connect(BM_DB)
+    c = conn.cursor()
+    c.execute("INSERT INTO bm_canaries VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)",
+              (doc_id, recipient, doc_type, token, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+
+    await broadcast({"type": "blackmirror", "payload": f"Canary forjado para {recipient} ({doc_type})"})
+    return {
+        "doc_id": doc_id, "recipient": recipient, "token": token,
+        "file": path, "type": doc_type,
+        "warning": "Distribuye este documento como si fuera real. Si se filtra, el token te delata al traidor."
+    }
+
+@app.get("/api/blackmirror/canary/ping/{token}")
+async def bm_canary_ping(token: str, request: Request):
+    """Web bug: se activa cuando alguien abre el documento HTML."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "unknown")
+    ua = request.headers.get("User-Agent", "Unknown")
+
+    conn = _sqlite3.connect(BM_DB)
+    c = conn.cursor()
+    c.execute("SELECT id, recipient FROM bm_canaries WHERE token = ?", (token,))
+    row = c.fetchone()
+
+    if row:
+        doc_id, recipient = row
+        c.execute("""UPDATE bm_canaries SET triggered = ?, trigger_ip = ?, trigger_ua = ?
+                     WHERE token = ?""", (datetime.now().isoformat(), ip, ua, token))
+        conn.commit()
+        conn.close()
+        print(f"\n[CANARY TRIGGERED] Doc: {doc_id} | Recipient: {recipient} | IP: {ip} | UA: {ua}\n")
+        await broadcast({"type": "blackmirror", "payload": f"CANARY TRIGGERED: {recipient} desde {ip}"})
+    else:
+        conn.close()
+
+    # 1x1 transparent GIF
+    gif_bytes = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+    return Response(content=gif_bytes, media_type="image/gif")
+
+@app.get("/api/blackmirror/canary/status")
+async def bm_canary_status():
+    conn = _sqlite3.connect(BM_DB)
+    c = conn.cursor()
+    c.execute("SELECT * FROM bm_canaries ORDER BY created DESC")
+    rows = c.fetchall()
+    conn.close()
+    return {"canaries": [
+        {"id": r[0], "recipient": r[1], "type": r[2], "token": r[3],
+         "created": r[4], "triggered": r[5], "trigger_ip": r[6], "trigger_ua": r[7],
+         "compromised": r[5] is not None}
+        for r in rows
+    ]}
+
+# ─── 2. SHADOW TWIN ──────────────────────────────────────────────
+
+@app.post("/api/blackmirror/shadow/twin")
+async def bm_shadow_twin(scan_result: dict):
+    """Genera configs de honeypots que imitan servicios detectados."""
+    hosts = scan_result.get("hosts", [])
+    if not hosts:
+        # Usar hosts del store si no se pasan
+        hosts = scan_result.get("data", [])
+
+    if not hosts:
+        raise HTTPException(status_code=400, detail="Se requiere resultado de escaneo con hosts")
+
+    configs = []
+    for host in hosts:
+        ip = host.get("ip", host.get("address", "unknown"))
+        for port in host.get("ports", []):
+            service = port.get("service", "unknown")
+            port_num = port.get("port", 0)
+
+            config = {
+                "type": "honeypot",
+                "mimics": {"ip": ip, "port": port_num, "service": service},
+                "listeners": [], "traps": []
+            }
+
+            if service in ["ssh", "telnet"]:
+                config["listeners"].append({
+                    "port": port_num + 10000, "protocol": "tcp",
+                    "banner": "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.5",
+                    "trap": "fake_shell",
+                    "commands": {"whoami": "root", "id": "uid=0(root) gid=0(root)"}
+                })
+                config["traps"].append("credentials_honeytrap")
+            elif service in ["http", "https"]:
+                config["listeners"].append({
+                    "port": port_num + 10000, "protocol": "tcp",
+                    "banner": "Server: nginx/1.18.0",
+                    "trap": "fake_admin_panel",
+                    "pages": ["/admin", "/login", "/config"]
+                })
+                config["traps"].append("sql_injection_honeytrap")
+            elif service == "ftp":
+                config["listeners"].append({
+                    "port": port_num + 10000, "protocol": "tcp",
+                    "banner": "220 ProFTPD 1.3.5 Server",
+                    "trap": "fake_ftp",
+                    "files": ["backup.zip", "credentials.xlsx", "secret.pdf"]
+                })
+                config["traps"].append("file_exfil_honeytrap")
+
+            config_path = os.path.join(SHADOW_DIR, f"shadow_{ip}_{port_num}.json")
+            with open(config_path, "w") as f:
+                json.dump(config, f, indent=2)
+
+            configs.append({
+                "target": f"{ip}:{port_num}", "service": service,
+                "shadow_port": port_num + 10000, "config_file": config_path,
+                "traps": config["traps"]
+            })
+
+    # Script de despliegue
+    deploy_script = os.path.join(SHADOW_DIR, "deploy_shadows.sh")
+    with open(deploy_script, "w") as f:
+        f.write("#!/bin/bash\n# Shadow Twin Deployer\n")
+        for c in configs:
+            f.write(f"echo '[+] Levantando honeypot para {c['target']} en puerto {c['shadow_port']}'\n")
+            f.write(f"nc -l -p {c['shadow_port']} &\n")
+        f.write("wait\n")
+    os.chmod(deploy_script, 0o755)
+
+    await broadcast({"type": "blackmirror", "payload": f"Shadow Twin: {len(configs)} honeypots generados"})
+    return {
+        "shadows_generated": len(configs), "configs": configs,
+        "deploy_script": deploy_script,
+        "note": "Los honeypots usan puerto real + 10000. Modifica el offset segun tu red."
+    }
+
+# ─── 3. GHOSTPRINT ───────────────────────────────────────────────
+
+@app.post("/api/blackmirror/ghostprint/learn")
+async def bm_ghostprint_learn(scan_data: dict):
+    """Alimenta con resultados de escaneo periodicos para aprender patrones."""
+    host = scan_data.get("host")
+    rtt = float(scan_data.get("rtt", 0))
+    hour = datetime.now().hour
+    dow = datetime.now().weekday()
+
+    if not host:
+        raise HTTPException(status_code=400, detail="Se requiere host")
+
+    conn = _sqlite3.connect(BM_DB)
+    c = conn.cursor()
+    c.execute("SELECT seen, avg_rtt FROM ghostprints WHERE host = ? AND hour = ? AND day_of_week = ?",
+              (host, hour, dow))
+    row = c.fetchone()
+
+    if row:
+        seen, old_rtt = row
+        new_rtt = (old_rtt * seen + rtt) / (seen + 1)
+        c.execute("""UPDATE ghostprints SET seen = ?, avg_rtt = ?, last_seen = ?
+                     WHERE host = ? AND hour = ? AND day_of_week = ?""",
+                  (seen + 1, new_rtt, datetime.now().isoformat(), host, hour, dow))
+    else:
+        c.execute("INSERT INTO ghostprints VALUES (?, ?, ?, 1, ?, ?)",
+                  (host, hour, dow, rtt, datetime.now().isoformat()))
+
+    conn.commit()
+    conn.close()
+    return {"status": "learned", "host": host, "hour": hour, "day": dow}
+
+@app.get("/api/blackmirror/ghostprint/profile/{host}")
+async def bm_ghostprint_profile(host: str):
+    """Devuelve el perfil semanal de un host y detecta anomalias."""
+    conn = _sqlite3.connect(BM_DB)
+    c = conn.cursor()
+    c.execute("SELECT hour, day_of_week, seen, avg_rtt FROM ghostprints WHERE host = ? ORDER BY day_of_week, hour",
+              (host,))
+    rows = c.fetchall()
+    conn.close()
+
+    if not rows:
+        return {"host": host, "profile": "insufficient_data",
+                "message": "Necesito minimo 7 dias de escaneos periodicos."}
+
+    profile = {}
+    total_seen = sum(r[2] for r in rows)
+
+    for hour, dow, seen, rtt in rows:
+        key = f"{dow}:{hour}"
+        probability = seen / total_seen if total_seen > 0 else 0
+        profile[key] = {"probability": round(probability, 3), "seen": seen, "avg_rtt": round(rtt, 2)}
+
+    now = datetime.now()
+    current_key = f"{now.weekday()}:{now.hour}"
+    current_prob = profile.get(current_key, {}).get("probability", 0)
+
+    anomaly = None
+    if current_prob < 0.05 and total_seen > 50:
+        anomaly = {
+            "type": "GHOST_ANOMALY", "severity": "HIGH",
+            "message": f"{host} esta activo ahora pero su probabilidad historica a esta hora es {current_prob:.1%}",
+            "usual_hours": [k for k, v in profile.items() if v["probability"] > 0.1]
+        }
+
+    return {
+        "host": host, "total_observations": total_seen,
+        "current_hour_probability": current_prob,
+        "profile": profile, "anomaly": anomaly,
+        "recommendation": "Operar durante horas de baja probabilidad para evitar deteccion." if not anomaly else "INVESTIGAR: Host activo fuera de patron."
+    }
+
+@app.get("/api/blackmirror/ghostprint/window/{host}")
+async def bm_ghostprint_window(host: str):
+    """Sugiere la mejor ventana temporal para operar contra este host."""
+    conn = _sqlite3.connect(BM_DB)
+    c = conn.cursor()
+    c.execute("SELECT hour, day_of_week, seen FROM ghostprints WHERE host = ?", (host,))
+    rows = c.fetchall()
+    conn.close()
+
+    all_slots = [(h, d, s) for h, d, s in rows]
+    all_slots.sort(key=lambda x: x[2])
+
+    days = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+    best_windows = []
+    for h, d, s in all_slots[:3]:
+        best_windows.append({"day": days[d], "hour": f"{h:02d}:00", "historical_activity": s})
+
+    return {
+        "host": host, "optimal_windows": best_windows,
+        "tactic": "Operar en estas franjas minimiza probabilidad de deteccion por monitoreo humano."
+    }
+
+# ─── 4. CHAOS FINGERPRINT ────────────────────────────────────────
+
+@app.post("/api/blackmirror/chaos/apply")
+async def bm_chaos_apply(real_port: int = Query(...), fake_os: str = Query("Windows Server 2019"),
+                         fake_service: str = Query("Microsoft-IIS/10.0")):
+    """Regla de envenenamiento de huellas."""
+    conn = _sqlite3.connect(BM_DB)
+    c = conn.cursor()
+    c.execute("INSERT INTO chaos_rules (real_service, fake_banner, fake_os, port) VALUES (?, ?, ?, ?)",
+              (fake_service, fake_service, fake_os, real_port))
+    rule_id = c.lastrowid
+    conn.commit()
+    conn.close()
+
+    script_path = os.path.join(SHADOW_DIR, f"chaos_{rule_id}.sh")
+    redirector = f"""#!/bin/bash
+# Chaos Fingerprint Rule {rule_id}
+# Puerto real: {real_port} -> Responde como: {fake_os} / {fake_service}
+
+iptables -t nat -A PREROUTING -p tcp --dport {real_port} -j REDIRECT --to-port {real_port + 20000}
+
+while true; do
+    echo -e "HTTP/1.1 200 OK\\r\\nServer: {fake_service}\\r\\nX-Powered-By: ASP.NET\\r\\n\\r\\n<html><body>IIS Windows Server</body></html>" | nc -l -p {real_port + 20000}
+done &
+"""
+    with open(script_path, "w") as f:
+        f.write(redirector)
+    os.chmod(script_path, 0o755)
+
+    await broadcast({"type": "blackmirror", "payload": f"Chaos aplicado: puerto {real_port} ahora simula {fake_os}"})
+    return {
+        "rule_id": rule_id, "real_port": real_port, "fake_os": fake_os,
+        "fake_service": fake_service, "script": script_path,
+        "warning": "Ejecuta el script como root. Esto redirige trafico real. Usalo solo en entornos controlados."
+    }
+
+@app.get("/api/blackmirror/chaos/status")
+async def bm_chaos_status():
+    conn = _sqlite3.connect(BM_DB)
+    c = conn.cursor()
+    c.execute("SELECT id, real_service, fake_banner, fake_os, port, active FROM chaos_rules ORDER BY id DESC")
+    rows = c.fetchall()
+    conn.close()
+    return {"rules": [
+        {"id": r[0], "real": r[1], "fake_banner": r[2], "fake_os": r[3], "port": r[4], "active": bool(r[5])}
+        for r in rows
+    ]}
+
+# == END BLACK MIRROR ================================================
