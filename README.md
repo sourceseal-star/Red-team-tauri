@@ -1,4 +1,4 @@
-# SourceSeal Console Pro v3.1 — Sala de Guerra Unificada
+# SourceSeal Console Pro v3.2 — Sala de Guerra Unificada
 
 > **Consola de operaciones de seguridad ofensiva y defensiva.**  
 > Topología + Cámaras + Ultrasonidos + Threat Intel + Exploits + Captura de tráfico.
@@ -42,6 +42,7 @@ bash sync.sh
 | 📡 **Packet Analyzer** | tcpdump + detección ARP storm / port scan | ✅ |
 | 🔍 **OSINT Engine** | crt.sh + brute force + WHOIS + emails + metadatos | ✅ |
 | 📶 **WiFi Scanner** | termux-api / iw / airodump-ng + captura + crackeo | ✅ |
+| 🌑 **Black Mirror** | Canary Forge + Shadow Twin + Ghostprint + Chaos Fingerprint | ✅ |
 | 📤 **Evidencia Blindada** | Hash SHA-256 + blockchain + PDF con QR + modo offline | ✅ |
 | 🪤 **Honeypot** | Honeypot + canary tokens | ✅ |
 | 🔍 **OSINT** | Shodan + WHOIS + geolocalización | ✅ |
@@ -63,4 +64,4 @@ Cyan `#00e5ff` · Amber `#fbbf24` · Red `#ff3b5c` · Green `#00ff88`
 
 ---
 
-*SourceSeal / Red-Team-Tauri v3.1 · 2026*
+*SourceSeal / Red-Team-Tauri v3.2 · 2026*

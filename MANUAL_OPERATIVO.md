@@ -1,5 +1,5 @@
 # 🛡️ MANUAL OPERATIVO — Red-Team-Tauri / SourceSeal
-## Sala de Guerra Unificada v3.1
+## Sala de Guerra Unificada v3.2
 
 > **Consola de operaciones de seguridad ofensiva y defensiva.**  
 > Topología + Cámaras + Comunicaciones Ultrasónicas + Threat Intel + Exploits + Captura de tráfico — todo en un dashboard.
@@ -23,10 +23,11 @@
 13. [Packet Analyzer](#13-packet-analyzer)
 14. [OSINT Engine](#14-osint-engine)
 15. [WiFi Scanner](#15-wifi-scanner)
-16. [Evidencia Blindada](#16-evidencia-blindada)
-17. [Comandos de Sincronización](#17-comandos-de-sincronización)
-18. [Solución de Problemas](#18-solución-de-problemas)
-19. [Identidad Visual SourceSeal](#19-identidad-visual-sourceseal)
+16. [Black Mirror](#16-black-mirror)
+17. [Evidencia Blindada](#17-evidencia-blindada)
+18. [Comandos de Sincronización](#18-comandos-de-sincronización)
+19. [Solución de Problemas](#19-solución-de-problemas)
+20. [Identidad Visual SourceSeal](#20-identidad-visual-sourceseal)
 
 ---
 
@@ -58,6 +59,8 @@
 | `aircrack-ng` | `pkg install aircrack-ng` / `apt install aircrack-ng` | WiFi — captura y crackeo de handshakes |
 | `iw` | `apt install iw` | WiFi — escaneo de redes (Linux/Kali) |
 | `termux-api` | `pkg install termux-api` | WiFi — escaneo sin root en Termux |
+| `iptables` | `apt install iptables` | Black Mirror — Chaos Fingerprint |
+| `netcat` | `pkg install netcat-openbsd` / `apt install netcat-openbsd` | Black Mirror — Shadow Twin + Chaos |
 | `qrencode` | `pkg install qrencode` | Códigos QR en evidencia |
 
 ### Dependencias Python
@@ -306,6 +309,7 @@ Red-Team-Tauri/
 │   │   │   ├── TrafficMonitor.tsx     # Packet Analyzer
 │   │   │   ├── OSINTPanel.tsx         # OSINT Engine (crt.sh + WHOIS + emails)
 │   │   │   ├── WiFiPanel.tsx          # WiFi Scanner (scan + capture + crack)
+│   │   │   ├── BlackMirrorPanel.tsx    # Black Mirror (Canary + Ghost + Chaos)
 │   │   │   ├── CameraGrid.tsx         # Grid de cámaras
 │   │   │   ├── EvidenceExporter.tsx   # Evidencia blindada
 │   │   │   ├── MurcielagoPanel.tsx    # Ultrasonidos (panel standalone)
@@ -419,6 +423,35 @@ Red-Team-Tauri/
 | `GET` | `/api/wifi/captures` | Lista de capturas .cap |
 | `DELETE` | `/api/wifi/captures/{filename}` | Eliminar captura |
 
+### Black Mirror — Canary Forge
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/blackmirror/canary/forge` | Generar documento canary (PDF o HTML) |
+| `GET` | `/api/blackmirror/canary/ping/{token}` | Web bug (se activa al abrir el documento) |
+| `GET` | `/api/blackmirror/canary/status` | Estado de todos los canaries |
+
+### Black Mirror — Shadow Twin
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/blackmirror/shadow/twin` | Generar configs de honeypots desde escaneo |
+
+### Black Mirror — Ghostprint
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/blackmirror/ghostprint/learn` | Alimentar patrón temporal de un host |
+| `GET` | `/api/blackmirror/ghostprint/profile/{host}` | Perfil semanal + detección de anomalías |
+| `GET` | `/api/blackmirror/ghostprint/window/{host}` | Ventanas óptimas para operar |
+
+### Black Mirror — Chaos Fingerprint
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/blackmirror/chaos/apply` | Aplicar regla de envenenamiento de huella |
+| `GET` | `/api/blackmirror/chaos/status` | Lista de reglas de chaos activas |
+
 ### Evidencia Blindada
 
 | Método | Ruta | Descripción |
@@ -471,20 +504,23 @@ La **Sala de Guerra** (`WarRoom.tsx`) es el dashboard unificado:
 |    Traceroute overlay  |  - Deteccion movimiento|
 |  - Hosts seleccionables|  - Hash de capturas    |
 +------------------------+------------------------+
-|  TABS: Murcielago | Threat Intel | Recon OSINT  |
-+-------------------------------------------------+
-|  Murcielago:                                    |
-|  - Slider de frecuencia (16-22 kHz)            |
-|  - Envio via Web Audio API (sin backend)       |
-|  - Recepcion via backend (microfono + FFT)    |
-|  - Historial de mensajes                       |
-+-------------------------------------------------+
-|  Threat Intel (3 columnas):                    |
-|  IntelPanel - ExploitMatrix - TrafficMonitor   |
-+-------------------------------------------------+
-|  Recon OSINT (2 columnas):                     |
-|  OSINTPanel - WiFiPanel                         |
-+-------------------------------------------------+
+|  TABS: Murcielago | Threat Intel | Recon | Mirror |
++---------------------------------------------------+
+|  Murcielago:                                      |
+|  - Slider de frecuencia (16-22 kHz)              |
+|  - Envio via Web Audio API (sin backend)         |
+|  - Recepcion via backend (microfono + FFT)      |
+|  - Historial de mensajes                          |
++---------------------------------------------------+
+|  Threat Intel (3 columnas):                      |
+|  IntelPanel - ExploitMatrix - TrafficMonitor     |
++---------------------------------------------------+
+|  Recon OSINT (2 columnas):                       |
+|  OSINTPanel - WiFiPanel                           |
++---------------------------------------------------+
+|  Black Mirror (panel completo):                  |
+|  Canary Forge | Ghostprint | Chaos Fingerprint   |
++---------------------------------------------------+
 ```
 
 ### Operacion desde el dashboard
@@ -497,6 +533,10 @@ La **Sala de Guerra** (`WarRoom.tsx`) es el dashboard unificado:
 6. **Traffic Analyzer**: Seleccionar interfaz -> "Capturar" -> 15s + analisis.
 7. **OSINT**: Ingresar dominio -> botones Subs/Emails/WHOIS -> resultados con fuente e historial.
 8. **WiFi**: Click en "Escanear" -> redes con señal semaforica -> capturar handshake -> crackear.
+9. **Black Mirror**: 3 sub-modulos en panel independiente:
+   - **Canary Forge**: Forjar doc con destinatario -> si se filtra, el token delata al traidor.
+   - **Ghostprint**: Analizar IP -> heatmap 7x24 -> ventanas optimas para operar sin deteccion.
+   - **Chaos**: Aplicar envenenamiento -> puerto real responde como Windows/Cisco/Fortinet.
 
 ---
 
@@ -824,7 +864,135 @@ curl -X DELETE http://localhost:8001/api/wifi/captures/archivo.cap
 
 ---
 
-## 16. EVIDENCIA BLINDADA
+## 16. BLACK MIRROR
+
+Modulo de operaciones de deception y contrainteligencia con 4 capacidades:
+
+### 16.1 Canary Forge — Documentos marcados geneticamente
+
+Genera documentos unicos con tokens invisibles por destinatario. Si el documento se filtra, el token identifica al responsable.
+
+**Tipos de documento:**
+- **HTML**: incluye un web bug (pixel 1x1) que reporta IP + User-Agent al abrirse
+- **PDF**: watermark invisible (texto 1pt color casi blanco) + metadatos unicos (Author, Subject, Creator)
+
+**Uso desde el dashboard:**
+1. Ir al tab "Black Mirror" -> sub-tab "Canary"
+2. Ingresar destinatario (ej: `juan.perez`)
+3. Ingresar titulo del documento
+4. Seleccionar tipo: HTML (web bug) o PDF (watermark)
+5. Click en "Forjar Documento Canary"
+6. Distribuir el documento como si fuera real
+
+**Deteccion de compromiso:**
+- El panel muestra todos los canaries con estado SEGURO o COMPROMETIDO
+- Si alguien abre un HTML canary, se registra: IP, User-Agent, fecha/hora
+- Los canaries comprometidos aparecen en rojo con animate-pulse
+
+**API directa:**
+```bash
+# Forjar canary
+curl -X POST "http://localhost:8001/api/blackmirror/canary/forge?recipient=juan.perez&doc_type=html&title=Informe+Q3"
+
+# Ver estado
+curl http://localhost:8001/api/blackmirror/canary/status
+
+# Web bug (se activa automaticamente al abrir HTML)
+curl http://localhost:8001/api/blackmirror/canary/ping/TOKEN_AQUI
+```
+
+### 16.2 Shadow Twin — Clonacion de topologia para honeypots
+
+Recibe resultados de escaneo nmap y genera configuraciones de honeypots que imitan exactamente los servicios detectados.
+
+**Traps generados:**
+- **SSH/Telnet**: fake_shell (responde whoami=root, id=uid=0) + credentials_honeytrap
+- **HTTP/HTTPS**: fake_admin_panel (paginas /admin, /login, /config) + sql_injection_honeytrap
+- **FTP**: fake_ftp (archivos backup.zip, credentials.xlsx, secret.pdf) + file_exfil_honeytrap
+
+**Uso:**
+```bash
+# Generar shadows desde un escaneo
+curl -X POST http://localhost:8001/api/blackmirror/shadow/twin   -H "Content-Type: application/json"   -d '{"hosts":[{"ip":"192.168.1.10","ports":[{"port":22,"service":"ssh"},{"port":80,"service":"http"}]}]}'
+
+# Desplegar honeypots (requiere root)
+sudo bash redteam/data/shadow_configs/deploy_shadows.sh
+```
+
+Los honeypots usan puerto real + 10000 (offset configurable).
+
+### 16.3 Ghostprint — Perfil temporal de comportamiento
+
+Aprende cuando cada host esta activo y detecta anomalias temporales.
+
+**Flujo:**
+1. Alimentar con escaneos periodicos: `POST /api/blackmirror/ghostprint/learn`
+2. Consultar perfil: muestra heatmap 7x24 (168 celdas) con probabilidad por franja
+3. Detecta GHOST_ANOMALY: host activo fuera de su patron historico (prob < 5%)
+4. Sugiere ventanas optimas: 3 franjas con menor actividad para operar
+
+**Uso desde el dashboard:**
+1. Ir al tab "Black Mirror" -> sub-tab "Ghost"
+2. Ingresar IP del host
+3. Click en "Analizar"
+4. Heatmap muestra actividad por dia/hora (purple = alta, oscuro = baja)
+5. Si hay anomalia, alerta roja con detalles
+6. Ventanas optimas en verde
+
+**API directa:**
+```bash
+# Alimentar (ejecutar periodicamente, ej: cron cada hora)
+curl -X POST http://localhost:8001/api/blackmirror/ghostprint/learn   -H "Content-Type: application/json"   -d '{"host":"192.168.1.10","rtt":0.5}'
+
+# Perfil
+curl http://localhost:8001/api/blackmirror/ghostprint/profile/192.168.1.10
+
+# Ventanas optimas
+curl http://localhost:8001/api/blackmirror/ghostprint/window/192.168.1.10
+```
+
+**Requisito:** Minimo 7 dias de escaneos periodicos para datos utiles. Mas de 50 observaciones para deteccion de anomalias.
+
+### 16.4 Chaos Fingerprint — Envenenamiento de huellas
+
+Hace que tu servidor Linux responda como un Windows IIS, Cisco IOS, Fortinet, etc. durante escaneos.
+
+**Uso desde el dashboard:**
+1. Ir al tab "Black Mirror" -> sub-tab "Chaos"
+2. Ingresar puerto real a envenenar (ej: 80)
+3. Seleccionar OS falso: Windows Server 2019, Cisco IOS, Fortinet, JunOS, Windows XP
+4. Click en "Aplicar Chaos Rule"
+5. Ejecutar el script generado como root
+
+**Efectos:**
+- `nmap -O` reportara el OS falso
+- Shodan/Censys/BinaryEdge clasificaran incorrectamente
+- Atacantes perderan tiempo con exploits equivocados
+
+**API directa:**
+```bash
+# Aplicar regla
+curl -X POST "http://localhost:8001/api/blackmirror/chaos/apply?real_port=80&fake_os=Windows+Server+2019"
+
+# Ver reglas
+curl http://localhost:8001/api/blackmirror/chaos/status
+
+# Ejecutar (requiere root)
+sudo bash redteam/data/shadow_configs/chaos_*.sh
+```
+
+**Requisitos:** `iptables` + `netcat` + root. Usar solo en entornos controlados.
+
+### 16.5 Base de datos
+
+Black Mirror usa `data/blackmirror.db` (SQLite) con 3 tablas:
+- `bm_canaries` — documentos canary con estado de compromiso
+- `ghostprints` — patrones temporales (host, hora, dia, seen, avg_rtt)
+- `chaos_rules` — reglas de envenenamiento activas
+
+---
+
+## 17. EVIDENCIA BLINDADA
 
 ### Que hace
 
@@ -854,7 +1022,7 @@ curl http://localhost:8001/api/export/verify/HASH_AQUI
 
 ---
 
-## 17. COMANDOS DE SINCRONIZACIÓN
+## 18. COMANDOS DE SINCRONIZACIÓN
 
 ### `sync.sh` — Traer cambios de GitHub
 
@@ -913,7 +1081,7 @@ curl http://localhost:8001/api/murcielago/status
 
 ---
 
-## 18. SOLUCIÓN DE PROBLEMAS
+## 19. SOLUCIÓN DE PROBLEMAS
 
 ### El backend no arranca
 
@@ -1074,9 +1242,42 @@ curl -L -o /usr/share/wordlists/rockyou.txt \
   https://github.com/brannondorsey/naive-hashcat/releases/download/data/rockyou.txt
 ```
 
+### Black Mirror: "reportlab no instalado" (Canary PDF)
+
+```bash
+pip install reportlab
+```
+
+### Black Mirror: Ghostprint dice "insufficient_data"
+
+- Necesitas minimo 7 dias de escaneos periodicos
+- Alimenta con: `POST /api/blackmirror/ghostprint/learn` (ej: cron cada hora)
+- Mas de 50 observaciones para deteccion de anomalias
+
+### Black Mirror: Chaos Fingerprint no funciona
+
+- Requiere root + iptables + netcat
+```bash
+sudo apt install iptables netcat-openbsd
+```
+- Ejecutar el script generado como root:
+```bash
+sudo bash redteam/data/shadow_configs/chaos_*.sh
+```
+- Solo usar en entornos controlados (redirige trafico real)
+
+### Black Mirror: Shadow Twin deploy falla
+
+- El script usa `nc -l -p` que requiere netcat-openbsd
+```bash
+pkg install netcat-openbsd   # Termux
+sudo apt install netcat-openbsd  # Linux
+```
+- Ejecutar como root si los puertos son < 1024
+
 ---
 
-## 19. IDENTIDAD VISUAL SOURCEESEAL
+## 20. IDENTIDAD VISUAL SOURCEESEAL
 
 ### Paleta de colores
 
@@ -1091,6 +1292,7 @@ curl -L -o /usr/share/wordlists/rockyou.txt \
 | `--ss-red` | `#ff3b5c` | Critico / exploits |
 | `--ss-green` | `#00ff88` | OK / trafico |
 | `--ss-purple` | `#a855f7` | OSINT / Recon |
+| `--ss-pink` | `#ec4899` | Black Mirror / Deception |
 
 ### Archivo de estilos
 
@@ -1105,6 +1307,7 @@ tauri-frontend/src/styles/source-seal.css
 - **Red** -> Critico, exploits, anomalias
 - **Green** -> OK, trafico limpio, capturas
 - **Purple** -> OSINT, Recon, subdominios
+- **Pink** -> Black Mirror, deception, canary, chaos
 - Fuente: `font-mono` (monospace)
 - Estilo: minimalista, tactico, sin gradientes innecesarios
 
@@ -1112,7 +1315,7 @@ tauri-frontend/src/styles/source-seal.css
 
 ## NOTAS FINALES
 
-- **Sin internet**: MURCIÉLAGO, captura de paquetes y WiFi Scanner funcionan 100% offline. Threat Intel, ExploitDB y OSINT (crt.sh) necesitan conexion para consulta inicial (luego cache/offline).
+- **Sin internet**: MURCIÉLAGO, captura de paquetes, WiFi Scanner y Black Mirror funcionan 100% offline. Threat Intel, ExploitDB y OSINT (crt.sh) necesitan conexion para consulta inicial (luego cache/offline).
 - **Seguridad**: La API key (`REDTEAM_API_KEY`) protege los endpoints. Sin ella, el backend no valida acceso — configurar en produccion.
 - **Rate limiting**: 60 requests/minuto por IP por defecto. Ajustable via `RATE_LIMIT`.
 - **Persistencia**: Datos en `redteam/data/`. SQLite para cache Intel, pcap en `captures/`, WAVs en `murcielago_wav/`.
@@ -1120,4 +1323,4 @@ tauri-frontend/src/styles/source-seal.css
 
 ---
 
-*Documentado: 2026-08-13 · SourceSeal / Red-Team-Tauri v3.1*
+*Documentado: 2026-08-13 · SourceSeal / Red-Team-Tauri v3.2*
