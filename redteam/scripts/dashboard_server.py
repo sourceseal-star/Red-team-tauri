@@ -295,15 +295,39 @@ async def tcp_check(host: str, port: int, timeout: float = 1.5) -> Optional[str]
         return banner
     except: return None
 
-def subnet_from_iface(iface: str = "wlan0") -> str:
+def _detect_active_iface() -> Optional[str]:
+    """Detecta la interfaz de red REALMENTE activa (la que tiene la ruta default),
+    en vez de asumir 'wlan0' que en muchos Android/Termux no existe o no es la activa."""
     try:
-        out = subprocess.check_output(["ip", "route", "show", "dev", iface],
+        out = subprocess.check_output(["ip", "route", "get", "8.8.8.8"],
                                       stderr=subprocess.DEVNULL).decode()
-        for line in out.splitlines():
-            parts = line.split()
-            if parts and "/" in parts[0]: return parts[0]
+        m = re.search(r"dev\s+(\S+)", out)
+        if m: return m.group(1)
     except: pass
-    return "192.168.1.0/24"
+    try:
+        out = subprocess.check_output(["ip", "route", "show", "default"],
+                                      stderr=subprocess.DEVNULL).decode()
+        m = re.search(r"dev\s+(\S+)", out)
+        if m: return m.group(1)
+    except: pass
+    return None
+
+def subnet_from_iface(iface: str = None) -> str:
+    """Devuelve el CIDR real de la red local. Ya NO asume wlan0: si no se
+    especifica interfaz, detecta la interfaz activa. Si todo falla, usa la
+    IP local real (truco del socket UDP) en vez de un 192.168.1.0/24 falso."""
+    target_iface = iface or _detect_active_iface()
+    if target_iface:
+        try:
+            out = subprocess.check_output(["ip", "route", "show", "dev", target_iface],
+                                          stderr=subprocess.DEVNULL).decode()
+            for line in out.splitlines():
+                parts = line.split()
+                if parts and "/" in parts[0]: return parts[0]
+        except: pass
+    # Fallback: usar la IP local real detectada (nunca un subnet inventado)
+    net = _detect_local_network()
+    return net["cidr"]
 
 def _detect_local_network() -> dict:
     try:
@@ -557,6 +581,70 @@ def _list_config_files() -> list:
 #  ENDPOINTS — ESCANEO DE RED
 # ═════════════════════════════════════════════════════════════════════════════
 
+# Puertos "huella digital" para clasificar tipo de dispositivo sin nmap -O
+# (nmap -O necesita root/raw sockets, no disponible en Termux sin root)
+FINGERPRINT_PORTS = [21, 22, 23, 80, 443, 554, 1883, 1900, 2323, 5000, 5683,
+                      7070, 8000, 8080, 8443, 8554, 9000, 37777, 47808, 62078]
+
+SERVICE_NAMES = {
+    21: "ftp", 22: "ssh", 23: "telnet", 80: "http", 443: "https",
+    554: "rtsp", 1883: "mqtt", 1900: "upnp/ssdp", 2323: "telnet-alt",
+    5000: "http-alt", 5683: "coap", 7070: "rtsp-alt", 8000: "http-alt",
+    8080: "http-proxy", 8443: "https-alt", 8554: "rtsp-alt",
+    9000: "http-alt", 37777: "dahua-dvr", 47808: "bacnet", 62078: "lockdownd",
+}
+
+# Puertos que implican riesgo alto si estan abiertos sin mas contexto
+HIGH_RISK_PORTS = {23: "Telnet expuesto (texto plano)", 21: "FTP expuesto (texto plano)",
+                    2323: "Telnet alterno expuesto"}
+MEDIUM_RISK_PORTS = {8080: "Panel admin HTTP sin cifrar", 80: "Panel admin HTTP sin cifrar",
+                      1900: "UPnP expuesto (SSDP)"}
+
+async def _fingerprint_host(ip: str) -> dict:
+    """Sondea puertos comunes en un host para: 1) clasificar tipo de dispositivo,
+    2) calcular nivel de riesgo real, 3) capturar banner/marca. Todo con TCP connect
+    puro (asyncio), sin necesitar root."""
+    tasks = [tcp_check(ip, p, timeout=0.9) for p in FINGERPRINT_PORTS]
+    banners = await asyncio.gather(*tasks)
+    open_ports = {p: b for p, b in zip(FINGERPRINT_PORTS, banners) if b is not None}
+
+    dev_type = "unknown"
+    vendor = None
+    risk = "low"
+    risk_reasons = []
+
+    if any(p in open_ports for p in (554, 8554, 37777)):
+        dev_type = "camera"
+        vendor = _detect_camera_brand(" ".join(open_ports.values()))
+    elif any(p in open_ports for p in (1883, 5683, 47808)):
+        dev_type = "iot"
+    elif 62078 in open_ports:
+        dev_type = "iot"
+        vendor = "Apple (lockdownd)"
+    elif any(p in open_ports for p in (80, 443, 8080, 8443, 22, 23, 1900)) and len(open_ports) >= 1:
+        http_banner = {}
+        for http_port, is_https in ((80, False), (8080, False), (443, True), (8443, True)):
+            if http_port in open_ports:
+                http_banner = _http_banner(ip, http_port, timeout=1.5, use_https=is_https)
+                break
+        combined = (http_banner.get("server", "") + " " + http_banner.get("body_preview", "")
+                    + " " + " ".join(open_ports.values()))
+        detected_vendor = _detect_router_brand(combined)
+        if detected_vendor != "Unknown" or 1900 in open_ports:
+            dev_type = "router"
+            vendor = detected_vendor if detected_vendor != "Unknown" else None
+
+    for p in open_ports:
+        if p in HIGH_RISK_PORTS:
+            risk = "high"; risk_reasons.append(HIGH_RISK_PORTS[p])
+        elif p in MEDIUM_RISK_PORTS and risk == "low":
+            risk = "medium"; risk_reasons.append(MEDIUM_RISK_PORTS[p])
+    if dev_type == "camera" and risk == "low":
+        risk = "medium"; risk_reasons.append("Cámara IP detectada — verificar credenciales por defecto")
+
+    return {"type": dev_type, "vendor": vendor, "risk": risk, "risk_reasons": risk_reasons,
+            "ports": sorted(open_ports.keys()), "banners": open_ports}
+
 @app.post("/api/scan/topology")
 async def scan_topology():
     subnet = subnet_from_iface()
@@ -574,6 +662,24 @@ async def scan_topology():
             if len(parts) >= 3:
                 current["mac"] = parts[2]
                 if len(parts) > 3: current["vendor"] = " ".join(parts[3:]).strip("()") or "unknown"
+
+    # Clasificar tipo + riesgo real de cada host (en paralelo, sin bloquear)
+    if hosts:
+        fp_results = await asyncio.gather(*[_fingerprint_host(h["ip"]) for h in hosts])
+        for h, fp in zip(hosts, fp_results):
+            h["type"] = fp["type"]
+            # El frontend (useScanStore.classifyRisk) espera objetos {port, service, banner},
+            # no una lista plana de numeros — por eso antes el risk score se quedaba en 0%.
+            h["ports"] = [
+                {"port": p, "service": SERVICE_NAMES.get(p, "unknown"),
+                 "state": "open", "banner": (fp["banners"].get(p) or "")[:80]}
+                for p in fp["ports"]
+            ]
+            h["risk"] = fp["risk"]
+            h["risk_reasons"] = fp["risk_reasons"]
+            if fp["vendor"] and not h.get("vendor"):
+                h["vendor"] = fp["vendor"]
+
     await broadcast({"type": "progress", "payload": f"Topología: {len(hosts)} hosts en {subnet}"})
     return {"results": hosts, "hosts_up": len(hosts), "subnet": subnet}
 

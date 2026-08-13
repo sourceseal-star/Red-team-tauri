@@ -28,6 +28,8 @@ export default function DashboardProV2() {
         ip: h.ip || h.host,
         mac: h.mac, vendor: h.vendor,
         ports: h.ports || [],
+        risk: h.risk,
+        risk_reasons: h.risk_reasons || [],
         first_seen: h.first_seen || new Date().toISOString(),
         type: h.type || 'unknown',
       }));
