@@ -25,7 +25,7 @@ fi
 sleep 2
 
 # -- 2. Deps Python --
-pip install -q fastapi uvicorn httpx psutil 2>/dev/null || true
+pip install -q fastapi uvicorn httpx psutil aiohttp 2>/dev/null || true
 
 # -- 3. Deps Node --
 cd "$SCRIPT_DIR/tauri-frontend"
