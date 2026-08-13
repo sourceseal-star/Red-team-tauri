@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 Descifrador del Manual de Operaciones - AES-256-CBC
-Uso: python3 acceder_manual_py.sh
+Uso:
+  python3 acceder_manual_py.py                    (te pide la clave, oculta)
+  python3 acceder_manual_py.py TU_CLAVE_AQUI      (clave como argumento, evita problemas de teclado)
 """
 import getpass
 import subprocess
@@ -21,9 +23,13 @@ def main():
     print("  Cifrado: AES-256-CBC + PBKDF2")
     print("============================================\n")
 
-    clave = getpass.getpass("Introduce la clave de acceso: ")
+    # Si se paso la clave como argumento, usarla directo (evita problemas de teclado/autocorreccion)
+    if len(sys.argv) > 1:
+        clave = sys.argv[1]
+        print(f"Usando clave pasada como argumento (longitud: {len(clave)})")
+    else:
+        clave = getpass.getpass("Introduce la clave de acceso: ")
 
-    # Descifrar con openssl
     try:
         result = subprocess.run(
             [
@@ -39,6 +45,7 @@ def main():
 
         if result.returncode != 0:
             print("\nCLAVE INCORRECTA. Acceso denegado.")
+            print(f"(detalle openssl: {result.stderr.strip()})")
             if os.path.exists(TEMP_FILE):
                 os.remove(TEMP_FILE)
             sys.exit(1)
@@ -47,10 +54,9 @@ def main():
             print("\nCLAVE INCORRECTA. Acceso denegado.")
             sys.exit(1)
 
-        # Verificar que el descifrado tiene sentido
         with open(TEMP_FILE, "r") as f:
-            primera_linea = f.readline()
-        if "MANUAL" not in primera_linea.upper():
+            primeras_lineas = f.read(500)
+        if "MANUAL DE OPERACIONES" not in primeras_lineas.upper():
             print("\nCLAVE INCORRECTA. Acceso denegado.")
             os.remove(TEMP_FILE)
             sys.exit(1)
@@ -72,7 +78,6 @@ def main():
         else:
             print(f"Descifrado en {TEMP_FILE}")
 
-        # Borrar temporal
         os.remove(TEMP_FILE)
         print("\nTemporal borrado. El manual cifrado sigue en manual_operaciones.enc")
 
