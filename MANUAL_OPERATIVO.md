@@ -1,5 +1,5 @@
 # 🛡️ MANUAL OPERATIVO — Red-Team-Tauri / SourceSeal
-## Sala de Guerra Unificada v3.0
+## Sala de Guerra Unificada v3.1
 
 > **Consola de operaciones de seguridad ofensiva y defensiva.**  
 > Topología + Cámaras + Comunicaciones Ultrasónicas + Threat Intel + Exploits + Captura de tráfico — todo en un dashboard.
@@ -21,10 +21,12 @@
 11. [Threat Intelligence](#11-threat-intelligence)
 12. [Exploit Matcher](#12-exploit-matcher)
 13. [Packet Analyzer](#13-packet-analyzer)
-14. [Evidencia Blindada](#14-evidencia-blindada)
-15. [Comandos de Sincronización](#15-comandos-de-sincronización)
-16. [Solución de Problemas](#16-solución-de-problemas)
-17. [Identidad Visual SourceSeal](#17-identidad-visual-sourceseal)
+14. [OSINT Engine](#14-osint-engine)
+15. [WiFi Scanner](#15-wifi-scanner)
+16. [Evidencia Blindada](#16-evidencia-blindada)
+17. [Comandos de Sincronización](#17-comandos-de-sincronización)
+18. [Solución de Problemas](#18-solución-de-problemas)
+19. [Identidad Visual SourceSeal](#19-identidad-visual-sourceseal)
 
 ---
 
@@ -50,6 +52,12 @@
 | `ffmpeg` | `pkg install ffmpeg` / `apt install ffmpeg` | RTSP→HLS, snapshots de cámaras, detección de movimiento |
 | `ffplay` | Incluido con ffmpeg | Reproducción de ultrasonidos (MURCIÉLAGO) |
 | `termux-microphone-record` | `pkg install termux-api` | Recepción de ultrasonidos (solo Termux) |
+| `whois` | `pkg install whois` / `apt install whois` | OSINT — WHOIS lookup |
+| `dig` | `pkg install bind-utils` / `apt install dnsutils` | OSINT — brute force de subdominios |
+| `exiftool` | `pkg install exiftool` / `apt install libimage-exiftool-perl` | OSINT — extracción de metadatos |
+| `aircrack-ng` | `pkg install aircrack-ng` / `apt install aircrack-ng` | WiFi — captura y crackeo de handshakes |
+| `iw` | `apt install iw` | WiFi — escaneo de redes (Linux/Kali) |
+| `termux-api` | `pkg install termux-api` | WiFi — escaneo sin root en Termux |
 | `qrencode` | `pkg install qrencode` | Códigos QR en evidencia |
 
 ### Dependencias Python
@@ -243,6 +251,7 @@ curl http://localhost:8001/health
 | `ALLOWED_ORIGINS` | `localhost:5173,127.0.0.1:5173` | CORS (separados por coma) |
 | `RATE_LIMIT` | `60` | Requests/min por IP |
 | `CANARY_CALLBACK_HOST` | (vacío) | URL pública para canary tokens |
+| `HUNTER_API_KEY` | (vacío) | Key de Hunter.io para email OSINT (25 req/mes gratis) |
 
 ### Cómo configurarlas
 
@@ -295,6 +304,8 @@ Red-Team-Tauri/
 │   │   │   ├── IntelPanel.tsx         # Threat Intel (AbuseIPDB)
 │   │   │   ├── ExploitMatrix.tsx      # Exploit Matcher
 │   │   │   ├── TrafficMonitor.tsx     # Packet Analyzer
+│   │   │   ├── OSINTPanel.tsx         # OSINT Engine (crt.sh + WHOIS + emails)
+│   │   │   ├── WiFiPanel.tsx          # WiFi Scanner (scan + capture + crack)
 │   │   │   ├── CameraGrid.tsx         # Grid de cámaras
 │   │   │   ├── EvidenceExporter.tsx   # Evidencia blindada
 │   │   │   ├── MurcielagoPanel.tsx    # Ultrasonidos (panel standalone)
@@ -386,6 +397,28 @@ Red-Team-Tauri/
 | `POST` | `/api/capture/stop/{id}` | Detener y analizar |
 | `GET` | `/api/capture/active` | Capturas activas |
 
+### OSINT Engine
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/osint/subdomains/{domain}` | Enumeración de subdominios (crt.sh + brute force) |
+| `GET` | `/api/osint/emails/{domain}` | Búsqueda de emails (Hunter.io + pattern-guess) |
+| `GET` | `/api/osint/whois/{domain}` | WHOIS lookup con parseo + cache |
+| `POST` | `/api/osint/metadata` | Extracción de metadatos con exiftool |
+| `GET` | `/api/osint/history/{target}` | Historial de consultas OSINT |
+| `GET` | `/api/osint/shodan` | Lookup en Shodan |
+| `POST` | `/api/osint/extract` | Extracción OSINT avanzada |
+
+### WiFi Scanner
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/wifi/scan` | Escaneo de redes WiFi (termux-api / iw / airodump-ng) |
+| `POST` | `/api/wifi/capture/{bssid}` | Captura handshake WPA/WPA2 |
+| `POST` | `/api/wifi/crack/{bssid}` | Crackeo de handshake con aircrack-ng |
+| `GET` | `/api/wifi/captures` | Lista de capturas .cap |
+| `DELETE` | `/api/wifi/captures/{filename}` | Eliminar captura |
+
 ### Evidencia Blindada
 
 | Método | Ruta | Descripción |
@@ -438,16 +471,19 @@ La **Sala de Guerra** (`WarRoom.tsx`) es el dashboard unificado:
 |    Traceroute overlay  |  - Deteccion movimiento|
 |  - Hosts seleccionables|  - Hash de capturas    |
 +------------------------+------------------------+
-|  TABS: Murcielago  |  Threat Intel             |
+|  TABS: Murcielago | Threat Intel | Recon OSINT  |
 +-------------------------------------------------+
 |  Murcielago:                                    |
-|  - Slider de frecuencia (16-22 kHz)             |
+|  - Slider de frecuencia (16-22 kHz)            |
 |  - Envio via Web Audio API (sin backend)       |
 |  - Recepcion via backend (microfono + FFT)    |
-|  - Historial de mensajes                        |
+|  - Historial de mensajes                       |
 +-------------------------------------------------+
-|  Threat Intel (3 columnas):                     |
+|  Threat Intel (3 columnas):                    |
 |  IntelPanel - ExploitMatrix - TrafficMonitor   |
++-------------------------------------------------+
+|  Recon OSINT (2 columnas):                     |
+|  OSINTPanel - WiFiPanel                         |
 +-------------------------------------------------+
 ```
 
@@ -459,6 +495,8 @@ La **Sala de Guerra** (`WarRoom.tsx`) es el dashboard unificado:
 4. **Threat Intel**: Click en "Verificar Reputacion" -> consulta AbuseIPDB.
 5. **Exploit Matrix**: Click en "Buscar Exploits" -> match contra ExploitDB.
 6. **Traffic Analyzer**: Seleccionar interfaz -> "Capturar" -> 15s + analisis.
+7. **OSINT**: Ingresar dominio -> botones Subs/Emails/WHOIS -> resultados con fuente e historial.
+8. **WiFi**: Click en "Escanear" -> redes con señal semaforica -> capturar handshake -> crackear.
 
 ---
 
@@ -630,7 +668,163 @@ curl http://localhost:8001/api/capture/active
 
 ---
 
-## 14. EVIDENCIA BLINDADA
+## 14. OSINT ENGINE
+
+### Descripcion
+
+Motor de inteligencia de fuentes abiertas (OSINT) con 4 capacidades:
+- **Subdominios** via crt.sh (gratis, sin API key) + brute force con dig
+- **Emails** via Hunter.io (si hay key) o pattern-guess
+- **WHOIS** via comando whois + parseo a JSON
+- **Metadatos** via exiftool con deteccion de campos sospechosos
+
+Todas las consultas se cachean en SQLite (24h TTL).
+
+### Activacion
+
+```bash
+# Herramientas del sistema
+pkg install whois dig          # Termux
+sudo apt install whois dnsutils # Linux
+
+# Exiftool (opcional, para metadatos)
+pkg install exiftool            # Termux
+sudo apt install libimage-exiftool-perl  # Linux
+
+# Hunter.io (opcional, para emails reales)
+# Registrarse en hunter.io (25 req/mes gratis)
+export HUNTER_API_KEY=tu_key_aqui
+
+# Wordlist para brute force (opcional, se crea una basica automaticamente)
+curl -o redteam/data/wordlists/subdomains.txt \
+  https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt
+```
+
+### Uso desde el dashboard
+
+1. Ir al tab "Recon OSINT"
+2. Ingresar dominio (ej: `ejemplo.com`)
+3. Click en **Subs** -> enumera subdominios (crt.sh + brute force)
+4. Click en **Emails** -> busca emails del dominio
+5. Click en **WHOIS** -> consulta WHOIS parseado
+
+Resultados muestran:
+- Subdominios: nombre + IP resuelta + fuente (crt.sh / brute-force)
+- Emails: direccion + fuente (hunter.io / pattern-guess) + confidence
+- WHOIS: campos parseados (registrar, creation date, etc.)
+- Historial: ultimas consultas con timestamp
+
+### API directa
+
+```bash
+# Subdominios (con brute force)
+curl "http://localhost:8001/api/osint/subdomains/ejemplo.com?brute=true"
+
+# Emails
+curl http://localhost:8001/api/osint/emails/ejemplo.com
+
+# WHOIS
+curl http://localhost:8001/api/osint/whois/ejemplo.com
+
+# Metadatos de archivo (requiere exiftool)
+curl -X POST "http://localhost:8001/api/osint/metadata?file_path=/ruta/archivo.pdf"
+
+# Historial
+curl http://localhost:8001/api/osint/history/ejemplo.com
+```
+
+### Wordlist por defecto
+
+Si no existe wordlist, se crea automaticamente con 55 palabras comunes:
+`www, mail, ftp, admin, api, app, blog, dev, staging, test, vpn, ns1, ns2, portal, shop, cdn, media, static, assets, secure, login, dashboard, panel, cpanel, webmail, smtp, pop, imap, mx, support, help, docs, wiki, git, gitlab, github, jenkins, jira, confluence, grafana, prometheus, kibana, elastic, db, database, sql, mysql, postgres, redis, mongo, backup, old, beta, alpha, demo, internal, intranet, extranet, private`
+
+Para mejor cobertura, descargar SecLists (5000 subdominios):
+```bash
+curl -o redteam/data/wordlists/subdomains.txt \
+  https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt
+```
+
+---
+
+## 15. WIFI SCANNER
+
+### Descripcion
+
+Escaneo de redes WiFi con 3 metodos progresivos (se intentan en orden):
+1. `termux-wifi-scaninfo` — Termux sin root (requiere termux-api + permisos de ubicacion)
+2. `iw dev wlan0 scan` — Linux/Kali (requiere root en Android)
+3. `airodump-ng` — Kali con modo monitor (requiere root + interfaz monitor)
+
+Captura de handshakes WPA/WPA2 y crackeo con aircrack-ng.
+
+### Activacion
+
+```bash
+# Termux (sin root)
+pkg install termux-api
+# Dar permisos de ubicacion a Termux:
+# Ajustes -> Apps -> Termux -> Permisos -> Ubicacion -> Permitir
+
+# Kali / Linux (con root)
+sudo apt install aircrack-ng iw
+# Modo monitor:
+sudo airmon-ng start wlan0
+# Interface pasara a llamarse wlan0mon
+
+# Wordlist para crackeo (rockyou.txt)
+mkdir -p /usr/share/wordlists
+curl -L -o /usr/share/wordlists/rockyou.txt \
+  https://github.com/brannondorsey/naive-hashcat/releases/download/data/rockyou.txt
+```
+
+### Uso desde el dashboard
+
+1. Ir al tab "Recon OSINT"
+2. Click en "Escanear" -> detecta redes WiFi cercanas
+3. Resultados muestran:
+   - SSID, BSSID, canal, encriptacion
+   - Señal semaforica: verde (>-50dBm), ambar (>-70dBm), rojo (<-70dBm)
+4. Click en **Handshake** -> captura 30s de handshake WPA/WPA2
+5. Click en **Crack** -> crackea con aircrack-ng + rockyou.txt
+
+### Requisitos por plataforma
+
+| Plataforma | Metodo | Requisito |
+|---|---|---|
+| Termux (sin root) | termux-wifi-scaninfo | termux-api + permisos ubicacion |
+| Termux (con root) | iw / airodump-ng | root + modo monitor |
+| Kali Linux | iw / airodump-ng | root + interfaz WiFi |
+| Linux normal | iw | root (para scan) |
+
+### API directa
+
+```bash
+# Escanear redes
+curl http://localhost:8001/api/wifi/scan
+
+# Capturar handshake
+curl -X POST \
+  "http://localhost:8001/api/wifi/capture/AA:BB:CC:DD:EE:FF?ssid=MiRed&channel=6&duration=30"
+
+# Crackear handshake
+curl -X POST http://localhost:8001/api/wifi/crack/AA:BB:CC:DD:EE:FF
+
+# Listar capturas
+curl http://localhost:8001/api/wifi/captures
+
+# Eliminar captura
+curl -X DELETE http://localhost:8001/api/wifi/captures/archivo.cap
+```
+
+### Notas de seguridad
+
+- El crackeo de WiFi solo debe usarse en redes propias o con autorizacion explicita
+- El modo monitor requiere root y una tarjeta WiFi compatible
+- aircrack-ng es la herramienta estandar; para mayor velocidad usar hashcat con GPU
+
+---
+
+## 16. EVIDENCIA BLINDADA
 
 ### Que hace
 
@@ -660,7 +854,7 @@ curl http://localhost:8001/api/export/verify/HASH_AQUI
 
 ---
 
-## 15. COMANDOS DE SINCRONIZACIÓN
+## 17. COMANDOS DE SINCRONIZACIÓN
 
 ### `sync.sh` — Traer cambios de GitHub
 
@@ -719,7 +913,7 @@ curl http://localhost:8001/api/murcielago/status
 
 ---
 
-## 16. SOLUCIÓN DE PROBLEMAS
+## 18. SOLUCIÓN DE PROBLEMAS
 
 ### El backend no arranca
 
@@ -813,9 +1007,76 @@ bash sync.sh
 - En Termux, usar `http://localhost:5173` (Vite proxy)
 - En Replit, usar la URL publica del Repl
 
+### OSINT: "whois: command not found"
+
+```bash
+pkg install whois    # Termux
+sudo apt install whois  # Linux
+```
+
+### OSINT: "dig: command not found"
+
+```bash
+pkg install bind-utils   # Termux
+sudo apt install dnsutils  # Linux
+```
+
+### OSINT: crt.sh no devuelve resultados
+
+- crt.sh puede tardar 10-30s en responder
+- Si el dominio no tiene certificados SSL, no habra resultados de crt.sh
+- El brute force con dig funciona igual (requiere dig instalado)
+
+### OSINT: exiftool no instalado
+
+```bash
+pkg install exiftool    # Termux
+sudo apt install libimage-exiftool-perl  # Linux
+```
+
+### WiFi: "Ningun metodo funciono"
+
+```bash
+# Termux: instalar termux-api
+pkg install termux-api
+
+# Dar permisos de ubicacion:
+# Ajustes -> Apps -> Termux -> Permisos -> Ubicacion -> Permitir
+
+# Verificar:
+termux-wifi-scaninfo
+```
+
+### WiFi: airodump-ng no encuentra wlan0mon
+
+```bash
+# Crear interfaz monitor (requiere root)
+su -c 'airmon-ng start wlan0'
+
+# Verificar
+iwconfig
+# Debe mostrar wlan0mon
+```
+
+### WiFi: "No se encontro captura para este BSSID"
+
+- Primero capturar el handshake: `POST /api/wifi/capture/{bssid}`
+- Si no se capturo handshake, no hay archivo .cap para crackear
+- Verificar capturas existentes: `GET /api/wifi/captures`
+
+### WiFi: crackeo fallido ("Key no encontrada en wordlist")
+
+- La wordlist por defecto (rockyou.txt) no contiene todas las claves posibles
+- Para redes con claves complejas, usar hashcat con GPU (miles de veces mas rapido)
+- Descargar rockyou.txt:
+```bash
+curl -L -o /usr/share/wordlists/rockyou.txt \
+  https://github.com/brannondorsey/naive-hashcat/releases/download/data/rockyou.txt
+```
+
 ---
 
-## 17. IDENTIDAD VISUAL SOURCEESEAL
+## 19. IDENTIDAD VISUAL SOURCEESEAL
 
 ### Paleta de colores
 
@@ -829,6 +1090,7 @@ bash sync.sh
 | `--ss-amber` | `#fbbf24` | Camaras / advertencias |
 | `--ss-red` | `#ff3b5c` | Critico / exploits |
 | `--ss-green` | `#00ff88` | OK / trafico |
+| `--ss-purple` | `#a855f7` | OSINT / Recon |
 
 ### Archivo de estilos
 
@@ -842,6 +1104,7 @@ tauri-frontend/src/styles/source-seal.css
 - **Ambar** -> Camaras, advertencias, evidencia
 - **Red** -> Critico, exploits, anomalias
 - **Green** -> OK, trafico limpio, capturas
+- **Purple** -> OSINT, Recon, subdominios
 - Fuente: `font-mono` (monospace)
 - Estilo: minimalista, tactico, sin gradientes innecesarios
 
@@ -849,7 +1112,7 @@ tauri-frontend/src/styles/source-seal.css
 
 ## NOTAS FINALES
 
-- **Sin internet**: MURCIÉLAGO y captura de paquetes funcionan 100% offline. Threat Intel y ExploitDB necesitan conexion para descarga inicial (luego cache/offline).
+- **Sin internet**: MURCIÉLAGO, captura de paquetes y WiFi Scanner funcionan 100% offline. Threat Intel, ExploitDB y OSINT (crt.sh) necesitan conexion para consulta inicial (luego cache/offline).
 - **Seguridad**: La API key (`REDTEAM_API_KEY`) protege los endpoints. Sin ella, el backend no valida acceso — configurar en produccion.
 - **Rate limiting**: 60 requests/minuto por IP por defecto. Ajustable via `RATE_LIMIT`.
 - **Persistencia**: Datos en `redteam/data/`. SQLite para cache Intel, pcap en `captures/`, WAVs en `murcielago_wav/`.
@@ -857,4 +1120,4 @@ tauri-frontend/src/styles/source-seal.css
 
 ---
 
-*Documentado: 2026-08-13 · SourceSeal / Red-Team-Tauri v3.0*
+*Documentado: 2026-08-13 · SourceSeal / Red-Team-Tauri v3.1*
