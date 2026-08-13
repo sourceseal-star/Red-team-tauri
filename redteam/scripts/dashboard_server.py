@@ -1837,3 +1837,178 @@ async def export_sealed_csv():
     )
 
 # == END FASE 3: EVIDENCIA BLINDADA ==================================
+
+# ============================================================
+# PROTOCOLO MURCIÉLAGO — Ultrasonidos 18-20 kHz
+# ============================================================
+
+import math as _math
+import struct as _struct
+import tempfile as _tempfile
+
+MURCIELAGO_DIR = str(ROOT / "murcielago")
+MURCIELAGO_WAV_CACHE = str(DATA_DIR / "murcielago_wav")
+os.makedirs(MURCIELAGO_WAV_CACHE, exist_ok=True)
+
+# Tabla de frecuencias
+_MURC_FREQ_TABLE = {
+    '0': (18000, 18400), '1': (18100, 18500), '2': (18200, 18600),
+    '3': (18300, 18700), '4': (18400, 18800), '5': (18500, 18900),
+    '6': (18600, 19000), '7': (18700, 19100), '8': (18800, 19200),
+    '9': (18900, 19300), 'A': (19000, 19400), 'B': (19100, 19500),
+    'C': (19200, 19600), 'D': (19300, 19700), 'E': (19400, 19800),
+    'F': (19500, 19900), '#': (18000, 19500), '*': (18500, 20000)
+}
+_MURC_SYNC_FREQ = 19500
+_MURC_SAMPLE_RATE = 48000
+_MURC_DURATION_SYMBOL = 0.08
+_MURC_SILENCE_BETWEEN = 0.025
+
+
+def _murc_generate_tone(freq, duration, sample_rate=48000):
+    n = int(sample_rate * duration)
+    samples = [int(_math.sin(2 * _math.pi * freq * (i / sample_rate)) * 32767) for i in range(n)]
+    return _struct.pack(f'<{n}h', *samples)
+
+
+def _murc_generate_silence(duration, sample_rate=48000):
+    n = int(sample_rate * duration)
+    return _struct.pack(f'<{n}h', *[0] * n)
+
+
+def _murc_encode_symbols(message):
+    msg_bytes = message.encode('utf-8')
+    checksum = sum(msg_bytes) % 256
+    hex_str = msg_bytes.hex().upper()
+    check_hex = f"{checksum:02X}"
+    return list(hex_str + '*' + check_hex)
+
+
+def _murc_build_wav(symbols, repeat=1):
+    full = b''
+    for _ in range(repeat):
+        full += _murc_generate_tone(_MURC_SYNC_FREQ, 0.3)
+        full += _murc_generate_silence(0.05)
+        for sym in symbols:
+            if sym in _MURC_FREQ_TABLE:
+                f1, f2 = _MURC_FREQ_TABLE[sym]
+                n = int(_MURC_SAMPLE_RATE * _MURC_DURATION_SYMBOL)
+                pcm = [int((0.5 * _math.sin(2 * _math.pi * f1 * (i / _MURC_SAMPLE_RATE)) +
+                            0.5 * _math.sin(2 * _math.pi * f2 * (i / _MURC_SAMPLE_RATE))) * 20000)
+                       for i in range(n)]
+                full += _struct.pack(f'<{n}h', *pcm)
+            else:
+                full += _murc_generate_silence(_MURC_DURATION_SYMBOL)
+            full += _murc_generate_silence(_MURC_SILENCE_BETWEEN)
+        full += _murc_generate_tone(_MURC_SYNC_FREQ, 0.2)
+        full += _murc_generate_silence(0.1)
+
+    # Cabecera WAV
+    data_len = len(full)
+    header = b'RIFF' + _struct.pack('<I', data_len + 36) + b'WAVE'
+    header += b'fmt ' + _struct.pack('<IHHIIHH', 16, 1, 1, _MURC_SAMPLE_RATE, _MURC_SAMPLE_RATE * 2, 2, 16)
+    header += b'data' + _struct.pack('<I', data_len)
+    return header + full
+
+
+@app.post("/api/murcielago/send")
+async def murcielago_send(request: Request):
+    """Genera y reproduce un mensaje por ultrasonidos."""
+    try:
+        data = await request.json()
+        message = data.get("message", "").strip()
+        repeat = data.get("repeat", 1)
+        if not message:
+            raise HTTPException(status_code=400, detail="Mensaje vacío")
+        if len(message) > 200:
+            raise HTTPException(status_code=400, detail="Mensaje demasiado largo (máx 200 chars)")
+
+        symbols = _murc_encode_symbols(message)
+        wav_bytes = _murc_build_wav(symbols, repeat=repeat)
+
+        # Guardar WAV en cache
+        wav_filename = f"murc_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.wav"
+        wav_path = os.path.join(MURCIELAGO_WAV_CACHE, wav_filename)
+        with open(wav_path, 'wb') as f:
+            f.write(wav_bytes)
+
+        # Intentar reproducir en segundo plano (no bloquear la respuesta)
+        player = None
+        for cmd in (['ffplay', '-nodisp', '-autoexit', '-volume', '80', wav_path],
+                    ['aplay', '-q', wav_path]):
+            try:
+                player = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                break
+            except FileNotFoundError:
+                continue
+
+        return {
+            "status": "sent",
+            "message": message,
+            "symbols": ''.join(symbols),
+            "wav_file": wav_filename,
+            "wav_url": f"/api/murcielago/download/{wav_filename}",
+            "playing": player is not None,
+            "duration_sec": round(len(symbols) * (_MURC_DURATION_SYMBOL + _MURC_SILENCE_BETWEEN) * repeat + 0.7 * repeat, 2)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/murcielago/generate-wav")
+async def murcielago_generate_wav(message: str = Query(...), repeat: int = 1):
+    """Genera un WAV sin reproducirlo. Devuelve el archivo para descargar."""
+    if len(message) > 200:
+        raise HTTPException(status_code=400, detail="Mensaje demasiado largo (máx 200 chars)")
+
+    symbols = _murc_encode_symbols(message)
+    wav_bytes = _murc_build_wav(symbols, repeat=repeat)
+
+    filename = f"murc_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
+    return StreamingResponse(
+        iter([wav_bytes]),
+        media_type="audio/wav",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@app.get("/api/murcielago/download/{filename}")
+async def murcielago_download(filename: str):
+    """Descarga un WAV generado previamente."""
+    wav_path = os.path.join(MURCIELAGO_WAV_CACHE, filename)
+    if not os.path.exists(wav_path):
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    return FileResponse(wav_path, media_type="audio/wav", filename=filename)
+
+
+@app.get("/api/murcielago/status")
+async def murcielago_status():
+    """Estado del protocolo MURCIÉLAGO."""
+    has_ffplay = shutil.which("ffplay") is not None if (shutil := __import__('shutil')) else False
+    has_aplay = shutil.which("aplay") is not None if shutil else False
+    has_numpy = False
+    try:
+        import numpy
+        has_numpy = True
+    except ImportError:
+        pass
+
+    wav_files = [f for f in os.listdir(MURCIELAGO_WAV_CACHE) if f.endswith('.wav')] if os.path.exists(MURCIELAGO_WAV_CACHE) else []
+
+    return {
+        "protocol": "MURCIÉLAGO v2.0",
+        "frequency_range": "18-20 kHz",
+        "capabilities": {
+            "send": has_ffplay or has_aplay,
+            "receive": has_numpy,
+            "player": "ffplay" if has_ffplay else ("aplay" if has_aplay else None),
+            "numpy": has_numpy
+        },
+        "cached_wavs": len(wav_files),
+        "sample_rate": _MURC_SAMPLE_RATE,
+        "symbol_duration_ms": int(_MURC_DURATION_SYMBOL * 1000)
+    }
+
+# == END PROTOCOLO MURCIÉLAGO =========================================
