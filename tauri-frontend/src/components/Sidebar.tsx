@@ -22,10 +22,6 @@ const items = [
   { to: '/about',    label: 'About',       icon: Info },
   { to: '/services',      label: 'Servicios',    icon: Server },
   { to: '/motor-metrics', label: 'Motor Métricas', icon: BarChart3 },
-  { to: '/services',      label: 'Servicios',     icon: Server },
-  { to: '/motor-metrics', label: 'Motor Métricas', icon: BarChart3 },
-  { to: '/services',      label: 'Servicios',     icon: Server },
-  { to: '/motor-metrics', label: 'Motor Métricas', icon: BarChart3 },
   { to: '/ventas',  label: 'Ventas',      icon: TrendingUp },
 ]
 
