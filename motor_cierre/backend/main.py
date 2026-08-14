@@ -28,7 +28,7 @@ except ImportError:
 from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 # ==========================================
 # CONFIGURACIÓN
@@ -174,11 +174,13 @@ class EmailReply(BaseModel):
     source: Optional[str] = "email_provider"
     campaign_id: Optional[str] = None
 
-    @validator('lead_email')
+    @field_validator('lead_email')
+    @classmethod
     def check_email(cls, v):
         return validate_email(v)
 
-    @validator('body_text')
+    @field_validator('body_text')
+    @classmethod
     def sanitize_body(cls, v):
         v = re.sub(r'["\']?\s*ignore\s+previous\s+instructions?["\']?', '[REDACTED]', v, flags=re.I)
         v = re.sub(r'["\']?\s*system\s*:*\s*["\']?', '[REDACTED]', v, flags=re.I)
@@ -190,7 +192,8 @@ class CheckoutRequest(BaseModel):
     price_usd: int = Field(default=499, ge=49, le=50000)
     metadata: Optional[Dict[str, Any]] = None
 
-    @validator('lead_email')
+    @field_validator('lead_email')
+    @classmethod
     def check_email(cls, v):
         return validate_email(v)
 
@@ -545,4 +548,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8001")))
