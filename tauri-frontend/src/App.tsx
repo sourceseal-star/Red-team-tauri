@@ -1,67 +1,48 @@
-import { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { Sidebar } from './components/Sidebar'
-import { TopBar } from './components/TopBar'
-import { BottomStatus } from './components/BottomStatus'
-import { BiometricLogin, ServiceControlPanel, MotorMetricsDashboard } from './components'
-import Dashboard from './routes/Dashboard'
-import ConfigEditor from './routes/ConfigEditor'
-import Reports from './routes/Reports'
-import Honeypot from './routes/Honeypot'
-import SOAR from './routes/SOAR'
-import ThreatIntel from './routes/ThreatIntel'
-import GeoIntel from './routes/GeoIntel'
-import RASP from './routes/RASP'
-import Terminal from './routes/Terminal'
-import Settings from './routes/Settings'
-import About from './routes/About'
-import CameraCommandCenter from './components/CameraCommandCenter'
-import TopologyMapFixed from './components/TopologyMapFixed'
-import SalesCommandCenter from './routes/SalesCommandCenter'
+import { useState } from 'react';
+import AppShell from './components/AppShell';
+import WarRoom from './components/WarRoom';
+import BiometricLogin from './components/BiometricLogin';
+import CameraCommandCenter from './components/CameraCommandCenter';
+import IntelPanel from './components/IntelPanel';
+import ExploitMatrix from './components/ExploitMatrix';
+import TrafficMonitor from './components/TrafficMonitor';
+import OSINTPanel from './components/OSINTPanel';
+import WiFiPanel from './components/WiFiPanel';
+import BlackMirrorPanel from './components/BlackMirrorPanel';
+import MotorMetricsDashboard from './components/MotorMetricsDashboard';
+import ServiceControlPanel from './components/ServiceControlPanel';
 
 function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [token, setToken] = useState<string | null>(localStorage.getItem('api_token'))
+  const [token, setToken] = useState(localStorage.getItem('api_token'));
+  const [module, setModule] = useState('warroom');
 
-  // Si no hay token, mostrar login
-  if (!token) {
-    return <BiometricLogin onLogin={(t) => {
-      setToken(t)
-    }} />
-  }
+  if (!token) return <BiometricLogin onLogin={setToken} />;
 
   return (
-    <BrowserRouter>
-      <div className="flex flex-col h-screen">
-        <TopBar onMenuClick={() => setSidebarOpen(true)} />
-        <div className="flex flex-1 overflow-hidden">
-          <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-          <main className="flex-1 overflow-y-auto p-2 sm:p-4 bg-background">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/services" element={<ServiceControlPanel />} />
-              <Route path="/motor-metrics" element={<MotorMetricsDashboard />} />
-              <Route path="/config" element={<ConfigEditor />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/honeypot" element={<Honeypot />} />
-              <Route path="/soar" element={<SOAR />} />
-              <Route path="/tip" element={<ThreatIntel />} />
-              <Route path="/geo" element={<GeoIntel />} />
-              <Route path="/rasp" element={<RASP />} />
-              <Route path="/terminal" element={<Terminal />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/about" element={<About />} />
-              <Route path="/cameras" element={<CameraCommandCenter />} />
-              <Route path="/topology" element={<TopologyMapFixed nodes={[]} />} />
-              {/* Motor de Cierre — independiente */}
-              <Route path="/ventas" element={<SalesCommandCenter />} />
-            </Routes>
-          </main>
+    <AppShell activeModule={module} onNavigate={setModule}>
+      {module === 'warroom' && <WarRoom />}
+      {module === 'cameras' && <CameraCommandCenter />}
+      {module === 'threat' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <IntelPanel />
+          <ExploitMatrix />
+          <TrafficMonitor />
         </div>
-        <BottomStatus />
-      </div>
-    </BrowserRouter>
-  )
+      )}
+      {module === 'osint' && <OSINTPanel />}
+      {module === 'wifi' && <WiFiPanel />}
+      {module === 'ultra' && <div className="text-slate-500">Panel de Ultrasonidos</div>}
+      {module === 'blackmirror' && <BlackMirrorPanel />}
+      {module === 'motor' && <MotorMetricsDashboard />}
+      {module === 'services' && <ServiceControlPanel />}
+      {module === 'terminal' && (
+        <div className="bg-black rounded-xl border border-slate-800 p-4 font-mono text-xs text-green-400 h-[70vh]">
+          $ <span className="animate-pulse">_</span>
+        </div>
+      )}
+      {module === 'settings' && <div className="text-slate-500">Configuración del sistema</div>}
+    </AppShell>
+  );
 }
 
 export default App
