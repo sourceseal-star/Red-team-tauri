@@ -19,6 +19,8 @@ import subprocess
 import tempfile
 import time
 import uuid
+import shutil
+import wave
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -28,9 +30,15 @@ from fastapi import (
     WebSocket, WebSocketDisconnect, Depends, Request
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse
 from pydantic import BaseModel, Field
 import uvicorn
+
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFIG — Termux-friendly
@@ -1056,6 +1064,266 @@ async def list_reports():
             fpath = os.path.join(EVIDENCE_DIR, f)
             reports.append({"file": f, "size": os.path.getsize(fpath)})
     return reports
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MURCIÉLAGO — Protocolo de comunicación ultrasónica (18-20 kHz)
+# Solo altavoz + microfono, sin red. FSK: cada caracter -> una frecuencia.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+MURCIELAGO_DIR = os.path.join(EVIDENCE_DIR, "murcielago")
+os.makedirs(MURCIELAGO_DIR, exist_ok=True)
+
+MURC_SAMPLE_RATE = 48000
+MURC_SYMBOL_MS = 60
+MURC_FREQ_MIN = 18000
+MURC_FREQ_MAX = 20000
+MURC_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?-_@:/"
+MURC_N_SYMBOLS = len(MURC_ALPHABET)
+MURC_FREQ_STEP = (MURC_FREQ_MAX - MURC_FREQ_MIN) / MURC_N_SYMBOLS
+MURC_MAX_MESSAGE = 200
+
+
+def _murc_char_to_freq(c: str) -> float:
+    idx = MURC_ALPHABET.find(c)
+    if idx == -1:
+        idx = 0
+    return MURC_FREQ_MIN + idx * MURC_FREQ_STEP
+
+
+def _murc_synth_tone(freq: float, duration_ms: float, amplitude: float = 0.6):
+    """Genera un tono senoidal puro con fade in/out para evitar clicks."""
+    n = int(MURC_SAMPLE_RATE * duration_ms / 1000)
+    if n <= 0:
+        return np.zeros(0)
+    t = np.linspace(0, duration_ms / 1000, n, endpoint=False)
+    tone = amplitude * np.sin(2 * np.pi * freq * t)
+    fade_n = min(int(MURC_SAMPLE_RATE * 0.005), max(1, n // 4))
+    if fade_n > 0:
+        fade = np.linspace(0, 1, fade_n)
+        tone[:fade_n] *= fade
+        tone[-fade_n:] *= fade[::-1]
+    return tone
+
+
+def _murc_encode_message(message: str, repeat: int = 1):
+    """Codifica un mensaje en audio ultrasonico FSK con tonos de sincronizacion."""
+    sync = _murc_synth_tone(19500, 80)
+    micro_gap = np.zeros(int(MURC_SAMPLE_RATE * 0.01))
+    repeat_gap = np.zeros(int(MURC_SAMPLE_RATE * 0.3))
+    parts = []
+    for _ in range(max(1, repeat)):
+        parts.append(sync)
+        parts.append(micro_gap)
+        for ch in message:
+            parts.append(_murc_synth_tone(_murc_char_to_freq(ch), MURC_SYMBOL_MS))
+            parts.append(micro_gap)
+        parts.append(sync)
+        parts.append(repeat_gap)
+    return np.concatenate(parts) if parts else np.zeros(0)
+
+
+def _murc_save_wav(audio, filepath: str):
+    audio_i16 = np.int16(np.clip(audio, -1, 1) * 32767)
+    with wave.open(filepath, "w") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(MURC_SAMPLE_RATE)
+        wf.writeframes(audio_i16.tobytes())
+
+
+def _murc_cleanup_old(max_files: int = 50):
+    """Evita que el cache de WAVs crezca sin limite."""
+    try:
+        files = sorted(
+            (os.path.join(MURCIELAGO_DIR, f) for f in os.listdir(MURCIELAGO_DIR) if f.endswith(".wav")),
+            key=os.path.getmtime,
+        )
+        for f in files[:-max_files]:
+            os.remove(f)
+    except Exception:
+        pass
+
+
+@app.get("/api/murcielago/status", dependencies=[Depends(require_auth)])
+async def murcielago_status():
+    cached = 0
+    if os.path.isdir(MURCIELAGO_DIR):
+        cached = len([f for f in os.listdir(MURCIELAGO_DIR) if f.endswith(".wav")])
+    player = shutil.which("ffplay")
+    mic_tool = shutil.which("termux-microphone-record")
+    return {
+        "protocol": "MURCIÉLAGO v1",
+        "frequency_range": f"{MURC_FREQ_MIN}-{MURC_FREQ_MAX} Hz",
+        "capabilities": {
+            "send": HAS_NUMPY,
+            "receive": mic_tool is not None,
+            "player": player,
+            "numpy": HAS_NUMPY,
+        },
+        "cached_wavs": cached,
+        "sample_rate": MURC_SAMPLE_RATE,
+        "symbol_duration_ms": MURC_SYMBOL_MS,
+    }
+
+
+@app.post("/api/murcielago/send", dependencies=[Depends(require_auth)])
+async def murcielago_send(payload: Dict[str, Any]):
+    if not HAS_NUMPY:
+        raise HTTPException(503, "numpy no disponible en el servidor — instala: pkg install python-numpy")
+    message = str(payload.get("message", ""))[:MURC_MAX_MESSAGE]
+    repeat = int(payload.get("repeat", 1) or 1)
+    repeat = max(1, min(repeat, 10))
+    if not message.strip():
+        raise HTTPException(400, "message requerido")
+
+    audio = _murc_encode_message(message, repeat)
+    duration_sec = round(len(audio) / MURC_SAMPLE_RATE, 2)
+    filename = f"murc_{int(time.time() * 1000)}.wav"
+    filepath = os.path.join(MURCIELAGO_DIR, filename)
+    _murc_save_wav(audio, filepath)
+    _murc_cleanup_old()
+
+    playing = False
+    player = shutil.which("ffplay")
+    if player:
+        try:
+            subprocess.Popen(
+                [player, "-nodisp", "-autoexit", "-loglevel", "quiet", filepath],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            playing = True
+        except Exception:
+            playing = False
+
+    return {
+        "ok": True,
+        "symbols": len(message) * repeat,
+        "duration_sec": duration_sec,
+        "playing": playing,
+        "wav_url": f"/api/murcielago/download/{filename}",
+    }
+
+
+@app.get("/api/murcielago/generate-wav", dependencies=[Depends(require_auth)])
+async def murcielago_generate_wav(message: str = Query(...), repeat: int = Query(1)):
+    if not HAS_NUMPY:
+        raise HTTPException(503, "numpy no disponible en el servidor")
+    message = message[:MURC_MAX_MESSAGE]
+    repeat = max(1, min(int(repeat or 1), 10))
+    if not message.strip():
+        raise HTTPException(400, "message requerido")
+    audio = _murc_encode_message(message, repeat)
+    filename = f"murc_dl_{int(time.time() * 1000)}.wav"
+    filepath = os.path.join(MURCIELAGO_DIR, filename)
+    _murc_save_wav(audio, filepath)
+    _murc_cleanup_old()
+    return FileResponse(filepath, media_type="audio/wav", filename=filename)
+
+
+@app.get("/api/murcielago/download/{filename}", dependencies=[Depends(require_auth)])
+async def murcielago_download(filename: str):
+    safe_name = os.path.basename(filename)
+    filepath = os.path.join(MURCIELAGO_DIR, safe_name)
+    if not os.path.isfile(filepath) or not filepath.endswith(".wav"):
+        raise HTTPException(404, "archivo no encontrado")
+    return FileResponse(filepath, media_type="audio/wav", filename=safe_name)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONFIG EDITOR — lectura/escritura de archivos de configuracion del proyecto
+# Restringido a una whitelist de archivos y extensiones por seguridad.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+CONFIG_ALLOWED_EXT = {".env", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".sh", ".md", ".txt", ".js", ".ts"}
+CONFIG_ALLOWED_FILES = [
+    ".env", ".env.example", "package.json", "replit.md", "replit.nix",
+    "start-termux.sh", "replit_start.sh", "sync.sh",
+    "sealctl/server.js", "sealctl/package.json",
+    "backend/requirements.txt",
+    "tauri-frontend/vite.config.ts", "tauri-frontend/package.json",
+    "tauri-frontend/.env.motor_cierre.example",
+]
+CONFIG_MAX_BYTES = 2 * 1024 * 1024  # 2MB
+
+
+def _config_safe_path(rel_path: str) -> str:
+    """Resuelve una ruta relativa dentro de PROJECT_ROOT, bloqueando path traversal."""
+    rel_path = rel_path.strip().lstrip("/")
+    full = os.path.abspath(os.path.join(PROJECT_ROOT, rel_path))
+    if not full.startswith(PROJECT_ROOT + os.sep) and full != PROJECT_ROOT:
+        raise HTTPException(400, "Ruta invalida (fuera del proyecto)")
+    return full
+
+
+@app.get("/api/config", dependencies=[Depends(require_auth)])
+async def config_list_files():
+    """Lista los archivos de configuracion editables (whitelist + escaneo superficial)."""
+    results = []
+    seen = set()
+    for rel in CONFIG_ALLOWED_FILES:
+        full = os.path.join(PROJECT_ROOT, rel)
+        if os.path.isfile(full):
+            results.append({"path": rel, "name": os.path.basename(rel), "size": os.path.getsize(full)})
+            seen.add(rel)
+    # Escaneo superficial de la raiz del proyecto (solo primer nivel, extensiones permitidas)
+    try:
+        for f in sorted(os.listdir(PROJECT_ROOT)):
+            full = os.path.join(PROJECT_ROOT, f)
+            if not os.path.isfile(full):
+                continue
+            ext = os.path.splitext(f)[1].lower()
+            if ext in CONFIG_ALLOWED_EXT and f not in seen and not f.startswith("."):
+                if os.path.getsize(full) <= CONFIG_MAX_BYTES:
+                    results.append({"path": f, "name": f, "size": os.path.getsize(full)})
+                    seen.add(f)
+    except Exception:
+        pass
+    return results
+
+
+@app.get("/api/config/read", dependencies=[Depends(require_auth)])
+async def config_read(path: str = Query(...)):
+    full = _config_safe_path(path)
+    ext = os.path.splitext(full)[1].lower()
+    if ext not in CONFIG_ALLOWED_EXT and os.path.basename(full) not in (".env", ".env.example"):
+        raise HTTPException(403, "Tipo de archivo no permitido")
+    if not os.path.isfile(full):
+        raise HTTPException(404, "Archivo no encontrado")
+    if os.path.getsize(full) > CONFIG_MAX_BYTES:
+        raise HTTPException(413, f"Archivo demasiado grande (max {CONFIG_MAX_BYTES // 1024}KB)")
+    with open(full, "r", encoding="utf-8", errors="replace") as f:
+        content = f.read()
+    return {"content": content, "path": path}
+
+
+@app.post("/api/config/write", dependencies=[Depends(require_auth)])
+async def config_write(payload: Dict[str, Any]):
+    path = str(payload.get("path", ""))
+    content = payload.get("content", "")
+    if not path:
+        raise HTTPException(400, "path requerido")
+    full = _config_safe_path(path)
+    ext = os.path.splitext(full)[1].lower()
+    if ext not in CONFIG_ALLOWED_EXT and os.path.basename(full) not in (".env", ".env.example"):
+        raise HTTPException(403, "Tipo de archivo no permitido")
+    if not os.path.isfile(full):
+        raise HTTPException(404, "Archivo no encontrado — solo se pueden editar archivos existentes")
+    if len(content.encode("utf-8")) > CONFIG_MAX_BYTES:
+        raise HTTPException(413, f"Contenido demasiado grande (max {CONFIG_MAX_BYTES // 1024}KB)")
+    # Backup antes de escribir
+    try:
+        backup_dir = os.path.join(EVIDENCE_DIR, "config_backups")
+        os.makedirs(backup_dir, exist_ok=True)
+        backup_name = f"{os.path.basename(full)}.{int(time.time())}.bak"
+        shutil.copy2(full, os.path.join(backup_dir, backup_name))
+    except Exception:
+        pass
+    with open(full, "w", encoding="utf-8") as f:
+        f.write(content)
+    return {"ok": True}
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # WEBSOCKET — feed en vivo
