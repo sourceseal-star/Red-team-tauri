@@ -25,7 +25,11 @@ except ImportError:
 from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, EmailStr, validator
+try:
+    from pydantic import BaseModel, Field, EmailStr, validator
+except ImportError:
+    from pydantic import BaseModel, Field, validator
+    EmailStr = str  # fallback cuando email-validator no esta instalado
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
