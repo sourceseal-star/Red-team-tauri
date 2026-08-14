@@ -2215,6 +2215,391 @@ async def scan_history():
     return history
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HONEYPOT — gestión unificada (el frontend usa /api/honeypot no /api/honeypot/list)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+HONEYPOT_STATE: Dict[str, Any] = {
+    "active": False,
+    "tokens_deployed": 0,
+    "triggers_today": 0,
+    "triggers_total": 0,
+    "last_trigger": None,
+    "token_rotated_at": None,
+}
+HONEYPOT_TOKENS: List[Dict[str, Any]] = []
+
+@app.get("/api/honeypot", dependencies=[Depends(require_auth)])
+async def honeypot_status():
+    return HONEYPOT_STATE
+
+@app.post("/api/honeypot/toggle", dependencies=[Depends(require_auth)])
+async def honeypot_toggle():
+    HONEYPOT_STATE["active"] = not HONEYPOT_STATE["active"]
+    if HONEYPOT_STATE["active"]:
+        # Generar tokens canary iniciales
+        for i in range(3):
+            token = {
+                "id": str(uuid.uuid4()),
+                "type": "canary",
+                "value": f"canary-{uuid.uuid4().hex[:12]}",
+                "created": now_iso(),
+                "triggered": False,
+            }
+            HONEYPOT_TOKENS.append(token)
+        HONEYPOT_STATE["tokens_deployed"] = len(HONEYPOT_TOKENS)
+    return HONEYPOT_STATE
+
+@app.post("/api/honeypot/rotate", dependencies=[Depends(require_auth)])
+async def honeypot_rotate():
+    HONEYPOT_TOKENS.clear()
+    for i in range(5):
+        token = {
+            "id": str(uuid.uuid4()),
+            "type": "canary",
+            "value": f"canary-{uuid.uuid4().hex[:12]}",
+            "created": now_iso(),
+            "triggered": False,
+        }
+        HONEYPOT_TOKENS.append(token)
+    HONEYPOT_STATE["tokens_deployed"] = len(HONEYPOT_TOKENS)
+    HONEYPOT_STATE["token_rotated_at"] = now_iso()
+    return {"ok": True, "tokens_deployed": len(HONEYPOT_TOKENS)}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# IOT — endpoint directo (GET /api/iot?target=X) para el frontend
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/iot", dependencies=[Depends(require_auth)])
+async def iot_scan(target: str = Query(...)):
+    """Escanea un target IoT — cámaras y servicios en un IP."""
+    cameras = []
+    radio = []
+
+    async def probe_port(port):
+        try:
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(target, port), timeout=2
+            )
+            writer.close()
+            await writer.wait_closed()
+            return port
+        except Exception:
+            return None
+
+    cam_ports = [554, 80, 8080, 8000, 8888]
+    radio_ports = [8000, 8080, 8443, 1935]
+
+    cam_results = await asyncio.gather(*[probe_port(p) for p in cam_ports])
+    for port in [p for p in cam_results if p]:
+        cameras.append({
+            "ip": target, "port": port,
+            "protocol": "RTSP" if port == 554 else "HTTP",
+            "status": "online", "banner": "",
+        })
+
+    radio_results = await asyncio.gather(*[probe_port(p) for p in radio_ports])
+    for port in [p for p in radio_results if p]:
+        proto = {8000: "icecast", 8080: "http", 8443: "https", 1935: "rtmp"}.get(port, "unknown")
+        radio.append({"ip": target, "port": port, "protocol": proto, "status": "online"})
+
+    # Si no hay huella, devolver honesto
+    if not cameras and not radio:
+        return {"target": target, "cameras": [], "radio": [], "total": 0,
+                "note": "sin huella — ningún puerto de cámara/radio respondió"}
+
+    return {"target": target, "cameras": cameras, "radio": radio,
+            "total": len(cameras) + len(radio)}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SOAR — DAGs de automatización
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SOAR_DAGS: List[Dict[str, Any]] = [
+    {
+        "id": "dag-001",
+        "name": "Escaneo automático al detectar intrusión",
+        "enabled": True,
+        "trigger": "manual",
+        "steps": [
+            "Detectar IP sospechosa en logs",
+            "Geolocalizar IP",
+            "Calcular trust score",
+            "Si score < 30 → bloquear en firewall",
+            "Generar reporte de incidente",
+        ],
+        "last_run": None,
+        "description": "Pipeline de respuesta a intrusión detectada",
+    },
+    {
+        "id": "dag-002",
+        "name": "Rotación de tokens canary diaria",
+        "enabled": True,
+        "trigger": "schedule",
+        "interval_mins": 1440,
+        "steps": [
+            "Rotar tokens canary del honeypot",
+            "Verificar despliegue",
+            "Notificar al dashboard",
+        ],
+        "last_run": None,
+        "description": "Rota tokens canary cada 24h para mantener frescura",
+    },
+    {
+        "id": "dag-003",
+        "name": "Auditoría de cámaras programada",
+        "enabled": False,
+        "trigger": "schedule",
+        "interval_mins": 360,
+        "steps": [
+            "Descubrir dispositivos en red local",
+            "Filtrar cámaras por puerto 554/8080",
+            "Probar credenciales por defecto",
+            "Generar reporte de exposición",
+        ],
+        "last_run": None,
+        "description": "Audita cámaras IP cada 6 horas",
+    },
+]
+
+@app.get("/api/soar/dags", dependencies=[Depends(require_auth)])
+async def soar_dags_list():
+    return SOAR_DAGS
+
+@app.post("/api/soar/dags", dependencies=[Depends(require_auth)])
+async def soar_dags_save(payload: Dict[str, Any]):
+    dag_id = payload.get("id", str(uuid.uuid4()))
+    existing = next((d for d in SOAR_DAGS if d["id"] == dag_id), None)
+    if existing:
+        for key in ["name", "enabled", "trigger", "interval_mins", "steps", "description"]:
+            if key in payload:
+                existing[key] = payload[key]
+        return {"ok": True, "id": dag_id}
+    new_dag = {
+        "id": dag_id,
+        "name": payload.get("name", "Nuevo DAG"),
+        "enabled": payload.get("enabled", False),
+        "trigger": payload.get("trigger", "manual"),
+        "interval_mins": payload.get("interval_mins", 60),
+        "steps": payload.get("steps", []),
+        "last_run": None,
+        "description": payload.get("description", ""),
+    }
+    SOAR_DAGS.append(new_dag)
+    return {"ok": True, "id": dag_id}
+
+@app.post("/api/soar/dry-run", dependencies=[Depends(require_auth)])
+async def soar_dry_run():
+    """Simula la ejecución de todos los DAGs habilitados."""
+    steps_executed = []
+    for dag in SOAR_DAGS:
+        if dag["enabled"]:
+            for step in dag["steps"]:
+                steps_executed.append(f"[{dag['name']}] {step}")
+            dag["last_run"] = now_iso()
+    return {"ok": True, "steps": steps_executed, "count": len(steps_executed)}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TIP — Threat Intel Platform (IOCs)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+IOC_DB = os.path.join(EVIDENCE_DIR, "iocs.json")
+
+def _load_iocs() -> List[Dict[str, Any]]:
+    if os.path.isfile(IOC_DB):
+        try:
+            with open(IOC_DB) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return [
+        {"id": "ioc-001", "type": "ip", "value": "185.220.101.1", "confidence": 95,
+         "tags": ["tor-exit", "abuse"], "added": now_iso()},
+        {"id": "ioc-002", "type": "domain", "value": "malware-c2.example.com", "confidence": 88,
+         "tags": ["c2", "botnet"], "added": now_iso()},
+        {"id": "ioc-003", "type": "hash", "value": "a1b2c3d4e5f6...", "confidence": 72,
+         "tags": ["malware", "trojan"], "added": now_iso()},
+    ]
+
+def _save_iocs(iocs: List[Dict[str, Any]]):
+    with open(IOC_DB, "w") as f:
+        json.dump(iocs, f, indent=2)
+
+@app.get("/api/tip/iocs", dependencies=[Depends(require_auth)])
+async def tip_iocs_list():
+    return _load_iocs()
+
+@app.post("/api/tip/iocs", dependencies=[Depends(require_auth)])
+async def tip_iocs_add(payload: Dict[str, Any]):
+    iocs = _load_iocs()
+    ioc = {
+        "id": str(uuid.uuid4()),
+        "type": payload.get("type", "ip"),
+        "value": payload.get("value", ""),
+        "confidence": payload.get("confidence", 50),
+        "tags": payload.get("tags", []),
+        "added": now_iso(),
+    }
+    iocs.append(ioc)
+    _save_iocs(iocs)
+    return {"ok": True, "id": ioc["id"]}
+
+@app.delete("/api/tip/iocs/{ioc_id}", dependencies=[Depends(require_auth)])
+async def tip_iocs_delete(ioc_id: str):
+    iocs = _load_iocs()
+    filtered = [i for i in iocs if i["id"] != ioc_id]
+    if len(filtered) == len(iocs):
+        raise HTTPException(404, f"IOC {ioc_id} no encontrado")
+    _save_iocs(filtered)
+    return {"ok": True}
+
+@app.post("/api/tip/import-stix", dependencies=[Depends(require_auth)])
+async def tip_import_stix(payload: Dict[str, Any]):
+    """Importa un bundle STIX 2.1 y extrae IOCs."""
+    iocs = _load_iocs()
+    imported = 0
+    objects = payload.get("objects", payload.get("indicators", []))
+    for obj in objects:
+        if obj.get("type") == "indicator":
+            pattern = obj.get("pattern", "")
+            # Extraer valor simple de patrones STIX como "[ipv4-addr:value = 'X']"
+            if "ipv4-addr" in pattern or "domain-name" in pattern or "file:hashes" in pattern:
+                ioc_type = "ip" if "ipv4" in pattern else "domain" if "domain" in pattern else "hash"
+                # Extraer valor entre comillas
+                import re
+                match = re.search(r"=\s*'([^']+)'", pattern)
+                if match:
+                    iocs.append({
+                        "id": str(uuid.uuid4()),
+                        "type": ioc_type,
+                        "value": match.group(1),
+                        "confidence": 80,
+                        "tags": ["stix-import"],
+                        "added": now_iso(),
+                    })
+                    imported += 1
+    _save_iocs(iocs)
+    return {"ok": True, "imported": imported}
+
+@app.post("/api/tip/update", dependencies=[Depends(require_auth)])
+async def tip_update_from_feeds():
+    """Actualiza IOCs desde feeds públicos (abuse.ch, AlienVault OTX)."""
+    import httpx
+    iocs = _load_iocs()
+    loaded = 0
+
+    # abuse.ch FeodoTracker
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.txt")
+            if resp.status_code == 200:
+                for line in resp.text.splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#") and not line.startswith('"'):
+                        # Evitar duplicados
+                        if not any(i["value"] == line and i["type"] == "ip" for i in iocs):
+                            iocs.append({
+                                "id": str(uuid.uuid4()),
+                                "type": "ip",
+                                "value": line,
+                                "confidence": 90,
+                                "tags": ["botnet", "c2", "abuse.ch"],
+                                "added": now_iso(),
+                            })
+                            loaded += 1
+    except Exception:
+        pass
+
+    _save_iocs(iocs)
+    return {"ok": True, "iocs_loaded": loaded}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RASP — Remote Attestation Security Platform
+# ═══════════════════════════════════════════════════════════════════════════════
+
+DEVICE_DB = os.path.join(EVIDENCE_DIR, "rasp_devices.json")
+
+def _load_devices() -> List[Dict[str, Any]]:
+    if os.path.isfile(DEVICE_DB):
+        try:
+            with open(DEVICE_DB) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return [
+        {"id": "dev-001", "name": "SealCtl-Termux-Android", "platform": "android/termux",
+         "attestation": "passed", "last_seen": now_iso(), "enrolled": True},
+        {"id": "dev-002", "name": "Scanner-Pi", "platform": "linux/raspberrypi",
+         "attestation": "pending", "last_seen": now_iso(), "enrolled": False},
+    ]
+
+def _save_devices(devices: List[Dict[str, Any]]):
+    with open(DEVICE_DB, "w") as f:
+        json.dump(devices, f, indent=2)
+
+@app.get("/api/rasp/devices", dependencies=[Depends(require_auth)])
+async def rasp_devices_list():
+    return _load_devices()
+
+@app.post("/api/rasp/devices", dependencies=[Depends(require_auth)])
+async def rasp_device_enroll(payload: Dict[str, Any]):
+    devices = _load_devices()
+    dev_id = str(uuid.uuid4())
+    device = {
+        "id": dev_id,
+        "name": payload.get("name", "Unknown Device"),
+        "platform": payload.get("platform", "unknown"),
+        "attestation": "pending",
+        "last_seen": now_iso(),
+        "enrolled": True,
+    }
+    devices.append(device)
+    _save_devices(devices)
+    return {"ok": True, "id": dev_id}
+
+@app.delete("/api/rasp/devices/{device_id}", dependencies=[Depends(require_auth)])
+async def rasp_device_revoke(device_id: str):
+    devices = _load_devices()
+    for d in devices:
+        if d["id"] == device_id:
+            d["attestation"] = "revoked"
+            d["revoked_at"] = now_iso()
+            d["enrolled"] = False
+            _save_devices(devices)
+            return {"ok": True}
+    raise HTTPException(404, f"Dispositivo {device_id} no encontrado")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONFIG — endpoint unificado (lista archivos editables)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/config", dependencies=[Depends(require_auth)])
+async def config_list_files():
+    """Lista archivos de configuración editables del proyecto."""
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    allowed_exts = {".sh", ".json", ".yml", ".yaml", ".toml", ".env", ".conf", ".md", ".txt", ".ini"}
+    files = []
+    for root, dirs, filenames in os.walk(project_root):
+        # Skip node_modules, .git, evidence
+        dirs[:] = [d for d in dirs if d not in {".git", "node_modules", "__pycache__", ".venv", "venv"}]
+        for fname in filenames:
+            ext = os.path.splitext(fname)[1].lower()
+            if ext in allowed_exts:
+                fpath = os.path.join(root, fname)
+                try:
+                    stat = os.stat(fpath)
+                    files.append({
+                        "name": fname,
+                        "path": os.path.relpath(fpath, project_root),
+                        "size": stat.st_size,
+                        "modified": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime)),
+                    })
+                except Exception:
+                    pass
+    return files
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # WEBSOCKET — feed en vivo
 # ═══════════════════════════════════════════════════════════════════════════════
