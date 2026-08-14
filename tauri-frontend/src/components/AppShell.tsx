@@ -38,6 +38,7 @@ const MODULES = [
   { id: 'motor', label: 'Motor de Cierre', icon: BarChart3, color: 'text-emerald-400', badge: 'revenue' },
   { id: 'services', label: 'Servicios', icon: Activity, color: 'text-blue-400', badge: null },
   { id: 'terminal', label: 'Terminal', icon: Terminal, color: 'text-slate-400', badge: null },
+    { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
   { id: 'settings', label: 'Config', icon: Settings, color: 'text-slate-500', badge: null },
 ];
 
