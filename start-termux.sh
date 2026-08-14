@@ -81,48 +81,21 @@ echo "  PID: $FRONTEND_PID"
 echo ""
 echo "Sistema corriendo:"
 echo "   -> Frontend: http://localhost:5173"
-echo "   -> Backend:  http://localhost:$PORT"
+echo "   -> Backend:  http://localhost:$PORT (incluye /motor/* y /api/murcielago/*)"
 echo ""
 echo "   Logs: tail -f $LOG_DIR/backend.log"
 echo "         tail -f $LOG_DIR/frontend.log"
 echo ""
 
-# -- 4b. Arrancar Motor de Cierre (FastAPI :8000) --
-echo "Arrancando Motor de Cierre en :8000 ..."
-cd "$SCRIPT_DIR/motor_cierre/backend"
-if [ ! -f .env ]; then
-    cp .env.example .env 2>/dev/null || true
-fi
-pip install -q fastapi uvicorn "pydantic[email]" slowapi tenacity 2>/dev/null || true
-python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 > "$LOG_DIR/motor_cierre.log" 2>&1 &
-MOTOR_PID=$!
-echo "  PID: $MOTOR_PID"
+# NOTA: el Motor de Cierre YA NO se arranca como proceso separado en :8000.
+# Esta fusionado como sub-app dentro de dashboard_server.py, montado en
+# /motor/* dentro del backend unificado de arriba (:8001). Arrancarlo aparte
+# aqui causaba dos backends en conflicto y dejaba paneles como Config /
+# Ultrasonidos apuntando al proceso equivocado.
 
-echo -n "  Esperando Motor de Cierre"
-MOTOR_READY=0
-for i in $(seq 1 15); do
-  if ! kill -0 "$MOTOR_PID" 2>/dev/null; then
-    echo ""
-    echo "  ! Motor de Cierre fallo al arrancar (no critico). Log:"
-    tail -10 "$LOG_DIR/motor_cierre.log"
-    break
-  fi
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8000/health" 2>/dev/null || echo "000")
-  if [ "$HTTP_CODE" = "200" ]; then
-    echo " OK"
-    MOTOR_READY=1
-    break
-  fi
-  sleep 1
-  echo -n "."
-done
-if [ "$MOTOR_READY" != "1" ]; then
-  echo " (timeout - continuando sin Motor de Cierre)"
-fi
-
-# -- 6. Watchdog --
+# -- 5. Watchdog --
 cleanup() {
-  kill $BACKEND_PID $FRONTEND_PID $MOTOR_PID 2>/dev/null
+  kill $BACKEND_PID $FRONTEND_PID 2>/dev/null
   pkill -f "dashboard_server.py" 2>/dev/null || true
   pkill -f "vite" 2>/dev/null || true
   exit 0
@@ -141,12 +114,6 @@ while true; do
     cd "$SCRIPT_DIR/tauri-frontend"
     npm run dev >> "$LOG_DIR/frontend.log" 2>&1 &
     FRONTEND_PID=$!
-  fi
-  if ! kill -0 $MOTOR_PID 2>/dev/null; then
-    echo "[watch] Motor de Cierre caido, reiniciando..."
-    cd "$SCRIPT_DIR/motor_cierre/backend"
-    python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 >> "$LOG_DIR/motor_cierre.log" 2>&1 &
-    MOTOR_PID=$!
   fi
   sleep 5
 done

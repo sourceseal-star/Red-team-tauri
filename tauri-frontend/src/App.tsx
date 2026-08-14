@@ -16,6 +16,7 @@ import ServiceControlPanel from './components/ServiceControlPanel';
 import ConfigEditor from './routes/ConfigEditor';
 import { MurcielagoPanel } from './components/MurcielagoPanel';
 import NetworkTopology from './components/NetworkTopology';
+import Terminal from './routes/Terminal';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -40,11 +41,7 @@ function App() {
       {module === 'blackmirror' && <BlackMirrorPanel />}
       {module === 'motor' && <MotorPanel />}
       {module === 'services' && <ServiceControlPanel />}
-      {module === 'terminal' && (
-        <div className="bg-black rounded-xl border border-slate-800 p-4 font-mono text-xs text-green-400 h-[70vh]">
-          $ <span className="animate-pulse">_</span>
-        </div>
-      )}
+      {module === 'terminal' && <Terminal />}
       {module === 'tower' && <ControlTower />}
       {module === 'topology' && <NetworkTopology />}
       {module === 'settings' && <ConfigEditor />}

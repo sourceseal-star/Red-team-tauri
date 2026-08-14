@@ -6,10 +6,17 @@
 // API key management — se guarda en SecureStore (mobile) o localStorage (web)
 let _apiKey: string | null = null
 
+// IMPORTANTE: usa la MISMA clave de localStorage que BiometricLogin.tsx / App.tsx
+// ('api_token'). Antes usaba 'sealctl_api_key', una clave distinta que nunca
+// se llenaba, causando que TODAS las llamadas de este cliente (Config, Terminal,
+// Reports, SOAR, GeoIntel, Honeypot, RASP, Settings, ThreatIntel...) fueran sin
+// token -> 401 silencioso -> paneles vacios/"inutiles".
+const TOKEN_KEY = 'api_token'
+
 export function getApiKey(): string | null {
   if (_apiKey) return _apiKey
   if (typeof window !== 'undefined' && window.localStorage) {
-    _apiKey = localStorage.getItem('sealctl_api_key')
+    _apiKey = localStorage.getItem(TOKEN_KEY)
   }
   return _apiKey
 }
@@ -17,14 +24,14 @@ export function getApiKey(): string | null {
 export function setApiKey(key: string) {
   _apiKey = key
   if (typeof window !== 'undefined' && window.localStorage) {
-    localStorage.setItem('sealctl_api_key', key)
+    localStorage.setItem(TOKEN_KEY, key)
   }
 }
 
 export function clearApiKey() {
   _apiKey = null
   if (typeof window !== 'undefined' && window.localStorage) {
-    localStorage.removeItem('sealctl_api_key')
+    localStorage.removeItem(TOKEN_KEY)
   }
 }
 

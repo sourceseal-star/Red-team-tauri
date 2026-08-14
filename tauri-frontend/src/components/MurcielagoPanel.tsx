@@ -1,5 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+// Usa el mismo token que BiometricLogin.tsx guarda en localStorage.
+// Sin esto, /api/murcielago/* devuelve 401 y el panel queda sin datos
+// (estado del protocolo nunca carga, envios fallan en silencio).
+const authHeaders = (): Record<string, string> => {
+  const token = localStorage.getItem('api_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 interface MurcielagoStatus {
   protocol: string;
   frequency_range: string;
@@ -20,7 +28,7 @@ export const MurcielagoPanel: React.FC = () => {
 
   // Cargar estado del protocolo
   useEffect(() => {
-    fetch('/api/murcielago/status')
+    fetch('/api/murcielago/status', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => setStatus(d))
       .catch(() => {});
@@ -33,7 +41,7 @@ export const MurcielagoPanel: React.FC = () => {
     try {
       const res = await fetch('/api/murcielago/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ message, repeat }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -51,10 +59,20 @@ export const MurcielagoPanel: React.FC = () => {
     }
   };
 
-  const playWav = (wavUrl: string) => {
-    if (audioRef.current) {
-      audioRef.current.src = wavUrl;
-      audioRef.current.play().catch(() => {});
+  const playWav = async (wavUrl: string) => {
+    // /api/murcielago/download/* requiere auth y <audio src> no puede mandar
+    // headers -> se descarga como blob con el token y se reproduce por object URL.
+    try {
+      const res = await fetch(wavUrl, { headers: authHeaders() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      if (audioRef.current) {
+        audioRef.current.src = objUrl;
+        audioRef.current.play().catch(() => {});
+      }
+    } catch (err: any) {
+      setResult({ msg: `Error al reproducir: ${err.message}`, type: 'error' });
     }
   };
 
@@ -62,7 +80,7 @@ export const MurcielagoPanel: React.FC = () => {
     if (!message.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/murcielago/generate-wav?message=${encodeURIComponent(message)}&repeat=${repeat}`);
+      const res = await fetch(`/api/murcielago/generate-wav?message=${encodeURIComponent(message)}&repeat=${repeat}`, { headers: authHeaders() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const link = document.createElement('a');
