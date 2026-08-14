@@ -1,68 +1,81 @@
-# API Gateway Mesh
+# Termux Orchestrator — Nodo Maestro
 
-Arquitectura distribuida para conectar nodos Termux/Replit.
+Arquitectura: 3 apps Replit + Tunnel permanente + Termux Maestro
+
+```
+INTERNET
+|
++--------------+  +--------------+  +--------------+
+|  Replit A    |  |  Replit B    |  |  Replit C    |
+|  Motor de    |  |  Frontend    |  |  Threat      |
+|  Cierre      |<>|  Dashboard   |<>|  Intel Proxy |
+|  (Stripe)    |  |  (React)     |  |  (AbuseIPDB) |
++------+-------+  +------+-------+  +------+-------+
+       +-----------------+-----------------+
+                         |
+           +-------------v-------------+
+           |  Tunnel permanente         |
+           |  tu-subdomain.trycloudflare.com
+           +-------------+-------------+
+                         |
+           +-------------v-------------+
+           |       TERMUX (Maestro)     |
+           |  +-----------------+      |
+           |  |  Orchestrator   |      |
+           |  |  - Descubre nodos|     |
+           |  |  - Enruta APIs  |      |
+           |  |  - Sincroniza DB|      |
+           |  +-----------------+      |
+           |  +-----------------+      |
+           |  |  Core Services  |      |
+           |  |  nmap, aircrack |      |
+           |  |  ffmpeg, tcpdump|      |
+           |  +-----------------+      |
+           |  +-----------------+      |
+           |  |  SQLite Master  |      |
+           |  +-----------------+      |
+           +---------------------------+
+```
 
 ## Estructura
 
 ```
 gateway/
-├── mesh_server.py           # Servidor central (FastAPI + WebSocket)
-├── node_client.py            # Cliente que corre en cada nodo
-├── node_config.example.json  # Template de configuración
-└── README.md
++-- orchestrator.py            # Nodo Maestro (FastAPI :8080)
++-- start_orchestrator.sh      # Arranque del maestro
++-- node_client.py             # Cliente para nodos secundarios
++-- README.md
 ```
 
-## Arquitectura
-
-```
-Control Tower (React)
-       │
-   Gateway Mesh (mesh_server.py :8080)
-       │
-   ┌───┼───┐
-   │   │   │
-Nodo A  Nodo B  Nodo C
-Termux  Termux  Replit
-```
-
-## Setup — Gateway (central)
+## Setup — Termux (Nodo Maestro)
 
 ```bash
-pip install fastapi uvicorn websockets
-python mesh_server.py
-# Corre en :8080
+cd gateway
+pip install fastapi uvicorn
+
+# Configurar URLs de Replits
+export REPLIT_MOTOR_URL="https://tu-replit-motor.repl.co"
+export REPLIT_FRONTEND_URL="https://tu-replit-frontend.repl.co"
+export REPLIT_THREAT_URL="https://tu-replit-threat.repl.co"
+
+bash start_orchestrator.sh
 ```
 
-## Setup — Nodo Termux
+## Endpoints del Orchestrator
 
-```bash
-pip install websockets
-cp node_config.example.json node_config.json
-# Editar node_config.json con tu node_id y capabilities
-python node_client.py
-```
+### Node Discovery
+- `GET /nodes` — Listar nodos Replit + status
+- `GET /nodes/{id}` — Info de nodo especifico
 
-## Endpoints HTTP
+### API Proxy
+- `ANY /proxy/{node_id}/{path}` — Proxy a cualquier Replit
 
-- `POST /nodes/register` — Registrar nodo
-- `POST /nodes/{id}/heartbeat` — Heartbeat manual
-- `GET /nodes` — Listar nodos
-- `GET /nodes/{id}` — Info de nodo específico
-- `DELETE /nodes/{id}` — Desconectar nodo
-- `GET /health` — Health del gateway
+### DB Sync
+- `POST /sync/{node_id}` — Sincronizar DB del nodo
+- `GET /sync/log` — Log de sincronizaciones
 
-## WebSocket
+### Core Services
+- `POST /core/exec` — Ejecutar herramienta en Termux
 
-- `ws://host:8080/ws/{node_id}` — Conexión bidireccional
-- Tipos de mensaje:
-  - `heartbeat` — Keepalive + telemetría
-  - `command` — Enviar comando a nodo específico
-  - `broadcast` — Broadcast a todos los nodos
-  - `telemetry` — Stats del nodo (CPU, RAM, disk)
-
-## Comandos soportados
-
-- `run_scan` — nmap scan (requiere nmap)
-- `capture_camera` — Captura de cámara
-- `network_monitor` — tcpdump capture
-- `ping` — Health check del nodo
+### Health
+- `GET /health` — Status del maestro + nodos + tunnel
