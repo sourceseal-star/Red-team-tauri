@@ -10,6 +10,7 @@ import OSINTPanel from './components/OSINTPanel';
 import WiFiPanel from './components/WiFiPanel';
 import BlackMirrorPanel from './components/BlackMirrorPanel';
 import MotorMetricsDashboard from './components/MotorMetricsDashboard';
+import MotorPanel from './components/MotorPanel';
 import ServiceControlPanel from './components/ServiceControlPanel';
 
 function App() {
@@ -33,7 +34,7 @@ function App() {
       {module === 'wifi' && <WiFiPanel />}
       {module === 'ultra' && <div className="text-slate-500">Panel de Ultrasonidos</div>}
       {module === 'blackmirror' && <BlackMirrorPanel />}
-      {module === 'motor' && <MotorMetricsDashboard />}
+      {module === 'motor' && <MotorPanel />}
       {module === 'services' && <ServiceControlPanel />}
       {module === 'terminal' && (
         <div className="bg-black rounded-xl border border-slate-800 p-4 font-mono text-xs text-green-400 h-[70vh]">
