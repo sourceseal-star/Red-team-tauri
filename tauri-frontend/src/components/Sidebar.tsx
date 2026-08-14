@@ -3,7 +3,7 @@ import {
   LayoutDashboard, FileText, Shield, Bug, Workflow,
   Globe, Smartphone, Terminal, Settings, Info, MapPin, Camera, Network, TrendingUp,
   Server, BarChart3
-} from 'lucide-react', Server, BarChart3 } from 'lucide-react'
+} from 'lucide-react'
 import { cn } from '../lib/utils'
 
 const items = [
