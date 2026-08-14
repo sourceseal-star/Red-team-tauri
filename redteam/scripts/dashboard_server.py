@@ -52,7 +52,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query, Depends, HTTPException, Security
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query, Depends, HTTPException, Security, Body
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, Response, PlainTextResponse
@@ -788,6 +788,76 @@ async def scan_radio():
                 results.append({"ip": f"{base}{i}", "port": port, "protocol": label,
                                "banner": banner[:80], "type": "radio"})
     return {"results": results, "count": len(results)}
+
+# ── IoT scan por CIDR (escanear red específica) ────────────────────────────────
+@app.post("/api/iot/scan-network")
+async def iot_scan_network(body: dict = Body(...)):
+    """Escanea una red CIDR específica en busca de cámaras IP y dispositivos con puertos abiertos."""
+    import ipaddress as _ipa
+    cidr = str(body.get("cidr", "")).strip()
+    if not cidr:
+        return JSONResponse({"error": "cidr requerido (ej: 192.168.1.0/24)"}, status_code=400)
+    try:
+        net = _ipa.ip_network(cidr, strict=False)
+    except Exception:
+        return JSONResponse({"error": f"CIDR inválido: {cidr}"}, status_code=400)
+    
+    hosts = [str(h) for h in net.hosts()][:254]  # limitar a /24
+    # Escanear puertos de cámara + comunes
+    SCAN_PORTS = [554, 80, 443, 8080, 8000, 37777, 8554, 23, 22]
+    
+    cameras = []
+    all_devices = []
+    
+    # Escaneo paralelo por IP
+    async def scan_ip(ip: str):
+        results = {}
+        for port in SCAN_PORTS:
+            b = await tcp_check(ip, port, timeout=1.0)
+            if b is not None:
+                results[port] = b[:80]
+        return ip, results
+    
+    tasks = [scan_ip(ip) for ip in hosts]
+    scan_results = await asyncio.gather(*tasks)
+    
+    for ip, ports in scan_results:
+        if not ports:
+            continue
+        open_port_list = list(ports.keys())
+        device_type = "device"
+        brand = None
+        
+        if 554 in ports:
+            brand = _detect_camera_brand(ports[554])
+            cameras.append({
+                "ip": ip, "port": 554, "protocol": "RTSP",
+                "banner": ports[554], "brand": brand,
+                "type": "camera",
+                "ports_open": [f"{p}/tcp" for p in open_port_list],
+            })
+            device_type = "camera"
+        
+        all_devices.append({
+            "ip": ip,
+            "type": device_type,
+            "vendor": brand or _detect_camera_brand(" ".join(ports.values())),
+            "ports_open": [f"{p}/tcp" for p in open_port_list],
+            "evidence": [{"port": p, "banner": b} for p, b in ports.items()],
+        })
+    
+    await broadcast({"type": "progress", "payload": f"Scan completo: {len(cameras)} cámaras, {len(all_devices)} dispositivos"})
+    
+    return {
+        "network": cidr,
+        "total_ips": len(hosts),
+        "total_scanned": len(hosts),
+        "cameras_found": len(cameras),
+        "devices_with_open_ports": len(all_devices),
+        "cameras": cameras,
+        "all_devices": all_devices,
+        "full_results": [],
+    }
 
 # ── IoT video URLs ───────────────────────────────────────────────────────────
 @app.post("/api/iot/scan-local")
