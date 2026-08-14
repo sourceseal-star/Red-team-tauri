@@ -41,7 +41,6 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/services" element={<ServiceControlPanel />} />
               <Route path="/motor-metrics" element={<MotorMetricsDashboard />} />
-              <Route path="/motor-metrics" element={<MotorMetricsDashboard />} />
               <Route path="/config" element={<ConfigEditor />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/honeypot" element={<Honeypot />} />
