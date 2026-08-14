@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { BottomStatus } from './components/BottomStatus'
 import { BiometricLogin, ServiceControlPanel, MotorMetricsDashboard } from './components'
+import { BiometricLogin, ServiceControlPanel, MotorMetricsDashboard } from './components'
 import Dashboard from './routes/Dashboard'
 import ConfigEditor from './routes/ConfigEditor'
 import Reports from './routes/Reports'
@@ -39,6 +40,8 @@ function App() {
           <main className="flex-1 overflow-y-auto p-2 sm:p-4 bg-background">
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/services" element={<ServiceControlPanel />} />
+              <Route path="/motor-metrics" element={<MotorMetricsDashboard />} />
               <Route path="/services" element={<ServiceControlPanel />} />
               <Route path="/motor-metrics" element={<MotorMetricsDashboard />} />
               <Route path="/config" element={<ConfigEditor />} />
