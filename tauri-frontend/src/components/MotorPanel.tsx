@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { DollarSign, Users, ShoppingCart, Target, ArrowUpRight, ArrowDownRight, Send, CreditCard } from 'lucide-react';
 
 const API_KEY = 'tu-clave-secreta-123';
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://localhost:8001';
 
 export default function MotorPanel() {
   const [metrics, setMetrics] = useState<any>(null);
