@@ -1,5 +1,5 @@
 # 🛡️ MANUAL OPERATIVO — Red-Team-Tauri / SourceSeal
-## Sala de Guerra Unificada v3.2.1
+## Sala de Guerra Unificada v3.3.0
 
 > **Consola de operaciones de seguridad ofensiva y defensiva.**  
 > Topología + Cámaras + Comunicaciones Ultrasónicas + Threat Intel + Exploits + Captura de tráfico — todo en un dashboard.
@@ -1415,6 +1415,185 @@ tauri-frontend/src/styles/source-seal.css
 
 ---
 
+
+## 18b. MOTOR DE CIERRE — Backend Autónomo (:8000)
+
+> **Módulo independiente de gestión de leads y conversión.** FastAPI en :8000 con SQLite propio.
+
+### Arquitectura
+
+- **Backend**: `motor_cierre/backend/main.py` — FastAPI + SQLite
+- **Puerto**: 8000
+- **DB**: `motor_cierre/backend/motor_cierre.db` (SQLite, auto-creada)
+- **Endpoint health**: `GET http://localhost:8000/health`
+
+### Tablas
+
+| Tabla | Propósito |
+|---|---|
+| `leads` | Emails, empresas, productos, fuentes |
+| `conversations` | Historial de conversaciones por lead |
+| `metrics` | Métricas diarias (leads recibidos, procesados) |
+| `processed_hashes` | Anti-duplicados (hash de contenido) |
+| `products` | Productos configurables con Stripe |
+
+### Endpoints principales
+
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Listar leads
+curl http://localhost:8000/leads
+
+# Crear/actualizar lead
+curl -X POST http://localhost:8000/leads \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","company":"Corp"}'
+
+# Listar productos
+curl http://localhost:8000/products
+```
+
+### Arranque
+
+```bash
+# Automático (incluido en deploy.sh y start-termux.sh)
+cd motor_cierre/backend
+python3 -m uvicorn main:app --host 0.0.0.0 --port 8000
+
+# Dependencias
+pip install fastapi uvicorn "pydantic[email]" slowapi tenacity
+```
+
+### Solución de problemas
+
+- **Crash al arrancar**: `pip install "pydantic[email]"` — falta `email-validator`
+- **No responde**: Verificar que el puerto 8000 esté libre: `curl http://localhost:8000/health`
+- **Sin .env**: Copiar `.env.example` a `.env` o crear uno básico
+
+---
+
+## 18c. SCRIPTS DE DESPLIEGUE Y OPERACIÓN
+
+### deploy.sh — Despliegue completo desde cero
+
+```bash
+# Despliegue total (paquetes → repo → deps → build → arranque → watchdog)
+bash deploy.sh
+
+# Sin watchdog
+bash deploy.sh --no-watch
+
+# Limpio (borra node_modules y reinstala)
+bash deploy.sh --fresh
+
+# Solo actualizar
+bash deploy.sh --update
+```
+
+Ejecuta 9 fases: wake-lock → paquetes Termux → git pull → Python deps → Node deps → .env → matar procesos previos → arranque en orden (Dashboard:8001 → Motor:8000 → Vite:5173) → watchdog.
+
+### update.sh — Actualización inteligente
+
+```bash
+# Actualizar + reiniciar servicios
+bash update.sh
+
+# Desde main
+bash update.sh --main
+
+# Con watchdog (vigila y revive servicios cada 10s)
+bash update.sh --watch
+```
+
+### recon.sh — Reconocimiento y reconexión de dispositivos
+
+```bash
+# Estado general del sistema
+bash recon.sh --status
+
+# Escanear red local
+bash recon.sh --scan
+
+# Dispositivos registrados
+bash recon.sh --known
+
+# Reconectar dispositivos caídos
+bash recon.sh --reconnect
+
+# Registrar dispositivo nuevo
+bash recon.sh --register 192.168.1.50
+
+# Listar usuarios/leads del Motor
+bash recon.sh --users
+
+# Cámaras y streams RTSP
+bash recon.sh --cameras
+
+# Todo
+bash recon.sh
+```
+
+### manuales.sh — Centro de documentación
+
+```bash
+# Menú interactivo con todos los manuales y docs
+bash manuales.sh
+
+# Abrir en otra ventana de Termux (no interfiere con servicios)
+bash manuales.sh --termux
+```
+
+Categorías: Manuales principales · Arquitectura · Módulos · Evidencia · Scripts · Estado del sistema.
+
+### cifrar_manual.sh / acceder_manual.sh — Cifrado del manual
+
+```bash
+# Cifrar (crea .enc, borra el .md original)
+bash cifrar_manual.sh
+
+# Descifrar (pide clave, muestra temporal, borra al salir)
+bash acceder_manual.sh
+# o
+python3 acceder_manual_py.py
+```
+
+Método: AES-256-CBC + PBKDF2 (100,000 iteraciones). La clave NO se guarda en ningún lado.
+
+---
+
+## 18d. MANUAL CIFRADO (manual_operaciones.enc)
+
+El archivo `manual_operaciones.enc` contiene una versión cifrada del manual con AES-256-CBC + PBKDF2.
+
+- **Método**: `openssl enc -aes-256-cbc -pbkdf2 -iter 100000`
+- **Archivo**: 18,912 bytes
+- **Formato**: OpenSSL `Salted__` + salt de 8 bytes + payload cifrado
+- **Seguridad**: Irrecuperable sin la clave exacta (PBKDF2 100k iter)
+
+### Estado actual
+
+> **⚠️ ADVERTENCIA**: La clave de este archivo se perdió. El contenido no es recuperable.
+> El `MANUAL_OPERATIVO.md` (este archivo) es la versión completa y actualizada.
+> El `.enc` puede regenerarse desde este manual cuando sea necesario.
+
+### Regenerar el .enc
+
+```bash
+# 1. Copiar el manual actual
+cp MANUAL_OPERATIVO.md manual_operaciones.md
+
+# 2. Cifrar con nueva clave
+bash cifrar_manual.sh
+# Introduce la clave (mínimo 12 caracteres)
+# El script borra el .md y deja solo el .enc
+
+# 3. Para descifrar
+bash acceder_manual.sh
+```
+
+
 ## NOTAS FINALES
 
 - **Sin internet**: MURCIÉLAGO, captura de paquetes, WiFi Scanner y Black Mirror funcionan 100% offline. Threat Intel, ExploitDB y OSINT (crt.sh) necesitan conexion para consulta inicial (luego cache/offline).
@@ -1425,7 +1604,7 @@ tauri-frontend/src/styles/source-seal.css
 
 ---
 
-*Documentado: 2026-08-13 · SourceSeal / Red-Team-Tauri v3.2*
+*Documentado: 2026-08-14 · SourceSeal / Red-Team-Tauri v3.3*
 
 
 ---
@@ -1439,7 +1618,7 @@ tauri-frontend/src/styles/source-seal.css
 ### Clave de cifrado (fija, no cambia)
 
 ```
-SourceSeal-RedTeam-Tauri-v3.2.1
+SourceSeal-RedTeam-Tauri-v3.3.0
 ```
 
 ### Bloque cifrado (Base64 XOR-SHA256)
@@ -1460,7 +1639,7 @@ bash acceder_manual.sh
 # Opción 3: Manual en Python
 import hashlib, base64, json
 
-CIPHER_KEY = hashlib.sha256(b"SourceSeal-RedTeam-Tauri-v3.2.1").digest()
+CIPHER_KEY = hashlib.sha256(b"SourceSeal-RedTeam-Tauri-v3.3.0").digest()
 ENCRYPTED = "eTGM3NbklcA33akUO6jUq9a1iDiR9uIVZ3jXBxzApOVsWoGfmNem4U75hDwFneuQ4J/gAMK5qxUsF5lCTObM3kdp7ai9+Z7bINWse17Jpo35m6MSwKDiRWFz3UJDyezoIgmY3ti88KRB3aYPO6/Nrszc90GR4qdZdj+VaE6Bq9hHeui5pumexS7dymNEy9zPyK6ETPipuxUsF5lCTPHc0k5y76Ox+JTULNGmDTfLvsLS9O1Bk+zgGGFt0E0GxOj8dlOO0P6W8KRDuscxAYjoluHc4WuT7OIXIjLaAwDA++ktWM2QmNSx5wi64nlEtKjoqd7vL/yYhxU6PZsuD4Hq/GNNydyH0/DjBvaNKwXJ543n3qIR1qKxRGw9ywMAxam9al7U3MaC8OENuJw8FoTxmtaNqBXGvOxEaD+zHw=="
 
 raw = base64.b64decode(ENCRYPTED)
