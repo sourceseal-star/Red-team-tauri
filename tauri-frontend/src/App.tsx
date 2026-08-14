@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { BottomStatus } from './components/BottomStatus'
+import { BiometricLogin, ServiceControlPanel, MotorMetricsDashboard } from './components'
 import Dashboard from './routes/Dashboard'
 import ConfigEditor from './routes/ConfigEditor'
 import Reports from './routes/Reports'
@@ -20,6 +21,14 @@ import SalesCommandCenter from './routes/SalesCommandCenter'
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [token, setToken] = useState<string | null>(localStorage.getItem('api_token'))
+
+  // Si no hay token, mostrar login
+  if (!token) {
+    return <BiometricLogin onLogin={(t) => {
+      setToken(t)
+    }} />
+  }
 
   return (
     <BrowserRouter>
@@ -30,12 +39,14 @@ function App() {
           <main className="flex-1 overflow-y-auto p-2 sm:p-4 bg-background">
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/services" element={<ServiceControlPanel />} />
+              <Route path="/motor-metrics" element={<MotorMetricsDashboard />} />
               <Route path="/config" element={<ConfigEditor />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/honeypot" element={<Honeypot />} />
               <Route path="/soar" element={<SOAR />} />
               <Route path="/tip" element={<ThreatIntel />} />
-        <Route path="/geo" element={<GeoIntel />} />
+              <Route path="/geo" element={<GeoIntel />} />
               <Route path="/rasp" element={<RASP />} />
               <Route path="/terminal" element={<Terminal />} />
               <Route path="/settings" element={<Settings />} />
