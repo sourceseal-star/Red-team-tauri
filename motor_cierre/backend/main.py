@@ -11,8 +11,17 @@ from contextlib import contextmanager
 from typing import Optional, Dict, Any, List
 from enum import Enum
 
-import stripe
-import openai
+try:
+    import stripe
+except ImportError:
+    stripe = None
+    logging.warning("stripe no instalado. Los pagos no funcionaran (modo demo).")
+
+try:
+    import openai
+except ImportError:
+    openai = None
+    logging.warning("openai no instalado. El NLP usara fallback heuristico.")
 from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,7 +50,7 @@ class Settings:
     STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
     STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-    API_KEY = os.getenv("API_KEY", "dev-key-cambiar-en-produccion")
+    API_KEY = os.getenv("API_KEY", "tu-clave-super-secreta-para-el-webhook")
     WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
     DB_PATH = os.getenv("DB_PATH", "./motor_cierre.db")
     DEFAULT_PRICE_USD = int(os.getenv("DEFAULT_PRICE_USD", "499"))
@@ -57,8 +66,10 @@ if not settings.STRIPE_SECRET_KEY:
 if not settings.OPENAI_API_KEY:
     logger.warning("OPENAI_API_KEY no configurada. El NLP usara fallback heuristico.")
 
-stripe.api_key = settings.STRIPE_SECRET_KEY
-openai.api_key = settings.OPENAI_API_KEY
+if stripe is not None:
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+if openai is not None:
+    openai.api_key = settings.OPENAI_API_KEY
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Motor de Cierre Autonomo v2.1", version="2.1.0")
@@ -343,9 +354,15 @@ class NLPService:
         return Intent.UNCLEAR
 
     @staticmethod
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10),
-           retry=retry_if_exception_type((openai.APIError, openai.APITimeoutError)), reraise=True)
     def analyze_with_openai(text: str) -> Intent:
+        if openai is None:
+            return Intent.UNCLEAR
+        return NLPService._call_openai(text)
+
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10),
+           retry=retry_if_exception_type((Exception,)), reraise=True)
+    def _call_openai(text: str) -> Intent:
         safe_text = text.replace('"', '\\"').replace('\n', ' ')
         system_prompt = ("Eres un clasificador de intencion de compra B2B. "
             "Analiza el texto del prospecto y clasificalo EXACTAMENTE en una de estas categorias: "
@@ -376,14 +393,21 @@ class NLPService:
 
 class PaymentService:
     @staticmethod
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10),
-           retry=retry_if_exception_type((stripe.error.APIError, stripe.error.APIConnectionError)), reraise=True)
     def create_checkout(email: str, service_name: str, price_usd: int,
                         metadata: Optional[Dict] = None,
                         success_url: Optional[str] = None,
                         cancel_url: Optional[str] = None):
-        if not settings.STRIPE_SECRET_KEY:
+        if stripe is None or not settings.STRIPE_SECRET_KEY:
             raise HTTPException(status_code=503, detail="Stripe no configurado")
+        return PaymentService._call_stripe_checkout(email, service_name, price_usd, metadata, success_url, cancel_url)
+
+    @staticmethod
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10),
+           retry=retry_if_exception_type((Exception,)), reraise=True)
+    def _call_stripe_checkout(email: str, service_name: str, price_usd: int,
+                        metadata: Optional[Dict] = None,
+                        success_url: Optional[str] = None,
+                        cancel_url: Optional[str] = None):
         s_url = success_url or settings.DEFAULT_SUCCESS_URL
         c_url = cancel_url or settings.DEFAULT_CANCEL_URL
         s_url = s_url.replace("{email}", email)
@@ -653,6 +677,7 @@ async def handle_objection(email: str, text: str):
 # ==========================================
 @app.get("/health")
 async def health():
+    """Health check público — no requiere API key."""
     product_count = len(ProductService.list_products(active_only=True))
     return {"status": "ok", "version": "2.1.0",
             "stripe_configured": bool(settings.STRIPE_SECRET_KEY),

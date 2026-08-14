@@ -5,7 +5,7 @@ import {
   Send, CreditCard, Activity, Mail, BarChart3, Zap, Shield, Package, Plus, Trash2
 } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_MOTOR_CIERRE_API_URL || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_MOTOR_CIERRE_API_URL || '/motor-api';
 const API_KEY = import.meta.env.VITE_MOTOR_CIERRE_API_KEY || 'tu-clave-super-secreta-para-el-webhook';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
