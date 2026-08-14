@@ -1,81 +1,85 @@
-# Termux Orchestrator — Nodo Maestro
+# SourceSeal Federation Gateway
 
-Arquitectura: 3 apps Replit + Tunnel permanente + Termux Maestro
-
-```
-INTERNET
-|
-+--------------+  +--------------+  +--------------+
-|  Replit A    |  |  Replit B    |  |  Replit C    |
-|  Motor de    |  |  Frontend    |  |  Threat      |
-|  Cierre      |<>|  Dashboard   |<>|  Intel Proxy |
-|  (Stripe)    |  |  (React)     |  |  (AbuseIPDB) |
-+------+-------+  +------+-------+  +------+-------+
-       +-----------------+-----------------+
-                         |
-           +-------------v-------------+
-           |  Tunnel permanente         |
-           |  tu-subdomain.trycloudflare.com
-           +-------------+-------------+
-                         |
-           +-------------v-------------+
-           |       TERMUX (Maestro)     |
-           |  +-----------------+      |
-           |  |  Orchestrator   |      |
-           |  |  - Descubre nodos|     |
-           |  |  - Enruta APIs  |      |
-           |  |  - Sincroniza DB|      |
-           |  +-----------------+      |
-           |  +-----------------+      |
-           |  |  Core Services  |      |
-           |  |  nmap, aircrack |      |
-           |  |  ffmpeg, tcpdump|      |
-           |  +-----------------+      |
-           |  +-----------------+      |
-           |  |  SQLite Master  |      |
-           |  +-----------------+      |
-           +---------------------------+
-```
+Arquitectura: 3 apps Replit + conexion permanente + Termux Maestro
 
 ## Estructura
 
 ```
 gateway/
-+-- orchestrator.py            # Nodo Maestro (FastAPI :8080)
-+-- start_orchestrator.sh      # Arranque del maestro
-+-- node_client.py             # Cliente para nodos secundarios
++-- orchestrator.py            # Nodo Maestro (FastAPI :9000)
++-- satellite.py               # Nodo Satelite (para cada Replit)
++-- start_federation.sh       # Launcher completo
++-- start_orchestrator.sh     # Launcher solo orchestrator
++-- node_client.py            # Cliente legacy
 +-- README.md
 ```
 
-## Setup — Termux (Nodo Maestro)
+## Setup Termux (Nodo Maestro)
 
 ```bash
 cd gateway
-pip install fastapi uvicorn
-
-# Configurar URLs de Replits
-export REPLIT_MOTOR_URL="https://tu-replit-motor.repl.co"
-export REPLIT_FRONTEND_URL="https://tu-replit-frontend.repl.co"
-export REPLIT_THREAT_URL="https://tu-replit-threat.repl.co"
-
-bash start_orchestrator.sh
+pip install fastapi uvicorn aiohttp
+bash start_federation.sh
 ```
 
-## Endpoints del Orchestrator
+## Setup Replit (cada nodo)
 
-### Node Discovery
-- `GET /nodes` — Listar nodos Replit + status
-- `GET /nodes/{id}` — Info de nodo especifico
+1. Copia `satellite.py` a tu Replit
+2. Crea `.env`:
+```
+ORCHESTRATOR_URL=https://tu-tunnel.trycloudflare.com
+ORCHESTRATOR_KEY=tu-clave-maestra-federada
+NODE_ID=motor_01
+REPLIT_URL=https://tu-replit.replit.app
+```
+3. Run: `python satellite.py`
 
-### API Proxy
-- `ANY /proxy/{node_id}/{path}` — Proxy a cualquier Replit
+## Comunicacion entre nodos
 
-### DB Sync
-- `POST /sync/{node_id}` — Sincronizar DB del nodo
-- `GET /sync/log` — Log de sincronizaciones
+### Proxy a un Replit especifico
 
-### Core Services
-- `POST /core/exec` — Ejecutar herramienta en Termux
+```bash
+curl -X POST http://localhost:9000/proxy \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_node": "replit_motor",
+    "endpoint": "/webhook/email-reply",
+    "method": "POST",
+    "payload": {
+      "lead_email": "test@test.com",
+      "subject": "Hola",
+      "body_text": "Quiero comprar"
+    }
+  }'
+```
 
-### Health
-- `GET /health` — Status del maestro + nodos + tunnel
+### Broadcast a todos los nodos
+
+```bash
+curl -X POST http://localhost:9000/broadcast \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_type": "scan_complete",
+    "payload": {"hosts_found": 12, "vulns": 3},
+    "target_nodes": ["replit_frontend", "replit_motor"]
+  }'
+```
+
+## Endpoints
+
+| Endpoint | Metodo | Descripcion |
+|---|---|---|
+| /health | GET | Status del maestro |
+| /nodes | GET | Lista de nodos con status y latencia |
+| /proxy | POST | Enruta peticion a un Replit |
+| /broadcast | POST | Envia evento a nodos suscritos |
+| /events | GET | Log de eventos |
+
+## Problemas conocidos
+
+| Problema | Solucion |
+|---|---|
+| Replit se duerme | UptimeRobot o cron-job.org ping cada 5 min a /health |
+| URL del tunel cambia | cloudflared tunnel create con cuenta fija |
+| Termux mata procesos | termux-wake-lock y nohup |
+| Latencia entre nodos | Orchestrator cachea resultados 60s |
