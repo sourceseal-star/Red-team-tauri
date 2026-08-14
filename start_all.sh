@@ -17,15 +17,16 @@ export PORT=8001
 
 # 2. Verificar backend
 echo -e "${YELLOW}[1/3]${NC} Verificando backend..."
-if [ ! -f "motor_cierre/backend/main.py" ]; then
-    echo -e "${RED}[!] main.py no encontrado${NC}"
+if [ ! -f "redteam/scripts/dashboard_server.py" ]; then
+    echo -e "${RED}[!] dashboard_server.py no encontrado${NC}"
     exit 1
 fi
 
-# 3. Levantar backend
-echo -e "${YELLOW}[2/3]${NC} Levantando backend en puerto $PORT..."
-cd motor_cierre/backend
-python main.py > ../../backend.log 2>&1 &
+# 3. Levantar backend UNIFICADO (dashboard_server.py incluye motor_cierre
+# como sub-app en /motor/* + todos los endpoints de escaneo/camaras/etc)
+echo -e "${YELLOW}[2/3]${NC} Levantando backend unificado en puerto $PORT..."
+cd redteam/scripts
+python3 dashboard_server.py > ../../backend.log 2>&1 &
 BACKEND_PID=$!
 cd ../..
 
@@ -33,7 +34,7 @@ echo "    Esperando backend..."
 BACKEND_OK=0
 for i in 1 2 3 4 5 6 7 8 9 10; do
     sleep 1
-    if curl -s http://127.0.0.1:$PORT/health > /dev/null 2>&1; then
+    if curl -s http://127.0.0.1:$PORT/api/health > /dev/null 2>&1; then
         echo -e "${GREEN}[OK] Backend online en http://127.0.0.1:$PORT${NC}"
         BACKEND_OK=1
         break

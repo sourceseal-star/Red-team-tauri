@@ -133,6 +133,31 @@ except Exception as _er_err:
     _ENHANCED_RECON_OK = False
     print(f"[WARN] enhanced_recon import falló: {_er_err}", flush=True)
 
+# ── API Key (necesaria antes del import del motor_cierre) ────────────────
+API_KEY = os.environ.get("REDTEAM_API_KEY", "").strip()
+
+# ── Motor de Cierre (leads/checkout/metrics) — antes corria como un 2do
+# proceso FastAPI en el MISMO puerto 8001 que este backend, lo que hacia
+# que solo uno de los dos pudiera estar vivo a la vez. Se monta aqui como
+# sub-app para que TODO viva en un solo proceso/puerto de verdad.
+try:
+    import importlib.util as _ilu
+    _motor_main_path = BASE.parent / "motor_cierre" / "backend" / "main.py"
+    _motor_spec = _ilu.spec_from_file_location("motor_cierre_main", str(_motor_main_path))
+    _motor_mod = _ilu.module_from_spec(_motor_spec)
+    sys.modules["motor_cierre_main"] = _motor_mod
+    _motor_spec.loader.exec_module(_motor_mod)
+    # Alinear el API key: dashboard_server.py emite tokens via REDTEAM_API_KEY
+    # (o "local-dev-token" si no esta seteada). motor_cierre validaba contra
+    # su propio default distinto ("dev-key-cambiar-en-produccion") -> con
+    # esto ambos aceptan el MISMO token emitido por /api/auth/login.
+    _motor_mod.settings.API_KEY = API_KEY or "local-dev-token"
+    _MOTOR_CIERRE_OK = True
+    print("[MOTOR-CIERRE] Módulo cargado: leads + checkout + metricas -> montado en /motor")
+except Exception as _mc_err:
+    _MOTOR_CIERRE_OK = False
+    print(f"[WARN] motor_cierre import falló: {_mc_err}", flush=True)
+
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Red-Team Tauri · Unified Dashboard Backend",
@@ -144,12 +169,17 @@ app = FastAPI(
 if _ENHANCED_RECON_OK:
     app.include_router(enhanced_recon_router)
     print("[ENHANCED-RECON] Router montado en /api/enhanced/*")
+
+# ── Mount Motor de Cierre como sub-app en /motor ────────────────────────────
+if _MOTOR_CIERRE_OK:
+    app.mount("/motor", _motor_mod.app)
+    print("[MOTOR-CIERRE] Sub-app montada en /motor/*")
 # ═════════════════════════════════════════════════════════════════════════════
 #  BLOQUE DE SEGURIDAD — Hardening completo
 # ═════════════════════════════════════════════════════════════════════════════
 
 # ── API Key (obligatoria) ────────────────────────────────────────────────────
-API_KEY = os.environ.get("REDTEAM_API_KEY", "").strip()
+# (movido arriba, antes del import del motor_cierre)
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # Endpoints PÚBLICOS (no requieren API key):
@@ -251,13 +281,21 @@ async def security_middleware(request: Request, call_next):
     if path in PUBLIC_PATHS or path == "/" or path.startswith("/assets/"):
         return await call_next(request)
 
-    # Todo lo demás requiere API key
+    # Todo lo demás requiere autenticación. El frontend envía el token emitido
+    # por /api/auth/login como "Authorization: Bearer <token>". También se
+    # acepta X-API-Key para compatibilidad con scripts.
     if not API_KEY:
         # Si no hay API key configurada, permitir solo desde localhost
         if client_ip not in ("127.0.0.1", "::1", "localhost"):
             return JSONResponse({"error": "Unauthorized — API key required"}, status_code=401)
     else:
+        # Intentar X-API-Key primero (compatibilidad scripts)
         key = request.headers.get("X-API-Key", "")
+        # Luego intentar Authorization: Bearer <token> (lo que usa el frontend)
+        if not key:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                key = auth_header[7:]
         if key != API_KEY:
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
@@ -1388,14 +1426,11 @@ async def settings_post(request: Request):
 # ═════════════════════════════════════════════════════════════════════════════
 #  ENDPOINTS — AUTH (básico, sin mocks)
 # ═════════════════════════════════════════════════════════════════════════════
-
-@app.post("/api/auth/login")
-async def auth_login(request: Request):
-    return {"ok": False, "error": "Auth no configurado. Usar API key via Settings."}
-
-@app.post("/api/auth/biometric")
-async def auth_biometric(request: Request):
-    return {"ok": False, "error": "Biometric no disponible en este entorno."}
+# NOTA: las implementaciones reales de /api/auth/login y /api/auth/biometric
+# estan mas abajo (usan ADMIN_EMAIL/ADMIN_PASSWORD). Antes habia un stub
+# duplicado aqui que SIEMPRE devolvia ok:false porque FastAPI/Starlette
+# usa la PRIMERA ruta que matchea el path -> el login real quedaba muerto,
+# nunca se ejecutaba sin importar la contrasena que pusieras.
 
 @app.post("/api/auth/logout")
 async def auth_logout():
@@ -1474,41 +1509,6 @@ async def root():
             "GET /api/network/stats", "GET /api/health", "WS /ws",
         ],
     }
-
-# ═════════════════════════════════════════════════════════════════════════════
-#  FRONTEND ESTÁTICO — SPA
-# ═════════════════════════════════════════════════════════════════════════════
-
-if DIST.exists() and DIST.is_dir():
-    assets_dir = DIST / "assets"
-    if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-
-    @app.get("/{full_path:path}")
-    async def spa_fallback(full_path: str):
-        if not full_path:
-            index = DIST / "index.html"
-            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
-        # NUNCA servir el SPA para rutas API — devuelve 404 JSON
-        if full_path.startswith(("api/", "canary/", "ws")):
-            return JSONResponse({"error": "not found"}, status_code=404)
-        if full_path.startswith("assets/"):
-            candidate = DIST / full_path
-            if candidate.exists() and candidate.is_file():
-                return FileResponse(candidate)
-            return JSONResponse({"error": "not found"}, status_code=404)
-        candidate = DIST / full_path
-        if candidate.exists() and candidate.is_file():
-            return FileResponse(candidate)
-        index = DIST / "index.html"
-        return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
-else:
-    @app.get("/{full_path:path}")
-    async def no_dist_fallback(full_path: str):
-        if full_path.startswith(("api/", "canary/", "ws", "health")):
-            return JSONResponse({"error": "not found"}, status_code=404)
-        return JSONResponse({"status": "ok", "backend": "red-team-tauri-unified",
-                            "dist_built": False, "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})"})
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  MAIN
@@ -3524,6 +3524,45 @@ async def bm_chaos_status():
     ]}
 
 # == END BLACK MIRROR ================================================
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  FRONTEND ESTÁTICO — SPA
+# ═════════════════════════════════════════════════════════════════════════════
+
+if DIST.exists() and DIST.is_dir():
+    assets_dir = DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        if not full_path:
+            index = DIST / "index.html"
+            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
+        # NUNCA servir el SPA para rutas API — devuelve 404 JSON
+        # Si empieza con un prefijo conocido de API/backend, no servir el SPA.
+        # El catch-all está registrado antes que muchas rutas API, asi que
+        # si no excluimos estas, las captura y devuelve 404 JSON.
+        if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/")):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if full_path.startswith("assets/"):
+            candidate = DIST / full_path
+            if candidate.exists() and candidate.is_file():
+                return FileResponse(candidate)
+            return JSONResponse({"error": "not found"}, status_code=404)
+        candidate = DIST / full_path
+        if candidate.exists() and candidate.is_file():
+            return FileResponse(candidate)
+        index = DIST / "index.html"
+        return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
+else:
+    @app.get("/{full_path:path}")
+    async def no_dist_fallback(full_path: str):
+        if full_path.startswith(("api/", "canary/", "ws", "health", "motor/", "hls/")):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return JSONResponse({"status": "ok", "backend": "red-team-tauri-unified",
+                            "dist_built": False, "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})"})
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  MAIN — debe ir al FINAL para que todos los @app endpoints se registren

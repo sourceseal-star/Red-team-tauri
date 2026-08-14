@@ -13,6 +13,8 @@ import MotorMetricsDashboard from './components/MotorMetricsDashboard';
 import MotorPanel from './components/MotorPanel';
 import ControlTower from './components/ControlTower';
 import ServiceControlPanel from './components/ServiceControlPanel';
+import ConfigEditor from './routes/ConfigEditor';
+import { MurcielagoPanel } from './components/MurcielagoPanel';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -33,7 +35,7 @@ function App() {
       )}
       {module === 'osint' && <OSINTPanel />}
       {module === 'wifi' && <WiFiPanel />}
-      {module === 'ultra' && <div className="text-slate-500">Panel de Ultrasonidos</div>}
+      {module === 'ultra' && <MurcielagoPanel />}
       {module === 'blackmirror' && <BlackMirrorPanel />}
       {module === 'motor' && <MotorPanel />}
       {module === 'services' && <ServiceControlPanel />}
@@ -43,7 +45,7 @@ function App() {
         </div>
       )}
       {module === 'tower' && <ControlTower />}
-      {module === 'settings' && <div className="text-slate-500">Configuración del sistema</div>}
+      {module === 'settings' && <ConfigEditor />}
     </AppShell>
   );
 }

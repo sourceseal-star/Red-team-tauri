@@ -46,3 +46,4 @@ source_seal_audit_report.json
 *.log
 manual_operaciones.enc
 manual_operaciones.md
+motor_cierre.db

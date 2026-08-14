@@ -26,7 +26,7 @@ export default defineConfig({
       '/motor-api': {
         target: 'http://127.0.0.1:8001',
         changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/motor-api/, ''),
+        rewrite: (path: string) => path.replace(/^\/motor-api/, '/motor'),
       },
     },
   },

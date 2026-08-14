@@ -60,13 +60,7 @@ echo -e "${B}║  RED-TEAM-TAURI · UPDATE                      ║${N}"
 echo -e "${B}╚══════════════════════════════════════════════╝${N}"
 echo ""
 
-# ── 1. GUARDAR HASHES DE DEPS ANTES DEL PULL ──────────────────────
-DASHBOARD_REQ_BEFORE=$(mdsum redteam/scripts/requirements.txt 2>/dev/null || echo "")
-BACKEND_REQ_BEFORE=$(mdsum backend/requirements.txt 2>/dev/null || echo "")
-MOTOR_REQ_BEFORE=$(mdsum motor_cierre/backend/requirements.txt 2>/dev/null || echo "")
-FRONTEND_PKG_BEFORE=$(mdsum tauri-frontend/package.json 2>/dev/null || echo "")
-TERMUX_SCRIPT_BEFORE=$(mdsum start-termux.sh 2>/dev/null || echo "")
-
+# ── Funcion auxiliar (debe definirse antes de usarse) ─────────────
 mdsum() {
     if [ -f "$1" ]; then
         md5sum "$1" | cut -d' ' -f1
@@ -75,7 +69,7 @@ mdsum() {
     fi
 }
 
-# Re-declare after function definition (bash quirk)
+# ── 1. GUARDAR HASHES DE DEPS ANTES DEL PULL ──────────────────────
 DASHBOARD_REQ_BEFORE=$(mdsum redteam/scripts/requirements.txt)
 BACKEND_REQ_BEFORE=$(mdsum backend/requirements.txt)
 MOTOR_REQ_BEFORE=$(mdsum motor_cierre/backend/requirements.txt)
@@ -95,7 +89,8 @@ CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 echo -e "${C}→ Branch actual: $CURRENT_BRANCH${N}"
 echo -e "${C}→ Haciendo git pull...${N}"
 
-git pull origin "$CURRENT_BRANCH" 2>&1 | while read -r line; do
+git fetch origin
+git reset --hard origin/"$CURRENT_BRANCH" 2>&1 | while read -r line; do
     echo "  $line"
 done
 
@@ -164,7 +159,6 @@ fi
 # ── 6. RESTART DE SERVICIOS ──────────────────────────────────────
 # Detectar si los servicios están corriendo
 DASHBOARD_PID=$(pgrep -f "dashboard_server.py" 2>/dev/null | head -1)
-MOTOR_PID=$(pgrep -f "uvicorn.*main:app.*8000" 2>/dev/null | head -1)
 VITE_PID=$(pgrep -f "vite" 2>/dev/null | head -1)
 
 RESTART_NEEDED=false
@@ -183,13 +177,12 @@ VITE_NEEDS_ACTION=false
 [ -z "$DASHBOARD_PID" ] && DASHBOARD_NEEDS_ACTION=true
 [ "$RESTART_NEEDED" = true ] && [ -n "$DASHBOARD_PID" ] && DASHBOARD_NEEDS_ACTION=true
 
-[ -z "$MOTOR_PID" ] && MOTOR_NEEDS_ACTION=true
-[ "$RESTART_NEEDED" = true ] && [ -n "$MOTOR_PID" ] && MOTOR_NEEDS_ACTION=true
+# Motor de Cierre va dentro de dashboard_server.py, no necesita proceso separado
 
 [ -z "$VITE_PID" ] && VITE_NEEDS_ACTION=true
 [ "$FULL_RESTART" = true ] && [ -n "$VITE_PID" ] && VITE_NEEDS_ACTION=true
 
-if [ "$DASHBOARD_NEEDS_ACTION" = true ] || [ "$MOTOR_NEEDS_ACTION" = true ] || [ "$VITE_NEEDS_ACTION" = true ]; then
+if [ "$DASHBOARD_NEEDS_ACTION" = true ] || [ "$VITE_NEEDS_ACTION" = true ]; then
     echo ""
     echo -e "${Y}→ Arrancando/reiniciando servicios...${N}"
 
@@ -210,24 +203,8 @@ if [ "$DASHBOARD_NEEDS_ACTION" = true ] || [ "$MOTOR_NEEDS_ACTION" = true ] || [
         cd "$ROOT"
     fi
 
-    # Motor de Cierre (8000)
-    if [ "$MOTOR_NEEDS_ACTION" = true ]; then
-        if [ -n "$MOTOR_PID" ]; then
-            echo -e "  ${C}Reiniciando Motor de Cierre (:8000)...${N}"
-        else
-            echo -e "  ${C}Arrancando Motor de Cierre (:8000)...${N}"
-        fi
-        pkill -f "uvicorn.*main:app.*8000" 2>/dev/null || true
-        sleep 1
-        cd "$ROOT/motor_cierre/backend"
-        if [ ! -f .env ]; then
-            cp .env.example .env 2>/dev/null || true
-        fi
-        python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 > "$LOG_DIR/motor_cierre.log" 2>&1 &
-        MOTOR_PID=$!
-        echo -e "  ${G}✓ Motor de Cierre arriba (PID: $MOTOR_PID)${N}"
-        cd "$ROOT"
-    fi
+    # Motor de Cierre — ya va dentro de dashboard_server.py como sub-app
+    # en /motor/*. No se arranca como proceso separado.
 
     # Vite frontend (5173)
     if [ "$VITE_NEEDS_ACTION" = true ]; then
@@ -307,7 +284,7 @@ if [ "$WATCH_MODE" = true ]; then
     echo -e "${B}╔══════════════════════════════════════════════╗${N}"
     echo -e "${B}║  WATCHDOG ACTIVO — Ctrl+C para salir          ║${N}"
     echo -e "${B}╚══════════════════════════════════════════════╝${N}"
-    echo -e "  Vigilando: Dashboard(:8001) · Motor(:8000) · Vite(:5173)"
+    echo -e "  Vigilando: Dashboard(:8001) · Vite(:5173)"
     echo -e "  Revisa cada 10s · Log: $LOG_DIR/watchdog.log"
     echo ""
 
@@ -333,15 +310,6 @@ if [ "$WATCH_MODE" = true ]; then
             cd "$ROOT/redteam/scripts"
             export PORT=8001 HOST=0.0.0.0
             python3 dashboard_server.py >> "$LOG_DIR/backend.log" 2>&1 &
-            cd "$ROOT"
-        fi
-
-        # Motor de Cierre :8000
-        if ! pgrep -f "uvicorn.*main:app.*8000" >/dev/null 2>&1; then
-            MSG="[$(date '+%F %T')] Motor de Cierre caído — reiniciando"
-            echo -e "${R}${MSG}${N}"; echo "$MSG" >> "$WATCH_LOG"
-            cd "$ROOT/motor_cierre/backend"
-            python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 >> "$LOG_DIR/motor_cierre.log" 2>&1 &
             cd "$ROOT"
         fi
 
