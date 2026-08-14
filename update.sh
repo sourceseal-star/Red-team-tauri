@@ -168,48 +168,83 @@ if [ "$DEPS_CHANGED" = true ] || [ "$FULL_RESTART" = true ]; then
     RESTART_NEEDED=true
 fi
 
-if [ "$RESTART_NEEDED" = true ]; then
+# NOTA CLAVE: si un servicio NO está corriendo, se ARRANCA sin importar
+# RESTART_NEEDED (antes solo se reiniciaba lo que ya estaba corriendo,
+# por eso update.sh no levantaba nada en una sesión nueva de Termux).
+DASHBOARD_NEEDS_ACTION=false
+MOTOR_NEEDS_ACTION=false
+VITE_NEEDS_ACTION=false
+
+[ -z "$DASHBOARD_PID" ] && DASHBOARD_NEEDS_ACTION=true
+[ "$RESTART_NEEDED" = true ] && [ -n "$DASHBOARD_PID" ] && DASHBOARD_NEEDS_ACTION=true
+
+[ -z "$MOTOR_PID" ] && MOTOR_NEEDS_ACTION=true
+[ "$RESTART_NEEDED" = true ] && [ -n "$MOTOR_PID" ] && MOTOR_NEEDS_ACTION=true
+
+[ -z "$VITE_PID" ] && VITE_NEEDS_ACTION=true
+[ "$FULL_RESTART" = true ] && [ -n "$VITE_PID" ] && VITE_NEEDS_ACTION=true
+
+if [ "$DASHBOARD_NEEDS_ACTION" = true ] || [ "$MOTOR_NEEDS_ACTION" = true ] || [ "$VITE_NEEDS_ACTION" = true ]; then
     echo ""
-    echo -e "${Y}→ Reiniciando servicios...${N}"
+    echo -e "${Y}→ Arrancando/reiniciando servicios...${N}"
 
     # Dashboard backend (8001)
-    if [ -n "$DASHBOARD_PID" ]; then
-        echo -e "  ${C}Reiniciando dashboard backend (:8001)...${N}"
+    if [ "$DASHBOARD_NEEDS_ACTION" = true ]; then
+        if [ -n "$DASHBOARD_PID" ]; then
+            echo -e "  ${C}Reiniciando dashboard backend (:8001)...${N}"
+        else
+            echo -e "  ${C}Arrancando dashboard backend (:8001)...${N}"
+        fi
         pkill -f "dashboard_server.py" 2>/dev/null || true
         sleep 1
         cd "$ROOT/redteam/scripts"
         export PORT=8001 HOST=0.0.0.0
         python3 dashboard_server.py > "$LOG_DIR/backend.log" 2>&1 &
-        echo -e "  ${G}✓ Dashboard backend reiniciado (PID: $!)${N}"
+        DASHBOARD_PID=$!
+        echo -e "  ${G}✓ Dashboard backend arriba (PID: $DASHBOARD_PID)${N}"
         cd "$ROOT"
     fi
 
     # Motor de Cierre (8000)
-    if [ -n "$MOTOR_PID" ]; then
-        echo -e "  ${C}Reiniciando Motor de Cierre (:8000)...${N}"
+    if [ "$MOTOR_NEEDS_ACTION" = true ]; then
+        if [ -n "$MOTOR_PID" ]; then
+            echo -e "  ${C}Reiniciando Motor de Cierre (:8000)...${N}"
+        else
+            echo -e "  ${C}Arrancando Motor de Cierre (:8000)...${N}"
+        fi
         pkill -f "uvicorn.*main:app.*8000" 2>/dev/null || true
         sleep 1
         cd "$ROOT/motor_cierre/backend"
+        if [ ! -f .env ]; then
+            cp .env.example .env 2>/dev/null || true
+        fi
         python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 > "$LOG_DIR/motor_cierre.log" 2>&1 &
-        echo -e "  ${G}✓ Motor de Cierre reiniciado (PID: $!)${N}"
+        MOTOR_PID=$!
+        echo -e "  ${G}✓ Motor de Cierre arriba (PID: $MOTOR_PID)${N}"
         cd "$ROOT"
     fi
 
-    # Vite frontend (5173) — solo si full restart
-    if [ "$FULL_RESTART" = true ] && [ -n "$VITE_PID" ]; then
-        echo -e "  ${C}Reiniciando Vite (:5173)...${N}"
+    # Vite frontend (5173)
+    if [ "$VITE_NEEDS_ACTION" = true ]; then
+        if [ -n "$VITE_PID" ]; then
+            echo -e "  ${C}Reiniciando Vite (:5173)...${N}"
+        else
+            echo -e "  ${C}Arrancando Vite (:5173)...${N}"
+        fi
         pkill -f "vite" 2>/dev/null || true
         sleep 1
         cd "$ROOT/tauri-frontend"
         npm run dev > "$LOG_DIR/frontend.log" 2>&1 &
-        echo -e "  ${G}✓ Vite reiniciado (PID: $!)${N}"
+        VITE_PID=$!
+        echo -e "  ${G}✓ Vite arriba (PID: $VITE_PID)${N}"
         cd "$ROOT"
     fi
 
+    RESTART_NEEDED=true
     sleep 3
 else
     echo ""
-    echo -e "${G}✓ Sin cambios en deps — servicios continúan corriendo${N}"
+    echo -e "${G}✓ Todos los servicios ya estaban corriendo y sin cambios en deps${N}"
     echo -e "  (uvicorn --reload detecta cambios automáticamente)"
     echo -e "  Si tienes problemas, usa: bash update.sh --all"
 fi
@@ -235,17 +270,9 @@ check_health() {
     return 1
 }
 
-if [ -n "$DASHBOARD_PID" ] || [ "$RESTART_NEEDED" = true ]; then
-    check_health "Dashboard :8001" "http://127.0.0.1:8001/api/health" "200"
-fi
-
-if [ -n "$MOTOR_PID" ] || [ "$RESTART_NEEDED" = true ]; then
-    check_health "Motor Cierre :8000" "http://127.0.0.1:8000/health" "200"
-fi
-
-if [ -n "$VITE_PID" ]; then
-    check_health "Vite :5173" "http://127.0.0.1:5173" "200"
-fi
+check_health "Dashboard :8001" "http://127.0.0.1:8001/api/health" "200"
+check_health "Motor Cierre :8000" "http://127.0.0.1:8000/health" "200"
+check_health "Vite :5173" "http://127.0.0.1:5173" "200"
 
 # ── 8. RESUMEN ───────────────────────────────────────────────────
 echo ""
