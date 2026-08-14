@@ -11,6 +11,7 @@ import WiFiPanel from './components/WiFiPanel';
 import BlackMirrorPanel from './components/BlackMirrorPanel';
 import MotorMetricsDashboard from './components/MotorMetricsDashboard';
 import MotorPanel from './components/MotorPanel';
+import ControlTower from './components/ControlTower';
 import ServiceControlPanel from './components/ServiceControlPanel';
 
 function App() {
@@ -41,6 +42,7 @@ function App() {
           $ <span className="animate-pulse">_</span>
         </div>
       )}
+      {module === 'tower' && <ControlTower />}
       {module === 'settings' && <div className="text-slate-500">Configuración del sistema</div>}
     </AppShell>
   );
