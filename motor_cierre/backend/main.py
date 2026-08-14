@@ -25,7 +25,7 @@ except ImportError:
     OPENAI_OK = False
     print("[!] openai no instalado. NLP usará heurística.")
 
-from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, Request, HTTPException, Depends, BackgroundTasks, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
@@ -535,6 +535,28 @@ async def stripe_webhook(request: Request):
             logger.info(f"[$] Pago completado: {email} ${amount}")
 
     return {"status": "received"}
+
+# == AUTENTICACION DEL DASHBOARD ==============================
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@redteam.local").strip()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123").strip()
+DASHBOARD_TOKEN = os.environ.get("API_KEY", "local-dev-token").strip()
+
+@app.post("/api/auth/login")
+async def auth_login(body: dict = Body(...)):
+    """Login por email/password — devuelve el token del dashboard."""
+    email = (body.get("email") or "").strip()
+    password = body.get("password") or ""
+    if email != ADMIN_EMAIL or password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Credenciales invalidas")
+    return {"token": DASHBOARD_TOKEN, "email": email}
+
+@app.post("/api/auth/biometric")
+async def auth_biometric(body: dict = Body(...)):
+    """Login biometrico (mock) — valida email del admin registrado."""
+    email = (body.get("email") or "").strip()
+    if email != ADMIN_EMAIL:
+        raise HTTPException(status_code=401, detail="Dispositivo no registrado para biometria")
+    return {"token": DASHBOARD_TOKEN, "email": email}
 
 @app.get("/health")
 async def health():
