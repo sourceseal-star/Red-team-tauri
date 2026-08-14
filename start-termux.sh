@@ -93,7 +93,7 @@ cd "$SCRIPT_DIR/motor_cierre/backend"
 if [ ! -f .env ]; then
     cp .env.example .env 2>/dev/null || true
 fi
-pip install -q fastapi uvicorn pydantic slowapi tenacity 2>/dev/null || true
+pip install -q fastapi uvicorn "pydantic[email]" slowapi tenacity 2>/dev/null || true
 python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 > "$LOG_DIR/motor_cierre.log" 2>&1 &
 MOTOR_PID=$!
 echo "  PID: $MOTOR_PID"
