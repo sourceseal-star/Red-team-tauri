@@ -35,8 +35,9 @@ for arg in "$@"; do
         --deps)     FORCE_DEPS=true ;;
         --build)    FORCE_BUILD=true ;;
         --all)      FORCE_DEPS=true; FORCE_BUILD=true; FULL_RESTART=true ;;
+        --watch)    WATCH_MODE=true ;;
         --help|-h)
-            echo "Uso: bash update.sh [--main | --branch X] [--deps] [--build] [--all]"
+            echo "Uso: bash update.sh [--main | --branch X] [--deps] [--build] [--all] [--watch]"
             echo ""
             echo "  (sin args)  Actualiza desde la branch actual"
             echo "  --main      Cambia a main y actualiza"
@@ -44,10 +45,14 @@ for arg in "$@"; do
             echo "  --deps      Fuerza reinstalación de dependencias"
             echo "  --build     Fuerza rebuild del frontend (npm run build)"
             echo "  --all       --deps + --build + restart completo"
+            echo "  --watch     Tras actualizar, queda vigilando los 3 servicios"
+            echo "              y los revive solos si alguno muere (Ctrl+C para salir)"
             exit 0
             ;;
     esac
 done
+
+WATCH_MODE=${WATCH_MODE:-false}
 
 echo ""
 echo -e "${B}╔══════════════════════════════════════════════╗${N}"
@@ -293,3 +298,62 @@ echo -e "  Frontend: http://localhost:5173"
 echo -e "  Backend:  http://localhost:8001"
 echo -e "  Motor:    http://localhost:8000"
 echo ""
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  WATCHDOG — modo --watch: vigila los 3 servicios y los revive si mueren
+# ═════════════════════════════════════════════════════════════════════════════
+if [ "$WATCH_MODE" = true ]; then
+    echo ""
+    echo -e "${B}╔══════════════════════════════════════════════╗${N}"
+    echo -e "${B}║  WATCHDOG ACTIVO — Ctrl+C para salir          ║${N}"
+    echo -e "${B}╚══════════════════════════════════════════════╝${N}"
+    echo -e "  Vigilando: Dashboard(:8001) · Motor(:8000) · Vite(:5173)"
+    echo -e "  Revisa cada 10s · Log: $LOG_DIR/watchdog.log"
+    echo ""
+
+    # Evita que Android suspenda Termux mientras el watchdog corre
+    command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock
+
+    cleanup_watch() {
+        echo ""
+        echo -e "${Y}Watchdog detenido (servicios siguen corriendo en background)${N}"
+        command -v termux-wake-unlock >/dev/null 2>&1 && termux-wake-unlock
+        exit 0
+    }
+    trap cleanup_watch SIGINT SIGTERM
+
+    WATCH_LOG="$LOG_DIR/watchdog.log"
+    echo "[$(date '+%F %T')] Watchdog iniciado" >> "$WATCH_LOG"
+
+    while true; do
+        # Dashboard :8001
+        if ! pgrep -f "dashboard_server.py" >/dev/null 2>&1; then
+            MSG="[$(date '+%F %T')] Dashboard caído — reiniciando"
+            echo -e "${R}${MSG}${N}"; echo "$MSG" >> "$WATCH_LOG"
+            cd "$ROOT/redteam/scripts"
+            export PORT=8001 HOST=0.0.0.0
+            python3 dashboard_server.py >> "$LOG_DIR/backend.log" 2>&1 &
+            cd "$ROOT"
+        fi
+
+        # Motor de Cierre :8000
+        if ! pgrep -f "uvicorn.*main:app.*8000" >/dev/null 2>&1; then
+            MSG="[$(date '+%F %T')] Motor de Cierre caído — reiniciando"
+            echo -e "${R}${MSG}${N}"; echo "$MSG" >> "$WATCH_LOG"
+            cd "$ROOT/motor_cierre/backend"
+            python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 >> "$LOG_DIR/motor_cierre.log" 2>&1 &
+            cd "$ROOT"
+        fi
+
+        # Vite :5173
+        if ! pgrep -f "vite" >/dev/null 2>&1; then
+            MSG="[$(date '+%F %T')] Vite caído — reiniciando"
+            echo -e "${R}${MSG}${N}"; echo "$MSG" >> "$WATCH_LOG"
+            cd "$ROOT/tauri-frontend"
+            npm run dev >> "$LOG_DIR/frontend.log" 2>&1 &
+            cd "$ROOT"
+        fi
+
+        sleep 10
+    done
+fi
