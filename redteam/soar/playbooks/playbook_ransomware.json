@@ -1,0 +1,57 @@
+{
+  "name": "playbook_ransomware",
+  "description": "Critical response to ransomware incident. Sinkhole C2 domain and block C2 IPs in parallel, then revoke ZTNA sessions for affected hosts, and send executive alert.",
+  "mitre_techniques": ["T1486", "T1071", "T1041"],
+  "severity": "CRITICAL",
+  "steps": [
+    {
+      "id": "step_1",
+      "name": "DNS Sinkhole C2 Domain",
+      "handler": "dns_sinkhole",
+      "params": {
+        "sinkhole_ip": "127.0.0.1",
+        "reason": "Ransomware C2 domain"
+      },
+      "depends_on": [],
+      "timeout_seconds": 20,
+      "mitre_technique": "T1071"
+    },
+    {
+      "id": "step_2",
+      "name": "Block C2 IPs at WAF",
+      "handler": "block_ip_waf",
+      "params": {
+        "waf_provider": "cloudflare",
+        "block_reason": "Ransomware C2 IP"
+      },
+      "depends_on": [],
+      "timeout_seconds": 30,
+      "rollback_handler": "unblock_ip_waf",
+      "mitre_technique": "T1071"
+    },
+    {
+      "id": "step_3",
+      "name": "Revoke ZTNA Sessions for Affected Hosts",
+      "handler": "revoke_ztna_session",
+      "params": {
+        "reason": "Ransomware containment — all sessions revoked"
+      },
+      "depends_on": ["step_1", "step_2"],
+      "timeout_seconds": 30,
+      "mitre_technique": "T1486"
+    },
+    {
+      "id": "step_4",
+      "name": "Executive Alert",
+      "handler": "slack_alert",
+      "params": {
+        "alert_title": "🚨 CRITICAL: Ransomware Detected — Immediate Action Taken",
+        "alert_message": "C2 domains sinkholed, IPs blocked, ZTNA sessions revoked. Verify backups immediately. Incident response team notified.",
+        "severity": "CRITICAL"
+      },
+      "depends_on": ["step_3"],
+      "timeout_seconds": 15,
+      "mitre_technique": "T1486"
+    }
+  ]
+}

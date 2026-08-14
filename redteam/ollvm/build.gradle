@@ -1,0 +1,60 @@
+// Gradle Configuration for building native components with OLLVM & Android NDK
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.redteam.security.ollvm'
+    compileSdk 33
+
+    defaultConfig {
+        minSdk 21
+        targetSdk 33
+
+        // Targeting high-performance mobile architectures
+        externalNativeBuild {
+            cmake {
+                abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            
+            // Pass compiler flags directly to NDK C/C++ compiler for OLLVM obfuscation
+            externalNativeBuild {
+                cmake {
+                    cFlags "-mllvm -fla -mllvm -bcf -mllvm -sub -mllvm -sobf"
+                    cppFlags "-mllvm -fla -mllvm -bcf -mllvm -sub -mllvm -sobf -std=c++17"
+                }
+            }
+        }
+        
+        debug {
+            // Debug builds explicitly bypass OLLVM obfuscation to speed up compile cycles
+            externalNativeBuild {
+                cmake {
+                    cFlags "-O0 -g"
+                    cppFlags "-O0 -g -std=c++17"
+                }
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    // Explicit NDK Version for deterministic builds
+    ndkVersion "25.2.9519653"
+}
+
+dependencies {
+    implementation 'androidx.annotation:annotation:1.5.0'
+}

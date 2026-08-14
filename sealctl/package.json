@@ -1,0 +1,13 @@
+{
+  "name": "sealctl",
+  "version": "1.0.0",
+  "description": "SealCtl Console — Geo, Intel & IoT Detection (stdlib only, no deps)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "SEALCTL_PORT=4000 node server.js"
+  },
+  "keywords": ["security", "iot", "geo", "intel", "recon", "sealctl"],
+  "license": "MIT",
+  "engines": { "node": ">=18" }
+}

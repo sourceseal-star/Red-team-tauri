@@ -1,0 +1,232 @@
+{
+  "started_at": "2026-07-22T13:12:43.822498",
+  "finished_at": "2026-07-22T13:13:00.045182",
+  "target": "/home/runner/workspace/build/evidence/dummy.apk",
+  "backend": "https://api.rappi.com.mx/v1",
+  "total_findings": 24,
+  "by_severity": {
+    "critical": 1,
+    "high": 11,
+    "medium": 3,
+    "low": 0,
+    "info": 9
+  },
+  "findings": [
+    {
+      "scenario": "rng",
+      "severity": "info",
+      "title": "Entropía del sistema OK",
+      "description": "Shannon entropy = 7.949 bits/byte",
+      "evidence_path": "/home/runner/workspace/build/reports/rng-sample.bin",
+      "remediation": "N/A",
+      "timestamp": "2026-07-22T13:12:44.008297"
+    },
+    {
+      "scenario": "rng",
+      "severity": "info",
+      "title": "Auditar seeds en el binario",
+      "description": "Revisar manualmente el binario/app por uso de time/pid como seed. Detectado uso potencial de time.time(); Detectado uso potencial de os.getpid()",
+      "evidence_path": "/home/runner/workspace/build/evidence/dummy.apk",
+      "remediation": "Usar exclusivamente CSPRNG del SO (SecRandomCopyBytes, getrandom, BCryptGenRandom).",
+      "timestamp": "2026-07-22T13:12:44.008314"
+    },
+    {
+      "scenario": "pinning",
+      "severity": "info",
+      "title": "Cert TLS del backend capturado",
+      "description": "Host api.rappi.com.mx:443 SHA256=99cb88852a89c29c...",
+      "evidence_path": "/home/runner/workspace/build/reports/pinning-cert.json",
+      "remediation": "Comparar SHA256 contra el pin hardcodeado en la app móvil.",
+      "timestamp": "2026-07-22T13:12:44.150480"
+    },
+    {
+      "scenario": "pinning",
+      "severity": "high",
+      "title": "Sin evidencia de pinning en el APK",
+      "description": "No se encontraron marcadores típicos (NetworkSecurityConfig, pin-set, OkHttp CertificatePinner).",
+      "evidence_path": "/home/runner/workspace/build/reports/apk-strings.txt",
+      "remediation": "Implementar pinning vía OkHttp CertificatePinner o NSP en res/xml/.",
+      "timestamp": "2026-07-22T13:12:44.150495"
+    },
+    {
+      "scenario": "sidechannel",
+      "severity": "info",
+      "title": "Sin comparación naive evidente",
+      "description": "No se detectaron patrones sospechosos en el análisis estático.",
+      "evidence_path": "/home/runner/workspace/build/reports/sidechannel-strings.txt",
+      "remediation": "Validar con microbenchmarks (medir tiempo en comparaciones válidas vs inválidas).",
+      "timestamp": "2026-07-22T13:12:44.156550"
+    },
+    {
+      "scenario": "keyhandling",
+      "severity": "high",
+      "title": "Sin uso detectable de KeyStore/Keychain nativo",
+      "description": "No se encontraron marcadores de AndroidKeyStore ni iOS Keychain.",
+      "evidence_path": "/home/runner/workspace/build/reports/keyhandling-strings.txt",
+      "remediation": "Migrar claves a KeyStore (Android) o Keychain (iOS) con protección StrongBox/biometric.",
+      "timestamp": "2026-07-22T13:12:44.167104"
+    },
+    {
+      "scenario": "payments",
+      "severity": "high",
+      "title": "Sin evidencia de verificación de firma en webhooks",
+      "description": "No se detectaron constructEvent/verifyWebhookSignature/validateWebhook. Riesgo de webhook spoofing → pagos falsos confirmados.",
+      "evidence_path": "/home/runner/workspace/build/reports/payments-strings.txt",
+      "remediation": "Implementar verificación criptográfica de TODOS los webhooks antes de marcar como pagado.",
+      "timestamp": "2026-07-22T13:12:44.173294"
+    },
+    {
+      "scenario": "imei",
+      "severity": "medium",
+      "title": "Sin evidencia de validación Luhn de IMEI",
+      "description": "No se encontraron marcadores de algoritmo Luhn. Riesgo: aceptar IMEIs malformados.",
+      "evidence_path": "/home/runner/workspace/build/reports/imei-strings.txt",
+      "remediation": "Implementar Luhn check antes de aceptar IMEI. Validar también TAC (primeros 8 dígitos) contra base de GSMA.",
+      "timestamp": "2026-07-22T13:12:44.189878"
+    },
+    {
+      "scenario": "imei",
+      "severity": "medium",
+      "title": "Sin evidencia de consulta a blacklist (IMEI robado/perdido)",
+      "description": "No se detectan referencias a GSMA blacklist. Riesgo: vender celular reportado como robado.",
+      "evidence_path": "/home/runner/workspace/build/reports/imei-strings.txt",
+      "remediation": "Integrar API de blacklist (GSMA, Stolen Phone Check, etc.) antes de aceptar IMEI.",
+      "timestamp": "2026-07-22T13:12:44.189886"
+    },
+    {
+      "scenario": "multiplatform",
+      "severity": "info",
+      "title": "Plataforma detectada: Android",
+      "description": "Archivo: dummy.apk, extensión: .apk",
+      "evidence_path": "/home/runner/workspace/build/evidence/dummy.apk",
+      "remediation": "N/A",
+      "timestamp": "2026-07-22T13:12:44.201184"
+    },
+    {
+      "scenario": "multiplatform",
+      "severity": "high",
+      "title": "Sin uso del almacén seguro nativo de Android",
+      "description": "Esperado alguno de: AndroidKeyStore",
+      "evidence_path": "/home/runner/workspace/build/reports/multiplatform-strings.txt",
+      "remediation": "Usar el mecanismo nativo: AndroidKeyStore. Nunca cifrar claves con contraseña hardcodeada.",
+      "timestamp": "2026-07-22T13:12:44.201191"
+    },
+    {
+      "scenario": "multiplatform",
+      "severity": "high",
+      "title": "Sin uso del CSPRNG nativo de Android",
+      "description": "Esperado: SecureRandom|getRandom",
+      "evidence_path": "/home/runner/workspace/build/reports/multiplatform-strings.txt",
+      "remediation": "Usar SIEMPRE el CSPRNG del SO. Nunca implementar RNG propio.",
+      "timestamp": "2026-07-22T13:12:44.201194"
+    },
+    {
+      "scenario": "multiplatform",
+      "severity": "info",
+      "title": "Check de servidor backend",
+      "description": "Backend actual: https://api.rappi.com.mx/v1. Verificar manualmente que el servidor Ubuntu tenga: ufw activo, fail2ban, TLS 1.2+ only, AppArmor/SELinux, logrotate, backups cifrados.",
+      "evidence_path": "https://api.rappi.com.mx/v1",
+      "remediation": "Auditar hardening del servidor con lynis / oscap. Rotar claves SSH. Desactivar login con password.",
+      "timestamp": "2026-07-22T13:12:44.201195"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "critical",
+      "title": "5 controles de seguridad de SOURCESEALCORP FALLARON",
+      "description": "Ataques que NO pasaron: A1(Reuso de hash anterior), A2(Time-lock bypass), A4(Rate limiting), A5(Validación de firma HMAC), A6(Replay attack)",
+      "evidence_path": "/home/runner/workspace/build/reports/sourceseal-attacks.json",
+      "remediation": "Revisar inmediatamente cada control. Detalle por ataque en el JSON.",
+      "timestamp": "2026-07-22T13:12:59.837866"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "high",
+      "title": "[A1] Reuso de hash anterior — FALLÓ",
+      "description": "Esperado: rechazado (4xx) | Actual: 404",
+      "evidence_path": "/home/runner/workspace/build/reports/A1-hash-reuse.json",
+      "remediation": "Corrige el control del ataque A1.",
+      "timestamp": "2026-07-22T13:12:59.837879"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "high",
+      "title": "[A2] Time-lock bypass — FALLÓ",
+      "description": "Esperado: rechazado con 423/425/409 | Actual: 404",
+      "evidence_path": "/home/runner/workspace/build/reports/A2-timelock.json",
+      "remediation": "Corrige el control del ataque A2.",
+      "timestamp": "2026-07-22T13:12:59.837881"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "high",
+      "title": "[A4] Rate limiting — FALLÓ",
+      "description": "Esperado: 429 tras umbral | Actual: {404: 100}",
+      "evidence_path": "/home/runner/workspace/build/reports/A4-ratelimit.json",
+      "remediation": "Corrige el control del ataque A4.",
+      "timestamp": "2026-07-22T13:12:59.837883"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "high",
+      "title": "[A5] Validación de firma HMAC — FALLÓ",
+      "description": "Esperado: 401 sin firma y firma inválida | Actual: no_sig=404 bad_sig=404",
+      "evidence_path": "/home/runner/workspace/build/reports/A5-signature.json",
+      "remediation": "Corrige el control del ataque A5.",
+      "timestamp": "2026-07-22T13:12:59.837885"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "high",
+      "title": "[A6] Replay attack — FALLÓ",
+      "description": "Esperado: segundo envío rechazado | Actual: 404 → 404",
+      "evidence_path": "/home/runner/workspace/build/reports/A6-replay.json",
+      "remediation": "Corrige el control del ataque A6.",
+      "timestamp": "2026-07-22T13:12:59.837886"
+    },
+    {
+      "scenario": "sourcesealcorp",
+      "severity": "info",
+      "title": "[A10] Blockchain confirm — no evaluado (config faltante)",
+      "description": "SOURCESEAL_NODE no configurado",
+      "evidence_path": "",
+      "remediation": "Proporcionar SOURCESEAL_KEY/NODE/RECOVERY_PAGE para habilitar.",
+      "timestamp": "2026-07-22T13:12:59.837888"
+    },
+    {
+      "scenario": "recovery_page",
+      "severity": "high",
+      "title": "Headers de seguridad ausentes en página de recuperación",
+      "description": "Faltan: x-frame-options, content-security-policy, x-content-type-options, strict-transport-security, referrer-policy",
+      "evidence_path": "/home/runner/workspace/build/reports/recovery-health.json",
+      "remediation": "Añadir headers: X-Frame-Options DENY, CSP frame-ancestors 'none', HSTS 1 año, X-Content-Type-Options nosniff.",
+      "timestamp": "2026-07-22T13:12:59.979259"
+    },
+    {
+      "scenario": "recovery_page",
+      "severity": "medium",
+      "title": "Vulnerable a clickjacking",
+      "description": "Sin X-Frame-Options ni CSP frame-ancestors, la página puede ser embebida en iframes maliciosos.",
+      "evidence_path": "/home/runner/workspace/build/reports/recovery-clickjack.json",
+      "remediation": "X-Frame-Options: DENY o CSP: frame-ancestors 'none'.",
+      "timestamp": "2026-07-22T13:12:59.979271"
+    },
+    {
+      "scenario": "pegasus",
+      "severity": "info",
+      "title": "Análisis ejecutado en Linux 6.18.34",
+      "description": "Plataforma: Linux, versión: #Replit-Linux SMP Mon Jun  1 15:51:08 UTC 2026",
+      "evidence_path": "",
+      "remediation": "N/A",
+      "timestamp": "2026-07-22T13:13:00.045164"
+    },
+    {
+      "scenario": "pegasus",
+      "severity": "info",
+      "title": "Sin procesos sospechosos",
+      "description": "No se detectaron patrones conocidos en la lista de procesos.",
+      "evidence_path": "",
+      "remediation": "Mantener monitoreo continuo. Pegasus se esconde; análisis estático no es suficiente.",
+      "timestamp": "2026-07-22T13:13:00.045177"
+    }
+  ]
+}

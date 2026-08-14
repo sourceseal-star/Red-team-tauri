@@ -1,0 +1,45 @@
+{
+  "name": "playbook_lateral_movement",
+  "description": "Response to lateral movement detected within the network. Revoke ZTNA sessions and block pivot IPs (parallel), then alert SOC for manual investigation.",
+  "mitre_techniques": ["T1021", "T1021.002", "T1550"],
+  "severity": "HIGH",
+  "steps": [
+    {
+      "id": "step_1",
+      "name": "Revoke ZTNA Sessions for Affected Hosts",
+      "handler": "revoke_ztna_session",
+      "params": {
+        "reason": "Lateral movement detected — isolating affected hosts"
+      },
+      "depends_on": [],
+      "timeout_seconds": 30,
+      "mitre_technique": "T1021"
+    },
+    {
+      "id": "step_2",
+      "name": "Block Lateral Movement IPs at WAF",
+      "handler": "block_ip_waf",
+      "params": {
+        "waf_provider": "cloudflare",
+        "block_reason": "Lateral movement pivot IP"
+      },
+      "depends_on": [],
+      "timeout_seconds": 30,
+      "rollback_handler": "unblock_ip_waf",
+      "mitre_technique": "T1021"
+    },
+    {
+      "id": "step_3",
+      "name": "Alert SOC",
+      "handler": "slack_alert",
+      "params": {
+        "alert_title": "Lateral Movement Detected — Hosts Isolated",
+        "alert_message": "ZTNA sessions revoked, pivot IPs blocked. Investigate affected hosts for credential theft and persistence mechanisms.",
+        "severity": "HIGH"
+      },
+      "depends_on": ["step_1", "step_2"],
+      "timeout_seconds": 15,
+      "mitre_technique": "T1021"
+    }
+  ]
+}

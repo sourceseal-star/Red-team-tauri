@@ -1,0 +1,109 @@
+---
+# MITRE ATT&CK — Técnicas cubiertas por DefenseMesh
+# Mínimo 10 técnicas requeridas. Cada entrada referencia el componente
+# que la detecta y la acción SOAR asociada.
+
+techniques:
+  - id: "T1056.001"
+    name: "Input Capture: Keylogging"
+    tactic: "Collection"
+    detectors: ["rasp.frida_active", "rasp.xposed_active"]
+    playbook: "pb_isolate_device"
+    severity: "critical"
+
+  - id: "T1518"
+    name: "Software Discovery"
+    tactic: "Discovery"
+    detectors: ["rasp.emulator_detected", "attestation.os_version"]
+    playbook: "pb_quarantine_apk"
+    severity: "medium"
+
+  - id: "T1071.004"
+    name: "Application Layer Protocol: DNS"
+    tactic: "Command and Control"
+    detectors: ["ndr.dns_tunneling"]
+    playbook: "pb_block_ioc"
+    severity: "high"
+
+  - id: "T1071.001"
+    name: "Application Layer Protocol: Web"
+    tactic: "Command and Control"
+    detectors: ["ndr.beaconing", "ndr.tls_interception"]
+    playbook: "pb_isolate_device"
+    severity: "high"
+
+  - id: "T1048"
+    name: "Exfiltration Over Alternative Protocol"
+    tactic: "Exfiltration"
+    detectors: ["ndr.low_slow_exfil", "ndr.icmp_tunnel"]
+    playbook: "pb_block_ioc"
+    severity: "high"
+
+  - id: "T1572"
+    name: "Protocol Tunneling"
+    tactic: "Command and Control"
+    detectors: ["ndr.icmp_tunnel", "ndr.dns_tunneling"]
+    playbook: "pb_block_ioc"
+    severity: "high"
+
+  - id: "T1095"
+    name: "Non-Application Layer Protocol"
+    tactic: "Command and Control"
+    detectors: ["ndr.icmp_tunnel"]
+    playbook: "pb_block_ioc"
+    severity: "medium"
+
+  - id: "T1078"
+    name: "Valid Accounts"
+    tactic: "Defense Evasion / Persistence"
+    detectors: ["ztna.bola_attempt", "ztna.posture_failure"]
+    playbook: "pb_revoke_jwt"
+    severity: "high"
+
+  - id: "T1078.004"
+    name: "Cloud Accounts"
+    tactic: "Defense Evasion"
+    detectors: ["deception.canary_access", "ztna.admin_login_anomaly"]
+    playbook: "pb_revoke_jwt"
+    severity: "critical"
+
+  - id: "T1611"
+    name: "Escape to Host"
+    tactic: "Privilege Escalation"
+    detectors: ["rasp.debugger_attached", "rasp.memory_tamper"]
+    playbook: "pb_quarantine_apk"
+    severity: "critical"
+
+  - id: "T1623"
+    name: "System Firmware"
+    tactic: "Persistence"
+    detectors: ["attestation.integrity_failure", "attestation.patch_outdated"]
+    playbook: "pb_quarantine_apk"
+    severity: "high"
+
+  - id: "T1190"
+    name: "Exploit Public-Facing Application"
+    tactic: "Initial Access"
+    detectors: ["ztna.unauthorized_action", "deception.endpoint_probe"]
+    playbook: "pb_revoke_jwt"
+    severity: "critical"
+
+  - id: "T1213"
+    name: "Data from Information Repositories"
+    tactic: "Collection"
+    detectors: ["deception.decoy_db_query", "ztna.bola_attempt"]
+    playbook: "pb_revoke_jwt"
+    severity: "high"
+
+coverage_summary:
+  total: 13
+  by_tactic:
+    Collection: 2
+    Discovery: 1
+    "Command and Control": 4
+    Exfiltration: 1
+    "Defense Evasion / Persistence": 1
+    "Defense Evasion": 1
+    "Privilege Escalation": 1
+    Persistence: 1
+    "Initial Access": 1

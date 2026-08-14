@@ -1,0 +1,26 @@
+{
+  "health": {
+    "status": 0,
+    "error": "<urlopen error [Errno -2] Name or service not known>",
+    "dry_run": true
+  },
+  "no_auth_list": {
+    "status": 0,
+    "error": "<urlopen error [Errno -2] Name or service not known>",
+    "dry_run": true
+  },
+  "idor_test": {
+    "status": 0,
+    "error": "<urlopen error [Errno -2] Name or service not known>",
+    "dry_run": true
+  },
+  "csrf_test": {
+    "status": 0,
+    "error": "<urlopen error [Errno -2] Name or service not known>",
+    "dry_run": true
+  },
+  "2fa_check": {
+    "status": 0,
+    "body_excerpt": ""
+  }
+}

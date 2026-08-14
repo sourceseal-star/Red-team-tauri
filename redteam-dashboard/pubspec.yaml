@@ -1,0 +1,68 @@
+name: sourceseal_control
+description: SourceSeal Red Team Enterprise Control Center - Professional Pentesting Platform
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # UI & Icons
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.1.0
+  font_awesome_flutter: ^10.5.0
+  flutter_animate: ^4.3.0
+  
+  # State Management
+  provider: ^6.1.1
+  get_it: ^7.6.4
+  
+  # Networking
+  http: ^1.1.0
+  dio: ^5.4.0
+  web_socket_channel: ^2.4.0
+  
+  # SSH
+  dartssh2: ^2.8.2
+  
+  # Code Editor
+  flutter_code_editor: ^0.1.4
+  highlight: ^0.7.0
+  
+  # Storage
+  flutter_secure_storage: ^9.0.0
+  shared_preferences: ^2.2.2
+  path_provider: ^2.1.1
+  
+  # Charts & Visualization
+  fl_chart: ^0.65.0
+  syncfusion_flutter_charts: ^24.1.41
+  
+  # Security
+  cryptography: ^2.7.0
+  encrypt: ^5.0.3
+  
+  # Utils
+  uuid: ^4.2.1
+  intl: ^0.18.1
+  json_annotation: ^4.8.1
+  
+  # Logs
+  logger: ^2.0.2+1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  build_runner: ^2.4.7
+  json_serializable: ^6.7.1
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/icons/
+    - assets/config/

@@ -1,0 +1,13 @@
+FROM python:3.11-alpine
+LABEL description="SOURCESEAL Honeytramp — C2 sinkhole + DNS sinkhole + canary monitor"
+
+WORKDIR /honeypot
+COPY c2-sinkhole/ /honeypot/c2-sinkhole/
+COPY canary-files/ /honeypot/canary-files/
+COPY network-ids/ /honeypot/network-ids/
+COPY entrypoint-pegasus.sh /honeypot/entrypoint.sh
+RUN chmod +x /honeypot/entrypoint.sh
+RUN addgroup -S honey && adduser -S honey -G honey && chown -R honey:honey /honeypot
+USER honey
+EXPOSE 8443 53/udp
+ENTRYPOINT ["/honeypot/entrypoint.sh"]

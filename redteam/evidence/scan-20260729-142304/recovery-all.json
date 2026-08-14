@@ -1,0 +1,80 @@
+{
+  "health": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/html",
+      "Content-Length": "5993",
+      "Connection": "close",
+      "Last-Modified": "Tue, 30 May 2023 19:02:22 GMT",
+      "x-amz-server-side-encryption": "AES256",
+      "Accept-Ranges": "bytes",
+      "Server": "AmazonS3",
+      "Date": "Wed, 29 Jul 2026 14:23:10 GMT",
+      "ETag": "\"e9cc0615ac06c9752b997dc690f86dcf\"",
+      "X-Cache": "Hit from cloudfront",
+      "Via": "1.1 0eb13e05c4822a1d557bf0ee1ff43760.cloudfront.net (CloudFront)",
+      "X-Amz-Cf-Pop": "SEA900-P6",
+      "X-Amz-Cf-Id": "oYLO0sMTaLt8CIw3SCrHGmpPViEHGBMk657bynlPvCV7HKhekJRORQ==",
+      "Age": "0"
+    },
+    "body": "<!DOCTYPE html><html><head><script src=\"https://cdn.cookielaw.org/scripttemplates/otSDKStub.js\" type=\"text/javascript\" charSet=\"UTF-8\" data-domain-script=\"79a72087-eb61-4ff3-a235-6dcd8e747fc2\"></script><title>Arabela México</title><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"initial-scale=1.0, width=device-width\"/><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"/><link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin=\"\"/><link rel=\"stylesheet\" data-href=\"https://fonts.googleapis.com/css2?family=Inter&amp;display=swap\" data-optimized-fonts=\"true\"/><link rel=\"stylesheet\" data-href=\"https://fonts.googleapis.com/css2?family=Inter&amp;display=swap\" data-optimized-fonts=\"true\"/><link rel=\"stylesheet\" data-href=\"https://fonts.googleapis.com/css2?family=Inter&amp;display=swap\" data-optimized-fonts=\"true\"/><meta name=\"next-head-count\" content=\"10\"/><link rel=\"preload\" href=\"/../arabela/_next/static/css/a64fb4aa9d22cabf.css\" as=\"style\"/><link rel=\"stylesheet\" href=\"/../arabela/_next/static/css/a64fb4aa9d22cabf.css\" data-n-g=\"\"/><link rel=\"preload\" href=\"/../arabela/_next/static/css/cb9b52cbee7d3677.css\" as=\"style\"/><link rel=\"stylesheet\" href=\"/../arabela/_next/static/css/cb9b52cbee7d3677.css\" data-n-p=\"\"/><noscript data-n-css=\"\"></noscript><script defer=\"\" nomodule=\"\" src=\"/../arabela/_next/static/chunks/polyfills-c67a75d1b6f99dc8.js\"></script><script src=\"/../arabela/_next/static/chunks/webpack-79b86f11bd994e88.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/framework-7dc8a65f4a0cda33.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/main-f437a0a52b76dfc1.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/pages/_app-66e462fb1b337883.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/pages/index-05901713a2fb5e14.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/4UFFODiyvMBGKpLee4-rM/_buildManifest.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/4UFFODiyvMBGKpLee4-rM/_ssgManifest.js\" defer=\"\"></script><link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Inter&display=swap\"/></head><body><div id=\"__next\"><div class=\"outerContainer\" style=\"background-color:#f1ebf4;background-image:none;background-size:cover;background-repeat:no-repeat;background-position:center top;overflow-y:auto\"><div class=\"microsite-view_micrositeContainer__dgpRA\"><div class=\"microsite-view_header__OkGEz\"><span class=\"microsite-view_logoImage__u8tK9\" style=\"border-radius:6px;background-image:url(https://empli.fi/content/08db02e1-b03e-4c23-8c88-caa00c5fbb7f/180319ed-f7c9-4a1d-b592-07cc52cdeb45.jpg)\"></span><p class=\"microsite-view_title__wq1Nn\" style=\"font-family:&#x27;Inter&#x27;, sans-serif;font-size:18px;line-height:28px;color:#2F3744\">Arabela México</p><p class=\"microsite-view_description__icx_9\" style=\"font-family:&#x27;Inter&#x27;, sans-serif;font-size:13px;line-height:20px;color:#2F3744\">¡Síguenos! Los mejores productos de #belleza con ingredi"
+  },
+  "no_auth_list": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/html",
+      "Content-Length": "5993",
+      "Connection": "close",
+      "Last-Modified": "Tue, 30 May 2023 19:02:22 GMT",
+      "x-amz-server-side-encryption": "AES256",
+      "Accept-Ranges": "bytes",
+      "Server": "AmazonS3",
+      "Date": "Wed, 29 Jul 2026 14:23:10 GMT",
+      "ETag": "\"e9cc0615ac06c9752b997dc690f86dcf\"",
+      "X-Cache": "Hit from cloudfront",
+      "Via": "1.1 dccb90e348d955ed46d2462f9c08ef86.cloudfront.net (CloudFront)",
+      "X-Amz-Cf-Pop": "SEA900-P6",
+      "X-Amz-Cf-Id": "H53Kh_YNLIy4G_GEwfO8hPVyfm_AZCTDhlCfKg5g-HpWUwBNi61cqw=="
+    },
+    "body": "<!DOCTYPE html><html><head><script src=\"https://cdn.cookielaw.org/scripttemplates/otSDKStub.js\" type=\"text/javascript\" charSet=\"UTF-8\" data-domain-script=\"79a72087-eb61-4ff3-a235-6dcd8e747fc2\"></script><title>Arabela México</title><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"initial-scale=1.0, width=device-width\"/><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"/><link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin=\"\"/><link rel=\"stylesheet\" data-href=\"https://fonts.googleapis.com/css2?family=Inter&amp;display=swap\" data-optimized-fonts=\"true\"/><link rel=\"stylesheet\" data-href=\"https://fonts.googleapis.com/css2?family=Inter&amp;display=swap\" data-optimized-fonts=\"true\"/><link rel=\"stylesheet\" data-href=\"https://fonts.googleapis.com/css2?family=Inter&amp;display=swap\" data-optimized-fonts=\"true\"/><meta name=\"next-head-count\" content=\"10\"/><link rel=\"preload\" href=\"/../arabela/_next/static/css/a64fb4aa9d22cabf.css\" as=\"style\"/><link rel=\"stylesheet\" href=\"/../arabela/_next/static/css/a64fb4aa9d22cabf.css\" data-n-g=\"\"/><link rel=\"preload\" href=\"/../arabela/_next/static/css/cb9b52cbee7d3677.css\" as=\"style\"/><link rel=\"stylesheet\" href=\"/../arabela/_next/static/css/cb9b52cbee7d3677.css\" data-n-p=\"\"/><noscript data-n-css=\"\"></noscript><script defer=\"\" nomodule=\"\" src=\"/../arabela/_next/static/chunks/polyfills-c67a75d1b6f99dc8.js\"></script><script src=\"/../arabela/_next/static/chunks/webpack-79b86f11bd994e88.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/framework-7dc8a65f4a0cda33.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/main-f437a0a52b76dfc1.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/pages/_app-66e462fb1b337883.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/pages/index-05901713a2fb5e14.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/4UFFODiyvMBGKpLee4-rM/_buildManifest.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/4UFFODiyvMBGKpLee4-rM/_ssgManifest.js\" defer=\"\"></script><link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Inter&display=swap\"/></head><body><div id=\"__next\"><div class=\"outerContainer\" style=\"background-color:#f1ebf4;background-image:none;background-size:cover;background-repeat:no-repeat;background-position:center top;overflow-y:auto\"><div class=\"microsite-view_micrositeContainer__dgpRA\"><div class=\"microsite-view_header__OkGEz\"><span class=\"microsite-view_logoImage__u8tK9\" style=\"border-radius:6px;background-image:url(https://empli.fi/content/08db02e1-b03e-4c23-8c88-caa00c5fbb7f/180319ed-f7c9-4a1d-b592-07cc52cdeb45.jpg)\"></span><p class=\"microsite-view_title__wq1Nn\" style=\"font-family:&#x27;Inter&#x27;, sans-serif;font-size:18px;line-height:28px;color:#2F3744\">Arabela México</p><p class=\"microsite-view_description__icx_9\" style=\"font-family:&#x27;Inter&#x27;, sans-serif;font-size:13px;line-height:20px;color:#2F3744\">¡Síguenos! Los mejores productos de #belleza con ingredi"
+  },
+  "idor_test": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "text/html",
+      "Content-Length": "5993",
+      "Connection": "close",
+      "Last-Modified": "Tue, 30 May 2023 19:02:22 GMT",
+      "x-amz-server-side-encryption": "AES256",
+      "Accept-Ranges": "bytes",
+      "Server": "AmazonS3",
+      "Date": "Wed, 29 Jul 2026 14:23:10 GMT",
+      "ETag": "\"e9cc0615ac06c9752b997dc690f86dcf\"",
+      "X-Cache": "Hit from cloudfront",
+      "Via": "1.1 11d3d6d74781304daa54a6c192b0c744.cloudfront.net (CloudFront)",
+      "X-Amz-Cf-Pop": "SEA900-P6",
+      "X-Amz-Cf-Id": "C1HmdkNzdJJs4LNPCa97jJ-X3f3p6cd48WagtKQDXcWgNdCgUL0KGw==",
+      "Age": "1"
+    },
+    "body": "<!DOCTYPE html><html><head><script src=\"https://cdn.cookielaw.org/scripttemplates/otSDKStub.js\" type=\"text/javascript\" charSet=\"UTF-8\" data-domain-script=\"79a72087-eb61-4ff3-a235-6dcd8e747fc2\"></script><title>Arabela México</title><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"initial-scale=1.0, width=device-width\"/><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"/><link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin=\"\"/><link rel=\"stylesheet\" data-href=\"https://fonts.googleapis.com/css2?family=Inter&amp;display=swap\" data-optimized-fonts=\"true\"/><link rel=\"stylesheet\" data-href=\"https://fonts.googleapis.com/css2?family=Inter&amp;display=swap\" data-optimized-fonts=\"true\"/><link rel=\"stylesheet\" data-href=\"https://fonts.googleapis.com/css2?family=Inter&amp;display=swap\" data-optimized-fonts=\"true\"/><meta name=\"next-head-count\" content=\"10\"/><link rel=\"preload\" href=\"/../arabela/_next/static/css/a64fb4aa9d22cabf.css\" as=\"style\"/><link rel=\"stylesheet\" href=\"/../arabela/_next/static/css/a64fb4aa9d22cabf.css\" data-n-g=\"\"/><link rel=\"preload\" href=\"/../arabela/_next/static/css/cb9b52cbee7d3677.css\" as=\"style\"/><link rel=\"stylesheet\" href=\"/../arabela/_next/static/css/cb9b52cbee7d3677.css\" data-n-p=\"\"/><noscript data-n-css=\"\"></noscript><script defer=\"\" nomodule=\"\" src=\"/../arabela/_next/static/chunks/polyfills-c67a75d1b6f99dc8.js\"></script><script src=\"/../arabela/_next/static/chunks/webpack-79b86f11bd994e88.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/framework-7dc8a65f4a0cda33.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/main-f437a0a52b76dfc1.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/pages/_app-66e462fb1b337883.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/chunks/pages/index-05901713a2fb5e14.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/4UFFODiyvMBGKpLee4-rM/_buildManifest.js\" defer=\"\"></script><script src=\"/../arabela/_next/static/4UFFODiyvMBGKpLee4-rM/_ssgManifest.js\" defer=\"\"></script><link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Inter&display=swap\"/></head><body><div id=\"__next\"><div class=\"outerContainer\" style=\"background-color:#f1ebf4;background-image:none;background-size:cover;background-repeat:no-repeat;background-position:center top;overflow-y:auto\"><div class=\"microsite-view_micrositeContainer__dgpRA\"><div class=\"microsite-view_header__OkGEz\"><span class=\"microsite-view_logoImage__u8tK9\" style=\"border-radius:6px;background-image:url(https://empli.fi/content/08db02e1-b03e-4c23-8c88-caa00c5fbb7f/180319ed-f7c9-4a1d-b592-07cc52cdeb45.jpg)\"></span><p class=\"microsite-view_title__wq1Nn\" style=\"font-family:&#x27;Inter&#x27;, sans-serif;font-size:18px;line-height:28px;color:#2F3744\">Arabela México</p><p class=\"microsite-view_description__icx_9\" style=\"font-family:&#x27;Inter&#x27;, sans-serif;font-size:13px;line-height:20px;color:#2F3744\">¡Síguenos! Los mejores productos de #belleza con ingredi"
+  },
+  "csrf_test": {
+    "status": 403,
+    "headers": {
+      "Server": "CloudFront",
+      "Date": "Wed, 29 Jul 2026 14:23:11 GMT",
+      "Content-Type": "text/html",
+      "Content-Length": "1053",
+      "Connection": "close",
+      "X-Cache": "Error from cloudfront",
+      "Via": "1.1 7e9b06f0eb97ea1897f375ba6acd2a88.cloudfront.net (CloudFront)",
+      "X-Amz-Cf-Pop": "SEA900-P6",
+      "X-Amz-Cf-Id": "x6yg1URRtoYBfn81V4g-UJHQHoz_5cG-L0mu-qDSqvTFs03wMn7Srg=="
+    },
+    "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nThis distribution is not configured to allow the HTTP request method that was used for this request. The distribution supports only cachable requests.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: x6yg1URRtoYBfn81V4g-UJHQHoz_5cG-L0mu-qDSqvTFs0"
+  },
+  "2fa_check": {
+    "status": 200,
+    "body_excerpt": "<!DOCTYPE html><html><head><script src=\"https://cdn.cookielaw.org/scripttemplates/otSDKStub.js\" type=\"text/javascript\" charSet=\"UTF-8\" data-domain-script=\"79a72087-eb61-4ff3-a235-6dcd8e747fc2\"></scrip"
+  }
+}

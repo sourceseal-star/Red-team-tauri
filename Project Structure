@@ -1,0 +1,52 @@
+SourceSeal-Console/
+├── src-tauri/
+│   ├── Cargo.toml
+│   ├── tauri.conf.json
+│   ├── src/
+│   │   ├── main.rs
+│   │   ├── lib.rs
+│   │   ├── commands.rs
+│   │   ├── state.rs
+│   │   └── utils.rs
+│   └── icons/
+├── src/
+│   ├── index.html
+│   ├── main.tsx
+│   ├── App.tsx
+│   ├── routes/
+│   │   ├── Dashboard.tsx
+│   │   ├── ConfigEditor.tsx
+│   │   ├── Reports.tsx
+│   │   ├── Honeypot.tsx
+│   │   ├── SOAR.tsx
+│   │   ├── ThreatIntel.tsx
+│   │   ├── RASP.tsx
+│   │   ├── Terminal.tsx
+│   │   ├── Settings.tsx
+│   │   └── About.tsx
+│   ├── components/
+│   │   ├── Sidebar.tsx
+│   │   ├── TopBar.tsx
+│   │   ├── BottomStatus.tsx
+│   │   ├── ServiceCard.tsx
+│   │   ├── ConfirmationDialog.tsx
+│   │   └── ui/          (shadcn/ui components)
+│   ├── stores/
+│   │   ├── serviceStore.ts
+│   │   ├── settingsStore.ts
+│   │   ├── reportStore.ts
+│   │   └── ...
+│   ├── lib/
+│   │   ├── api.ts       (Tauri invoke wrappers)
+│   │   └── utils.ts
+│   └── styles/
+│       └── globals.css
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+├── tailwind.config.js
+├── postcss.config.js
+├── scripts/
+│   └── dev.sh
+├── README.md
+└── LICENSE

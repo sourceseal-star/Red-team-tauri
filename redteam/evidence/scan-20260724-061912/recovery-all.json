@@ -1,0 +1,88 @@
+{
+  "health": {
+    "status": 200,
+    "headers": {
+      "Date": "Fri, 24 Jul 2026 06:19:18 GMT",
+      "Content-Type": "text/html; charset=UTF-8",
+      "Transfer-Encoding": "chunked",
+      "Connection": "close",
+      "Server": "cloudflare",
+      "Link": "<https://guardianocturna.mx/wp-json/>; rel=\"https://api.w.org/\"",
+      "Set-Cookie": "_fbp=fb.1.1784873956875.1073897659.AQECAQIB; expires=Thu, 22-Oct-2026 06:19:16 GMT; Max-Age=7776000; path=/; domain=guardianocturna.mx; secure; SameSite=Lax",
+      "Report-To": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=msOaI%2BxetmRdNa5PVJJM5J6uMNfKGp%2F62wsMn7qMLBSpsu8J0LS7CY5SwdUnTteOyHoPrHbzbtAEtXkl4yceKcsuDzqBsP1oxPbWKFln3jQdHyZy2IrI193jQv%2BhydaOEE9yF%2BU%3D\"}]}",
+      "Nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+      "cf-cache-status": "DYNAMIC",
+      "Server-Timing": "cfCacheStatus;desc=\"DYNAMIC\"",
+      "CF-RAY": "a200cffc99047561-SEA",
+      "alt-svc": "h3=\":443\"; ma=86400"
+    },
+    "body": "\n<!doctype html>\n<html lang=\"en\" prefix=\"op: https://media.facebook.com/op#\">\n<head>\n\t<meta charset=\"UTF-8\">\n\t<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge,chrome=1\">\n\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\t<link rel=\"canonical\" href=\"https://guardianocturna.mx\">\n\t<meta property=\"op:markup_version\" content=\"v1.0\">\n\t<meta name=\"google-site-verification\" content=\"eVh3YOl_o96kQ-YFefR7GphSsgOrlMVqaId1nIjz774\" />\n\t\n\t<link rel=\"shortcut icon\" type=\"image/x-icon\" href=\"https://guardianocturna.mx/wp-content/themes/guardianocturna/assets/svg/favicon.svg?v=1\" />\n\n\t<meta name='robots' content='index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1' />\n\n\t<!-- This site is optimized with the Yoast SEO plugin v28.1 - https://yoast.com/product/yoast-seo-wordpress/ -->\n\t<title>Guardia Nocturna | Proyecto informativo con las noticias de todo lo acontecido en la noche y madrugada en nuestra ciudad.</title>\n\t<meta name=\"description\" content=\"Proyecto informativo con las noticias de todo lo acontecido en la noche y madrugada en nuestra ciudad.\" />\n\t<link rel=\"canonical\" href=\"https://guardianocturna.mx/\" />\n\t<link rel=\"next\" href=\"https://guardianocturna.mx/page/2/\" />\n\t<meta property=\"og:locale\" content=\"es_ES\" />\n\t<meta property=\"og:type\" content=\"website\" />\n\t<meta property=\"og:title\" content=\"Guardia Nocturna\" />\n\t<meta property=\"og:description\" content=\"Proyecto informativo con las noticias de todo lo acontecido en la noche y madrugada en nuestra ciudad.\" />\n\t<meta property=\"og:url\" content=\"https://guardianocturna.mx/\" />\n\t<meta property=\"og:site_name\" content=\"Guardia Nocturna\" />\n\t<meta name=\"twitter:card\" content=\"summary_large_image\" />\n\t<script type=\"application/ld+json\" class=\"yoast-schema-graph\">{\"@context\":\"https:\\/\\/schema.org\",\"@graph\":[{\"@type\":\"CollectionPage\",\"@id\":\"https:\\/\\/guardianocturna.mx\\/\",\"url\":\"https:\\/\\/guardianocturna.mx\\/\",\"name\":\"Guardia Nocturna | Proyecto informativo con las noticias de todo lo acontecido en la noche y madrugada en nuestra ciudad.\",\"isPartOf\":{\"@id\":\"https:\\/\\/guardianocturna.mx\\/#website\"},\"description\":\"Proyecto informativo con las noticias de todo lo acontecido en la noche y madrugada en nuestra ciudad.\",\"breadcrumb\":{\"@id\":\"https:\\/\\/guardianocturna.mx\\/#breadcrumb\"},\"inLanguage\":\"es\"},{\"@type\":\"BreadcrumbList\",\"@id\":\"https:\\/\\/guardianocturna.mx\\/#breadcrumb\",\"itemListElement\":[{\"@type\":\"ListItem\",\"position\":1,\"name\":\"Portada\"}]},{\"@type\":\"WebSite\",\"@id\":\"https:\\/\\/guardianocturna.mx\\/#website\",\"url\":\"https:\\/\\/guardianocturna.mx\\/\",\"name\":\"Guardia Nocturna\",\"description\":\"Proyecto informativo con las noticias de todo lo acontecido en la noche y madrugada en nuestra ciudad.\",\"potentialAction\":[{\"@type\":\"SearchAction\",\"target\":{\"@type\":\"EntryPoint\",\"urlTemplate\":\"https:\\/\\/guardianocturna.mx\\/?s={search_term_string}\"},\"query-input\":{\"@type\":\"PropertyValueSpecification\",\"valueRequired\":true,\"valueName\":\"search_term_string\"}}],\"inLanguage\":\"es\"}]}</scri"
+  },
+  "no_auth_list": {
+    "status": 404,
+    "headers": {
+      "Date": "Fri, 24 Jul 2026 06:19:19 GMT",
+      "Content-Type": "text/html; charset=UTF-8",
+      "Transfer-Encoding": "chunked",
+      "Connection": "close",
+      "Server": "cloudflare",
+      "Expires": "Wed, 11 Jan 1984 05:00:00 GMT",
+      "Cache-Control": "no-cache, must-revalidate, max-age=0, no-store, private",
+      "Link": "<https://guardianocturna.mx/wp-json/>; rel=\"https://api.w.org/\"",
+      "Set-Cookie": "_fbp=fb.1.1784873957683.115788442.AQECAQIB; expires=Thu, 22-Oct-2026 06:19:17 GMT; Max-Age=7776000; path=/; domain=guardianocturna.mx; secure; SameSite=Lax",
+      "Report-To": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=4WNMK3%2B6JLzdXRBauJod6hhrPmsd8ID9PG3V5qVgHbkQjSKwkI2Jats91OSLd0QvA6j%2F6pWQLerQVBbeEME3p0EAtYGsZkZTizsH1wBT8j2lX2YcfZ9ohS9PVF3ITVqP9vQ8XS4%3D\"}]}",
+      "Nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+      "cf-cache-status": "DYNAMIC",
+      "Server-Timing": "cfCacheStatus;desc=\"DYNAMIC\"",
+      "CF-RAY": "a200d000bcbd309f-SEA",
+      "alt-svc": "h3=\":443\"; ma=86400"
+    },
+    "body": "\n<!doctype html>\n<html lang=\"en\" prefix=\"op: https://media.facebook.com/op#\">\n<head>\n\t<meta charset=\"UTF-8\">\n\t<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge,chrome=1\">\n\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\t<link rel=\"canonical\" href=\"https://guardianocturna.mx/api/hashes\">\n\t<meta property=\"op:markup_version\" content=\"v1.0\">\n\t<meta name=\"google-site-verification\" content=\"eVh3YOl_o96kQ-YFefR7GphSsgOrlMVqaId1nIjz774\" />\n\t\n\t<link rel=\"shortcut icon\" type=\"image/x-icon\" href=\"https://guardianocturna.mx/wp-content/themes/guardianocturna/assets/svg/favicon.svg?v=1\" />\n\n\t<meta name='robots' content='noindex, follow' />\n\n\t<!-- This site is optimized with the Yoast SEO plugin v28.1 - https://yoast.com/product/yoast-seo-wordpress/ -->\n\t<title>Página no encontrada | Guardia Nocturna</title>\n\t<meta property=\"og:locale\" content=\"es_ES\" />\n\t<meta property=\"og:title\" content=\"Página no encontrada | Guardia Nocturna\" />\n\t<meta property=\"og:site_name\" content=\"Gu"
+  },
+  "idor_test": {
+    "status": 404,
+    "headers": {
+      "Date": "Fri, 24 Jul 2026 06:19:19 GMT",
+      "Content-Type": "text/html; charset=UTF-8",
+      "Transfer-Encoding": "chunked",
+      "Connection": "close",
+      "Server": "cloudflare",
+      "Expires": "Wed, 11 Jan 1984 05:00:00 GMT",
+      "Cache-Control": "no-cache, must-revalidate, max-age=0, no-store, private",
+      "Link": "<https://guardianocturna.mx/wp-json/>; rel=\"https://api.w.org/\"",
+      "Set-Cookie": "_fbp=fb.1.1784873958283.1795315137.AQECAQIB; expires=Thu, 22-Oct-2026 06:19:18 GMT; Max-Age=7776000; path=/; domain=guardianocturna.mx; secure; SameSite=Lax",
+      "Report-To": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=szZFtzi37sksfFeQlSVSNORCs66Km44degLQXTLlrGLBh9qInQIHUSu8FNvsIzRYJgHejnI3z4DtpvIUAK9GXLNW7jwNSlO6J7viw5XybPp5rt4Xqk7Oxf0wDPZZhnjI5QYbNbs%3D\"}]}",
+      "Nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+      "cf-cache-status": "DYNAMIC",
+      "Server-Timing": "cfCacheStatus;desc=\"DYNAMIC\"",
+      "CF-RAY": "a200d0055c5076e2-SEA",
+      "alt-svc": "h3=\":443\"; ma=86400"
+    },
+    "body": "\n<!doctype html>\n<html lang=\"en\" prefix=\"op: https://media.facebook.com/op#\">\n<head>\n\t<meta charset=\"UTF-8\">\n\t<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge,chrome=1\">\n\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\t<link rel=\"canonical\" href=\"https://guardianocturna.mx/api/hashes/test-5dfda5d5\">\n\t<meta property=\"op:markup_version\" content=\"v1.0\">\n\t<meta name=\"google-site-verification\" content=\"eVh3YOl_o96kQ-YFefR7GphSsgOrlMVqaId1nIjz774\" />\n\t\n\t<link rel=\"shortcut icon\" type=\"image/x-icon\" href=\"https://guardianocturna.mx/wp-content/themes/guardianocturna/assets/svg/favicon.svg?v=1\" />\n\n\t<meta name='robots' content='noindex, follow' />\n\n\t<!-- This site is optimized with the Yoast SEO plugin v28.1 - https://yoast.com/product/yoast-seo-wordpress/ -->\n\t<title>Página no encontrada | Guardia Nocturna</title>\n\t<meta property=\"og:locale\" content=\"es_ES\" />\n\t<meta property=\"og:title\" content=\"Página no encontrada | Guardia Nocturna\" />\n\t<meta property=\"og:site_nam"
+  },
+  "csrf_test": {
+    "status": 404,
+    "headers": {
+      "Date": "Fri, 24 Jul 2026 06:19:20 GMT",
+      "Content-Type": "text/html; charset=UTF-8",
+      "Transfer-Encoding": "chunked",
+      "Connection": "close",
+      "Server": "cloudflare",
+      "Expires": "Wed, 11 Jan 1984 05:00:00 GMT",
+      "Cache-Control": "no-cache, must-revalidate, max-age=0, no-store, private",
+      "Link": "<https://guardianocturna.mx/wp-json/>; rel=\"https://api.w.org/\"",
+      "Set-Cookie": "_fbp=fb.1.1784873959205.1814591625.AQECAQIB; expires=Thu, 22-Oct-2026 06:19:19 GMT; Max-Age=7776000; path=/; domain=guardianocturna.mx; secure; SameSite=Lax",
+      "Report-To": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=svncLyzn0uXyLcsbkEYFl7jAy42YVh70t%2BKkqI4bsmfw1BYnuzDVCDhBrs1vWyWm2vjMWG5sH57q%2B3IKdezzbLDOIpVWdswoeEkrLrC84YGNsu4BUUPcMA3O7J0x7scJj8cPRKY%3D\"}]}",
+      "Nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+      "cf-cache-status": "DYNAMIC",
+      "Server-Timing": "cfCacheStatus;desc=\"DYNAMIC\"",
+      "CF-RAY": "a200d00a7881f2f7-SEA",
+      "alt-svc": "h3=\":443\"; ma=86400"
+    },
+    "body": "\n<!doctype html>\n<html lang=\"en\" prefix=\"op: https://media.facebook.com/op#\">\n<head>\n\t<meta charset=\"UTF-8\">\n\t<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge,chrome=1\">\n\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n\t<link rel=\"canonical\" href=\"https://guardianocturna.mx/api/regenerate\">\n\t<meta property=\"op:markup_version\" content=\"v1.0\">\n\t<meta name=\"google-site-verification\" content=\"eVh3YOl_o96kQ-YFefR7GphSsgOrlMVqaId1nIjz774\" />\n\t\n\t<link rel=\"shortcut icon\" type=\"image/x-icon\" href=\"https://guardianocturna.mx/wp-content/themes/guardianocturna/assets/svg/favicon.svg?v=1\" />\n\n\t<meta name='robots' content='noindex, follow' />\n\n\t<!-- This site is optimized with the Yoast SEO plugin v28.1 - https://yoast.com/product/yoast-seo-wordpress/ -->\n\t<title>Página no encontrada | Guardia Nocturna</title>\n\t<meta property=\"og:locale\" content=\"es_ES\" />\n\t<meta property=\"og:title\" content=\"Página no encontrada | Guardia Nocturna\" />\n\t<meta property=\"og:site_name\" content"
+  },
+  "2fa_check": {
+    "status": 404,
+    "body_excerpt": "\n<!doctype html>\n<html lang=\"en\" prefix=\"op: https://media.facebook.com/op#\">\n<head>\n\t<meta charset=\"UTF-8\">\n\t<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge,chrome=1\">\n\t<meta name=\"viewport\" cont"
+  }
+}

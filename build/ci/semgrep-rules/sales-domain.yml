@@ -1,0 +1,103 @@
+rules:
+  # === Dominio: Ventas de celulares / control de pagos ===
+
+  - id: sales-idor-risk
+    patterns:
+      - pattern-either:
+          - pattern: app.get("/sales/{id}", ...)
+          - pattern: app.get("/customers/{id}", ...)
+          - pattern: app.get("/payments/{id}", ...)
+          - pattern: router.get("/$ID", ...)
+    message: "Endpoint con ID en path. Verificar autorización server-side (ownership por vendedor/tienda)."
+    languages: [python, javascript, typescript, java, generic]
+    severity: WARNING
+
+  - id: sales-client-pricing
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $PRICE = req.body.price
+              ...
+          - pattern: |
+              $AMOUNT = request.json["amount"]
+              ...
+          - pattern: |
+              sale.price = $REQ.amount
+              ...
+    message: "Precio/amount viene del cliente. Debe venir del catálogo server-side."
+    languages: [python, javascript, typescript, java]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-602: Client-Side Enforcement of Server-Side Security"
+
+  - id: sales-state-machine-violation
+    patterns:
+      - pattern-either:
+          - pattern: sale.status = "paid"
+          - pattern: order.status = "paid"
+          - pattern: payment.status = "completed"
+      - pattern-not: sale.status = webhook_event.status
+    message: "Cambio de estado a 'paid' sin provenir de webhook. Solo pasarela puede confirmar pago."
+    languages: [python, javascript, typescript, java]
+    severity: ERROR
+
+  - id: sales-no-imei-validation
+    patterns:
+      - pattern: |
+          $DB.insert(imei=$REQ.imei)
+      - pattern-not-inside: |
+          if luhn_check($REQ.imei):
+              ...
+              $DB.insert(imei=$REQ.imei)
+    message: "IMEI insertado sin validación Luhn visible."
+    languages: [python, javascript, typescript, java]
+    severity: WARNING
+
+  - id: sales-pci-storage
+    patterns:
+      - pattern-either:
+          - pattern: db.execute("INSERT ... card_number ...", ...)
+          - pattern: db.execute("INSERT ... cvv ...", ...)
+          - pattern: save(cardNumber=..., cvv=...)
+    message: "Almacenamiento de datos de tarjeta. PCI-DSS: tokenizar, no almacenar."
+    languages: [python, javascript, typescript, java]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-312: Cleartext Storage of Sensitive Information"
+
+  - id: sales-webhook-no-verification
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @app.post("/webhook/$PROV")
+              def $HANDLER(req):
+                  ...
+                  $DB.update(...status="paid"...)
+          - pattern: |
+              app.post("/webhooks/$PROV", (req, res) => {
+                  ...
+                  db.update(...{status: "paid"}...)
+              })
+    message: "Webhook handler sin verificación de firma visible."
+    languages: [python, javascript, typescript, java]
+    severity: ERROR
+
+  - id: sales-biometric-client-bypass
+    patterns:
+      - pattern-either:
+          - pattern: isBiometricValid = True
+          - pattern: biometricOk = true
+          - pattern: skipBiometric = true
+    message: "Flag biométrico seteado a true. La validación debe ser server-side."
+    languages: [python, javascript, typescript, java]
+    severity: ERROR
+
+  - id: sales-weak-kdf
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.sha256($SALT + $BIO)
+          - pattern: hashlib.md5($BIO)
+          - pattern: MessageDigest.getInstance("SHA-256")
+    message: "Para biometría, SHA-256 no es recuperable. Usar AES + KDF o cifrado reversible explícito."
+    languages: [python, java, generic]
+    severity: WARNING

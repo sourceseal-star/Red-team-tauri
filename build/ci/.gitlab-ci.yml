@@ -1,0 +1,66 @@
+# Red Team CI/CD Pipeline
+# Se ejecuta en cada merge request y nightly a las 03:00 UTC.
+stages:
+  - static
+  - mobile
+  - dynamic
+  - report
+
+variables:
+  APP_PATH: "$CI_PROJECT_DIR/build/app.apk"
+  BACKEND_URL: "https://api.tu-dominio.com"
+  REPORT_DIR: "$CI_PROJECT_DIR/redteam/reports"
+
+semgrep:
+  stage: static
+  image: returntocorp/semgrep:latest
+  script:
+    - semgrep --config redteam/ci/semgrep-rules/crypto-weak.yml --error --json > semgrep.json || true
+    - semgrep --config p/crypto --config p/java --config p/security-audit redteam/ --json > semgrep-full.json || true
+  artifacts:
+    paths: [semgrep.json, semgrep-full.json]
+    when: always
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+
+mobsf-scan:
+  stage: mobile
+  image: opensecurity/mobile-security-framework-mobsf:latest
+  script:
+    - |
+      if [ -f "$APP_PATH" ]; then
+        python3 -m mobsf.MobSF -f "$APP_PATH" --json > mobsf-report.json || true
+      else
+        echo "No APK en $APP_PATH, saltando MobSF"
+      fi
+  artifacts:
+    paths: [mobsf-report.json]
+    when: always
+  allow_failure: true
+
+redteam-nightly:
+  stage: dynamic
+  image: python:3.11
+  before_script:
+    - pip install -r redteam/requirements.txt
+  script:
+    - python3 redteam/runner/orchestrator.py --target "$APP_PATH" --backend "$BACKEND_URL" --output "$REPORT_DIR"
+  artifacts:
+    paths: ["$REPORT_DIR/"]
+    when: always
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+publish-report:
+  stage: report
+  image: alpine:latest
+  script:
+    - cp redteam/reports/latest.md artifacts/redteam-latest.md
+  artifacts:
+    paths: [artifacts/redteam-latest.md]
+  when: always
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'

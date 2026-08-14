@@ -1,0 +1,183 @@
+name: sourceseal_console
+description: SourceSeal Console — Red Team & Pentesting Toolkit Pro
+publish_to: 'none'
+version: 2.0.0+20
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ===== CORE =====
+  cupertino_icons: ^1.0.8
+  flutter_native_splash: ^2.4.1
+  flutter_launcher_icons: ^0.14.1
+
+  # ===== STATE MANAGEMENT =====
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.7
+  get_it: ^7.7.0
+  injectable: ^2.4.0
+
+  # ===== ROUTING =====
+  go_router: ^14.6.0
+
+  # ===== NETWORKING =====
+  dio: ^5.7.0
+  dio_smart_retry: ^6.0.0
+  web_socket_channel: ^3.0.1
+  connectivity_plus: ^6.1.0
+
+  # ===== SSH / TELNET / RAW =====
+  dartssh2: ^2.10.0
+
+  # ===== SECURITY =====
+  flutter_secure_storage: ^9.2.2
+  local_auth: ^2.3.0
+  crypto: ^3.0.6
+  pointycastle: ^3.9.1
+  encrypt: ^5.0.3
+
+  # ===== DATABASE =====
+  sqflite: ^2.4.0
+  path: ^1.9.0
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  shared_preferences: ^2.3.3
+
+  # ===== SERIALIZATION =====
+  json_annotation: ^4.9.0
+  freezed_annotation: ^2.4.4
+
+  # ===== UI / UX =====
+  fl_chart: ^0.69.0
+  graphic: ^2.5.0
+  graphview: ^1.2.0
+  data_table_2: ^2.5.18
+  flutter_markdown: ^0.7.4
+  pdf: ^3.11.1
+  printing: ^5.14.0
+  excel: ^4.0.6
+  file_picker: ^8.1.4
+  lottie: ^3.2.0
+  shimmer: ^3.0.0
+  flutter_slidable: ^3.1.2
+  flutter_staggered_animations: ^1.1.1
+  animated_text_kit: ^4.2.3
+  glassmorphism: ^3.0.0
+
+  # ===== TERMINAL / EDITOR =====
+  xterm: ^4.0.0
+  code_text_field: ^2.1.1
+
+  # ===== UTILS =====
+  logger: ^2.5.0
+  intl: ^0.19.0
+  url_launcher: ^6.3.1
+  share_plus: ^10.1.2
+  permission_handler: ^11.3.1
+  device_info_plus: ^11.2.0
+  package_info_plus: ^8.1.2
+  path_provider: ^2.1.5
+  image_picker: ^1.1.2
+
+  # ===== PARSING =====
+  xml: ^6.5.0
+  yaml: ^3.1.3
+  csv: ^6.0.0
+  html_unescape: ^2.0.0
+
+  # ===== SCANNING / PENTESTING =====
+  # Nmap XML parser
+  nmap_xml: ^1.0.0
+  # IP / Network utils
+  ip: ^1.2.0
+  # WHOIS
+  whois: ^1.0.0
+  # QR / Barcode (para credenciales, payloads)
+  qr_flutter: ^4.1.0
+  barcode_scan2: ^4.3.3
+
+  # ===== NOTIFICATIONS =====
+  flutter_local_notifications: ^18.0.1
+
+  # ===== ANIMATIONS =====
+  flutter_animate: ^4.5.2
+
+  # ===== THEME =====
+  flex_color_scheme: ^7.3.1
+
+  # ===== GEOLOCATION (para war driving, site mapping)
+  geolocator: ^13.0.2
+
+  # ===== AUDIO (para radio scanning, SDR)
+  just_audio: ^0.9.42
+  record: ^5.2.0
+
+  # ===== CAMERA (para cámaras IP, recon visual)
+  camera: ^0.11.0+2
+  video_player: ^2.9.2
+  chewie: ^1.8.5
+
+  # ===== MAPS (para geolocalización de targets)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # ===== BLE / WIFI (para IoT scanning)
+  flutter_blue_plus: ^1.34.5
+  wifi_iot: ^0.3.19
+  network_info_plus: ^6.1.1
+
+  # ===== HTTP SERVER (para payloads local)
+  shelf: ^1.4.2
+  shelf_router: ^1.1.4
+
+  # ===== PROCESS RUNNER (para ejecutar comandos en Termux/Replit)
+  process_run: ^1.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  build_runner: ^2.4.13
+  json_serializable: ^6.9.0
+  freezed: ^2.5.7
+  injectable_generator: ^2.4.0
+  hive_generator: ^2.0.1
+  mockito: ^5.4.4
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/config/
+    - assets/fonts/
+
+  fonts:
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+        - asset: assets/fonts/JetBrainsMono-Bold.ttf
+          weight: 700
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+
+flutter_native_splash:
+  color: "#0a0a0f"
+  image: assets/images/splash_logo.png
+  android_12:
+    image: assets/images/splash_logo.png
+    icon_background_color: "#0a0a0f"
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/app_icon.png"
+  min_sdk_android: 21

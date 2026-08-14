@@ -1,0 +1,16 @@
+# 1. Volver a la carpeta raíz
+cd ~
+
+# 2. Comprimir todo el proyecto en un ZIP (Listo para subir a Replit/GitHub)
+zip -r sourceseal_control.zip sourceseal_control/
+
+# 3. Verificar que el ZIP se creó correctamente
+ls -lh sourceseal_control.zip
+
+# 4. (Opcional) Si quieres compilar la APK directamente en Termux:
+cd sourceseal_control
+flutter pub get
+flutter build apk --release
+
+# El APK final estará en:
+# build/app/outputs/flutter-apk/app-release.apk

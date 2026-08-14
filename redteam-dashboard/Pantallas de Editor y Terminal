@@ -1,0 +1,179 @@
+# 3. Crear pantalla de Editor de Código
+cat << 'EOF' > lib/screens/editor_screen.dart
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+class EditorScreen extends StatefulWidget {
+  const EditorScreen({super.key});
+
+  @override
+  State<EditorScreen> createState() => _EditorScreenState();
+}
+
+class _EditorScreenState extends State<EditorScreen> {
+  final TextEditingController _codeController = TextEditingController();
+  String _currentFile = 'backend/main.py';
+
+  final Map<String, String> _mockFiles = {
+    'backend/main.py': 'from fastapi import FastAPI\n\napp = FastAPI()\n\n@app.get("/health")\ndef health():\n    return {"status": "ok"}\n\n# TODO: Implementar validación HMAC (A5) y Nonce (A6)',
+    'backend/security.py': 'import hmac\nimport hashlib\n\ndef verify_hmac(payload, signature, secret):\n    expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()\n    return hmac.compare_digest(expected, signature)',
+    'config.json': '{\n  "backend_url": "https://red-team--sealclient2.replit.app",\n  "api_key": "your_secret_key"\n}',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _codeController.text = _mockFiles[_currentFile] ?? '';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_currentFile, style: const TextStyle(fontFamily: 'monospace', fontSize: 14)),
+        actions: [
+          IconButton(icon: const Icon(Icons.save, color: Colors.greenAccent), onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('💾 Archivo guardado en el servidor'), backgroundColor: Colors.green));
+          }),
+        ],
+      ),
+      body: Column(children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          color: const Color(0xFF1A1F3A),
+          child: DropdownButton<String>(
+            value: _currentFile,
+            dropdownColor: const Color(0xFF1A1F3A),
+            style: const TextStyle(color: Colors.white),
+            underline: const SizedBox(),
+            items: _mockFiles.keys.map((file) => DropdownMenuItem(value: file, child: Text(file, style: const TextStyle(fontFamily: 'monospace')))).toList(),
+            onChanged: (val) => setState(() { _currentFile = val!; _codeController.text = _mockFiles[_currentFile] ?? ''; }),
+          ),
+        ),
+        Expanded(
+          child: Container(
+            color: const Color(0xFF0D1117),
+            padding: const EdgeInsets.all(12),
+            child: TextField(
+              controller: _codeController,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              style: GoogleFonts.firaCode(color: Colors.greenAccent, fontSize: 14, height: 1.4),
+              decoration: const InputDecoration(border: InputBorder.none, hintText: '# Escribe o modifica el código aquí...', hintStyle: TextStyle(color: Colors.white30)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+EOF
+
+# 4. Crear pantalla de Terminal SSH
+cat << 'EOF' > lib/screens/terminal_screen.dart
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../config/app_config.dart';
+import '../services/ssh_service.dart';
+import '../services/secure_storage_service.dart';
+
+class TerminalScreen extends StatefulWidget {
+  const TerminalScreen({super.key});
+
+  @override
+  State<TerminalScreen> createState() => _TerminalScreenState();
+}
+
+class _TerminalScreenState extends State<TerminalScreen> {
+  final SSHService _sshService = SSHService();
+  final List<String> _output = ['> SourceSeal Terminal v1.0', '> Escribe "help" para ver comandos o conecta vía SSH.'];
+  final TextEditingController _commandController = TextEditingController();
+  bool _isConnected = false;
+
+  Future<void> _toggleConnection() async {
+    final config = Provider.of<AppConfig>(context, listen: false);
+    final storage = Provider.of<SecureStorageService>(context, listen: false);
+    final password = await storage.read(key: 'ssh_password') ?? '';
+
+    if (_isConnected) {
+      _sshService.disconnect();
+      setState(() { _isConnected = false; _output.add('> Conexión cerrada.'); });
+      return;
+    }
+
+    final success = await _sshService.connect(config.sshHost, config.sshPort, config.sshUser, password);
+    setState(() {
+      _isConnected = success;
+      _output.add(success ? '> ✅ Conectado a ${config.sshHost}:${config.sshPort}' : '> ❌ Fallo de conexión. Revisa Config.');
+    });
+  }
+
+  void _executeCommand(String command) async {
+    if (command.trim().isEmpty) return;
+    setState(() => _output.add('\$ $command'));
+    _commandController.clear();
+
+    if (command == 'clear') { setState(() => _output.clear()); return; }
+
+    if (!_isConnected) {
+      setState(() => _output.add('> ️ No hay conexión SSH. Conecta primero.'));
+      return;
+    }
+
+    final result = await _sshService.executeCommand(command);
+    setState(() => _output.addAll(result.split('\n')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Terminal SSH'),
+        actions: [
+          IconButton(
+            icon: Icon(_isConnected ? Icons.link : Icons.link_off, color: _isConnected ? Colors.green : Colors.red),
+            onPressed: _toggleConnection,
+          ),
+        ],
+      ),
+      body: Column(children: [
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            color: const Color(0xFF0D1117),
+            padding: const EdgeInsets.all(12),
+            child: ListView.builder(
+              itemCount: _output.length,
+              itemBuilder: (context, index) {
+                final line = _output[index];
+                return SelectableText(line, style: GoogleFonts.firaCode(
+                  color: line.startsWith('>') ? (line.contains('✅') ? Colors.green : (line.contains('❌') ? Colors.red : Colors.blueAccent)) : Colors.white70,
+                  fontSize: 13,
+                ));
+              },
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(12),
+          color: const Color(0xFF1A1F3A),
+          child: Row(children: [
+            const Text('> ', style: TextStyle(color: Colors.greenAccent, fontFamily: 'monospace', fontWeight: FontWeight.bold)),
+            Expanded(child: TextField(
+              controller: _commandController,
+              style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
+              decoration: const InputDecoration(hintText: 'Escribe un comando (ej: docker ps)...', border: InputBorder.none),
+              onSubmitted: _executeCommand,
+            )),
+            IconButton(icon: const Icon(Icons.send, color: Colors.blueAccent), onPressed: () => _executeCommand(_commandController.text)),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  @override
+  void dispose() { _commandController.dispose(); _sshService.disconnect(); super.dispose(); }
+}
+EOF

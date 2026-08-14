@@ -1,0 +1,49 @@
+*.tar
+*.tar.*
+*.jar
+*.exe
+*.msi
+*.deb
+*.zip
+*.tgz
+*.log
+*.log.*
+*.sig
+
+pkg/
+__pycache__/
+*.pyc
+
+# Keystore de firma — NO subir al repo (contiene clave privada)
+signing/
+*.keystore
+*.jks
+
+# Archivos generados en runtime — NO subir al repo
+redteam/reports/
+redteam/evidence/
+redteam/logs/
+
+# Data files con estado en runtime (causan conflictos)
+redteam/data/latest.json
+redteam/data/honeypot.json
+redteam/data/rasp_devices.json
+redteam/data/settings.json
+redteam/data/soar_dags.json
+redteam/data/iocs.json
+
+# Reports de scans
+redteam/reports/*.json
+redteam/reports/latest.json
+node_modules/
+
+# Build output — se regenera en cada start/sync, no versionar
+tauri-frontend/dist/
+tauri-frontend/node_modules/
+*.bak
+*.bak2
+source_seal_audit_report.json
+*.log
+manual_operaciones.enc
+manual_operaciones.md
+motor_cierre.db

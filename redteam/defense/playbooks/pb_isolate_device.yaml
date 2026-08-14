@@ -1,0 +1,45 @@
+id: "pb_isolate_device"
+name: "Isolate compromised device"
+description: "Aísla un device_id del API Gateway, lo bloquea perimetralmente, invalida sus tokens y emite un IoC para TheHive."
+trigger_category: "device_compromise"
+severity_min: "high"
+sources:
+  - "rasp.hooking"
+  - "ndr.beaconing"
+  - "xdr.correlation"
+inputs:
+  - name: "device_id"
+    type: "string"
+    required: true
+  - name: "user_id"
+    type: "string"
+    required: false
+  - name: "reason"
+    type: "string"
+    required: true
+actions:
+  - id: "quarantine_device"
+    type: "internal"
+    target: "RASPEnforcer.quarantine"
+    timeout_ms: 100
+  - id: "block_in_api_gateway"
+    type: "internal"
+    target: "ZTNA.PolicyEngine.deny_device"
+    timeout_ms: 50
+  - id: "revoke_user_sessions"
+    type: "internal"
+    target: "RASPEnforcer.revoke_session"
+    timeout_ms: 100
+  - id: "emit_ioc"
+    type: "internal"
+    target: "Deception.STIXExporter.export"
+    timeout_ms: 100
+  - id: "notify_thehive"
+    type: "external"
+    target: "thehive.case_creator"
+    timeout_ms: 200
+sla_ms: 500
+mitre:
+  - "T1056.001"
+  - "T1071.001"
+  - "T1611"

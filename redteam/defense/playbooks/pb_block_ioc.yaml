@@ -1,0 +1,42 @@
+id: "pb_block_ioc"
+name: "Block IoC perimeter-wide"
+description: "Inserta un IoC (dominio, IP, hash, patrón de tráfico) en la lista de bloqueo perimetral y exporta como STIX 2.1."
+trigger_category: "ioc_discovered"
+severity_min: "medium"
+sources:
+  - "ndr.beaconing"
+  - "ndr.dns_tunneling"
+  - "ndr.icmp_tunnel"
+inputs:
+  - name: "ioc_type"
+    type: "enum[domain,ip,hash,ja3,ja3s]"
+    required: true
+  - name: "ioc_value"
+    type: "string"
+    required: true
+  - name: "source"
+    type: "string"
+    required: true
+actions:
+  - id: "push_to_blocklist"
+    type: "internal"
+    target: "NDR.blocklist_add"
+    timeout_ms: 50
+  - id: "export_stix"
+    type: "internal"
+    target: "Deception.STIXExporter.export"
+    timeout_ms: 100
+  - id: "notify_thehive"
+    type: "external"
+    target: "thehive.case_creator"
+    timeout_ms: 200
+  - id: "emit_incident"
+    type: "internal"
+    target: "XDR.IncidentStore.append"
+    timeout_ms: 50
+sla_ms: 500
+mitre:
+  - "T1071.004"
+  - "T1048"
+  - "T1572"
+  - "T1095"

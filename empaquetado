@@ -1,0 +1,17 @@
+# ---- build-zip.sh : empaqueta todo el proyecto sealctl ----
+cat << 'EOF' > build-zip.sh
+#!/usr/bin/env bash
+set -e
+cd "$(dirname "$0")"
+# limpia artefactos para que el zip no pese por node_modules
+rm -rf node_modules evidence/*.flow
+NAME="sealctl-$(date +%Y%m%d-%H%M%S).zip"
+zip -r "$NAME" . -x "*.git*" -x "node_modules/*" -x "*.zip" >/dev/null
+echo "listo: $NAME  ($(du -h "$NAME" | cut -f1))"
+echo "subelo a Replit (Upload files) o a GitHub; en Replit: unzip $NAME && npm install && node server.js"
+EOF
+chmod +x build-zip.sh
+
+# genera el zip ahora
+./build-zip.sh
+ls -lh sealctl-*.zip

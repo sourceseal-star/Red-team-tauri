@@ -1,0 +1,41 @@
+id: "pb_revoke_jwt"
+name: "Revoke compromised JWTs"
+description: "Revoca todos los tokens emitidos para un user_id o subject fingerprint. Notifica a TheHive y crea evidencia firmada."
+trigger_category: "credential_compromise"
+severity_min: "high"
+sources:
+  - "deception.canary"
+  - "ztna.bola_attempt"
+  - "xdr.correlation"
+inputs:
+  - name: "user_id"
+    type: "string"
+    required: true
+  - name: "cert_fingerprint"
+    type: "string"
+    required: false
+  - name: "reason"
+    type: "string"
+    required: true
+actions:
+  - id: "add_to_jwt_revoke_list"
+    type: "internal"
+    target: "ZTNA.JWTValidator.revocation_set"
+    timeout_ms: 50
+  - id: "force_session_termination"
+    type: "internal"
+    target: "RASPEnforcer.revoke_session"
+    timeout_ms: 100
+  - id: "create_thehive_case"
+    type: "external"
+    target: "thehive.case_creator"
+    timeout_ms: 200
+  - id: "emit_incident"
+    type: "internal"
+    target: "XDR.IncidentStore.append"
+    timeout_ms: 50
+sla_ms: 500
+mitre:
+  - "T1078"
+  - "T1078.004"
+  - "T1190"

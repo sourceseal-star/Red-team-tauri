@@ -1,0 +1,15 @@
+{
+  "name": "sealctl",
+  "version": "2.1.0",
+  "description": "Red-Team Tauri — Backend unificado en Python/FastAPI :8001",
+  "scripts": {
+    "start": "cd redteam/scripts && python3 dashboard_server.py",
+    "dev:frontend": "cd tauri-frontend && npm run dev",
+    "build:frontend": "cd tauri-frontend && npm run build",
+    "deprecated:node": "node server.js.deprecated"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}

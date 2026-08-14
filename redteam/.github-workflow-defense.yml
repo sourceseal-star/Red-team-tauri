@@ -1,0 +1,35 @@
+name: defense-tests
+on:
+  push:
+    paths:
+      - "defense/**"
+      - "tests/test_defense.py"
+      - "scripts/run_defense_pipeline.sh"
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Health check
+        run: |
+          python -c "from defense import DefenseMesh; m=DefenseMesh(); print(m.health_check())"
+      - name: Run defense tests
+        run: python -m pytest tests/test_defense.py -v
+      - name: Run defense pipeline
+        run: bash scripts/run_defense_pipeline.sh
+      - name: Upload defense report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: defense-report
+          path: reports/defense-*

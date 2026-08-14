@@ -1,0 +1,7 @@
+{
+  "api_url": "",
+  "interval": 15,
+  "scan_on_startup": false,
+  "notify_slack": false,
+  "slack_webhook": ""
+}
