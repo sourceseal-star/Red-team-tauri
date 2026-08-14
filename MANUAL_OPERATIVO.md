@@ -1671,3 +1671,183 @@ print(creds['REDTEAM_API_KEY'])
 ---
 
 *Última actualización del cifrado: 2026-08-13 11:29 UTC*
+
+
+---
+
+# SECCION 15 - Federacion Distribuida (v4.0)
+
+## Arquitectura
+
+```
+INTERNET
+|
++--------------+  +--------------+  +--------------+
+|  Replit A    |  |  Replit B    |  |  Replit C    |
+|  Motor de    |  |  Frontend    |  |  Threat      |
+|  Cierre      |<>|  Dashboard   |<>|  Intel Proxy |
+|  (Stripe)    |  |  (React)     |  |  (AbuseIPDB) |
++------+-------+  +------+-------+  +------+-------+
+       +-----------------+-----------------+
+                         |
+           +-------------v-------------+
+           |  Cloudflare Tunnel          |
+           |  tu-subdomain.trycloudflare.com
+           +-------------+-------------+
+                         |
+           +-------------v-------------+
+           |       TERMUX (Maestro)     |
+           |  +-----------------+      |
+           |  |  Orchestrator   |      |
+           |  |  - Descubre nodos|     |
+           |  |  - Enruta APIs  |      |
+           |  |  - Sincroniza DB|      |
+           |  |  - Broadcast    |      |
+           |  +-----------------+      |
+           |  +-----------------+      |
+           |  |  Core Services  |      |
+           |  |  nmap, aircrack |      |
+           |  |  ffmpeg, tcpdump|      |
+           |  +-----------------+      |
+           |  +-----------------+      |
+           |  |  SQLite Master  |      |
+           |  +-----------------+      |
+           +---------------------------+
+```
+
+## Componentes
+
+### gateway/orchestrator.py - Nodo Maestro (puerto 9000)
+
+Servidor central FastAPI que corre en Termux. Funciones:
+- **Node Discovery**: Health checks cada 30s a los 3 Replits (latencia, status)
+- **API Proxy**: `/proxy` enruta peticiones a cualquier Replit
+- **Broadcast**: `/broadcast` envia eventos a todos los nodos
+- **SQLite Master**: `orchestrator.db` con tablas `nodes` y `events`
+
+Dependencias: `fastapi uvicorn aiohttp`
+
+Variables de entorno:
+| Variable | Default | Descripcion |
+|---|---|---|
+| `NODE_MOTOR_URL` | https://tu-motor.replit.app | URL Replit Motor de Cierre |
+| `NODE_MOTOR_KEY` | | API key del Motor |
+| `NODE_FRONTEND_URL` | https://tu-frontend.replit.app | URL Replit Frontend |
+| `NODE_INTEL_URL` | | URL Replit Threat Intel |
+| `NODE_INTEL_KEY` | | API key Threat Intel |
+
+Endpoints del Orchestrator:
+| Endpoint | Metodo | Descripcion |
+|---|---|---|
+| `/health` | GET | Status del maestro + nodos monitoreados |
+| `/nodes` | GET | Lista de nodos con status y latencia |
+| `/proxy` | POST | Enruta peticion a un Replit especifico |
+| `/broadcast` | POST | Envia evento a nodos suscritos |
+| `/events` | GET | Log de eventos broadcasted |
+
+### gateway/satellite.py - Nodo Satelite (para cada Replit)
+
+Script ligero que corre en cada Replit. Funciones:
+- **Health**: Responde `/health` con node_id, version, orchestrator URL
+- **Event receiver**: `/webhook/event` recibe eventos del orchestrator
+- **Auto-register**: `/register` se registra con el orchestrator automaticamente
+
+Variables de entorno (archivo `.env` en cada Replit):
+```bash
+ORCHESTRATOR_URL=https://tu-tunnel.trycloudflare.com
+ORCHESTRATOR_KEY=tu-clave-maestra-federada
+NODE_ID=motor_01          # motor_01 | frontend_01 | intel_01
+REPLIT_URL=https://tu-replit.replit.app
+```
+
+### gateway/start_federation.sh - Launcher
+
+Script unico que arranca toda la federacion:
+1. Verifica dependencias (python, cloudflared)
+2. Exporta variables de entorno
+3. Inicia Orchestrator (:9000)
+4. Inicia tunel Cloudflare
+5. Inicia Dashboard Server (:8001)
+6. Trap de limpieza con Ctrl+C
+
+## Comunicacion entre nodos
+
+### Proxy - hablar con un Replit especifico
+
+Desde Termux, para enviar una peticion al Motor de Cierre en Replit:
+
+```bash
+curl -X POST http://localhost:9000/proxy \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_node": "replit_motor",
+    "endpoint": "/webhook/email-reply",
+    "method": "POST",
+    "payload": {
+      "lead_email": "test@test.com",
+      "subject": "Hola",
+      "body_text": "Quiero comprar"
+    }
+  }'
+```
+
+### Broadcast - enviar evento a todos los nodos
+
+```bash
+curl -X POST http://localhost:9000/broadcast \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_type": "scan_complete",
+    "payload": {"hosts_found": 12, "vulns": 3},
+    "target_nodes": ["replit_frontend", "replit_motor"]
+  }'
+```
+
+### Eventos soportados
+
+| Evento | Descripcion | Accion en satelite |
+|---|---|---|
+| `scan_complete` | Escaneo terminado | Notificar al frontend |
+| `payment_received` | Pago confirmado | Actualizar metricas |
+| `lead_created` | Nuevo lead | Sincronizar con motor |
+| `threat_detected` | Amenaza detectada | Alertar a todos los nodos |
+
+## Arranque en 3 comandos
+
+```bash
+# 1. En Termux (una sola vez)
+pkg install cloudflared
+chmod +x start_federation.sh
+
+# 2. Configura tus URLs de Replit como variables de entorno
+
+# 3. Arranca todo
+cd gateway && ./start_federation.sh
+```
+
+## Problemas conocidos y soluciones
+
+| Problema | Solucion |
+|---|---|
+| Replit se duerme | Usar UptimeRobot o cron-job.org para hacer ping cada 5 min a /health |
+| URL del tunel cambia | Usar `cloudflared tunnel create` con cuenta fija para URL permanente |
+| Termux mata procesos en background | Usar `termux-wake-lock` y `nohup` |
+| Latencia entre nodos | El orchestrator cachea resultados 60s para reducir pings |
+
+## Estructura de archivos
+
+```
+gateway/
++-- orchestrator.py            # Nodo Maestro (FastAPI :9000)
++-- satellite.py               # Nodo Satelite (para Replits)
++-- start_federation.sh        # Launcher completo
++-- start_orchestrator.sh      # Launcher solo orchestrator (legacy)
++-- node_client.py            # Cliente legacy (mesh anterior)
++-- node_config.example.json   # Template de config (legacy)
++-- mesh_server.py            # Gateway Mesh anterior (legacy)
++-- README.md                 # Documentacion del gateway
+```
+
+---
+
+*Ultima actualizacion: 2026-08-14 02:31 UTC - Federacion Distribuida v4.0*
