@@ -17,11 +17,16 @@ echo "+-------------------------------------------------+"
 echo ""
 
 # -- 1. Matar procesos anteriores --
+# pkill/fuser NO son fiables en Termux (fuser normalmente ni esta instalado,
+# y procesos de sesiones anteriores de Termux pueden sobrevivir a un Ctrl+C
+# si no dispararon el trap). kill_port.py lee /proc directo y SI encuentra
+# y mata lo que este realmente escuchando en el puerto, venga de donde venga.
 pkill -f "dashboard_server.py" 2>/dev/null || true
 pkill -f "vite" 2>/dev/null || true
 if command -v fuser >/dev/null 2>&1; then
   fuser -k ${PORT}/tcp 2>/dev/null || true
 fi
+python3 "$SCRIPT_DIR/redteam/scripts/kill_port.py" "$PORT" 2>/dev/null || true
 sleep 2
 
 # -- 2. Deps Python --
@@ -105,6 +110,11 @@ trap cleanup SIGTERM SIGINT
 while true; do
   if ! kill -0 $BACKEND_PID 2>/dev/null; then
     echo "[watch] Backend caido, reiniciando..."
+    # Liberar el puerto ANTES de reintentar -- si el proceso muerto dejo el
+    # socket colgado, sin esto el reintento falla instantaneo con
+    # 'address already in use' y entra en loop infinito.
+    python3 "$SCRIPT_DIR/redteam/scripts/kill_port.py" "$PORT" 2>/dev/null || true
+    sleep 1
     cd "$SCRIPT_DIR/redteam/scripts"
     python3 dashboard_server.py >> "$LOG_DIR/backend.log" 2>&1 &
     BACKEND_PID=$!
