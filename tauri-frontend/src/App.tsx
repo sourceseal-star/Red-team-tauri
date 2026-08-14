@@ -4,7 +4,6 @@ import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { BottomStatus } from './components/BottomStatus'
 import { BiometricLogin, ServiceControlPanel, MotorMetricsDashboard } from './components'
-import { BiometricLogin, ServiceControlPanel, MotorMetricsDashboard } from './components'
 import Dashboard from './routes/Dashboard'
 import ConfigEditor from './routes/ConfigEditor'
 import Reports from './routes/Reports'
@@ -42,7 +41,6 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/services" element={<ServiceControlPanel />} />
               <Route path="/motor-metrics" element={<MotorMetricsDashboard />} />
-              <Route path="/services" element={<ServiceControlPanel />} />
               <Route path="/motor-metrics" element={<MotorMetricsDashboard />} />
               <Route path="/config" element={<ConfigEditor />} />
               <Route path="/reports" element={<Reports />} />
