@@ -1,0 +1,19 @@
+{
+  "node_id": "nodo-a-oficina",
+  "name": "Termux Oficina",
+  "type": "termux",
+  "location": "oficina",
+  "gateway_url": "ws://localhost:8080/ws",
+  "capabilities": [
+    "nmap",
+    "airodump-ng",
+    "ffmpeg",
+    "tcpdump",
+    "network_scan"
+  ],
+  "auto_register": true,
+  "heartbeat_interval_sec": 30,
+  "env": {
+    "API_KEY": "tu-clave-secreta-123"
+  }
+}
