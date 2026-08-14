@@ -155,7 +155,7 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 # Endpoints PÚBLICOS (no requieren API key):
 #   /api/health, /health, /healthz  → health checks
 #   /canary/callback               → intruso phone-home (debe ser accesible)
-PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback"}
+PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric"}
 
 # ── CORS lockdown ───────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
@@ -1409,6 +1409,27 @@ async def auth_logout():
 async def network_stats():
     return {"hosts": 0, "cameras": 0, "routers": 0, "alerts": 0,
             "backend": "unified", "version": "3.0-unified", "ts": int(time.time())}
+
+# == AUTENTICACION DEL DASHBOARD (email/password + biometria mock) ==========
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@redteam.local").strip()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123").strip()
+
+@app.post("/api/auth/login")
+async def auth_login(body: dict = Body(...)):
+    email = (body.get("email") or "").strip()
+    password = body.get("password") or ""
+    if email != ADMIN_EMAIL or password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Credenciales invalidas")
+    return {"token": API_KEY or "local-dev-token", "email": email}
+
+@app.post("/api/auth/biometric")
+async def auth_biometric(body: dict = Body(...)):
+    # NOTA: mock — no es WebAuthn real todavia (requiere HTTPS + hardware).
+    # Solo verifica que el email coincida con el admin configurado.
+    email = (body.get("email") or "").strip()
+    if email != ADMIN_EMAIL:
+        raise HTTPException(status_code=401, detail="Dispositivo no registrado para biometria")
+    return {"token": API_KEY or "local-dev-token", "email": email}
 
 @app.get("/api/health")
 @app.get("/health")
