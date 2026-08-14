@@ -32,7 +32,7 @@ export default function MotorMetricsDashboard() {
     setLoading(true);
     try {
       const token = localStorage.getItem('api_token');
-      const res = await fetch(`/motor-api/metrics/dashboard?days=${period}', {
+      const res = await fetch(`/motor-api/metrics/dashboard?days=${period}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {

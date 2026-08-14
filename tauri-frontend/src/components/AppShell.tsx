@@ -2,7 +2,7 @@ import React, { useState, useEffect, createContext, useContext } from 'react';
 import {
   LayoutDashboard, Shield, Camera, Radio, Globe, Wifi, Activity,
   Terminal, Settings, Bell, Search, Menu, X, ChevronRight,
-  Zap, Lock, Eye, Fingerprint, BarChart3, Bug, FileText,
+  Zap, Lock, Eye, Fingerprint, BarChart3, Bug, FileText, Network,
   Sun, Moon, LogOut
 } from 'lucide-react';
 
@@ -39,6 +39,7 @@ const MODULES = [
   { id: 'services', label: 'Servicios', icon: Activity, color: 'text-blue-400', badge: null },
   { id: 'terminal', label: 'Terminal', icon: Terminal, color: 'text-slate-400', badge: null },
     { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
+  { id: 'topology', label: 'Topología', icon: Network, color: 'text-cyan-400', badge: null },
   { id: 'settings', label: 'Config', icon: Settings, color: 'text-slate-500', badge: null },
 ];
 

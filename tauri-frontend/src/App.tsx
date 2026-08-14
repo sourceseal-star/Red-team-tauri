@@ -15,6 +15,7 @@ import ControlTower from './components/ControlTower';
 import ServiceControlPanel from './components/ServiceControlPanel';
 import ConfigEditor from './routes/ConfigEditor';
 import { MurcielagoPanel } from './components/MurcielagoPanel';
+import NetworkTopology from './components/NetworkTopology';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -45,6 +46,7 @@ function App() {
         </div>
       )}
       {module === 'tower' && <ControlTower />}
+      {module === 'topology' && <NetworkTopology />}
       {module === 'settings' && <ConfigEditor />}
     </AppShell>
   );
