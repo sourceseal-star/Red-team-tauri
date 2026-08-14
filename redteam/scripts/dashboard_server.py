@@ -1520,20 +1520,6 @@ async def osint_extract(request: Request):
         return {"error": str(e)}
 # == END CORSET + TRIAGE + OSINT ENDPOINTS ================================
 
-if __name__ == "__main__":
-    import uvicorn
-    host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "8001"))
-    print("═" * 60, flush=True)
-    print(f"  RED-TEAM-TAURI · Unified Dashboard Backend v3.0", flush=True)
-    print(f"  → Escuchando en  http://{host}:{port}", flush=True)
-    print(f"  → Frontend dist/ {'OK' if DIST.exists() else 'FALTA'}: {DIST}", flush=True)
-    print(f"  → WebSocket:     ws://{host}:{port}/ws", flush=True)
-    print(f"  → psutil: {'OK' if HAS_PSUTIL else 'NOT AVAILABLE'}", flush=True)
-    print(f"  → geo_intel: {'OK' if _GEO_INTEL_OK else 'NOT AVAILABLE'}", flush=True)
-    print(f"  → Sin mocks. Sin dummy data. Solo datos reales.", flush=True)
-    print("═" * 60, flush=True)
-    uvicorn.run(app, host=host, port=port, log_level="info")
 
 # ============================================================
 # ENDPOINTS — VIDEO EN VIVO (MJPEG + RTSP → HLS)
@@ -3517,3 +3503,21 @@ async def bm_chaos_status():
     ]}
 
 # == END BLACK MIRROR ================================================
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  MAIN — debe ir al FINAL para que todos los @app endpoints se registren
+# ═════════════════════════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    import uvicorn
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8001"))
+    print("═" * 60, flush=True)
+    print(f"  RED-TEAM-TAURI · Unified Dashboard Backend v3.0", flush=True)
+    print(f"  → Escuchando en  http://{host}:{port}", flush=True)
+    print(f"  → Frontend dist/ {'OK' if DIST.exists() else 'FALTA'}: {DIST}", flush=True)
+    print(f"  → WebSocket:     ws://{host}:{port}/ws", flush=True)
+    print(f"  → psutil: {'OK' if HAS_PSUTIL else 'NOT AVAILABLE'}", flush=True)
+    print(f"  → geo_intel: {'OK' if _GEO_INTEL_OK else 'NOT AVAILABLE'}", flush=True)
+    print(f"  → Sin mocks. Sin dummy data. Solo datos reales.", flush=True)
+    print("═" * 60, flush=True)
+    uvicorn.run(app, host=host, port=port, log_level="info")
