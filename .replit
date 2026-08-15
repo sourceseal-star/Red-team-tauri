@@ -17,13 +17,12 @@ localPort = 5001
 externalPort = 3001
 
 [[ports]]
-localPort = 8001
-externalPort = 80
-
-
-[[ports]]
 localPort = 8000
 externalPort = 8080
+
+[[ports]]
+localPort = 8001
+externalPort = 80
 
 [workflows]
 runButton = "Project"
@@ -45,26 +44,13 @@ args = "SourceSeal Dashboard"
 name = "SourceSeal Dashboard"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "console"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "bash replit_start.sh"
 waitForPort = 8001
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-
-[[workflows.workflow]]
-name = "Motor de Cierre"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "bash motor_cierre/start.sh"
-waitForPort = 8000
-
-[workflows.workflow.metadata]
-outputType = "console"
 
 [rules]
 

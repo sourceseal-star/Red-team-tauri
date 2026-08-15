@@ -1,6 +1,8 @@
-# SOURCESEAL RedTeam — Centro de Control
+# SourceSeal Console Pro — Centro de Control
 
-Dashboard de auditoría y monitoreo de seguridad con tres módulos integrados.
+Dashboard de operaciones de seguridad ofensiva y defensiva. El flujo activo en Replit
+es el dashboard unificado de `Red-team-tauri`; el APK y el Motor de Cierre quedan
+fuera de este flujo por ahora.
 
 ## Cómo ejecutar
 
@@ -8,89 +10,41 @@ Dashboard de auditoría y monitoreo de seguridad con tres módulos integrados.
 bash replit_start.sh
 ```
 
-El workflow **Start application** ya está configurado y arranca automáticamente.  
-Servidor disponible en el puerto **5000**.
+El workflow **SourceSeal Dashboard** arranca automáticamente el backend y sirve el
+frontend compilado en el puerto **8001**.
 
-## Módulos
+Health check:
 
-| Módulo | Descripción |
-|---|---|
-| 🛡 Red Team Agent | Ejecuta escenarios de auditoría contra APK/backend y genera reportes JSON |
-| 🛰 Site Monitor | Vigila URLs en tiempo real: latencia, TLS, headers, diff de HTML |
-| ✏ Editor Frontend | Descarga y edita el frontend de un Repl; genera patches `.bundle.txt` |
+```bash
+curl http://localhost:8001/api/health
+```
 
 ## Estructura principal
 
 ```
 redteam/
-├── scripts/dashboard_server.py   # Servidor principal (HTTP + API)
-├── dashboard/                    # PWA frontend (HTML/CSS/JS)
-├── reports/                      # Reportes JSON generados
-├── runner/orchestrator.py        # Orquestador de escenarios
-├── scenarios/                    # 13 escenarios de pentest
-├── xdr/                          # Correlación + Kill Chain + Attack Surface
-├── rasp/                         # RASP Android/iOS + Attestation server
-├── soar/                         # Motor SOAR + playbooks
-├── tip/                          # STIX 2.1 + TAXII 2.1
-└── ...
+└── scripts/dashboard_server.py   # Backend unificado FastAPI :8001
+tauri-frontend/
+├── src/                          # React + TypeScript
+└── dist/                         # Frontend generado para el backend
+backend/modules/                  # Reconocimiento real complementario
 ```
 
-## Variables de entorno (opcionales)
+## Variables de entorno
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `PORT` | `5000` | Puerto HTTP del dashboard |
-| `SOURCESEAL_API` | `https://api.sourcesealcorp.local` | Backend auditado |
-| `SOURCESEAL_KEY` | — | HMAC key para escenarios |
-| `RECOVERY_PAGE` | — | URL de página de recuperación |
-| `SITE_MONITOR_URL` | — | Auto-inicia el monitor al arrancar |
-| `SITE_MONITOR_INTERVAL` | `15` | Segundos entre probes |
-| `REPLIT_TOKEN` | — | Habilita publicación directa en Replit |
+| `PORT` | `8001` | Puerto HTTP del dashboard |
+| `REDTEAM_API_KEY` | local-dev-token | Clave para endpoints protegidos |
+| `CORSET_SCOPE_B64` | — | Alcance autorizado de escaneo; recomendado |
+| `SHODAN_API_KEY` | — | Intel Shodan, si se desea habilitar |
 
-## Estado del proyecto
+El backend informa explícitamente cuando faltan servicios o claves opcionales; no
+rellena resultados con datos simulados. Para operar escaneos reales, define un
+alcance autorizado mediante `CORSET_SCOPE_B64` y configura únicamente las claves
+de servicios externos que vayas a utilizar.
 
-Ver `CONTINUAR_AQUI.md` para el estado detallado de cada módulo y los próximos pasos pendientes.
-
-## Tauri Frontend (web preview)
-
-El frontend de Tauri corre como app web con Vite:
-```bash
-cd tauri-frontend && npm run dev   # puerto 5000
-```
-Workflow: **Start application** — ya configurado.
-
-## Flujo móvil — APK automático para Android
-
-### Cómo obtener el APK en tu Moto Edge 50 Fusion
-
-1. Haz push del código a GitHub (desde Replit, celular, o cualquier cliente git)
-2. GitHub Actions compila el APK automáticamente (`.github/workflows/build-android.yml`)
-3. Ve a **GitHub → tu repo → Releases** — aparece el APK listo
-4. Descárgalo en el celular e instálalo (activa "fuentes desconocidas" si lo pide)
-
-### Para lanzar el build manualmente desde el celular
-GitHub → tu repo → **Actions** → "Build Android APK" → **Run workflow**
-
-### Estructura Tauri
-```
-src-tauri/
-├── Cargo.toml              # dependencias Rust (Tauri 2.0)
-├── build.rs                # script de build requerido
-├── tauri.conf.json         # config principal de Tauri
-├── capabilities/default.json  # permisos Tauri 2.0
-├── icons/                  # íconos de la app
-└── src/
-    ├── main.rs             # entry point Rust
-    ├── commands.rs         # comandos invocables desde el frontend
-    └── state.rs            # estado compartido (servicios activos)
-
-tauri-frontend/             # Frontend React/Vite
-├── src/
-│   ├── mocks/tauri.ts      # mock del API Tauri para preview web
-│   ├── routes/             # Dashboard, Reports, SOAR, TIP, RASP, Terminal...
-│   └── components/         # TopBar, Sidebar, ServiceCard, UI primitives
-└── vite.config.ts
-```
+El flujo de APK no forma parte de la puesta en marcha actual.
 
 ## User preferences
 
