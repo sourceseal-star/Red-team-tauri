@@ -7,7 +7,6 @@ import TrafficMonitor from './TrafficMonitor';
 import OSINTPanel from './OSINTPanel';
 import WiFiPanel from './WiFiPanel';
 import BlackMirrorPanel from './BlackMirrorPanel';
-import MotorMetricsDashboard from './MotorMetricsDashboard';
 import ServiceControlPanel from './ServiceControlPanel';
 
 // Paneles disponibles para el War Room
@@ -19,7 +18,6 @@ const PANELS = [
   { id: 'osint', label: 'OSINT', component: OSINTPanel, default: false, span: 'lg:col-span-1' },
   { id: 'wifi', label: 'WiFi', component: WiFiPanel, default: false, span: 'lg:col-span-1' },
   { id: 'mirror', label: 'Black Mirror', component: BlackMirrorPanel, default: false, span: 'lg:col-span-1' },
-  { id: 'motor', label: 'Motor de Cierre', component: MotorMetricsDashboard, default: true, span: 'lg:col-span-2' },
   { id: 'services', label: 'Servicios', component: ServiceControlPanel, default: false, span: 'lg:col-span-2' },
 ];
 
