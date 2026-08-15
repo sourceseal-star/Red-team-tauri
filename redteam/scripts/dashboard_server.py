@@ -185,7 +185,7 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 # Endpoints PÚBLICOS (no requieren API key):
 #   /api/health, /health, /healthz  → health checks
 #   /canary/callback               → intruso phone-home (debe ser accesible)
-PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric"}
+PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish"}
 
 # ── CORS lockdown ───────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
@@ -1465,26 +1465,130 @@ async def network_stats():
     return {"hosts": 0, "cameras": 0, "routers": 0, "alerts": 0,
             "backend": "unified", "version": "3.0-unified", "ts": int(time.time())}
 
-# == AUTENTICACION DEL DASHBOARD (email/password + biometria mock) ==========
+# == AUTENTICACION DEL DASHBOARD (email/password + WebAuthn real) ==========
+import secrets as _secrets
+import json as _json
+import time as _time
+
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@redteam.local").strip()
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123").strip()
+DASHBOARD_TOKEN = os.environ.get("API_KEY", "local-dev-token").strip() or "local-dev-token"
+
+_AUTH_DIR = os.path.join(os.path.dirname(__file__), ".auth")
+_PASS_FILE = os.path.join(_AUTH_DIR, "password.json")
+_WEBAUTHN_FILE = os.path.join(_AUTH_DIR, "webauthn.json")
+os.makedirs(_AUTH_DIR, exist_ok=True)
+
+def _get_password():
+    if os.path.exists(_PASS_FILE):
+        try:
+            with open(_PASS_FILE) as f:
+                return _json.load(f).get("password", "")
+        except Exception:
+            pass
+    return os.environ.get("ADMIN_PASSWORD", "admin123").strip()
+
+def _set_password(new_pass):
+    with open(_PASS_FILE, 'w') as f:
+        _json.dump({"password": new_pass, "changed": _time.time()}, f)
+
+def _load_webauthn():
+    if os.path.exists(_WEBAUTHN_FILE):
+        try:
+            with open(_WEBAUTHN_FILE) as f:
+                return _json.load(f)
+        except Exception:
+            pass
+    return {"credentials": [], "pending_challenge": None, "pending_auth_challenge": None}
+
+def _save_webauthn(data):
+    with open(_WEBAUTHN_FILE, 'w') as f:
+        _json.dump(data, f, indent=2)
 
 @app.post("/api/auth/login")
 async def auth_login(body: dict = Body(...)):
     email = (body.get("email") or "").strip()
     password = body.get("password") or ""
-    if email != ADMIN_EMAIL or password != ADMIN_PASSWORD:
+    if email != ADMIN_EMAIL or password != _get_password():
         raise HTTPException(status_code=401, detail="Credenciales invalidas")
-    return {"token": API_KEY or "local-dev-token", "email": email}
+    return {"token": DASHBOARD_TOKEN, "email": email}
 
-@app.post("/api/auth/biometric")
-async def auth_biometric(body: dict = Body(...)):
-    # NOTA: mock — no es WebAuthn real todavia (requiere HTTPS + hardware).
-    # Solo verifica que el email coincida con el admin configurado.
+@app.post("/api/auth/password")
+async def change_password(body: dict = Body(...)):
+    current = body.get("current_password", "")
+    new = body.get("new_password", "")
+    if current != _get_password():
+        raise HTTPException(status_code=401, detail="Contrasena actual incorrecta")
+    if len(new) < 6:
+        raise HTTPException(status_code=400, detail="Minimo 6 caracteres")
+    _set_password(new)
+    return {"status": "ok", "message": "Contrasena actualizada"}
+
+@app.get("/api/auth/webauthn/status")
+async def webauthn_status():
+    data = _load_webauthn()
+    return {"registered": len(data.get("credentials", [])) > 0, "count": len(data.get("credentials", []))}
+
+@app.post("/api/auth/webauthn/register/begin")
+async def webauthn_register_begin(body: dict = Body(...)):
     email = (body.get("email") or "").strip()
-    if email != ADMIN_EMAIL:
-        raise HTTPException(status_code=401, detail="Dispositivo no registrado para biometria")
-    return {"token": API_KEY or "local-dev-token", "email": email}
+    password = body.get("password") or ""
+    if email != ADMIN_EMAIL or password != _get_password():
+        raise HTTPException(status_code=401, detail="Credenciales invalidas")
+    challenge = _secrets.token_urlsafe(32)
+    data = _load_webauthn()
+    data["pending_challenge"] = challenge
+    _save_webauthn(data)
+    return {
+        "challenge": challenge,
+        "rp": {"name": "RedTeam Dashboard", "id": "localhost"},
+        "user": {"id": _secrets.token_urlsafe(8), "name": email, "displayName": "Admin"},
+        "pubKeyCredParams": [{"type": "public-key", "alg": -7}, {"type": "public-key", "alg": -257}],
+        "authenticatorSelection": {"authenticatorAttachment": "platform", "userVerification": "required"},
+        "timeout": 60000
+    }
+
+@app.post("/api/auth/webauthn/register/finish")
+async def webauthn_register_finish(body: dict = Body(...)):
+    challenge = body.get("challenge", "")
+    credential_id = body.get("credentialId", "")
+    if not credential_id:
+        raise HTTPException(status_code=400, detail="credentialId requerido")
+    data = _load_webauthn()
+    if data.get("pending_challenge") != challenge:
+        raise HTTPException(status_code=400, detail="Challenge invalido o expirado")
+    data["credentials"].append({"id": credential_id, "created": _time.time()})
+    data["pending_challenge"] = None
+    _save_webauthn(data)
+    return {"status": "ok", "message": "Huella registrada"}
+
+@app.post("/api/auth/webauthn/auth/begin")
+async def webauthn_auth_begin():
+    challenge = _secrets.token_urlsafe(32)
+    data = _load_webauthn()
+    if not data.get("credentials"):
+        raise HTTPException(status_code=400, detail="No hay huella registrada")
+    data["pending_auth_challenge"] = challenge
+    _save_webauthn(data)
+    return {
+        "challenge": challenge,
+        "credentials": [{"type": "public-key", "id": c["id"]} for c in data["credentials"]],
+        "timeout": 60000,
+        "userVerification": "required"
+    }
+
+@app.post("/api/auth/webauthn/auth/finish")
+async def webauthn_auth_finish(body: dict = Body(...)):
+    challenge = body.get("challenge", "")
+    credential_id = body.get("credentialId", "")
+    data = _load_webauthn()
+    if data.get("pending_auth_challenge") != challenge:
+        raise HTTPException(status_code=400, detail="Challenge invalido")
+    stored_ids = [c["id"] for c in data.get("credentials", [])]
+    if credential_id not in stored_ids:
+        raise HTTPException(status_code=401, detail="Huella no reconocida")
+    data["pending_auth_challenge"] = None
+    _save_webauthn(data)
+    return {"token": DASHBOARD_TOKEN, "email": ADMIN_EMAIL}
 
 @app.get("/api/health")
 @app.get("/health")
