@@ -152,8 +152,6 @@ try:
     # su propio default distinto ("dev-key-cambiar-en-produccion") -> con
     # esto ambos aceptan el MISMO token emitido por /api/auth/login.
     _motor_mod.settings.API_KEY = API_KEY or "local-dev-token"
-    _MOTOR_CIERRE_OK = True
-    print("[MOTOR-CIERRE] Módulo cargado: leads + checkout + metricas -> montado en /motor")
 except Exception as _mc_err:
     _MOTOR_CIERRE_OK = False
     print(f"[WARN] motor_cierre import falló: {_mc_err}", flush=True)
