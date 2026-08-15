@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DollarSign, Users, ShoppingCart, Target, ArrowUpRight, ArrowDownRight, Send, CreditCard } from 'lucide-react';
 
-const API_KEY = 'tu-clave-secreta-123';
+const API_KEY = localStorage.getItem('api_token') || '';
 const API_BASE = '/motor-api';
 
 export default function MotorPanel() {
