@@ -170,14 +170,6 @@ if _ENHANCED_RECON_OK:
     app.include_router(enhanced_recon_router)
     print("[ENHANCED-RECON] Router montado en /api/enhanced/*")
 
-# ── Mount Motor de Cierre como sub-app en /motor ────────────────────────────
-if _MOTOR_CIERRE_OK:
-    app.mount("/motor", _motor_mod.app)
-    print("[MOTOR-CIERRE] Sub-app montada en /motor/*")
-# ═════════════════════════════════════════════════════════════════════════════
-#  BLOQUE DE SEGURIDAD — Hardening completo
-# ═════════════════════════════════════════════════════════════════════════════
-
 # ── API Key (obligatoria) ────────────────────────────────────────────────────
 # (movido arriba, antes del import del motor_cierre)
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
