@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Server, Globe, Cloud, Cpu, HardDrive, Wifi, RefreshCw, Activity, Zap, Database } from 'lucide-react';
+import { Server, Globe, Cloud, Cpu, HardDrive, Wifi, RefreshCw, Activity, Zap, Database, AlertTriangle, Radio } from 'lucide-react';
 
-const ORCHESTRATOR_URL = 'http://localhost:8080';
+// URL del orquestador de federación — configurable via env o localhost:8080
+const ORCHESTRATOR_URL = (import.meta as any).env?.VITE_ORCHESTRATOR_URL || 'http://localhost:8080';
 
 export default function ControlTower() {
   const [nodes, setNodes] = useState<any[]>([]);
   const [health, setHealth] = useState<any>(null);
   const [syncLog, setSyncLog] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [offline, setOffline] = useState(false);
 
   const loadAll = async () => {
     try {
@@ -25,8 +27,9 @@ export default function ControlTower() {
         const lg = await logRes.json();
         setSyncLog(lg.logs || []);
       }
+      setOffline(false);
     } catch (e) {
-      console.error('Orchestrator offline:', e);
+      setOffline(true);
     } finally {
       setLoading(false);
     }
@@ -75,6 +78,52 @@ export default function ControlTower() {
     if (nodeId === 'threat_intel') return <Activity size={14} className="text-rose-400" />;
     return <Server size={14} className="text-slate-400" />;
   };
+
+  // Estado: Orquestador offline
+  if (offline && !loading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Cloud size={18} className="text-cyan-400" />
+              Control Tower
+            </h2>
+            <p className="text-xs text-slate-500">Federación de nodos</p>
+          </div>
+          <button onClick={loadAll} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400">
+            <RefreshCw size={14} />
+          </button>
+        </div>
+
+        <div className="bg-slate-900/60 border border-amber-800/40 rounded-xl p-6 text-center">
+          <AlertTriangle size={32} className="text-amber-500/60 mx-auto mb-3" />
+          <h3 className="text-sm font-bold text-amber-400 mb-1">Orquestador no detectado</h3>
+          <p className="text-xs text-slate-500 mb-4">
+            El orquestador de federación no está corriendo en <span className="font-mono text-slate-300">{ORCHESTRATOR_URL}</span>
+          </p>
+
+          <div className="bg-slate-950/50 border border-slate-800 rounded-lg p-3 text-left max-w-md mx-auto">
+            <p className="text-[10px] text-slate-400 mb-2 font-bold uppercase">Para iniciarlo en Termux:</p>
+            <pre className="text-[10px] text-slate-300 font-mono whitespace-pre-wrap">
+{`# El orquestador es un proceso separado
+# que coordina los nodos Replit
+
+cd ~/Red-team-tauri
+python3 orchestrator.py &
+
+# O si tienes el script de federación:
+bash start_orchestrator.sh`}
+            </pre>
+          </div>
+
+          <p className="text-[10px] text-slate-600 mt-4">
+            Mientras tanto, todos los módulos del dashboard funcionan localmente sin federación.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
