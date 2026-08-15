@@ -72,7 +72,6 @@ mdsum() {
 # ── 1. GUARDAR HASHES DE DEPS ANTES DEL PULL ──────────────────────
 DASHBOARD_REQ_BEFORE=$(mdsum redteam/scripts/requirements.txt)
 BACKEND_REQ_BEFORE=$(mdsum backend/requirements.txt)
-MOTOR_REQ_BEFORE=$(mdsum motor_cierre/backend/requirements.txt)
 FRONTEND_PKG_BEFORE=$(mdsum tauri-frontend/package.json)
 TERMUX_SCRIPT_BEFORE=$(mdsum start-termux.sh)
 
@@ -110,7 +109,6 @@ fi
 # ── 4. DETECTAR SI LAS DEPS CAMBIARON ─────────────────────────────
 DASHBOARD_REQ_AFTER=$(mdsum redteam/scripts/requirements.txt)
 BACKEND_REQ_AFTER=$(mdsum backend/requirements.txt)
-MOTOR_REQ_AFTER=$(mdsum motor_cierre/backend/requirements.txt)
 FRONTEND_PKG_AFTER=$(mdsum tauri-frontend/package.json)
 TERMUX_SCRIPT_AFTER=$(mdsum start-termux.sh)
 
@@ -125,9 +123,7 @@ if [ "$DASHBOARD_REQ_BEFORE" != "$DASHBOARD_REQ_AFTER" ] || [ "$FORCE_DEPS" = tr
     DEPS_CHANGED=true
 fi
 
-if [ "$MOTOR_REQ_BEFORE" != "$MOTOR_REQ_AFTER" ] || [ "$FORCE_DEPS" = true ]; then
     echo ""
-    echo -e "${Y}→ Deps del Motor de Cierre cambiaron. Reinstalando...${N}"
     pip install -q fastapi uvicorn "pydantic[email]" slowapi tenacity 2>/dev/null || true
     DEPS_CHANGED=true
 fi
@@ -171,13 +167,11 @@ fi
 # RESTART_NEEDED (antes solo se reiniciaba lo que ya estaba corriendo,
 # por eso update.sh no levantaba nada en una sesión nueva de Termux).
 DASHBOARD_NEEDS_ACTION=false
-MOTOR_NEEDS_ACTION=false
 VITE_NEEDS_ACTION=false
 
 [ -z "$DASHBOARD_PID" ] && DASHBOARD_NEEDS_ACTION=true
 [ "$RESTART_NEEDED" = true ] && [ -n "$DASHBOARD_PID" ] && DASHBOARD_NEEDS_ACTION=true
 
-# Motor de Cierre va dentro de dashboard_server.py, no necesita proceso separado
 
 [ -z "$VITE_PID" ] && VITE_NEEDS_ACTION=true
 [ "$FULL_RESTART" = true ] && [ -n "$VITE_PID" ] && VITE_NEEDS_ACTION=true
@@ -203,8 +197,6 @@ if [ "$DASHBOARD_NEEDS_ACTION" = true ] || [ "$VITE_NEEDS_ACTION" = true ]; then
         cd "$ROOT"
     fi
 
-    # Motor de Cierre — ya va dentro de dashboard_server.py como sub-app
-    # en /motor/*. No se arranca como proceso separado.
 
     # Vite frontend (5173)
     if [ "$VITE_NEEDS_ACTION" = true ]; then
@@ -253,7 +245,6 @@ check_health() {
 }
 
 check_health "Dashboard :8001" "http://127.0.0.1:8001/api/health" "200"
-check_health "Motor Cierre :8000" "http://127.0.0.1:8000/health" "200"
 check_health "Vite :5173" "http://127.0.0.1:5173" "200"
 
 # ── 8. RESUMEN ───────────────────────────────────────────────────
@@ -268,12 +259,10 @@ echo -e "${B}║  Build:  $([ "$BUILD_NEEDED" = true ] && echo "ejecutado" || ec
 echo -e "${B}╚══════════════════════════════════════════════╝${N}"
 echo ""
 echo -e "  Logs: tail -f $LOG_DIR/backend.log"
-echo -e "        tail -f $LOG_DIR/motor_cierre.log"
 echo -e "        tail -f $LOG_DIR/frontend.log"
 echo ""
 echo -e "  Frontend: http://localhost:5173"
 echo -e "  Backend:  http://localhost:8001"
-echo -e "  Motor:    http://localhost:8000"
 echo ""
 
 # ═════════════════════════════════════════════════════════════════════════════
