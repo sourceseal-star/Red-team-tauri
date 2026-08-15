@@ -5,7 +5,7 @@ import React, { useState, useEffect, useRef } from 'react';
 // (estado del protocolo nunca carga, envios fallan en silencio).
 const authHeaders = (): Record<string, string> => {
   const token = localStorage.getItem('api_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return token ? { 'X-API-Key': token } : {};
 };
 
 interface MurcielagoStatus {
