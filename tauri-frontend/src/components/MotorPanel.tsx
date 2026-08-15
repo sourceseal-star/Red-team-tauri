@@ -10,7 +10,7 @@ export default function MotorPanel() {
   const [period, setPeriod] = useState(30);
   const [checkoutForm, setCheckoutForm] = useState({ email: '', price: 499, service: 'Auditoría Operativa Express' });
 
-  const headers = { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' };
+  const headers = { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' };
 
   const loadMetrics = async () => {
     try {
