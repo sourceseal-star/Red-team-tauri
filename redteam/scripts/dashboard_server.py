@@ -299,7 +299,14 @@ async def security_middleware(request: Request, call_next):
         if key != API_KEY:
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
-    return await call_next(request)
+    # Timeout global: ningún endpoint puede bloquear el event loop más de 30s
+    try:
+        return await asyncio.wait_for(call_next(request), timeout=20.0)
+    except asyncio.TimeoutError:
+        return JSONResponse(
+            {"error": "Request timeout", "detail": "La operación tardó más de 30 segundos. Intenta con un rango más pequeño."},
+            status_code=504
+        )
 
 # ── WebSocket hub ────────────────────────────────────────────────────────────
 ws_clients: set[WebSocket] = set()
@@ -818,13 +825,26 @@ RADIO_PORTS = [(8000, "Icecast/ShoutCast"), (8001, "ShoutCast-alt"), (8080, "HTT
 async def scan_radio():
     subnet = subnet_from_iface()
     base = subnet.rsplit(".", 1)[0] + "."
-    results = []
-    for i in range(1, 255):
-        for port, label in RADIO_PORTS:
-            banner = await tcp_check(f"{base}{i}", port, timeout=0.5)
+    # Paralelizar: lanzar todos los tcp_check a la vez con un semaphore
+    # para no saturar el event loop (254 IPs × 10 puertos = 2540 checks)
+    sem = asyncio.Semaphore(200)
+
+    async def check_one(ip, port, label):
+        async with sem:
+            banner = await tcp_check(ip, port, timeout=0.3)
             if banner is not None:
-                results.append({"ip": f"{base}{i}", "port": port, "protocol": label,
-                               "banner": banner[:80], "type": "radio"})
+                return {"ip": ip, "port": port, "protocol": label,
+                        "banner": banner[:80], "type": "radio"}
+            return None
+
+    tasks = []
+    for i in range(1, 255):
+        ip = f"{base}{i}"
+        for port, label in RADIO_PORTS:
+            tasks.append(check_one(ip, port, label))
+
+    raw = await asyncio.gather(*tasks)
+    results = [r for r in raw if r is not None]
     return {"results": results, "count": len(results)}
 
 # ── IoT scan por CIDR (escanear red específica) ────────────────────────────────
@@ -1564,7 +1584,7 @@ async def mjpeg_proxy(url: str = Query(...)):
     Devuelve el stream en formato multipart/x-mixed-replace para el navegador.
     """
     try:
-        client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+        client = httpx.AsyncClient(timeout=20.0, follow_redirects=True)
         req = await client.get(url)
         return StreamingResponse(
             req.aiter_bytes(),
