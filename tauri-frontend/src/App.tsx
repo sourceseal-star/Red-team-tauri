@@ -9,8 +9,6 @@ import TrafficMonitor from './components/TrafficMonitor';
 import OSINTPanel from './components/OSINTPanel';
 import WiFiPanel from './components/WiFiPanel';
 import BlackMirrorPanel from './components/BlackMirrorPanel';
-import MotorMetricsDashboard from './components/MotorMetricsDashboard';
-import MotorPanel from './components/MotorPanel';
 import ControlTower from './components/ControlTower';
 import ServiceControlPanel from './components/ServiceControlPanel';
 import ConfigEditor from './routes/ConfigEditor';
@@ -39,7 +37,6 @@ function App() {
       {module === 'wifi' && <WiFiPanel />}
       {module === 'ultra' && <MurcielagoPanel />}
       {module === 'blackmirror' && <BlackMirrorPanel />}
-      {module === 'motor' && <MotorPanel />}
       {module === 'services' && <ServiceControlPanel />}
       {module === 'terminal' && <Terminal />}
       {module === 'tower' && <ControlTower />}
