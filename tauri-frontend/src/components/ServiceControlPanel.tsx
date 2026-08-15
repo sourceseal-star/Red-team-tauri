@@ -1,227 +1,226 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, RotateCw, Terminal, Activity, Cpu, HardDrive, Wifi, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Play, Square, RotateCw, Terminal, Activity, Cpu, HardDrive, AlertTriangle, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
 
 interface Service {
   name: string;
+  description?: string;
   status: 'running' | 'stopped' | 'error' | 'restarting';
   pid?: number;
-  uptime: string;
-  cpu: number;
-  memory: number;
-  port: number;
+  uptime?: string;
+  cpu?: number;
+  memory?: number;
+  port?: number;
   lastLog?: string;
 }
 
-const MOCK_SERVICES: Service[] = [
-  { name: 'dashboard_server', status: 'running', pid: 2847, uptime: '3d 4h', cpu: 12, memory: 128, port: 8000, lastLog: 'GET /health 200 OK' },
-  { name: 'websocket_server', status: 'running', pid: 2851, uptime: '3d 4h', cpu: 3, memory: 45, port: 8001, lastLog: 'Client connected: 192.168.1.45' },
-  { name: 'scan_worker', status: 'running', pid: 2860, uptime: '2h 15m', cpu: 67, memory: 256, port: 0, lastLog: 'nmap scan completed: 12 hosts found' },
-  { name: 'stripe_webhook', status: 'running', pid: 2872, uptime: '3d 4h', cpu: 1, memory: 32, port: 8002, lastLog: 'Webhook received: checkout.session.completed' },
-  { name: 'motion_detector', status: 'stopped', uptime: '-', cpu: 0, memory: 0, port: 0, lastLog: 'Process terminated by user' },
-  { name: 'canary_listener', status: 'error', pid: 2899, uptime: '15m', cpu: 0, memory: 12, port: 8003, lastLog: 'ERROR: Port 8003 already in use' },
-];
+function getApiKey(): string | null {
+  return localStorage.getItem('api_token');
+}
+
+const statusConfig = {
+  running: { color: 'text-green-400', bg: 'bg-green-900/20', border: 'border-green-800', icon: CheckCircle, label: 'Running' },
+  stopped: { color: 'text-slate-400', bg: 'bg-slate-900/40', border: 'border-slate-700', icon: XCircle, label: 'Stopped' },
+  error: { color: 'text-red-400', bg: 'bg-red-900/20', border: 'border-red-800', icon: AlertTriangle, label: 'Error' },
+  restarting: { color: 'text-amber-400', bg: 'bg-amber-900/20', border: 'border-amber-800', icon: RotateCw, label: 'Restarting' },
+};
 
 export default function ServiceControlPanel() {
-  const [services, setServices] = useState<Service[]>(MOCK_SERVICES);
+  const [services, setServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedService, setSelectedService] = useState<string | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [systemStats, setSystemStats] = useState({ cpu: 23, ram: 45, disk: 62, net: 1.2 });
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const [logs, setLogs] = useState('');
+  const [actionMsg, setActionMsg] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Simular logs en vivo
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const newLogs = [
-        `[${new Date().toISOString().split('T')[1].slice(0,8)}] GET /api/scan/topology 200`,
-        `[${new Date().toISOString().split('T')[1].slice(0,8)}] WebSocket broadcast: scan_complete`,
-        `[${new Date().toISOString().split('T')[1].slice(0,8)}] Stripe webhook verified`,
-        `[${new Date().toISOString().split('T')[1].slice(0,8)}] Memory usage: ${Math.floor(Math.random() * 30 + 20)}%`,
-      ];
-      setLogs(prev => [...prev.slice(-50), newLogs[Math.floor(Math.random() * newLogs.length)]]);
+  const apiKey = getApiKey();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['X-API-Key'] = apiKey;
 
-      // Stats fluctuantes
-      setSystemStats(prev => ({
-        cpu: Math.min(100, Math.max(5, prev.cpu + (Math.random() - 0.5) * 10)),
-        ram: Math.min(100, Math.max(20, prev.ram + (Math.random() - 0.5) * 5)),
-        disk: prev.disk,
-        net: Math.max(0, prev.net + (Math.random() - 0.5) * 0.5),
-      }));
-    }, 2000);
-    return () => clearInterval(interval);
+  const fetchServices = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      const res = await fetch('/api/services', { headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setServices(Array.isArray(data) ? data : []);
+    } catch (err) {
+      // Fallback: show empty state, not mock
+      setServices([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+    fetchServices();
+    const interval = setInterval(fetchServices, 5000);
+    return () => clearInterval(interval);
+  }, [fetchServices]);
 
-  const toggleService = async (name: string, action: 'start' | 'stop' | 'restart') => {
-    setServices(prev => prev.map(s => {
-      if (s.name === name) {
-        return { ...s, status: action === 'stop' ? 'stopped' : action === 'restart' ? 'restarting' : 'running' };
+  const handleAction = async (action: 'start' | 'stop' | 'restart', name: string) => {
+    try {
+      const res = await fetch(`/api/services/${action}?name=${encodeURIComponent(name)}`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionMsg(`${name}: ${data.error || 'error'}`);
+        setTimeout(() => setActionMsg(''), 3000);
+      } else {
+        setActionMsg(`${name}: ${action} OK`);
+        setTimeout(() => setActionMsg(''), 2000);
+        fetchServices();
       }
-      return s;
-    }));
-
-    // Simular llamada API
-    setTimeout(() => {
-      setServices(prev => prev.map(s => {
-        if (s.name === name) {
-          return { ...s, status: action === 'stop' ? 'stopped' : 'running', lastLog: `Service ${action}ed manually` };
-        }
-        return s;
-      }));
-    }, 1500);
+    } catch (err) {
+      setActionMsg(`${name}: connection error`);
+      setTimeout(() => setActionMsg(''), 3000);
+    }
   };
 
-  const statusConfig: Record<string, { color: string; icon: any }> = {
-    running: { color: 'text-green-400 bg-green-900/20 border-green-800', icon: CheckCircle },
-    stopped: { color: 'text-slate-400 bg-slate-800 border-slate-700', icon: XCircle },
-    error: { color: 'text-red-400 bg-red-900/20 border-red-800', icon: AlertTriangle },
-    restarting: { color: 'text-amber-400 bg-amber-900/20 border-amber-800 animate-pulse', icon: RotateCw },
+  const handleStartAll = async () => {
+    try {
+      await fetch('/api/services/start-all', { method: 'POST', headers });
+      setActionMsg('All services starting...');
+      setTimeout(() => setActionMsg(''), 3000);
+      fetchServices();
+    } catch {}
   };
+
+  const handleStopAll = async () => {
+    try {
+      await fetch('/api/services/stop-all', { method: 'POST', headers });
+      setActionMsg('All services stopping...');
+      setTimeout(() => setActionMsg(''), 3000);
+      fetchServices();
+    } catch {}
+  };
+
+  const fetchLogs = async (name: string) => {
+    try {
+      const res = await fetch(`/api/services/${encodeURIComponent(name)}/logs`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setLogs(data.logs || data.content || 'No logs available');
+      } else {
+        setLogs('Error fetching logs');
+      }
+    } catch {
+      setLogs('Connection error');
+    }
+  };
+
+  if (loading && services.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full p-8">
+        <div className="w-5 h-5 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mr-3" />
+        <span className="text-xs text-slate-500">Cargando servicios...</span>
+      </div>
+    );
+  }
+
+  if (!loading && services.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+        <AlertTriangle size={24} className="text-amber-500/50 mb-2" />
+        <p className="text-xs text-slate-500">No se pudieron cargar los servicios</p>
+        <p className="text-[10px] text-slate-600 mt-1">Verifica que el backend esté corriendo en puerto 8001</p>
+        <button onClick={fetchServices} className="mt-3 px-3 py-1.5 text-[10px] bg-slate-800 border border-slate-700 rounded-lg text-slate-300 hover:bg-slate-700 flex items-center gap-1">
+          <RefreshCw size={10} /> Reintentar
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      {/* Stats del sistema */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          { label: 'CPU', value: systemStats.cpu, icon: Cpu, color: 'text-cyan-400' },
-          { label: 'RAM', value: systemStats.ram, icon: Activity, color: 'text-purple-400' },
-          { label: 'Disco', value: systemStats.disk, icon: HardDrive, color: 'text-amber-400' },
-          { label: 'Red', value: systemStats.net.toFixed(1) + ' MB/s', icon: Wifi, color: 'text-green-400' },
-        ].map(stat => {
-          const Icon = stat.icon;
+    <div className="flex flex-col h-full">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-800/50">
+        <div className="flex items-center gap-2">
+          <Activity size={12} className="text-cyan-400" />
+          <span className="text-[10px] font-bold text-slate-400 uppercase">{services.length} servicios</span>
+          {refreshing && <RefreshCw size={10} className="text-slate-600 animate-spin" />}
+        </div>
+        <div className="flex gap-1.5">
+          <button onClick={handleStartAll} className="px-2 py-1 text-[9px] bg-green-900/30 border border-green-800 rounded text-green-400 hover:bg-green-900/50 flex items-center gap-1">
+            <Play size={8} /> Start All
+          </button>
+          <button onClick={handleStopAll} className="px-2 py-1 text-[9px] bg-red-900/30 border border-red-800 rounded text-red-400 hover:bg-red-900/50 flex items-center gap-1">
+            <Square size={8} /> Stop All
+          </button>
+        </div>
+      </div>
+
+      {actionMsg && (
+        <div className="px-3 py-1.5 text-[10px] text-cyan-400 bg-cyan-900/20 border-b border-cyan-900/30">
+          {actionMsg}
+        </div>
+      )}
+
+      {/* Services list */}
+      <div className="flex-1 overflow-auto p-2 space-y-1.5">
+        {services.map((svc) => {
+          const cfg = statusConfig[svc.status] || statusConfig.stopped;
+          const Icon = cfg.icon;
           return (
-            <div key={stat.label} className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] text-slate-500 font-bold">{stat.label}</span>
-                <Icon size={14} className={stat.color} />
+            <div key={svc.name} className={`rounded-lg border ${cfg.border} ${cfg.bg} p-2.5`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <Icon size={12} className={`${cfg.color} flex-shrink-0`} />
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-slate-200 truncate">{svc.name}</div>
+                    {svc.description && <div className="text-[9px] text-slate-500 truncate">{svc.description}</div>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => handleAction('start', svc.name)} disabled={svc.status === 'running'} className="p-1 text-green-400 hover:bg-green-900/30 rounded disabled:opacity-30" title="Start">
+                    <Play size={10} />
+                  </button>
+                  <button onClick={() => handleAction('stop', svc.name)} disabled={svc.status === 'stopped'} className="p-1 text-red-400 hover:bg-red-900/30 rounded disabled:opacity-30" title="Stop">
+                    <Square size={10} />
+                  </button>
+                  <button onClick={() => handleAction('restart', svc.name)} className="p-1 text-amber-400 hover:bg-amber-900/30 rounded" title="Restart">
+                    <RotateCw size={10} />
+                  </button>
+                  <button onClick={() => { setSelectedService(svc.name); fetchLogs(svc.name); }} className="p-1 text-slate-400 hover:bg-slate-800 rounded" title="Logs">
+                    <Terminal size={10} />
+                  </button>
+                </div>
               </div>
-              <div className="text-xl font-bold text-white">
-                {typeof stat.value === 'number' ? `${Math.round(stat.value)}%` : stat.value}
+
+              {/* Stats row */}
+              <div className="flex items-center gap-3 mt-1.5 text-[9px] text-slate-500">
+                {svc.pid && <span className="flex items-center gap-0.5"><Cpu size={8} /> PID {svc.pid}</span>}
+                {svc.port && svc.port > 0 && <span>:{svc.port}</span>}
+                {svc.uptime && <span>{svc.uptime}</span>}
+                {svc.cpu !== undefined && svc.cpu > 0 && <span className="flex items-center gap-0.5"><Cpu size={8} /> {svc.cpu}%</span>}
+                {svc.memory !== undefined && svc.memory > 0 && <span className="flex items-center gap-0.5"><HardDrive size={8} /> {svc.memory}MB</span>}
               </div>
-              <div className="mt-1.5 h-1 bg-slate-800 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full rounded-full transition-all duration-500 ${stat.color.replace('text-', 'bg-')}`}
-                  style={{ width: `${typeof stat.value === 'number' ? stat.value : 50}%` }}
-                />
-              </div>
+
+              {svc.lastLog && (
+                <div className="mt-1 text-[9px] text-slate-600 truncate font-mono">{svc.lastLog}</div>
+              )}
             </div>
           );
         })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Lista de servicios */}
-        <div className="lg:col-span-2 space-y-2">
-          <h3 className="text-sm font-bold text-slate-200 mb-2 flex items-center gap-2">
-            <Terminal size={14} className="text-cyan-400" />
-            Servicios Activos
-          </h3>
-          {services.map(svc => {
-            const cfg = statusConfig[svc.status];
-            const StatusIcon = cfg.icon;
-            return (
-              <div 
-                key={svc.name}
-                onClick={() => setSelectedService(svc.name)}
-                className={`p-3 rounded-xl border transition-all cursor-pointer ${
-                  selectedService === svc.name ? 'bg-slate-800 border-cyan-700' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${
-                      svc.status === 'running' ? 'bg-green-400' :
-                      svc.status === 'error' ? 'bg-red-400' :
-                      svc.status === 'restarting' ? 'bg-amber-400 animate-pulse' :
-                      'bg-slate-600'
-                    }`} />
-                    <div>
-                      <div className="text-xs font-mono font-bold text-slate-200">{svc.name}</div>
-                      <div className="text-[10px] text-slate-500">
-                        PID: {svc.pid || '—'} | Uptime: {svc.uptime} | Port: {svc.port || '—'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border flex items-center gap-1 ${cfg.color}`}>
-                      <StatusIcon size={10} /> {svc.status}
-                    </span>
-                    <div className="flex gap-1">
-                      {svc.status !== 'running' && (
-                        <button 
-                          onClick={e => { e.stopPropagation(); toggleService(svc.name, 'start'); }}
-                          className="p-1 bg-green-600/20 hover:bg-green-600/40 text-green-400 rounded transition-colors"
-                        >
-                          <Play size={12} />
-                        </button>
-                      )}
-                      {svc.status === 'running' && (
-                        <button 
-                          onClick={e => { e.stopPropagation(); toggleService(svc.name, 'stop'); }}
-                          className="p-1 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded transition-colors"
-                        >
-                          <Square size={12} />
-                        </button>
-                      )}
-                      <button 
-                        onClick={e => { e.stopPropagation(); toggleService(svc.name, 'restart'); }}
-                        className="p-1 bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 rounded transition-colors"
-                      >
-                        <RotateCw size={12} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                {svc.lastLog && (
-                  <div className="mt-2 text-[10px] text-slate-600 font-mono truncate">
-                    → {svc.lastLog}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Terminal de logs */}
-        <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden flex flex-col h-[500px]">
-          <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
-            <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1.5">
-              <Terminal size={10} /> Logs en vivo
-            </span>
-            <div className="flex gap-1">
-              <div className="w-2 h-2 rounded-full bg-red-500" />
-              <div className="w-2 h-2 rounded-full bg-amber-500" />
-              <div className="w-2 h-2 rounded-full bg-green-500" />
+      {/* Logs modal */}
+      {selectedService && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setSelectedService(null)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 max-w-2xl w-full max-h-[60vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2"><Terminal size={14} className="text-cyan-400" /> Logs: {selectedService}</h3>
+              <button onClick={() => setSelectedService(null)} className="text-slate-500 hover:text-white text-xs">✕</button>
             </div>
-          </div>
-          <div className="flex-1 overflow-y-auto p-3 font-mono text-[11px] space-y-1">
-            {logs.map((log, i) => (
-              <div key={i} className="text-slate-400">
-                <span className="text-slate-600">{log.split(']')[0]}]</span>
-                <span className="text-cyan-500/70">{log.split(']')[1] || ''}</span>
-              </div>
-            ))}
-            <div ref={logsEndRef} />
-          </div>
-          <div className="px-3 py-2 bg-slate-900 border-t border-slate-800">
-            <div className="flex items-center gap-2">
-              <span className="text-green-400 text-xs">$</span>
-              <input 
-                placeholder="Comando..."
-                className="flex-1 bg-transparent text-xs text-slate-300 outline-none placeholder:text-slate-700"
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    setLogs(prev => [...prev, `[${new Date().toISOString().split('T')[1].slice(0,8)}] CMD: ${(e.target as HTMLInputElement).value}`]);
-                    (e.target as HTMLInputElement).value = '';
-                  }
-                }}
-              />
-            </div>
+            <pre className="flex-1 overflow-auto text-[10px] text-slate-400 font-mono bg-slate-950 rounded p-3 border border-slate-800">{logs || 'Cargando...'}</pre>
+            <button onClick={() => fetchLogs(selectedService)} className="mt-2 px-3 py-1.5 text-[10px] bg-slate-800 border border-slate-700 rounded text-slate-300 hover:bg-slate-700 flex items-center gap-1 self-start">
+              <RefreshCw size={10} /> Refrescar logs
+            </button>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
