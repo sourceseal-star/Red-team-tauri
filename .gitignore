@@ -47,3 +47,7 @@ source_seal_audit_report.json
 manual_operaciones.enc
 manual_operaciones.md
 motor_cierre.db
+
+# Credenciales de autenticacion (huella + password) — NO subir
+redteam/scripts/.auth/
+motor_cierre/backend/.auth/
