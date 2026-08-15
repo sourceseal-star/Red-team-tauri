@@ -22,8 +22,7 @@ if [ ! -f "redteam/scripts/dashboard_server.py" ]; then
     exit 1
 fi
 
-# 3. Levantar backend UNIFICADO (dashboard_server.py incluye motor_cierre
-# como sub-app en /motor/* + todos los endpoints de escaneo/camaras/etc)
+# 3. Levantar backend UNIFICADO (dashboard_server.py con todos los endpoints de escaneo/camaras/etc)
 echo -e "${YELLOW}[2/3]${NC} Levantando backend unificado en puerto $PORT..."
 cd redteam/scripts
 python3 dashboard_server.py > ../../backend.log 2>&1 &
