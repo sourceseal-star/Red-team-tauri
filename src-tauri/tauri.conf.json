@@ -1,10 +1,10 @@
 {
   "productName": "SourceSeal Console",
   "version": "0.1.0",
-  "identifier": "com.sourceseal.console",
+  "identifier": "com.sourceseal.securityconsole",
   "build": {
     "frontendDist": "../tauri-frontend/dist",
-    "devUrl": "http://localhost:5000",
+    "devUrl": "http://localhost:5173",
     "beforeDevCommand": "cd tauri-frontend && npm run dev",
     "beforeBuildCommand": "cd tauri-frontend && npm run build"
   },
@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' ws: wss: http: https:"
     }
   },
   "bundle": {
