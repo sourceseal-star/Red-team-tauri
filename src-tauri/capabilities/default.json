@@ -2,15 +2,13 @@
   "$schema": "https://schema.tauri.app/config/2/capability.json",
   "identifier": "default",
   "description": "Capability por defecto para SourceSeal Console",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
     "core:window:allow-set-title",
-    "shell:allow-spawn",
-    "shell:allow-execute",
-    "shell:allow-open",
-    "process:allow-restart",
-    "process:allow-exit"
+    "shell:allow-open"
   ]
 }
