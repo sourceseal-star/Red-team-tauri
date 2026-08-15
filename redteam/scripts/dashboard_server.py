@@ -133,28 +133,15 @@ except Exception as _er_err:
     _ENHANCED_RECON_OK = False
     print(f"[WARN] enhanced_recon import falló: {_er_err}", flush=True)
 
-# ── API Key (necesaria antes del import del motor_cierre) ────────────────
 API_KEY = os.environ.get("REDTEAM_API_KEY", "").strip()
 
 # ── Motor de Cierre (leads/checkout/metrics) — antes corria como un 2do
 # proceso FastAPI en el MISMO puerto 8001 que este backend, lo que hacia
 # que solo uno de los dos pudiera estar vivo a la vez. Se monta aqui como
 # sub-app para que TODO viva en un solo proceso/puerto de verdad.
-try:
-    import importlib.util as _ilu
-    _motor_main_path = BASE.parent / "motor_cierre" / "backend" / "main.py"
-    _motor_spec = _ilu.spec_from_file_location("motor_cierre_main", str(_motor_main_path))
-    _motor_mod = _ilu.module_from_spec(_motor_spec)
-    sys.modules["motor_cierre_main"] = _motor_mod
-    _motor_spec.loader.exec_module(_motor_mod)
     # Alinear el API key: dashboard_server.py emite tokens via REDTEAM_API_KEY
-    # (o "local-dev-token" si no esta seteada). motor_cierre validaba contra
     # su propio default distinto ("dev-key-cambiar-en-produccion") -> con
     # esto ambos aceptan el MISMO token emitido por /api/auth/login.
-    _motor_mod.settings.API_KEY = API_KEY or "local-dev-token"
-except Exception as _mc_err:
-    _MOTOR_CIERRE_OK = False
-    print(f"[WARN] motor_cierre import falló: {_mc_err}", flush=True)
 
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -169,7 +156,6 @@ if _ENHANCED_RECON_OK:
     print("[ENHANCED-RECON] Router montado en /api/enhanced/*")
 
 # ── API Key (obligatoria) ────────────────────────────────────────────────────
-# (movido arriba, antes del import del motor_cierre)
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # Endpoints PÚBLICOS (no requieren API key):
