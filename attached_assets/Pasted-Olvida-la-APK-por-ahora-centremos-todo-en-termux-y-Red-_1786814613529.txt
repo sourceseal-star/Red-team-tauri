@@ -1,0 +1,53 @@
+Olvida la APK por ahora centremos todo en termux y Red-team-tauri por favor necesito que funcione correctamente y con datos reales sin simulaciónes 
+Voy a hacer dos cosas: escanear todo el repo en busca de simulaciones restantes, y separar el Motor de Cierre completamente para que no interfiera con Termux ni Replit.
+
+Hay 210 referencias pero la mayoría son legítimas (deception, honeypot, tests). Déjame filtrar las que de verdad son simulaciones en el dashboard activo.
+
+Buenas noticias: el frontend del dashboard está casi limpio. Los únicos problemas reales son:
+
+1. **`SalesCommandCenter.tsx`** — es parte del Motor de Cierre, hay que sacarlo
+2. **SOAR handlers** — devuelven `"simulated"` en vez de ejecutar de verdad cuando no hay httpx
+3. **`start_all.sh` y `update.sh`** — tienen referencias al motor_cierre
+
+Voy a arreglar todo de una vez.
+
+Ahora limpio los scripts de arranque y subo todo de una.
+
+Listo. Ahora déjame hacer una verificación final — escanear de nuevo para confirmar que no quedan mocks en el dashboard activo.
+
+Queda un archivo: `tauri-frontend/src/mocks/tauri.ts` — ese es un archivo de mocks que probablemente se usa cuando el backend Tauri no está disponible. Déjame verificar si se está importando en algún componente activo.
+
+El archivo `mocks/tauri.ts` es código muerto — nadie lo importa. Lo elimino.
+
+Listo. Todo limpio. Resumen final de lo que hice en esta ronda:
+
+**Motor de Cierre separado completamente:**
+- `App.tsx` — removido el módulo `motor` y sus imports
+- `WarRoom.tsx` — el panel "Motor de Cierre" ya no aparece en el grid
+- `vite.config.ts` — proxy `/motor-api` eliminado
+- `dashboard_server.py` — sin imports, sin mount, sin variables del motor
+- `start_all.sh` — sin comentarios referenciando el motor
+- `update.sh` — sin health checks, sin deps, sin logs del motor
+- `SalesCommandCenter.tsx` — eliminado del frontend
+- `motor_cierre/README.md` — creado con instrucciones para desplegarlo aparte
+
+**Simulaciones eliminadas:**
+- `mocks/tauri.ts` — archivo completo eliminado (tenía `mockServices`, `mockIocs`, `mockDevices`, etc — nadie lo importaba)
+- SOAR handlers — reescritos: ahora ejecutan `iptables`, `/etc/hosts`, archivos de bloqueo local. Usan `urllib` de la stdlib en vez de `httpx`. Cero simulaciones.
+
+**El dashboard queda así:**
+- 0 archivos con datos mock en `tauri-frontend/src/`
+- 0 referencias a `motor_cierre` en el backend
+- 0 simulaciones en SOAR
+- Todos los paneles usan la API real con `X-API-Key`
+
+En Termux:
+```bash
+cd ~/Red-team-tauri
+git checkout -- .
+git pull origin main
+bash start_all.sh
+```
+
+¿Quieres que verifique algo más antes de que pruebes?
+Ésto es lo último que hemos hecho para que no dupliques ni hagas trabajo doble 
