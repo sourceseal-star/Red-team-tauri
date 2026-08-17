@@ -13,6 +13,9 @@ bash replit_start.sh
 El workflow **SourceSeal Dashboard** arranca automáticamente el backend y sirve el
 frontend compilado en el puerto **8001**.
 
+En Termux, `start-termux.sh` inicia además el Gateway Mesh en el puerto **8080**.
+Se puede omitir con `START_GATEWAY=0 bash start-termux.sh`.
+
 Health check:
 
 ```bash
@@ -38,6 +41,7 @@ backend/modules/                  # Reconocimiento real complementario
 | `REDTEAM_API_KEY` | local-dev-token | Clave para endpoints protegidos |
 | `CORSET_SCOPE_B64` | — | Alcance autorizado de escaneo; recomendado |
 | `SHODAN_API_KEY` | — | Intel Shodan, si se desea habilitar |
+| `START_GATEWAY` | `1` en Termux | Inicia el Gateway Mesh en 8080 |
 
 El backend informa explícitamente cuando faltan servicios o claves opcionales; no
 rellena resultados con datos simulados. Para operar escaneos reales, define un

@@ -1,9 +1,9 @@
 # 🛡️ MANUAL OPERATIVO — Red-Team-Tauri / SourceSeal
-## SealCtl Console v2.0
+## SourceSeal Console v3.2
 
-> **Una sola pieza. Un solo comando. Sin dependencias.**
-> Node.js stdlib only — sin Python, sin Vite, sin npm install.
-> Escaneo de red /24, cámaras IP, geolocalización, threat intel, forense.
+> **Backend Python/FastAPI + frontend React/Vite.**
+> El arranque unificado sirve API y frontend real en el puerto 8001.
+> Los escaneos deben ejecutarse únicamente dentro de un alcance autorizado.
 
 ---
 
@@ -22,10 +22,11 @@
 
 | Componente | Requisito | Nota |
 |---|---|---|
-| **Node.js** | 18+ (LTS) | Único requisito obligatorio |
+| **Python** | 3.10+ | Backend FastAPI |
+| **Node.js** | 18+ (LTS) | Necesario para compilar el frontend |
 | **Git** | Cualquiera | Para clonar/actualizar |
 | **Termux** | Desde F-Droid | NO desde Play Store |
-| **RAM** | 256 MB libre | Suficiente — Node.js es ligero |
+| **RAM** | 512 MB libre | Recomendado para reconocimiento de red |
 
 **Opcionales** (activan funciones extra):
 
@@ -34,7 +35,8 @@
 | `termux-api` | `pkg install termux-api` | Wake-lock + WiFi scan |
 | `nmap` | `pkg install nmap` | Escaneo avanzado de puertos |
 
-**Sin Python. Sin pip. Sin Vite. Sin npm install.**
+El script instala las dependencias Python que falten y compila el frontend
+únicamente si todavía no existe `tauri-frontend/dist/`.
 
 ---
 
@@ -53,11 +55,11 @@ termux-setup-storage
 # Ajustes → Apps → Termux → Bateria → Sin restricciones
 ```
 
-### Paso 2: Instalar Node.js
+### Paso 2: Instalar Python y Node.js
 
 ```bash
 pkg update -y && pkg upgrade -y
-pkg install -y nodejs-lts git
+pkg install -y python nodejs-lts git openssl curl
 ```
 
 ### Paso 3: Clonar el repo
@@ -73,7 +75,7 @@ cd Red-team-tauri
 pkg install -y termux-api
 ```
 
-**Eso es todo. No hay Paso 5. No hay pip install. No hay npm install.**
+La primera ejecución puede instalar dependencias Python y compilar el frontend.
 
 ---
 
@@ -87,9 +89,17 @@ bash start-termux.sh
 
 Esto hace:
 1. Activa wake-lock (Android no mata el proceso)
-2. Verifica Node.js
-3. Mata procesos anteriores en el puerto 8001
-4. Arranca `sealctl/server.js`
+2. Verifica Python y dependencias FastAPI
+3. Crea un `.env` local con una API key si no existe
+4. Compila `tauri-frontend` si falta `dist/`
+5. Arranca el gateway mesh en `:8080`
+6. Arranca el backend unificado en `:8001`
+
+Para ejecutar únicamente el backend y omitir la federación:
+
+```bash
+START_GATEWAY=0 bash start-termux.sh
+```
 
 ### Actualizar desde GitHub
 
@@ -105,6 +115,12 @@ bash start-termux.sh
 En tu celular, abre el navegador:
 ```
 http://localhost:8001
+```
+
+El gateway mesh, cuando está activo, se comprueba en:
+
+```bash
+curl http://localhost:8080/health
 ```
 
 Desde otro dispositivo en la misma WiFi:
@@ -221,26 +237,25 @@ Respuesta JSON cruda del último análisis.
 curl http://localhost:8001/api/health
 
 # Si no responde, matar y reiniciar
-pkill -f "server.js"
+pkill -f "dashboard_server.py"
 bash start-termux.sh
 
 # Verificar que el HTML existe
-ls sealctl/public/index.html
+ls tauri-frontend/dist/index.html
 ```
 
-### "node: not found"
+### "python3: not found"
 
 ```bash
-pkg install -y nodejs-lts
+pkg install -y python
 ```
 
-### "Cannot find module './lib/geo'"
+### El frontend no compila
 
 ```bash
-# Los archivos lib/ faltan — actualizar
-git pull origin main
-ls sealctl/lib/
-# Debe mostrar: geo.js  intel.js  iot.js
+cd tauri-frontend
+npm install --legacy-peer-deps
+npm run build
 ```
 
 ### Puerto 8001 ocupado
@@ -250,8 +265,21 @@ ls sealctl/lib/
 # pero si persiste:
 fuser -k 8001/tcp
 # o
-ps aux | grep server.js | grep -v grep
+ps aux | grep dashboard_server.py | grep -v grep
 kill <PID>
+```
+
+### Gateway Mesh no responde en 8080
+
+```bash
+curl http://localhost:8080/health
+tail -f /tmp/sourceseal-gateway.log
+```
+
+Si no necesitas federación, arranca solo el dashboard:
+
+```bash
+START_GATEWAY=0 bash start-termux.sh
 ```
 
 ### Termux se cierra solo
@@ -284,25 +312,21 @@ El SSE streaming muestra resultados en vivo, no esperes al final.
 
 ```
 Red-team-tauri/
-├── start-termux.sh          ← Script de inicio (UN comando)
-├── sealctl/
-│   ├── server.js            ← Backend Node.js (stdlib only)
-│   ├── public/
-│   │   └── index.html       ← Dashboard (un solo HTML)
-│   └── lib/
-│       ├── geo.js           ← Geolocalización (ipwho.is)
-│       ├── intel.js         ← Threat scoring (abuse.ch + DNS)
-│       └── iot.js           ← TCP scan + RTSP + SIP + HTTP probe
-├── evidence/                ← Reportes forenses (auto-generado)
-└── backend/
-    └── dashboard_server.py  ← Backend Python (referencia, NO necesario)
+├── start-termux.sh          ← Arranque Termux: gateway + dashboard
+├── gateway/
+│   └── mesh_server.py       ← Gateway Mesh :8080
+├── redteam/scripts/
+│   └── dashboard_server.py  ← Backend FastAPI unificado :8001
+├── tauri-frontend/
+│   ├── src/                 ← React + TypeScript
+│   └── dist/                ← Frontend servido por FastAPI
+└── backend/modules/         ← Reconocimiento complementario
 ```
 
-**No necesita:**
-- ❌ Python / pip
-- ❌ npm install / node_modules
-- ❌ Vite / Webpack
-- ❌ API keys
+**El sistema requiere:**
+- ✅ Python 3.10+ y dependencias FastAPI
+- ✅ Node.js 18+ para compilar el frontend
+- ✅ Un alcance autorizado para escaneos reales
 - ❌ Bases de datos
 - ❌ Redis / Docker
 

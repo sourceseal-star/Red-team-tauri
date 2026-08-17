@@ -10,6 +10,8 @@ cd "$SCRIPT_DIR"
 
 PORT="${PORT:-8001}"
 HOST="${HOST:-0.0.0.0}"
+GATEWAY_PORT="${GATEWAY_PORT:-8080}"
+START_GATEWAY="${START_GATEWAY:-1}"
 
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[0;33m'; C='\033[0;36m'; N='\033[0m'
 
@@ -81,11 +83,47 @@ fi
 
 # ─── 6. Matar proceso anterior en el puerto ────────────────────────────
 pkill -f "dashboard_server.py" 2>/dev/null || true
+if [ "$START_GATEWAY" = "1" ]; then
+  pkill -f "gateway/mesh_server.py" 2>/dev/null || true
+fi
 sleep 1
 
-# ─── 7. ARRANCAR ────────────────────────────────────────────────────────
+# ─── 7. Gateway Mesh (opcional, activo por defecto) ─────────────────────
+GATEWAY_PID=""
+if [ "$START_GATEWAY" = "1" ]; then
+  echo -e "${Y}[gateway] Iniciando mesh en :${GATEWAY_PORT}...${N}"
+  (
+    cd "$SCRIPT_DIR/gateway"
+    PORT="$GATEWAY_PORT" python3 mesh_server.py
+  ) > /tmp/sourceseal-gateway.log 2>&1 &
+  GATEWAY_PID=$!
+
+  GATEWAY_READY=0
+  for i in $(seq 1 10); do
+    if curl -fsS "http://127.0.0.1:${GATEWAY_PORT}/health" >/dev/null 2>&1; then
+      GATEWAY_READY=1
+      break
+    fi
+    if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if [ "$GATEWAY_READY" = "1" ]; then
+    echo -e "${G}[gateway] OK en :${GATEWAY_PORT}${N}"
+  else
+    echo -e "${Y}[gateway] No disponible; el dashboard principal continuará en :${PORT}${N}"
+    GATEWAY_PID=""
+  fi
+fi
+
+# ─── 8. ARRANCAR ────────────────────────────────────────────────────────
 echo -e "${G}╔══════════════════════════════════════════════════╗${N}"
 echo -e "${G}║  SourceSeal Console arrancando...                ║${N}"
+echo -e "${G}║  Backend FastAPI :${PORT}                         ║${N}"
+if [ "$START_GATEWAY" = "1" ]; then
+  echo -e "${G}║  Gateway Mesh    :${GATEWAY_PORT}                         ║${N}"
+fi
 echo -e "${G}║  Navegador: http://localhost:${PORT}              ║${N}"
 echo -e "${G}║  WiFi:     http://$(ip addr show wlan0 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1 || echo 'TU_IP'):${PORT}  ║${N}"
 echo -e "${G}║                                                  ║${N}"
@@ -95,4 +133,10 @@ echo ""
 
 # Backend Python completo — sirve API + dist/ en un solo puerto
 cd "$SCRIPT_DIR/redteam/scripts"
-exec python3 dashboard_server.py
+cleanup() {
+  if [ -n "$GATEWAY_PID" ]; then
+    kill "$GATEWAY_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+python3 dashboard_server.py

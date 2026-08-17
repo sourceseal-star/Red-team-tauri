@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Server, Globe, Cloud, Cpu, HardDrive, Wifi, RefreshCw, Activity, Zap, Database, AlertTriangle, Radio } from 'lucide-react';
+import { Server, Globe, Cloud, Cpu, HardDrive, Wifi, RefreshCw, Activity, Database, AlertTriangle, Radio } from 'lucide-react';
 
 // URL del orquestador de federación — configurable via env o localhost:8080
 const ORCHESTRATOR_URL = (import.meta as any).env?.VITE_ORCHESTRATOR_URL || 'http://localhost:8080';
@@ -73,7 +73,6 @@ export default function ControlTower() {
   };
 
   const nodeIcon = (nodeId: string) => {
-    if (nodeId === 'motor_cierre') return <Zap size={14} className="text-amber-400" />;
     if (nodeId === 'frontend') return <Globe size={14} className="text-cyan-400" />;
     if (nodeId === 'threat_intel') return <Activity size={14} className="text-rose-400" />;
     return <Server size={14} className="text-slate-400" />;
@@ -106,14 +105,12 @@ export default function ControlTower() {
           <div className="bg-slate-950/50 border border-slate-800 rounded-lg p-3 text-left max-w-md mx-auto">
             <p className="text-[10px] text-slate-400 mb-2 font-bold uppercase">Para iniciarlo en Termux:</p>
             <pre className="text-[10px] text-slate-300 font-mono whitespace-pre-wrap">
-{`# El orquestador es un proceso separado
-# que coordina los nodos Replit
-
+ {`# Gateway Mesh separado para federar nodos
 cd ~/Red-team-tauri
-python3 orchestrator.py &
+PORT=8080 python3 gateway/mesh_server.py &
 
-# O si tienes el script de federación:
-bash start_orchestrator.sh`}
+ # Verificar que responde
+ curl http://localhost:8080/health`}
             </pre>
           </div>
 
