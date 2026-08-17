@@ -1,90 +1,98 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # =====================================================================
-# SourceSeal SealCtl — Termux (Android)
-# UN solo comando. UN solo backend. Cero dependencias.
-# Node.js stdlib only — sin Python, sin Vite, sin npm install.
+# SourceSeal Console — Termux (Android) — Backend Python completo
+# FastAPI :8001 con dist/ estático, enhanced_recon, cameras, topology
 # =====================================================================
+set -e
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PORT="${SEALCTL_PORT:-8001}"
+cd "$SCRIPT_DIR"
+
+PORT="${PORT:-8001}"
+HOST="${HOST:-0.0.0.0}"
 
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[0;33m'; C='\033[0;36m'; N='\033[0m'
 
 echo ""
-echo "  ╔══════════════════════════════════════════════╗"
-echo "  ║  SourceSeal SealCtl — Termux                 ║"
-echo "  ║  Backend Node.js puro — puerto $PORT          ║"
-echo "  ╚══════════════════════════════════════════════╝"
+echo -e "  ${C}╔══════════════════════════════════════════════╗${N}"
+echo -e "  ${C}║  SourceSeal Console — Termux (Python)         ║${N}"
+echo -e "  ${C}║  Backend FastAPI :${PORT}                        ║${N}"
+echo -e "  ${C}╚══════════════════════════════════════════════╝${N}"
 echo ""
 
-# ─── 1. Wake Lock (evita que Android mate el proceso) ──────────────────────
+# ─── 1. Wake Lock ──────────────────────────────────────────────────────
 if command -v termux-wake-lock >/dev/null 2>&1; then
   termux-wake-lock
-  echo -e "${G}[wake-lock] Activo — Android no suspendera Termux${N}"
+  echo -e "${G}[wake-lock] Activo${N}"
 else
   echo -e "${Y}[wake-lock] NO disponible. Instala: pkg install termux-api${N}"
-  echo -e "${Y}            En Ajustes -> Apps -> Termux -> Bateria -> Sin restricciones${N}"
 fi
 echo ""
 
-# ─── 2. Verificar Node.js ──────────────────────────────────────────────────
-if ! command -v node >/dev/null 2>&1; then
-  echo -e "${R}[ERROR] Node.js no esta instalado.${N}"
-  echo -e "${Y}Instala con: pkg install nodejs-lts${N}"
+# ─── 2. Verificar Python ────────────────────────────────────────────────
+if ! command -v python3 >/dev/null 2>&1; then
+  echo -e "${R}[ERROR] Python3 no instalado. Ejecuta: pkg install python${N}"
   exit 1
 fi
+echo -e "${G}[python] $(python3 --version)${N}"
 
-NODE_VER=$(node -v 2>/dev/null)
-echo -e "${G}[node] ${NODE_VER}${N}"
+# ─── 3. Verificar dependencias Python ──────────────────────────────────
+echo -e "${Y}[deps] Verificando dependencias Python...${N}"
+python3 -c "import fastapi, uvicorn, httpx, pydantic" 2>/dev/null || {
+  echo -e "${Y}[deps] Instalando dependencias faltantes...${N}"
+  pip install -q fastapi uvicorn httpx pydantic psutil aiohttp 2>&1 | tail -3
+}
+echo -e "${G}[deps] OK${N}"
+echo ""
 
-# ─── 3. Verificar que sealctl/server.js existe ─────────────────────────────
-SEALCTL="$SCRIPT_DIR/sealctl/server.js"
-if [ ! -f "$SEALCTL" ]; then
-  echo -e "${R}[ERROR] No se encontro sealctl/server.js${N}"
-  echo -e "${Y}Ejecuta desde la raiz del repo: bash start-termux.sh${N}"
-  exit 1
-fi
-
-# Verificar lib/
-if [ ! -f "$SCRIPT_DIR/sealctl/lib/geo.js" ] || [ ! -f "$SCRIPT_DIR/sealctl/lib/iot.js" ] || [ ! -f "$SCRIPT_DIR/sealctl/lib/intel.js" ]; then
-  echo -e "${R}[ERROR] Faltan archivos en sealctl/lib/${N}"
-  echo -e "${Y}Ejecuta: git pull origin main${N}"
-  exit 1
-fi
-
-# ─── 4. Matar proceso anterior en el puerto ────────────────────────────────
-if command -v fuser >/dev/null 2>&1; then
-  fuser -k ${PORT}/tcp 2>/dev/null && echo -e "${Y}[puerto] Liberado puerto $PORT${N}"
-elif command -v lsof >/dev/null 2>&1; then
-  lsof -ti:${PORT} | xargs kill -9 2>/dev/null && echo -e "${Y}[puerto] Liberado puerto $PORT${N}"
+# ─── 4. Verificar/crear .env ────────────────────────────────────────────
+if [ ! -f "$SCRIPT_DIR/.env" ]; then
+  API_KEY=$(openssl rand -hex 24)
+  cat > "$SCRIPT_DIR/.env" << EOF
+REDTEAM_API_KEY=${API_KEY}
+HOST=${HOST}
+PORT=${PORT}
+ALLOWED_ORIGINS=http://localhost:${PORT},http://127.0.0.1:${PORT}
+EOF
+  chmod 600 "$SCRIPT_DIR/.env"
+  echo -e "${G}[env] .env creado. API Key: ${API_KEY:0:8}...${N}"
+  echo -e "${Y}[env] GUARDA TU KEY: ${API_KEY}${N}"
 else
-  # Fallback Termux: buscar y matar
-  pids=$(ps aux 2>/dev/null | grep "server.js" | grep -v grep | awk '{print $2}')
-  if [ -n "$pids" ]; then
-    echo "$pids" | xargs kill 2>/dev/null
-    echo -e "${Y}[puerto] Procesos anteriores terminados${N}"
-  fi
+  echo -e "${G}[env] .env existe${N}"
 fi
+export $(cat "$SCRIPT_DIR/.env" | grep -v '^#' | xargs)
+echo ""
 
-# ─── 5. Sincronizar con GitHub (opcional) ───────────────────────────────────
-if [ "$1" = "--sync" ] || [ "$1" = "-s" ]; then
-  echo -e "${C}[sync] Actualizando desde GitHub...${N}"
-  cd "$SCRIPT_DIR" && git fetch origin && git reset --hard origin/main
-  echo -e "${G}[sync] Actualizado${N}"
+# ─── 5. Build frontend si no existe dist/ ──────────────────────────────
+if [ ! -f "$SCRIPT_DIR/tauri-frontend/dist/index.html" ]; then
+  echo -e "${Y}[build] Frontend no compilado. Compilando...${N}"
+  cd "$SCRIPT_DIR/tauri-frontend"
+  if [ ! -d "node_modules" ]; then
+    npm install --legacy-peer-deps 2>&1 | tail -5
+  fi
+  npm run build 2>&1 | tail -10
+  cd "$SCRIPT_DIR"
+  echo -e "${G}[build] Frontend compilado${N}"
+  echo ""
+else
+  echo -e "${G}[build] Frontend ya compilado (dist/)${N}"
   echo ""
 fi
 
-# ─── 6. ARRANCAR ────────────────────────────────────────────────────────────
-echo ""
+# ─── 6. Matar proceso anterior en el puerto ────────────────────────────
+pkill -f "dashboard_server.py" 2>/dev/null || true
+sleep 1
+
+# ─── 7. ARRANCAR ────────────────────────────────────────────────────────
 echo -e "${G}╔══════════════════════════════════════════════════╗${N}"
-echo -e "${G}║  SealCtl Console v2.0 arrancando...              ║${N}"
-echo -e "${G}╠══════════════════════════════════════════════════╣${N}"
-echo -e "${G}║  Abre el navegador en tu celular:                ║${N}"
-echo -e "${G}║  http://localhost:${PORT}                           ║${N}"
+echo -e "${G}║  SourceSeal Console arrancando...                ║${N}"
+echo -e "${G}║  Navegador: http://localhost:${PORT}              ║${N}"
+echo -e "${G}║  WiFi:     http://$(ip addr show wlan0 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1 || echo 'TU_IP'):${PORT}  ║${N}"
 echo -e "${G}║                                                  ║${N}"
-echo -e "${G}║  O desde otro dispositivo en la misma WiFi:       ║${N}"
-echo -e "${G}║  http://TU_IP_LOCAL:${PORT}                       ║${N}"
+echo -e "${G}║  Ctrl+C para detener                              ║${N}"
 echo -e "${G}╚══════════════════════════════════════════════════╝${N}"
 echo ""
 
-cd "$SCRIPT_DIR"
-exec node sealctl/server.js
+# Backend Python completo — sirve API + dist/ en un solo puerto
+cd "$SCRIPT_DIR/redteam/scripts"
+exec python3 dashboard_server.py
