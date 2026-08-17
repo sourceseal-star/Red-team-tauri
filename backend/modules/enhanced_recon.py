@@ -427,6 +427,11 @@ def extract_ssl_info(ip: str, port: int = 443) -> Optional[Dict]:
 # ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
+@router.get("/discover/all")
+async def full_discovery_get(network: str = "192.168.1"):
+    """Alias GET del POST /discover/all — el frontend usa GET"""
+    return await full_discovery(network)
+
 @router.post("/discover/all")
 async def full_discovery(network: str = "192.168.1"):
     """

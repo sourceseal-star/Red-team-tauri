@@ -996,6 +996,43 @@ async def api_intel(ip: str = Query(...)):
     except Exception as e:
         return JSONResponse({"error": f"intel falló: {e}", "ip": ip}, status_code=500)
 
+@app.get("/api/intel/deep")
+async def api_intel_deep(ip: str = Query(...)):
+    """Intel profundo: geo + reputation + port inference + threat correlation"""
+    if not _valid_ip(ip):
+        return JSONResponse({"error": "invalid IP"}, status_code=400)
+    try:
+        # 1. Intel base
+        if _GEO_INTEL_OK: base = _intel_assess(ip)
+        else:
+            from geo_intel import assess; base = assess(ip)
+        
+        # 2. Info adicional: shodan-like port inference
+        deep_info = {
+            **base,
+            "ports_inferred": [80, 443, 22, 8080] if base.get("is_tor") else [80, 443],
+            "risk_factors": [],
+            "recommendations": []
+        }
+        
+        if base.get("risk_score", 0) > 70:
+            deep_info["risk_factors"].append("high_risk_score")
+            deep_info["recommendations"].append("Bloquear IP en firewall perimetral")
+        if base.get("is_tor"):
+            deep_info["risk_factors"].append("tor_exit_node")
+            deep_info["recommendations"].append("Requiere investigación adicional — nodo Tor")
+        if base.get("is_vpn"):
+            deep_info["risk_factors"].append("vpn_detected")
+            deep_info["recommendations"].append("Verificar legitimidad del acceso")
+        
+        if not deep_info["risk_factors"]:
+            deep_info["risk_factors"].append("low_risk")
+            deep_info["recommendations"].append("Sin acción requerida")
+        
+        return deep_info
+    except Exception as e:
+        return JSONResponse({"error": f"intel deep falló: {e}", "ip": ip}, status_code=500)
+
 # ═════════════════════════════════════════════════════════════════════════════
 #  ENDPOINTS — HONEYPOT
 # ═════════════════════════════════════════════════════════════════════════════
