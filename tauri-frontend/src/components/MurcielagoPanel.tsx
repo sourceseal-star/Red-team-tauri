@@ -30,7 +30,10 @@ export const MurcielagoPanel: React.FC = () => {
   useEffect(() => {
     fetch('/api/murcielago/status', { headers: authHeaders() })
       .then(r => r.json())
-      .then(d => setStatus(d))
+      // FIX: si el backend devuelve un error (401, 500...) el objeto no
+      // tiene "capabilities" -> el render crasheaba con pagina en blanco
+      // al leer status.capabilities.send. Se valida la forma antes de setear.
+      .then(d => { if (d && d.capabilities) setStatus(d); })
       .catch(() => {});
   }, []);
 

@@ -1447,7 +1447,11 @@ import json as _json
 import time as _time
 
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@redteam.local").strip()
-DASHBOARD_TOKEN = os.environ.get("API_KEY", "local-dev-token").strip() or "local-dev-token"
+# FIX CRITICO: antes leia "API_KEY" (env var que nunca se seteaba) mientras
+# el middleware de seguridad exige "REDTEAM_API_KEY" (variable API_KEY definida
+# arriba, linea ~136). Esto causaba que el login emitiera un token que NUNCA
+# coincidia con el que el middleware validaba -> 401 en TODO despues de loguear.
+DASHBOARD_TOKEN = API_KEY or "local-dev-token"
 
 _AUTH_DIR = os.path.join(os.path.dirname(__file__), ".auth")
 _PASS_FILE = os.path.join(_AUTH_DIR, "password.json")
