@@ -51,3 +51,4 @@ motor_cierre.db
 # Credenciales de autenticacion (huella + password) — NO subir
 redteam/scripts/.auth/
 motor_cierre/backend/.auth/
+.env
