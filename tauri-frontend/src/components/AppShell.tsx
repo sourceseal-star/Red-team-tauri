@@ -2,7 +2,7 @@ import React, { useState, useEffect, createContext, useContext } from 'react';
 import {
   LayoutDashboard, Shield, Camera, Radio, Globe, Wifi, Activity,
   Terminal, Settings, Bell, Search, Menu, X, ChevronRight,
-  Zap, Lock, Eye, Fingerprint, BarChart3, Bug, FileText, Network,
+  Zap, Lock, Eye, Fingerprint, Bug, FileText, Network,
   Sun, Moon, LogOut
 } from 'lucide-react';
 
@@ -35,7 +35,6 @@ const MODULES = [
   { id: 'wifi', label: 'WiFi', icon: Wifi, color: 'text-green-400', badge: null },
   { id: 'ultra', label: 'Ultrasonidos', icon: Radio, color: 'text-pink-400', badge: null },
   { id: 'blackmirror', label: 'Black Mirror', icon: Eye, color: 'text-rose-400', badge: null },
-  { id: 'motor', label: 'Motor de Cierre', icon: BarChart3, color: 'text-emerald-400', badge: 'revenue' },
   { id: 'services', label: 'Servicios', icon: Activity, color: 'text-blue-400', badge: null },
   { id: 'terminal', label: 'Terminal', icon: Terminal, color: 'text-slate-400', badge: null },
     { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
@@ -300,9 +299,6 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
                         {m.badge === 'live' && (
                           <span className="ml-auto w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />
                         )}
-                        {m.badge === 'revenue' && (
-                          <span className="ml-auto text-[9px] text-emerald-400 font-mono">$</span>
-                        )}
                       </>
                     )}
                   </button>
@@ -356,7 +352,6 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
                     {activeModule === 'warroom' && 'Vista unificada de todos los sistemas'}
                     {activeModule === 'cameras' && 'Descubrimiento y control de cámaras IP'}
                     {activeModule === 'threat' && 'Inteligencia de amenazas y reputación'}
-                    {activeModule === 'motor' && 'Pipeline de conversión y revenue'}
                   </p>
                 </div>
                 <div className="flex gap-2">

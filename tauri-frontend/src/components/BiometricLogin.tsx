@@ -269,7 +269,7 @@ export default function BiometricLogin({ onLogin }: LoginProps) {
           </button>
         </div>
 
-        <p className="text-center text-[10px] text-slate-600 mt-4">v2.1.0 — WebAuthn + Motor de Cierre</p>
+        <p className="text-center text-[10px] text-slate-600 mt-4">v3.0 — WebAuthn + FastAPI</p>
       </div>
 
       {/* Modal: Registrar huella */}
