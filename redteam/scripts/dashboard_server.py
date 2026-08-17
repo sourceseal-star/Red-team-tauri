@@ -48,7 +48,7 @@ import uuid
 import urllib.request
 import urllib.error
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -1587,7 +1587,7 @@ async def root():
             "POST /api/scan/topology", "POST /api/scan/cameras | /api/network/cameras",
             "POST /api/scan/routers", "POST /api/scan/iot", "POST /api/scan/wifi",
             "POST /api/scan/antenna | /api/scan/radio", "GET /api/network/radio",
-            "GET /api/osint/shodan?ip=X", "GET /api/exploits/list",
+            "GET /api/osint/shodan?ip=X", "GET /api/osint/whois/{domain}", "GET /api/osint/subdomains/{domain}", "GET /api/osint/emails/{domain}", "GET /api/intel/ip/{ip}", "GET /api/intel/bulk-check", "GET /api/investigate/ip/{ip}", "GET /api/investigate/camera/{ip}", "GET /api/exploits/list",
             "GET /api/geo?ip=X", "GET /api/intel?ip=X",
             "GET /api/services", "POST /api/services/start|stop|restart?name=X",
             "POST /api/services/start-all|stop-all", "GET /api/services/{name}/logs",
@@ -2536,6 +2536,241 @@ async def bulk_check_ips(request: Request):
     return {"results": results, "total": len(results), "malicious": malicious}
 
 # == END THREAT INTEL =================================================
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  ENDPOINT — INVESTIGACIÓN COMPLETA DE IP (Due Diligence)
+#  Combina geo + intel + abuseipdb + shodan + rdns + blocklist
+#  Para investigar antecedentes de IPs y cámaras de segunda mano
+# ═════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/investigate/ip/{ip}")
+async def investigate_ip(ip: str):
+    """
+    Investigación completa de una IP para due diligence.
+    Combina todas las fuentes OSINT disponibles:
+    - Geo-localización (ipwho.is, sin API key)
+    - Threat intel assessment (scoring, flags, blocklist)
+    - AbuseIPDB reputation (si hay API key)
+    - Shodan (si hay API key)
+    - rDNS lookup
+    - Análisis de riesgo consolidado
+    
+    Útil para investigar antecedentes de IPs/cámaras de segunda mano.
+    """
+    import ipaddress as _ipa
+    try:
+        _ipa.ip_address(ip)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="IP inválida")
+
+    result = {
+        "ip": ip,
+        "timestamp": datetime.now().isoformat(),
+        "sources": {},
+        "risk_assessment": {},
+        "recommendations": []
+    }
+
+    # 1. Geo-localización (siempre disponible, sin API key)
+    try:
+        if _GEO_INTEL_OK:
+            result["sources"]["geo"] = _geo_lookup(ip)
+        else:
+            from geo_intel import lookup
+            result["sources"]["geo"] = lookup(ip)
+    except Exception as e:
+        result["sources"]["geo"] = {"error": str(e)}
+
+    geo = result["sources"].get("geo", {})
+    
+    # 2. Threat Intel Assessment (siempre disponible, sin API key)
+    try:
+        if _GEO_INTEL_OK:
+            result["sources"]["intel"] = _intel_assess(ip)
+        else:
+            from geo_intel import assess
+            result["sources"]["intel"] = assess(ip)
+    except Exception as e:
+        result["sources"]["intel"] = {"error": str(e)}
+
+    intel = result["sources"].get("intel", {})
+
+    # 3. AbuseIPDB (si hay API key)
+    try:
+        abuse = await _check_abuseipdb(ip)
+        result["sources"]["abuseipdb"] = abuse
+    except Exception as e:
+        result["sources"]["abuseipdb"] = {"error": str(e)}
+
+    abuse = result["sources"].get("abuseipdb", {})
+    abuse_score = abuse.get("abuseConfidenceScore", 0) if "error" not in abuse else None
+
+    # 4. Shodan (si hay API key)
+    shodan_key = os.environ.get("SHODAN_API_KEY", "")
+    if shodan_key:
+        try:
+            async with httpx.AsyncClient(timeout=15) as c:
+                r = await c.get(f"https://api.shodan.io/shodan/host/{ip}?key={shodan_key}")
+                if r.status_code == 200:
+                    result["sources"]["shodan"] = r.json()
+                else:
+                    result["sources"]["shodan"] = {"error": f"HTTP {r.status_code}"}
+        except Exception as e:
+            result["sources"]["shodan"] = {"error": str(e)}
+    else:
+        result["sources"]["shodan"] = {"note": "SHODAN_API_KEY no configurada"}
+
+    shodan = result["sources"].get("shodan", {})
+    shodan_ports = shodan.get("ports", []) if isinstance(shodan, dict) else []
+
+    # 5. rDNS
+    try:
+        rdns = socket.gethostbyaddr(ip)[0]
+        result["sources"]["rdns"] = rdns
+    except Exception:
+        result["sources"]["rdns"] = None
+
+    # 6. Risk Assessment Consolidado
+    risk_score = 0
+    risk_factors = []
+
+    if geo.get("hosting"):
+        risk_score += 15
+        risk_factors.append({"factor": "Hosting/Cloud", "weight": 15, "detail": f"ISP: {geo.get('isp', '?')}"})
+    
+    if geo.get("proxy"):
+        risk_score += 25
+        risk_factors.append({"factor": "Proxy/VPN", "weight": 25, "detail": "IP usa proxy o VPN"})
+    
+    if intel.get("blocklist") and ip in (intel.get("flags", {}).get("blocklist", "") or ""):
+        risk_score += 40
+        risk_factors.append({"factor": "Blocklist abuse.ch", "weight": 40, "detail": "IP en lista de bloqueo"})
+
+    if abuse_score is not None:
+        if abuse_score > 75:
+            risk_score += 40
+            risk_factors.append({"factor": "AbuseIPDB Crítico", "weight": 40, "detail": f"Score: {abuse_score}/100"})
+        elif abuse_score > 25:
+            risk_score += 20
+            risk_factors.append({"factor": "AbuseIPDB Sospechoso", "weight": 20, "detail": f"Score: {abuse_score}/100"})
+        elif abuse_score == 0:
+            risk_factors.append({"factor": "AbuseIPDB Limpio", "weight": 0, "detail": "Sin reportes de abuso"})
+
+    if shodan_ports:
+        cam_ports = [p for p in shodan_ports if p in [554, 8000, 8080, 8888, 37777, 37778]]
+        if cam_ports:
+            risk_score += 10
+            risk_factors.append({"factor": "Puertos de cámara abiertos", "weight": 10, "detail": f"Puertos: {cam_ports}"})
+
+    intel_score = intel.get("score", 0)
+    if intel_score > 50:
+        risk_score += 20
+        risk_factors.append({"factor": "Threat Intel Score alto", "weight": 20, "detail": f"Score: {intel_score}/100, {intel.get('label', '?')}"})
+
+    risk_score = max(0, min(100, risk_score))
+    
+    if risk_score >= 70:
+        verdict = "ALTO RIESGO"
+        recommendation = "NO usar sin investigación adicional. Posible equipo comprometido o robado."
+    elif risk_score >= 40:
+        verdict = "RIESGO MEDIO"
+        recommendation = "Precaución. Verificar procedencia con documentación."
+    elif risk_score >= 20:
+        verdict = "RIESGO BAJO"
+        recommendation = "Bajo riesgo. Verificar documentación normal."
+    else:
+        verdict = "LIMPIO"
+        recommendation = "Sin señales de riesgo. Proceder con normalidad."
+
+    result["risk_assessment"] = {
+        "score": risk_score,
+        "verdict": verdict,
+        "factors": risk_factors,
+        "recommendation": recommendation
+    }
+
+    # Recommendations específicas
+    recs = []
+    if abuse_score is not None and abuse_score > 0:
+        recs.append(f"AbuseIPDB: {abuse_score}/100 — {abuse.get('totalReports', 0)} reportes en 90 días")
+    if geo.get("hosting"):
+        recs.append(f"IP pertenece a hosting/cloud ({geo.get('isp')}) — no es ISP residencial")
+    if shodan_ports:
+        recs.append(f"Shodan detectó puertos abiertos: {shodan_ports}")
+        if 554 in shodan_ports:
+            recs.append("Puerto 554 (RTSP) abierto — cámara accesible públicamente en el pasado")
+    if result["sources"]["rdns"]:
+        recs.append(f"rDNS: {result['sources']['rdns']}")
+    if intel.get("blocklist"):
+        recs.append("IP aparece en blocklist de abuse.ch (botnet/C2 conocido)")
+    recs.append(recommendation)
+    result["recommendations"] = recs
+
+    return result
+
+
+@app.get("/api/investigate/camera/{ip}")
+async def investigate_camera(ip: str, port: int = 80):
+    """
+    Investigación de una cámara IP específica.
+    Combina investigación de IP + detección de marca/modelo + puertos + streams.
+    """
+    import ipaddress as _ipa
+    try:
+        _ipa.ip_address(ip)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="IP inválida")
+
+    # 1. Investigación base de la IP
+    ip_investigation = await investigate_ip(ip)
+
+    # 2. Detección de marca/modelo
+    banner = _http_banner(ip, port, "/", timeout=5.0)
+    brand = _detect_camera_brand(banner.get("server", "") + " " + banner.get("body_preview", ""))
+
+    # 3. Detección de streams de video
+    video_sources = _detect_video_urls(ip, port, timeout=3.0)
+
+    # 4. Escaneo de puertos comunes de cámara
+    cam_ports = [80, 443, 554, 8000, 8080, 8888, 37777, 37778]
+    open_ports = {}
+    for p in cam_ports:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1.5)
+            result = sock.connect_ex((ip, p))
+            if result == 0:
+                open_ports[p] = "open"
+            sock.close()
+        except Exception:
+            pass
+
+    # 5. SSL info si hay HTTPS
+    ssl_info = None
+    if 443 in open_ports or port in (443, 8443):
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            with socket.create_connection((ip, port), timeout=5) as sock:
+                with ctx.wrap_socket(sock, server_hostname=ip) as ssock:
+                    cert = ssock.getpeercert()
+                    ssl_info = {"issuer": dict(x[0]) for x in cert.get("issuer", [])} if cert else None
+        except Exception:
+            ssl_info = {"error": "No se pudo obtener certificado SSL"}
+
+    return {
+        "ip": ip,
+        "port": port,
+        "brand": brand,
+        "banner": banner,
+        "video_sources": video_sources,
+        "open_ports": open_ports,
+        "ssl_info": ssl_info,
+        "ip_investigation": ip_investigation,
+        "timestamp": datetime.now().isoformat()
+    }
+
 
 
 # ============================================================
