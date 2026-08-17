@@ -103,8 +103,49 @@ echo -e "${G}  OK Frontend compilado${N}"
 
 # ─── 7. ARRANCAR BACKEND ──────────────────────────────────────────────
 echo -e "${C}[7/7] Arrancando backend...${N}"
-pkill -f "dashboard_server.py" 2>/dev/null || true
-sleep 1
+
+# FIX CRITICO: "pkill + sleep 1" no garantizaba que el proceso viejo
+# soltara el puerto a tiempo. Si el nuevo proceso arrancaba con el puerto
+# aun ocupado (o el kernel hace SO_REUSEPORT), quedaban DOS backends vivos
+# respondiendo en el mismo puerto 8001 -> el navegador le pegaba a veces
+# al viejo (roto/con token distinto) y a veces al nuevo -> 401 random,
+# "Archivos" vacios, "Servicios no cargan", etc. Ahora se mata con -9,
+# se espera activamente a que el puerto quede libre (hasta 10s), y si
+# sigue ocupado se aborta en vez de arrancar un segundo proceso fantasma.
+echo -e "${C}  Deteniendo procesos anteriores...${N}"
+pkill -9 -f "dashboard_server.py" 2>/dev/null || true
+
+for i in $(seq 1 10); do
+  if command -v fuser >/dev/null 2>&1; then
+    PORT_BUSY=$(fuser "${PORT}/tcp" 2>/dev/null || true)
+  else
+    PORT_BUSY=$(python3 -c "
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(0.3)
+try:
+    s.connect(('127.0.0.1', ${PORT}))
+    print('busy')
+except Exception:
+    pass
+finally:
+    s.close()
+" 2>/dev/null)
+  fi
+  if [ -z "$PORT_BUSY" ]; then
+    break
+  fi
+  echo -e "${Y}  Puerto ${PORT} aun ocupado, esperando... (${i}/10)${N}"
+  pkill -9 -f "dashboard_server.py" 2>/dev/null || true
+  sleep 1
+done
+
+if [ -n "$PORT_BUSY" ]; then
+  echo -e "${R}  ERROR: el puerto ${PORT} sigue ocupado por otro proceso y no se pudo liberar.${N}"
+  echo -e "${R}  Cierra Termux por completo (quitalo de apps recientes) y vuelve a correr este script.${N}"
+  exit 1
+fi
+echo -e "${G}  OK Puerto ${PORT} libre${N}"
 
 IP_LOCAL=$(ip addr show wlan0 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1 || echo "TU_IP")
 

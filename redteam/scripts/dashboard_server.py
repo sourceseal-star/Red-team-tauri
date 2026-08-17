@@ -3908,8 +3908,29 @@ else:
 # ═════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     import uvicorn
+    import socket as _socket
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8001"))
+
+    # GUARDIA ANTI-ZOMBIE: si ya hay algo escuchando en este puerto (un
+    # proceso viejo que "pkill" no logro matar a tiempo), NO arrancar un
+    # segundo proceso encima. Dos backends vivos en el mismo puerto
+    # producen 401 al azar segun cual atienda cada request -> paneles
+    # "rotos" de forma intermitente e imposible de diagnosticar a ojo.
+    _probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    _probe.settimeout(0.5)
+    try:
+        _probe.connect(("127.0.0.1", port))
+        print(f"[FATAL] Ya hay un proceso escuchando en el puerto {port}.", flush=True)
+        print(f"[FATAL] Mata todos los procesos viejos antes de arrancar uno nuevo:", flush=True)
+        print(f"[FATAL]   pkill -9 -f dashboard_server.py", flush=True)
+        print(f"[FATAL] Si Termux esta cerrado y el puerto sigue ocupado, cierra la app", flush=True)
+        print(f"[FATAL] Termux por completo (quitala de apps recientes) y reintenta.", flush=True)
+        raise SystemExit(1)
+    except (ConnectionRefusedError, OSError):
+        pass  # puerto libre, seguir normal
+    finally:
+        _probe.close()
     print("═" * 60, flush=True)
     print(f"  RED-TEAM-TAURI · Unified Dashboard Backend v3.0", flush=True)
     print(f"  → Escuchando en  http://{host}:{port}", flush=True)
