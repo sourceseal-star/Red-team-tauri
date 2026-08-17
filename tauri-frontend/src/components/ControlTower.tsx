@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Server, Globe, Cloud, Cpu, HardDrive, Wifi, RefreshCw, Activity, Database, AlertTriangle, Radio } from 'lucide-react';
 
 // URL del orquestador de federación — configurable via env o localhost:8080
-const ORCHESTRATOR_URL = (import.meta as any).env?.VITE_ORCHESTRATOR_URL || 'http://localhost:8080';
+const ORCHESTRATOR_URL = (import.meta as any).env?.VITE_ORCHESTRATOR_URL || 'http://127.0.0.1:8080';
 
 export default function ControlTower() {
   const [nodes, setNodes] = useState<any[]>([]);
@@ -105,12 +105,15 @@ export default function ControlTower() {
           <div className="bg-slate-950/50 border border-slate-800 rounded-lg p-3 text-left max-w-md mx-auto">
             <p className="text-[10px] text-slate-400 mb-2 font-bold uppercase">Para iniciarlo en Termux:</p>
             <pre className="text-[10px] text-slate-300 font-mono whitespace-pre-wrap">
- {`# Gateway Mesh separado para federar nodos
+{`# Gateway Mesh separado para federar nodos
 cd ~/Red-team-tauri
 PORT=8080 python3 gateway/mesh_server.py &
 
- # Verificar que responde
- curl http://localhost:8080/health`}
+# O usando el script:
+bash gateway/start_gateway.sh &
+
+# Verificar que responde
+curl http://localhost:8080/health`}
             </pre>
           </div>
 

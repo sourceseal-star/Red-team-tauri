@@ -1,4 +1,6 @@
 import { useState } from 'react';
+// El import de api.ts activa el interceptor global de fetch (injecta Bearer token)
+import './lib/api';
 import AppShell from './components/AppShell';
 import WarRoom from './components/WarRoom';
 import BiometricLogin from './components/BiometricLogin';

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { getApiKey } from '../lib/api'
 import { Network, Scan, Filter, AlertCircle, Shield, Camera, Router as RouterIcon,
          Server, Cpu, Wifi, Eye, RefreshCw, ChevronDown, X, Play, Radio,
          Globe, Lock, Fingerprint, Activity } from 'lucide-react'
@@ -65,6 +66,19 @@ const SERVICE_NAMES: Record<number, string> = {
   161: 'SNMP', 1900: 'SSDP', 5000: 'UPnP', 9000: 'Web',
 }
 
+
+function authHeaders(): Record<string, string> {
+  const key = getApiKey()
+  const h: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (key) h['Authorization'] = `Bearer ${key}`
+  return h
+}
+
+function authHeadersGet(): Record<string, string> {
+  const key = getApiKey()
+  return key ? { 'Authorization': `Bearer ${key}` } : {}
+}
+
 export default function NetworkTopology() {
   const [hosts, setHosts] = useState<Host[]>([])
   const [cameras, setCameras] = useState<Camera[]>([])
@@ -89,7 +103,7 @@ export default function NetworkTopology() {
 
   const loadCameras = async () => {
     try {
-      const r = await fetch('/api/enhanced/cameras')
+      const r = await fetch('/api/enhanced/cameras', { headers: authHeadersGet() })
       const data = await r.json()
       setCameras(data.cameras || [])
     } catch (e) { /* sin cámaras */ }
@@ -100,14 +114,14 @@ export default function NetworkTopology() {
     setSelectedHost(null)
     addLog('Iniciando escaneo de topologia...')
     try {
-      const r = await fetch('/api/scan/topology', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      const r = await fetch('/api/scan/topology', { method: 'POST', headers: authHeaders() })
       const data = await r.json()
       if (data.error) { addLog(`Error: ${data.error}`); return }
       setHosts(data.results || [])
       setSubnet(data.subnet || '')
       addLog(`Topologia: ${data.hosts_up} hosts en ${data.subnet}`)
       addLog('Buscando camaras ONVIF/RTSP...')
-      const camRes = await fetch('/api/scan/cameras', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      const camRes = await fetch('/api/scan/cameras', { method: 'POST', headers: authHeaders() })
       const camData = await camRes.json()
       setCameras(camData.cameras || camData.results || [])
       addLog(`Camaras encontradas: ${camData.cameras?.length || camData.results?.length || 0}`)
@@ -123,7 +137,7 @@ export default function NetworkTopology() {
     addLog('Descubrimiento completo (ONVIF + SSDP + SNMP)...')
     try {
       const net = subnet.split('.').slice(0, 3).join('.') || '192.168.1'
-      const r = await fetch('/api/enhanced/discover/all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ network: net }) })
+      const r = await fetch('/api/enhanced/discover/all', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ network: net }) })
       const data = await r.json()
       setCameras(data.cameras || [])
       addLog(`ONVIF: ${data.onvif_found || 0} | SSDP: ${data.ssdp_found || 0} | Camaras: ${data.cameras?.length || 0}`)
@@ -145,7 +159,7 @@ export default function NetworkTopology() {
     setVideoLoading(true)
     setVideoUrls([])
     try {
-      const r = await fetch(`/api/scan/video-urls?ip=${ip}`)
+      const r = await fetch(`/api/scan/video-urls?ip=${ip}`, { headers: authHeadersGet() })
       const data = await r.json()
       setVideoUrls(data.video_sources || [])
       addLog(`Video en ${ip}: ${data.video_sources?.length || 0} fuentes`)

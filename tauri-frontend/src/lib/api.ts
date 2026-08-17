@@ -427,3 +427,31 @@ export interface WiFiScanResult {
   interface?: string
   warning?: string | null
 }
+
+
+// ── Interceptor global de fetch ────────────────────────────────────────────────
+// Monkey-patch window.fetch para que TODA peticion a /api/ incluya
+// automaticamente el header Authorization: Bearer <token>.
+// Esto arregla los fetch() directos en componentes que no usan el cliente api.
+// (NetworkTopology, CameraCommandCenter, BlackMirrorPanel, ExploitMatrix, etc.)
+//
+if (typeof window !== 'undefined') {
+  const _origFetch = window.fetch.bind(window)
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : (input as Request).url || String(input)
+    // Solo inyectar auth en peticiones a nuestra API
+    if (url.includes('/api/') || url.startsWith('/api')) {
+      const key = getApiKey()
+      if (key) {
+        init = init || {}
+        const existingHeaders = new Headers(init.headers)
+        // No sobrescribir si ya tiene Authorization
+        if (!existingHeaders.has('Authorization')) {
+          existingHeaders.set('Authorization', `Bearer ${key}`)
+          init.headers = existingHeaders
+        }
+      }
+    }
+    return _origFetch(input, init)
+  }
+}
