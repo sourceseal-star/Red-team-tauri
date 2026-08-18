@@ -86,7 +86,7 @@ export default function OSINTAdvancedPanel() {
         case 'email':
           data = await apiCall(`${base}/email`, {
             method: 'POST',
-            body: JSON.stringify({ query: input })
+            body: JSON.stringify({ target: input })
           });
           break;
         case 'headers':
@@ -113,7 +113,7 @@ export default function OSINTAdvancedPanel() {
         case 'social':
           data = await apiCall(`${base}/social`, {
             method: 'POST',
-            body: JSON.stringify({ username: input })
+            body: JSON.stringify({ target: input })
           });
           break;
         case 'results':
