@@ -451,3 +451,370 @@ async def api_get_results():
         return {"domains": domains, "ips": ips}
     except Exception as e:
         return {"error": str(e), "domains": [], "ips": []}
+
+
+# ============================================================================
+# GOOGLE CUSTOM SEARCH
+# ============================================================================
+
+@osint_router.get("/google")
+async def api_google_search(
+    q: str = Query(..., description="Consulta de busqueda"),
+    num: int = Query(10, ge=1, le=20, description="Numero de resultados"),
+):
+    """
+    Google Custom Search API — NIST SP 800-115 §A.1.
+    Si no hay API key, usa scraping basico con httpx.
+    """
+    google_key = os.environ.get("GOOGLE_API_KEY", "")
+    cse_id = os.environ.get("GOOGLE_CSE_ID", "")
+
+    if google_key and cse_id:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    "https://www.googleapis.com/customsearch/v1",
+                    params={"key": google_key, "cx": cse_id, "q": q, "num": num},
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    results = []
+                    for item in data.get("items", []):
+                        results.append({
+                            "title": item.get("title", ""),
+                            "link": item.get("link", ""),
+                            "snippet": item.get("snippet", ""),
+                            "displayLink": item.get("displayLink", ""),
+                        })
+                    return {"query": q, "engine": "google-cse", "results": results, "total": len(results)}
+        except Exception as e:
+            pass
+
+    # Fallback: DuckDuckGo HTML (no requiere API key)
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(
+                "https://html.duckduckgo.com/html/",
+                params={"q": q},
+                headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
+            )
+            results = []
+            if resp.status_code == 200:
+                # Parsear resultados basico con regex
+                links = re.findall(r'class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)', resp.text)
+                for url, title in links[:num]:
+                    # Limpiar URL de redirect de DDG
+                    if "uddg=" in url:
+                        from urllib.parse import parse_qs, urlparse as up
+                        parsed = up(url)
+                        qs = parse_qs(parsed.query)
+                        url = unquote(qs.get("uddg", [url])[0])
+                    results.append({"title": title.strip(), "link": url, "snippet": "", "displayLink": ""})
+            return {"query": q, "engine": "duckduckgo", "results": results, "total": len(results)}
+    except Exception as e:
+        return {"query": q, "engine": "none", "results": [], "error": str(e)}
+
+
+# ============================================================================
+# SHODAN HOST LOOKUP
+# ============================================================================
+
+@osint_router.get("/shodan/{ip}")
+async def api_shodan(ip: str):
+    """
+    Shodan host lookup — NIST SP 800-150.
+    Requiere SHODAN_API_KEY. Sin key, retorna info basica de la IP.
+    """
+    shodan_key = os.environ.get("SHODAN_API_KEY", "")
+
+    if shodan_key:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"https://api.shodan.io/shodan/host/{ip}",
+                    params={"key": shodan_key},
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return {
+                        "ip": ip,
+                        "source": "shodan",
+                        "hostnames": data.get("hostnames", []),
+                        "org": data.get("org", ""),
+                        "os": data.get("os", ""),
+                        "ports": data.get("ports", []),
+                        "services": [
+                            {"port": s.get("port"), "product": s.get("product", ""),
+                             "version": s.get("version", ""), "banner": (s.get("data", "") or "")[:200]}
+                            for s in data.get("data", [])
+                        ],
+                        "country": data.get("country_name", ""),
+                        "city": data.get("city", ""),
+                        "isp": data.get("isp", ""),
+                        "tags": data.get("tags", []),
+                        "vulns": data.get("vulns", []),
+                    }
+                elif resp.status_code == 404:
+                    return {"ip": ip, "source": "shodan", "error": "No data found"}
+                else:
+                    return {"ip": ip, "source": "shodan", "error": f"HTTP {resp.status_code}"}
+        except Exception as e:
+            return {"ip": ip, "source": "shodan", "error": str(e)}
+
+    # Sin key: info basica
+    try:
+        hostname = socket.gethostbyaddr(ip)[0]
+    except Exception:
+        hostname = None
+    return {"ip": ip, "source": "basic", "hostname": hostname, "note": "Configura SHODAN_API_KEY para datos completos"}
+
+
+# ============================================================================
+# VIRUSTOTAL LOOKUP
+# ============================================================================
+
+@osint_router.get("/virustotal/{indicator}")
+async def api_virustotal(indicator: str):
+    """
+    VirusTotal v3 lookup — NIST SP 800-150.
+    Soporta IP, dominio, o hash de archivo.
+    """
+    vt_key = os.environ.get("VIRUSTOTAL_API_KEY", "")
+
+    if not vt_key:
+        return {"indicator": indicator, "source": "virustotal", "error": "VIRUSTOTAL_API_KEY no configurado"}
+
+    # Detectar tipo de indicator
+    try:
+        socket.inet_aton(indicator)
+        endpoint = f"https://www.virustotal.com/api/v3/ip_addresses/{indicator}"
+    except Exception:
+        if "." in indicator and " " not in indicator:
+            endpoint = f"https://www.virustotal.com/api/v3/domains/{indicator}"
+        else:
+            endpoint = f"https://www.virustotal.com/api/v3/files/{indicator}"
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(endpoint, headers={"x-apikey": vt_key})
+            if resp.status_code == 200:
+                data = resp.json().get("data", {}).get("attributes", {})
+                stats = data.get("last_analysis_stats", {})
+                return {
+                    "indicator": indicator,
+                    "source": "virustotal",
+                    "malicious": stats.get("malicious", 0),
+                    "suspicious": stats.get("suspicious", 0),
+                    "harmless": stats.get("harmless", 0),
+                    "undetected": stats.get("undetected", 0),
+                    "reputation": data.get("reputation", 0),
+                    "categories": data.get("categories", {}),
+                    "tags": data.get("tags", []),
+                }
+            elif resp.status_code == 404:
+                return {"indicator": indicator, "source": "virustotal", "error": "No encontrado"}
+            else:
+                return {"indicator": indicator, "source": "virustotal", "error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"indicator": indicator, "source": "virustotal", "error": str(e)}
+
+
+# ============================================================================
+# CENSYS HOST SEARCH
+# ============================================================================
+
+@osint_router.get("/censys/{ip}")
+async def api_censys(ip: str):
+    """
+    Censys host search — NIST SP 800-150.
+    Requiere CENSYS_API_ID y CENSYS_API_SECRET.
+    """
+    censys_id = os.environ.get("CENSYS_API_ID", "")
+    censys_secret = os.environ.get("CENSYS_API_SECRET", "")
+
+    if not censys_id or not censys_secret:
+        return {"ip": ip, "source": "censys", "error": "CENSYS_API_ID/SECRET no configurados"}
+
+    try:
+        import httpx
+        import base64
+        auth = base64.b64encode(f"{censys_id}:{censys_secret}".encode()).decode()
+
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"https://search.censys.io/api/v2/hosts/{ip}",
+                headers={"Authorization": f"Basic {auth}", "Accept": "application/json"},
+            )
+            if resp.status_code == 200:
+                data = resp.json().get("result", {})
+                services = []
+                for svc in data.get("services", []):
+                    services.append({
+                        "port": svc.get("port", 0),
+                        "transport": svc.get("transport", ""),
+                        "service": svc.get("service", ""),
+                        "banner": (str(svc.get("banner", "")) or "")[:200],
+                    })
+                return {
+                    "ip": ip,
+                    "source": "censys",
+                    "services": services,
+                    "location": data.get("location", {}),
+                    "autonomous_system": data.get("autonomous_system", {}),
+                }
+            elif resp.status_code == 404:
+                return {"ip": ip, "source": "censys", "error": "No encontrado"}
+            else:
+                return {"ip": ip, "source": "censys", "error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"ip": ip, "source": "censys", "error": str(e)}
+
+
+# ============================================================================
+# GITHUB RECON — Search for leaked secrets and exposed repos
+# ============================================================================
+
+@osint_router.get("/github/{username}")
+async def api_github_recon(username: str):
+    """
+    GitHub recon — busca repos publicos, gists y posibles leaks.
+    MITRE ATT&CK T1613 (Search for Victim Organizations Info).
+    """
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    if github_token:
+        headers["Authorization"] = f"token {github_token}"
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as client:
+            # Perfil
+            resp = await client.get(f"https://api.github.com/users/{username}", headers=headers)
+            profile = {}
+            if resp.status_code == 200:
+                d = resp.json()
+                profile = {
+                    "login": d.get("login"), "name": d.get("name"),
+                    "bio": d.get("bio"), "company": d.get("company"),
+                    "blog": d.get("blog"), "location": d.get("location"),
+                    "public_repos": d.get("public_repos", 0),
+                    "public_gists": d.get("public_gists", 0),
+                    "followers": d.get("followers", 0),
+                    "following": d.get("following", 0),
+                    "created_at": d.get("created_at"),
+                }
+
+            # Repos
+            resp = await client.get(
+                f"https://api.github.com/users/{username}/repos?sort=updated&per_page=10",
+                headers=headers,
+            )
+            repos = []
+            if resp.status_code == 200:
+                for r in resp.json():
+                    repos.append({
+                        "name": r.get("name"), "description": r.get("description"),
+                        "language": r.get("language"), "stars": r.get("stargazers_count", 0),
+                        "updated_at": r.get("updated_at"), "url": r.get("html_url"),
+                    })
+
+            # GitHub dorks — buscar posibles secrets en codigo publico
+            dorks = [
+                f"{username} password",
+                f"{username} api_key",
+                f"{username} secret",
+                f"{username} token",
+            ]
+            leaks = []
+            for dork in dorks[:2]:
+                resp = await client.get(
+                    "https://api.github.com/search/code",
+                    params={"q": dork, "per_page": 3},
+                    headers=headers,
+                )
+                if resp.status_code == 200:
+                    for item in resp.json().get("items", []):
+                        leaks.append({
+                            "file": item.get("name"),
+                            "repo": item.get("repository", {}).get("full_name"),
+                            "url": item.get("html_url"),
+                        })
+
+            return {
+                "username": username,
+                "profile": profile,
+                "repos": repos,
+                "potential_leaks": leaks[:5],
+            }
+    except Exception as e:
+        return {"username": username, "error": str(e)}
+
+
+# ============================================================================
+# SOCIAL MEDIA USERNAME SEARCH
+# ============================================================================
+
+PLATFORMS = {
+    "github": "https://github.com/{u}",
+    "twitter": "https://twitter.com/{u}",
+    "x": "https://x.com/{u}",
+    "instagram": "https://instagram.com/{u}",
+    "linkedin": "https://linkedin.com/in/{u}",
+    "facebook": "https://facebook.com/{u}",
+    "youtube": "https://youtube.com/@{u}",
+    "reddit": "https://reddit.com/user/{u}",
+    "tiktok": "https://tiktok.com/@{u}",
+    "telegram": "https://t.me/{u}",
+    "gitlab": "https://gitlab.com/{u}",
+    "medium": "https://medium.com/@{u}",
+    "pinterest": "https://pinterest.com/{u}",
+    "snapchat": "https://snapchat.com/add/{u}",
+    "twitch": "https://twitch.tv/{u}",
+    "steam": "https://steamcommunity.com/id/{u}",
+}
+
+@osint_router.post("/social")
+async def api_social_search(req: OSINTRequest):
+    """
+    Social media username search — MITRE ATT&CK T1589 (Gather Victim Identity Info).
+    Verifica si un username existe en 15+ plataformas via HTTP status check.
+    """
+    username = req.target.replace("@", "").strip()
+    results = []
+    sem = asyncio.Semaphore(10)
+
+    async def check_platform(name: str, url: str):
+        full_url = url.replace("{u}", username)
+        async with sem:
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=8, follow_redirects=True, verify=False) as client:
+                    resp = await client.get(full_url, headers={"User-Agent": "Mozilla/5.0"})
+                    exists = resp.status_code == 200
+                    # Algunas plataformas retornan 404 si no existe
+                    not_found_signals = ["not found", "doesn't exist", "unavailable", "page not found"]
+                    if resp.status_code == 200 and any(s in resp.text[:2000].lower() for s in not_found_signals):
+                        exists = False
+                    results.append({
+                        "platform": name,
+                        "url": full_url,
+                        "exists": exists,
+                        "status_code": resp.status_code,
+                    })
+            except Exception as e:
+                results.append({
+                    "platform": name,
+                    "url": full_url,
+                    "exists": False,
+                    "error": str(e)[:100],
+                })
+
+    tasks = [check_platform(name, url) for name, url in PLATFORMS.items()]
+    await asyncio.gather(*tasks)
+
+    found = [r for r in results if r["exists"]]
+    return {"username": username, "found": found, "total_found": len(found), "total_checked": len(results)}

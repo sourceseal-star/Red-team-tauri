@@ -18,6 +18,8 @@ Uso:
 
 import asyncio
 import json
+import ssl
+import socket
 import re
 import sqlite3
 import hashlib
@@ -544,3 +546,342 @@ async def api_clear_flows():
         return {"ok": True, "message": "Flujos y alertas eliminados"}
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+# ============================================================================
+# XXE PATTERNS (CWE-611)
+# ============================================================================
+
+XXE_PATTERNS = [
+    (r"(?i)<!ENTITY\s+", "XXE: ENTITY declaration"),
+    (r"(?i)<!DOCTYPE\s+[^>]*\[", "XXE: DOCTYPE with internal subset"),
+    (r"(?i)SYSTEM\s+[\"']", "XXE: SYSTEM identifier"),
+    (r"(?i)ENTITY\s+\w+\s+SYSTEM", "XXE: External entity"),
+    (r"(?i)&\w+;", "XXE: Entity reference"),
+    (r"(?i)file:///", "XXE: file:// protocol"),
+    (r"(?i)expect://", "XXE: expect:// protocol"),
+    (r"(?i)php://filter", "XXE: PHP filter wrapper"),
+    (r"(?i)CDATA\[", "XXE: CDATA section"),
+]
+
+# LFI/RFI PATTERNS (CWE-98)
+LFI_RFI_PATTERNS = [
+    (r"(?i)php://input", "LFI: PHP input wrapper"),
+    (r"(?i)php://filter.*resource=", "LFI: PHP filter resource"),
+    (r"(?i)data://text", "LFI: data:// wrapper"),
+    (r"(?i)input://", "LFI: input:// wrapper"),
+    (r"(?i)expect://", "LFI: expect:// wrapper"),
+    (r"(?i)include\s*\(", "LFI: include() function"),
+    (r"(?i)require\s*\(", "LFI: require() function"),
+    (r"(?i)require_once\s*\(", "LFI: require_once()"),
+    (r"(?i)include_once\s*\(", "LFI: include_once()"),
+    (r"(?i)\.\./.*\.php", "LFI: Path traversal to PHP file"),
+    (r"(?i)\.\./.*\.conf", "LFI: Path traversal to config"),
+    (r"(?i)https?://.*\.(?:php|jsp|asp)", "RFI: Remote file inclusion"),
+]
+
+# LDAP INJECTION PATTERNS (CWE-90)
+LDAP_INJECTION_PATTERNS = [
+    (r"\*\)", "LDAP: Wildcard close paren"),
+    (r"\(\|", "LDAP: OR filter"),
+    (r"\(&", "LDAP: AND filter"),
+    (r"\)\(", "LDAP: Filter chaining"),
+    (r"(?i)\*objectClass\*", "LDAP: objectClass wildcard"),
+    (r"(?i)admin\)", "LDAP: admin close"),
+    (r"(?i)uid=\*", "LDAP: uid wildcard"),
+    (r"(?i)cn=\*", "LDAP: cn wildcard"),
+    (r"(?i)userPassword", "LDAP: userPassword access"),
+]
+
+# NOSQL INJECTION PATTERNS (CWE-943)
+NOSQL_INJECTION_PATTERNS = [
+    (r"\$ne\b", "NoSQLi: $ne (not equal)"),
+    (r"\$gt\b", "NoSQLi: $gt (greater than)"),
+    (r"\$lt\b", "NoSQLi: $lt (less than)"),
+    (r"\$gte\b", "NoSQLi: $gte (greater or equal)"),
+    (r"\$lte\b", "NoSQLi: $lte (less or equal)"),
+    (r"\$regex\b", "NoSQLi: $regex operator"),
+    (r"\$where\b", "NoSQLi: $where injection"),
+    (r"\$or\b", "NoSQLi: $or operator"),
+    (r"\$in\b", "NoSQLi: $in operator"),
+    (r"(?i)\bthis\.\w+", "NoSQLi: this.property access"),
+    (r"(?i)\breturn\s+true", "NoSQLi: return true bypass"),
+]
+
+# Add new pattern categories to ALL_PATTERNS
+ALL_PATTERNS.extend([
+    ("XXE", XXE_PATTERNS, "CWE-611", "T1059.002"),
+    ("LFI/RFI", LFI_RFI_PATTERNS, "CWE-98", "T1020"),
+    ("LDAP Injection", LDAP_INJECTION_PATTERNS, "CWE-90", "T1190"),
+    ("NoSQL Injection", NOSQL_INJECTION_PATTERNS, "CWE-943", "T1190"),
+])
+
+
+# ============================================================================
+# PAYLOAD DECODER
+# ============================================================================
+
+def decode_payload(payload: str) -> List[str]:
+    """
+    Decodifica un payload en multiples formatos para deteccion profunda.
+    Retorna lista de variantes decodificadas para analisis.
+    """
+    variants = [payload]
+
+    # URL decode
+    try:
+        decoded_url = unquote(payload)
+        if decoded_url != payload:
+            variants.append(decoded_url)
+        # Doble URL decode
+        decoded_url2 = unquote(decoded_url)
+        if decoded_url2 != decoded_url:
+            variants.append(decoded_url2)
+    except Exception:
+        pass
+
+    # Base64 decode
+    try:
+        import base64
+        # Intentar decodificar si parece base64
+        stripped = payload.strip()
+        if len(stripped) > 8 and re.match(r'^[A-Za-z0-9+/=\s]+$', stripped):
+            decoded_b64 = base64.b64decode(stripped).decode('utf-8', errors='ignore')
+            if decoded_b64 and decoded_b64 != payload:
+                variants.append(decoded_b64)
+    except Exception:
+        pass
+
+    # Hex decode
+    try:
+        if re.match(r'^[0-9a-fA-F]{10,}$', payload.strip()):
+            decoded_hex = bytes.fromhex(payload.strip()).decode('utf-8', errors='ignore')
+            if decoded_hex:
+                variants.append(decoded_hex)
+    except Exception:
+        pass
+
+    # Unicode decode
+    try:
+        decoded_unicode = payload.encode('utf-8').decode('unicode_escape')
+        if decoded_unicode != payload:
+            variants.append(decoded_unicode)
+    except Exception:
+        pass
+
+    return list(set(variants))
+
+
+# ============================================================================
+# CERTIFICATE ANALYSIS
+# ============================================================================
+
+def analyze_certificate(host: str, port: int = 443, timeout: float = 5.0) -> Dict[str, Any]:
+    """
+    Analiza el certificado TLS de un host — NIST SP 800-52 Rev. 2.
+    """
+    result: Dict[str, Any] = {"host": host, "port": port, "cert": {}, "issues": []}
+
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                cert = ssock.getpeercert()
+
+                # TLS version
+                tls_version = ssock.version()
+                result["tls_version"] = tls_version
+                if tls_version in ("TLSv1", "TLSv1.1", "SSLv3"):
+                    result["issues"].append({
+                        "type": "weak_tls",
+                        "severity": "high",
+                        "description": f"TLS obsoleto: {tls_version}",
+                        "cwe": "CWE-326",
+                        "mitre": "T1573",
+                    })
+
+                # Certificate details
+                if cert:
+                    subject = dict(x[0] for x in cert.get("subject", []))
+                    issuer = dict(x[0] for x in cert.get("issuer", []))
+                    result["cert"] = {
+                        "subject": subject,
+                        "issuer": issuer,
+                        "not_before": cert.get("notBefore"),
+                        "not_after": cert.get("notAfter"),
+                        "serial": cert.get("serialNumber"),
+                        "san": cert.get("subjectAltName", []),
+                    }
+
+                    # Check expiry
+                    from datetime import datetime as dt
+                    try:
+                        expiry = dt.strptime(cert.get("notAfter", ""), "%b %d %H:%M:%S %Y %Z")
+                        days_left = (expiry - dt.utcnow()).days
+                        if days_left < 0:
+                            result["issues"].append({
+                                "type": "expired_cert",
+                                "severity": "critical",
+                                "description": f"Certificado expirado hace {abs(days_left)} dias",
+                                "cwe": "CWE-295",
+                            })
+                        elif days_left < 30:
+                            result["issues"].append({
+                                "type": "expiring_cert",
+                                "severity": "medium",
+                                "description": f"Certificado expira en {days_left} dias",
+                                "cwe": "CWE-295",
+                            })
+                    except Exception:
+                        pass
+
+                    # SNI mismatch
+                    if host not in str(cert.get("subject", "")) and host not in str(cert.get("subjectAltName", "")):
+                        result["issues"].append({
+                            "type": "sni_mismatch",
+                            "severity": "medium",
+                            "description": f"SNI mismatch: {host} no coincide con el cert",
+                            "cwe": "CWE-295",
+                        })
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
+# ============================================================================
+# RATE LIMITING / BRUTE FORCE DETECTION
+# ============================================================================
+
+class RateLimitDetector:
+    """Detecta patrones de brute force y rate limit bypass — NIST SP 800-94 §3.3."""
+
+    def __init__(self, window_seconds: int = 60, threshold: int = 30):
+        self.window = window_seconds
+        self.threshold = threshold
+        self.requests: Dict[str, List[float]] = {}
+
+    def check(self, src_ip: str) -> Dict[str, Any]:
+        now = time.time()
+        if src_ip not in self.requests:
+            self.requests[src_ip] = []
+
+        # Limpiar ventana
+        self.requests[src_ip] = [t for t in self.requests[src_ip] if now - t < self.window]
+        self.requests[src_ip].append(now)
+
+        count = len(self.requests[src_ip])
+        alerts = []
+
+        if count > self.threshold:
+            alerts.append({
+                "type": "brute_force",
+                "severity": "critical",
+                "description": f"{count} requests en {self.window}s desde {src_ip}",
+                "cwe": "CWE-307",
+                "mitre": "T1110",
+            })
+
+        if count > self.threshold // 2:
+            alerts.append({
+                "type": "rate_anomaly",
+                "severity": "medium",
+                "description": f"Rate elevado: {count} requests en {self.window}s",
+                "cwe": "CWE-770",
+            })
+
+        return {
+            "ip": src_ip,
+            "count": count,
+            "window": self.window,
+            "threshold": self.threshold,
+            "alerts": alerts,
+        }
+
+
+# ============================================================================
+# USER-AGENT ANALYSIS
+# ============================================================================
+
+SUSPICIOUS_UA_PATTERNS = [
+    (r"(?i)sqlmap", "SQLmap scanner"),
+    (r"(?i)nmap", "Nmap scanner"),
+    (r"(?i)nikto", "Nikto scanner"),
+    (r"(?i)masscan", "Masscan scanner"),
+    (r"(?i)dirbuster", "DirBuster"),
+    (r"(?i)gobuster", "Gobuster"),
+    (r"(?i)wpscan", "WPScan"),
+    (r"(?i)hydra", "Hydra brute force"),
+    (r"(?i)metasploit", "Metasploit"),
+    (r"(?i)burp", "Burp Suite"),
+    (r"(?i)zap", "OWASP ZAP"),
+    (r"(?i)acunetix", "Acunetix scanner"),
+    (r"(?i)nessus", "Nessus scanner"),
+    (r"(?i)openvas", "OpenVAS scanner"),
+    (r"(?i)w3af", "w3af scanner"),
+    (r"(?i)skipfish", "Skipfish scanner"),
+    (r"(?i)curl/[0-9]", "curl (automated)"),
+    (r"(?i)wget/[0-9]", "wget (automated)"),
+    (r"(?i)python-requests", "Python requests (automated)"),
+    (r"(?i)go-http-client", "Go HTTP client (automated)"),
+    (r"(?i)scrapy", "Scrapy crawler"),
+    (r"(?i)semrush", "Semrush bot"),
+    (r"(?i)ahrefs", "Ahrefs bot"),
+    (r"(?i)empty", "Empty User-Agent"),
+]
+
+def analyze_user_agent(ua: str) -> Dict[str, Any]:
+    """Analiza un User-Agent en busca de scanners y herramientas de ataque."""
+    if not ua or ua.strip() == "":
+        return {"ua": ua, "suspicious": True, "type": "Empty User-Agent", "mitre": "T1190", "cwe": "CWE-451"}
+
+    for pattern, name in SUSPICIOUS_UA_PATTERNS:
+        if re.search(pattern, ua):
+            return {
+                "ua": ua,
+                "suspicious": True,
+                "type": name,
+                "mitre": "T1190" if "scanner" in name.lower() or "brute" in name.lower() else "T1589",
+                "cwe": "CWE-451",
+            }
+
+    return {"ua": ua, "suspicious": False}
+
+
+# ============================================================================
+# ENHANCED ENDPOINTS
+# ============================================================================
+
+class DecodePayloadModel(BaseModel):
+    payload: str = Field(..., description="Payload a decodificar")
+
+@interceptor_router.post("/decode")
+async def api_decode_payload(req: DecodePayloadModel):
+    """Decodifica un payload en multiples formatos para analisis manual."""
+    variants = decode_payload(req.payload)
+    return {"original": req.payload, "variants": variants, "total": len(variants)}
+
+
+@interceptor_router.get("/cert/{host}")
+async def api_analyze_cert(host: str, port: int = Query(443, ge=1, le=65535)):
+    """Analiza el certificado TLS de un host — NIST SP 800-52 Rev. 2."""
+    return analyze_certificate(host, port)
+
+
+class UserAgentModel(BaseModel):
+    ua: str = Field(..., description="User-Agent a analizar")
+
+@interceptor_router.post("/analyze/user-agent")
+async def api_analyze_ua(req: UserAgentModel):
+    """Analiza un User-Agent en busca de herramientas de ataque."""
+    return analyze_user_agent(req.ua)
+
+
+@interceptor_router.get("/rate-check/{ip}")
+async def api_rate_check(ip: str):
+    """Verifica el rate de un IP especifico."""
+    detector = RateLimitDetector()
+    return detector.check(ip)
