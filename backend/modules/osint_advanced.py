@@ -43,7 +43,7 @@ OSINT_DB_PATH = os.path.join(os.getcwd(), "evidence", "osint_results.db")
 API_KEYS = {
     "shodan": os.environ.get("SHODAN_API_KEY", ""),
     "virustotal": os.environ.get("VIRUSTOTAL_API_KEY", ""),
-    "abuseipdb": os.environ.get("ABUSEIPDB_API_KEY", ""),
+    "abuseipdb": os.environ.get("ABUSEIPDB_KEY", ""),
     "github": os.environ.get("GITHUB_TOKEN", ""),
 }
 
