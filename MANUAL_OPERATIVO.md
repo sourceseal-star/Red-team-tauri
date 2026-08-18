@@ -1,5 +1,5 @@
 # 🛡️ MANUAL OPERATIVO — Red-Team-Tauri / SourceSeal
-## SourceSeal Console v4.0
+## SourceSeal Console v4.1
 
 > **Backend Python/FastAPI + frontend React/Vite.**
 > El arranque unificado sirve API y frontend real en el puerto 8001.
@@ -15,6 +15,7 @@
 4. [Dashboard — Pestañas](#4-dashboard--pestañas)
 5. [API — Endpoints](#5-api--endpoints)
 6. [Solución de Problemas](#6-solución-de-problemas)
+7. [Changelog](#7-changelog)
 
 ---
 
@@ -33,7 +34,10 @@
 | Herramienta | Instalación | Activa |
 |---|---|---|
 | `termux-api` | `pkg install termux-api` | Wake-lock + WiFi scan |
-| `nmap` | `pkg install nmap` | Escaneo avanzado de puertos |
+| `nmap` | `pkg install nmap` | Escaneo avanzado de puertos y topología |
+| `tcpdump` | `pkg install tcpdump` | Traffic Analyzer (captura de paquetes) |
+| `whois` | `pkg install whois` | OSINT WHOIS lookup |
+| `bind-utils` | `pkg install bind-utils` | DNS recon (dig) |
 
 El script instala las dependencias Python que falten y compila el frontend
 únicamente si todavía no existe `tauri-frontend/dist/`.
@@ -81,22 +85,32 @@ La primera ejecución puede instalar dependencias Python y compilar el frontend.
 
 ## 3. ARRANQUE
 
-### Comando único
+### Comando único — recomendado
+
+```bash
+bash arrancar.sh
+```
+
+`arrancar.sh` hace todo en 7 pasos:
+1. Activa wake-lock (Android no mata el proceso)
+2. `git pull` para sincronizar código
+3. Verifica e instala dependencias del sistema (python, nodejs, nmap, tcpdump, etc.)
+4. Verifica dependencias Python (fastapi, uvicorn, httpx, pydantic, psutil)
+5. Crea `.env` con API key local + espacios para API keys OSINT (preserva .env existente)
+6. Compila `tauri-frontend` si falta `dist/`
+7. Mata procesos anteriores y arranca el backend en `:8001`
+
+### Alternativa: start-termux.sh
 
 ```bash
 bash start-termux.sh
 ```
 
-Esto hace:
-1. Activa wake-lock (Android no mata el proceso)
-2. Verifica Python y dependencias FastAPI
-3. Crea un `.env` local con una API key si no existe
-4. Compila `tauri-frontend` si falta `dist/`
-5. Arranca el gateway mesh en `:8080`
-6. Arranca el backend unificado en `:8001`
+Similar a `arrancar.sh` pero además:
+- Inicia el gateway mesh en `:8080` (opcional)
+- Útil si necesitas federación entre dispositivos
 
-Para ejecutar únicamente el backend y omitir la federación:
-
+Para omitir el gateway:
 ```bash
 START_GATEWAY=0 bash start-termux.sh
 ```
@@ -104,10 +118,15 @@ START_GATEWAY=0 bash start-termux.sh
 ### Actualizar desde GitHub
 
 ```bash
-bash start-termux.sh --sync
-# o manualmente:
+# Opción 1: arrancar.sh ya hace git pull automáticamente
+bash arrancar.sh
+
+# Opción 2: sync.sh (más agresivo — reset --hard)
+bash sync.sh
+
+# Opción 3: manual
 git pull origin main
-bash start-termux.sh
+bash arrancar.sh
 ```
 
 ### Abrir el dashboard
@@ -139,18 +158,49 @@ ifconfig wlan0
 
 ```bash
 curl http://localhost:8001/api/health
-# Respuesta: {"status":"ok","version":"2.0.0",...}
+# Respuesta: {"status":"ok","version":"3.0-unified",...}
 ```
+
+### Configurar API Keys OSINT
+
+Las API keys se configuran en el archivo `.env` (creado automáticamente).
+Edítalo con tu editor preferido:
+
+```bash
+nano .env
+```
+
+```bash
+# === API KEYS OSINT (todas tienen tier gratis) ===
+
+# AbuseIPDB: https://www.abuseipdb.com/account/api — gratis, 1000 checks/día
+ABUSEIPDB_KEY=tu-key-aqui
+
+# Shodan: https://www.shodan.io/dashboard — cuenta gratis
+SHODAN_API_KEY=tu-key-aqui
+
+# Hunter.io (emails): https://hunter.io/api-keys — opcional
+HUNTER_API_KEY=tu-key-aqui
+```
+
+**Importante:** Todos los módulos usan `ABUSEIPDB_KEY` (sin `_API`).
+Si una clave no funciona, verifica el nombre de la variable en `.env`.
+
+Los módulos funcionan sin keys con fallbacks graceful.
 
 ---
 
 ## 4. DASHBOARD — PESTAÑAS
 
-### 🌐 Red (escaneo de red /24)
+### 🌐 Topología de Red (escaneo de red /24)
 
 La pestaña principal. Escanea los 254 hosts de tu subred en tiempo real.
 
-1. **Botón "Auto"** — detecta tu subred automáticamente via WebRTC
+**Nodo central:** Muestra tu dispositivo real con ícono de servidor,
+hostname del sistema e IP local detectada automáticamente (no un
+placeholder genérico). Anillo de pulso animado durante el escaneo.
+
+1. **Botón "Auto"** — detecta tu subred automáticamente
 2. **Escribir manual** — `192.168.1.0/24`
 3. **"Escanear Red"** — empieza el escaneo SSE en vivo
 4. Cada host aparece al instante con su tipo:
@@ -181,6 +231,7 @@ Score de riesgo 0-100:
 - rDNS lookup
 - Detección de hosting/proxy/Tor/bulletproof ASN
 - Desglose del score por factor
+- AbuseIPDB si la API key está configurada
 
 ### 📡 IoT
 
@@ -191,6 +242,21 @@ Detección de cámaras IP, radio streaming y VoIP:
 - HTTP path probing (ISAPI, ONVIF, magicBox, etc.)
 - Fingerprinting de vendor (Hikvision, Dahua, Axis, Uniview)
 - Botón "Cámara" para escaneo profundo
+
+### 📊 Traffic Analyzer
+
+Captura y análisis de tráfico de red en tiempo real:
+- Selector de interfaz (any, wlan0, eth0, wlan1)
+- Selector de duración (10s, 15s, 30s, 60s)
+- Stats grid: paquetes totales, protocolos detectados, anomalías
+- Distribución de protocolos con barras de color por tipo:
+  - HTTPS/TLS, HTTP, DNS, ARP, ICMP, TCP, UDP
+- Top Talkers (IPs origen más activas)
+- Top Destinos (IPs destino más activas)
+- Top Servicios (puertos con nombre real del servicio)
+- Detección de anomalías: ARP Storm, Port Scan
+
+**Requiere:** `tcpdump` instalado (`pkg install tcpdump`)
 
 ### 🔬 Forense
 
@@ -209,12 +275,14 @@ Respuesta JSON cruda del último análisis.
 
 ## 5. API — ENDPOINTS
 
+### 5.0 Core
+
 | Método | Ruta | Descripción |
 |---|---|---|
 | GET | `/` | Dashboard HTML |
 | GET | `/api/health` | Estado del servidor |
 | GET | `/api/geo?ip=X` | Geolocalización (ipwho.is) |
-| GET | `/api/intel?ip=X` | Threat score (abuse.ch + DNS) |
+| GET | `/api/intel?ip=X` | Threat score (abuse.ch + DNS + AbuseIPDB) |
 | GET | `/api/iot?ip=X` | Scan IoT de un host |
 | GET | `/api/full?ip=X` | Geo + Intel + IoT combinado |
 | POST | `/api/scan-batch` | Escaneo batch `{ips:[...]}` |
@@ -226,10 +294,28 @@ Respuesta JSON cruda del último análisis.
 | GET | `/api/forensics/patterns` | Lista de patrones IOC |
 | GET | `/api/stream?ip=X` | SSE streaming single IP |
 
----
+### 5.1 Topología y Captura de Tráfico
 
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/api/scan/topology` | Escaneo topológico de red (nmap -sn) — devuelve `local_ip`, `local_hostname` |
+| POST | `/api/scan/cameras` | Detección de cámaras ONVIF/RTSP |
+| GET | `/api/enhanced/cameras` | Listado de cámaras detectadas |
+| POST | `/api/enhanced/discover/all` | Descubrimiento completo de red |
+| GET | `/api/scan/video-urls?ip=X` | URLs de video streaming detectadas |
+| POST | `/api/capture/start` | Iniciar captura de tráfico (tcpdump) |
+| POST | `/api/capture/stop/{session_id}` | Detener captura y obtener análisis |
+| GET | `/api/capture/active` | Capturas activas |
 
-## 5.1 API v4.0 — OSINT AVANZADO
+**Análisis de captura incluye:**
+- `total_packets`: conteo total
+- `protocols`: distribución por protocolo (HTTPS/TLS, HTTP, DNS, ARP, ICMP, TCP, UDP)
+- `top_talkers`: IPs origen más activas (top 6)
+- `top_destinations`: IPs destino más activas (top 6)
+- `top_services`: puertos/servicios más frecuentes con nombre real (top 6)
+- `anomalies`: ARP Storm, Port Scan detectados automáticamente
+
+### 5.2 OSINT Avanzado
 
 | Método | Ruta | Descripción |
 |---|---|---|
@@ -237,7 +323,8 @@ Respuesta JSON cruda del último análisis.
 | GET | `/api/osint/dns/{domain}` | DNS recon (A, MX, TXT, NS, SPF, DMARC) |
 | POST | `/api/osint/subdomains` | Enumeración de subdominios |
 | GET | `/api/osint/threat-intel/{ip}` | Threat intelligence IP |
-| POST | `/api/osint/email` | Email OSINT |
+| POST | `/api/osint/email` | Email OSINT (MX, SPF, DMARC, hash SHA-256) |
+| GET | `/api/osint/emails/{domain}` | Búsqueda de emails por dominio (Hunter.io + pattern guess) |
 | GET | `/api/osint/headers?url=` | HTTP header fingerprinting |
 | GET | `/api/osint/full/{domain}` | OSINT completo |
 | GET | `/api/osint/results` | Resultados guardados BD |
@@ -248,7 +335,7 @@ Respuesta JSON cruda del último análisis.
 | GET | `/api/osint/github/{username}` | GitHub user recon |
 | POST | `/api/osint/social` | Social media username search |
 
-## 5.2 API v4.0 — INTERCEPTOR AVANZADO
+### 5.3 Interceptor Avanzado
 
 | Método | Ruta | Descripción |
 |---|---|---|
@@ -274,18 +361,24 @@ Respuesta JSON cruda del último análisis.
 - LDAP Injection (CWE-90)
 - NoSQL Injection (CWE-943)
 
-### API Keys opcionales (v4.0)
+### API Keys OSINT
+
 ```bash
-export SHODAN_API_KEY="tu-key"
-export VIRUSTOTAL_API_KEY="tu-key"
-export ABUSEIPDB_API_KEY="tu-key"
-export CENSYS_API_ID="tu-id"
-export CENSYS_API_SECRET="tu-secret"
-export GOOGLE_API_KEY="tu-key"
-export GOOGLE_CSE_ID="tu-cse-id"
-export GITHUB_TOKEN="tu-token"
+# Variables de entorno (.env)
+ABUSEIPDB_KEY=tu-key           # AbuseIPDB (todos los módulos usan este nombre)
+SHODAN_API_KEY=tu-key           # Shodan
+HUNTER_API_KEY=tu-key           # Hunter.io (emails)
+VIRUSTOTAL_API_KEY=tu-key       # VirusTotal
+CENSYS_API_ID=tu-id             # Censys (ID + Secret)
+CENSYS_API_SECRET=tu-secret
+GOOGLE_API_KEY=tu-key           # Google Custom Search
+GOOGLE_CSE_ID=tu-cse-id
+GITHUB_TOKEN=tu-token           # GitHub recon
 ```
+
 Los módulos funcionan sin keys con fallbacks graceful.
+
+---
 
 ## 6. SOLUCIÓN DE PROBLEMAS
 
@@ -297,7 +390,7 @@ curl http://localhost:8001/api/health
 
 # Si no responde, matar y reiniciar
 pkill -f "dashboard_server.py"
-bash start-termux.sh
+bash arrancar.sh
 
 # Verificar que el HTML existe
 ls tauri-frontend/dist/index.html
@@ -320,7 +413,7 @@ npm run build
 ### Puerto 8001 ocupado
 
 ```bash
-# El script de inicio mata el proceso anterior automáticamente,
+# arrancar.sh ya mata procesos anteriores automáticamente,
 # pero si persiste:
 fuser -k 8001/tcp
 # o
@@ -328,11 +421,26 @@ ps aux | grep dashboard_server.py | grep -v grep
 kill <PID>
 ```
 
+### Traffic Analyzer muestra error "tcpdump no instalado"
+
+```bash
+pkg install tcpdump
+```
+
+### AbuseIPDB no devuelve datos
+
+Verifica que en tu `.env` la variable se llama `ABUSEIPDB_KEY` (no `ABUSEIPDB_API_KEY`).
+
+```bash
+grep ABUSEIPDB .env
+# Debe mostrar: ABUSEIPDB_KEY=tu-key
+```
+
 ### Gateway Mesh no responde en 8080
 
 ```bash
 curl http://localhost:8080/health
-tail -f /tmp/sourceseal-gateway.log
+tail -f sourceseal-gateway.log
 ```
 
 Si no necesitas federación, arranca solo el dashboard:
@@ -367,7 +475,6 @@ El SSE streaming muestra resultados en vivo, no esperes al final.
 
 ---
 
-
 ### 🌐 Internacionalización (i18n)
 
 El dashboard soporta 3 idiomas: Español, 简体中文, English.
@@ -380,24 +487,50 @@ El dashboard soporta 3 idiomas: Español, 简体中文, English.
 
 ```
 Red-team-tauri/
-├── start-termux.sh          ← Arranque Termux: gateway + dashboard
+├── arrancar.sh                ← Arranque completo (7 pasos, recomendado)
+├── start-termux.sh            ← Arranque Termux con gateway mesh opcional
+├── sync.sh                    ← Sincronización forzada + rebuild
+├── .env.example               ← Template de API keys
 ├── gateway/
-│   └── mesh_server.py       ← Gateway Mesh :8080
+│   └── mesh_server.py         ← Gateway Mesh :8080
 ├── redteam/scripts/
-│   └── dashboard_server.py  ← Backend FastAPI unificado :8001
+│   └── dashboard_server.py    ← Backend FastAPI unificado :8001
+├── backend/
+│   ├── dashboard_server.py    ← Backend alternativo (FastAPI)
+│   └── modules/
+│       └── osint_advanced.py   ← Módulos OSINT avanzados
 ├── tauri-frontend/
-│   ├── src/                 ← React + TypeScript
-│   └── dist/                ← Frontend servido por FastAPI
-└── backend/modules/         ← Reconocimiento complementario
+│   ├── src/components/
+│   │   ├── NetworkTopology.tsx ← Topología de red con hostname/IP real
+│   │   ├── TrafficMonitor.tsx  ← Traffic Analyzer con protocolos reales
+│   │   ├── WarRoom.tsx         ← War Room (Comms/Intel/Exploits/Traffic)
+│   │   └── ...
+│   └── dist/                   ← Build de producción (servido por el backend)
+└── docs/
 ```
 
-**El sistema requiere:**
-- ✅ Python 3.10+ y dependencias FastAPI
-- ✅ Node.js 18+ para compilar el frontend
-- ✅ Un alcance autorizado para escaneos reales
-- ❌ Bases de datos
-- ❌ Redis / Docker
+## 7. CHANGELOG
 
-**Solo necesita:**
-- ✅ Node.js 18+
-- ✅ `node sealctl/server.js`
+### v4.1 (2026-08-18) — commits 259f28c, dd59d0d
+
+**Topología de Red:**
+- Nodo central reemplazado: texto "YO" → ícono Server profesional
+- Muestra hostname real del dispositivo + IP local detectada
+- Anillo de pulso animado durante escaneo
+- Backend `/api/scan/topology` ahora devuelve `local_ip` y `local_hostname`
+
+**Traffic Analyzer:**
+- Parser de tcpdump reescrito: clasifica HTTPS/TLS, HTTP, DNS, ARP, ICMP, TCP, UDP
+- Nuevos paneles: Top Talkers, Top Destinos, Top Servicios
+- Selector de duración de captura (10/15/30/60s)
+- Barras de protocolo con color por tipo
+- Manejo de errores visible en UI (no más alert())
+
+**Fix de consistencia:**
+- `osint_advanced.py`: `ABUSEIPDB_API_KEY` → `ABUSEIPDB_KEY` (alineado con .env, arrancar.sh, y los demás backends)
+
+### v4.0 (2026-08-14) — commit ab107d9
+
+- Integración OSINT Advanced: Google, Shodan, VirusTotal, Censys, GitHub, Social
+- Interceptor Advanced: XXE, LFI/RFI, LDAP, NoSQL, cert, UA, decoder
+- i18n: Español, 简体中文, English

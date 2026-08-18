@@ -32,7 +32,7 @@ echo -e "${G}  OK Código actualizado${N}"
 
 # ─── 3. DEPENDENCIAS SISTEMA ───────────────────────────────────────────
 echo -e "${C}[3/7] Verificando dependencias del sistema...${N}"
-pkg install -y python nodejs-lts git nmap whois bind-utils openssl-tool jq curl 2>/dev/null | tail -3 || true
+pkg install -y python nodejs-lts git nmap whois bind-utils openssl-tool jq curl tcpdump 2>/dev/null | tail -3 || true
 # numpy via pkg (NUNCA pip en Termux/aarch64)
 if ! python3 -c "import numpy" 2>/dev/null; then
   pkg install -y python-numpy 2>/dev/null || true
@@ -89,6 +89,13 @@ if [ -z "$SHODAN_API_KEY" ]; then
   echo -e "${Y}    Luego: echo 'SHODAN_API_KEY=tu-key' >> $ROOT/.env${N}"
 else
   echo -e "${G}  ✓ Shodan configurado${N}"
+fi
+if [ -z "$HUNTER_API_KEY" ]; then
+  echo -e "${Y}  ⚠ HUNTER_API_KEY no configurada (opcional, emails OSINT)${N}"
+  echo -e "${Y}    Obtén: https://hunter.io/api-keys${N}"
+  echo -e "${Y}    Luego: echo 'HUNTER_API_KEY=tu-key' >> $ROOT/.env${N}"
+else
+  echo -e "${G}  ✓ Hunter.io configurado${N}"
 fi
 
 # ─── 6. FRONTEND ──────────────────────────────────────────────────────
