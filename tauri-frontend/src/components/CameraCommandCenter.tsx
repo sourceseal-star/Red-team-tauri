@@ -9,6 +9,7 @@ function ccHeaders(): Record<string, string> {
 
 export default function CameraCommandCenter() {
   const [network, setNetwork] = useState('192.168.1');
+  const [customPorts, setCustomPorts] = useState('');
   const [scanning, setScanning] = useState(false);
   const [cameras, setCameras] = useState<any[]>([]);
   const [selectedCam, setSelectedCam] = useState<any>(null);
@@ -35,12 +36,12 @@ export default function CameraCommandCenter() {
   const runDiscovery = async () => {
     setScanning(true);
     setCameras([]);
-    addLog(`🔍 Iniciando descubrimiento completo en ${network}.0/24...`);
+    addLog(`🔍 Iniciando descubrimiento en ${network}.0/24${customPorts ? ' + puertos: ' + customPorts : ''}...`);
     try {
       const res = await fetch('/api/enhanced/discover/all', {
         method: 'POST',
         headers: ccHeaders(),
-        body: JSON.stringify({ network })
+        body: JSON.stringify({ network, custom_ports: customPorts || undefined })
       });
       const data = await res.json();
       setCameras(data.cameras || []);
@@ -73,8 +74,15 @@ export default function CameraCommandCenter() {
           <input 
             value={network} 
             onChange={e => setNetwork(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-200 font-mono w-32"
+            className="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-200 font-mono w-28"
             placeholder="192.168.1"
+          />
+          <input 
+            value={customPorts} 
+            onChange={e => setCustomPorts(e.target.value)}
+            className="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-200 font-mono w-36"
+            placeholder="Puertos extra (ej: 554,9999)"
+            title="Puertos adicionales separados por coma. Ej: 554,8554,37777,9999"
           />
           <button 
             onClick={runDiscovery}

@@ -366,10 +366,10 @@ async def scan_camera_full(ip: str, port: int = 80) -> Optional[Dict]:
     # Construir RTSP URL
     rtsp_paths = ["/live/ch00_0", "/cam/realmonitor?channel=1&subtype=0", "/Streaming/channels/101"]
     for rp in rtsp_paths:
-        test_url = f"rtsp://{ip}:{554 if port == 80 else port}{rp}"
+        test_url = f"rtsp://{ip}:{port if port != 80 else 554}{rp}"
         # Verificación ligera: intentar conectar TCP al puerto RTSP (async)
         try:
-            _, writer = await asyncio.wait_for(asyncio.open_connection(ip, 554), timeout=1.0)
+            _, writer = await asyncio.wait_for(asyncio.open_connection(ip, port if port != 80 else 554), timeout=1.0)
             writer.close()
             try: await writer.wait_closed()
             except: pass
@@ -450,10 +450,11 @@ async def full_discovery_get(network: str = None):
     return await full_discovery(network)
 
 @router.post("/discover/all")
-async def full_discovery(network: str = None):
+async def full_discovery(network: str = None, custom_ports: str = None):
     """
     Descubrimiento completo: ONVIF + SSDP + TCP scan + credenciales + SNMP + NetBIOS + mDNS
     Timeout total ~30s (ONVIF 4s + SSDP 4s + mDNS 2s + scan 20s). Nunca bloquea el event loop.
+    custom_ports: puertos extra separados por coma (ej: "554,8554,37777,9999")
     """
     if not network:
         network = _real_subnet_prefix()
@@ -481,6 +482,12 @@ async def full_discovery(network: str = None):
 
     # 2. Escanear /24 en puertos clave — paralelo con semaphore y timeout por host
     ports_to_scan = [80, 81, 82, 88, 443, 554, 8000, 8080, 8081, 8554, 37777, 8900, 23, 22, 5000, 8888]
+    # Agregar puertos personalizados del usuario
+    if custom_ports:
+        for p in custom_ports.split(","):
+            p = p.strip()
+            if p.isdigit() and int(p) not in ports_to_scan:
+                ports_to_scan.append(int(p))
     semaphore = asyncio.Semaphore(100)
 
     async def check_host(ip: str):
@@ -503,8 +510,8 @@ async def full_discovery(network: str = None):
                                 all_cameras.append(cam)
                         except (asyncio.TimeoutError, Exception):
                             pass
-                    # Si es puerto RTSP (554/8554), agregar como cámara RTSP-only
-                    if port in [554, 8554]:
+                    # Si es puerto RTSP (554/8554) o puerto personalizado, agregar como cámara RTSP-only
+                    if port in [554, 8554] or (custom_ports and port in [int(p.strip()) for p in custom_ports.split(",") if p.strip().isdigit()]):
                         rtsp_url = f"rtsp://{ip}:{port}/"
                         # Evitar duplicados
                         if not any(c.get("ip") == ip for c in all_cameras):
