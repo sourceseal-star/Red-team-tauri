@@ -95,7 +95,7 @@ if [ "$START_GATEWAY" = "1" ]; then
   (
     cd "$SCRIPT_DIR/gateway"
     PORT="$GATEWAY_PORT" python3 mesh_server.py
-  ) > /tmp/sourceseal-gateway.log 2>&1 &
+  ) > "$SCRIPT_DIR/sourceseal-gateway.log" 2>&1 &
   GATEWAY_PID=$!
 
   GATEWAY_READY=0
