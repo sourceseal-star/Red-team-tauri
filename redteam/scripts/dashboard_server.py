@@ -306,7 +306,7 @@ async def security_middleware(request: Request, call_next):
     # Timeout: los escaneos de red (nmap, ONVIF) pueden tardar hasta 60s en
     # Termux. El resto de endpoints se limita a 25s para evitar cuelgues.
     _scan_paths = ("/api/scan/", "/api/enhanced/discover", "/api/network/cameras",
-                   "/api/iot/scan")
+                   "/api/iot/scan", "/api/capture/")
     _timeout = 150.0 if any(path.startswith(p) for p in _scan_paths for path in [request.url.path]) else 25.0
     try:
         return await asyncio.wait_for(call_next(request), timeout=_timeout)
@@ -3122,7 +3122,7 @@ def _stop_capture_internal(session_id: str):
 
 @app.post("/api/capture/stop/{session_id}")
 async def stop_capture(session_id: str):
-    result = _stop_capture_internal(session_id)
+    result = await asyncio.to_thread(_stop_capture_internal, session_id)
     if not result:
         raise HTTPException(status_code=404, detail="Sesión no encontrada")
     return result

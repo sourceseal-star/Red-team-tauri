@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Activity, Play, StopCircle, AlertOctagon, ArrowUpRight, ArrowDownLeft, Server, Wifi } from 'lucide-react';
+import { getApiKey } from '../lib/api';
+
+function trafficHeaders(): Record<string, string> {
+  const key = getApiKey()
+  return key ? { 'Authorization': `Bearer ${key}` } : {}
+}
 
 const PROTO_COLORS: Record<string, string> = {
   'HTTPS/TLS': '#06b6d4', HTTP: '#f59e0b', DNS: '#a78bfa', ARP: '#64748b',
@@ -30,7 +36,7 @@ export default function TrafficMonitor() {
     setAnalysis(null);
     setError(null);
     try {
-      const res = await fetch(`/api/capture/start?interface=${iface}&duration=${duration}`, { method: 'POST' });
+      const res = await fetch(`/api/capture/start?interface=${iface}&duration=${duration}`, { method: 'POST', headers: trafficHeaders() });
       if (!res.ok) {
         const err = await res.json();
         setError(err.detail || `HTTP ${res.status}`);
@@ -50,7 +56,7 @@ export default function TrafficMonitor() {
 
   const stopCapture = async (sid: string) => {
     try {
-      const res = await fetch(`/api/capture/stop/${sid}`, { method: 'POST' });
+      const res = await fetch(`/api/capture/stop/${sid}`, { method: 'POST', headers: trafficHeaders() });
       if (!res.ok) { setCapturing(false); return; }
       const data = await res.json();
       setAnalysis(data.analysis);
