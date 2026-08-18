@@ -62,9 +62,15 @@ IS_TERMUX = os.path.isdir("/data/data/com.termux/files/usr")
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class ScanRequest(BaseModel):
-    target: str = Field(..., description="IP o rango a escanear")
+    target: Optional[str] = Field(None, description="IP o rango a escanear (autodetecta la LAN local si se omite)")
     ports: Optional[str] = Field("1-1000", description="Rango de puertos")
     timeout: Optional[int] = Field(5, description="Timeout en segundos")
+
+class CamerasScanRequest(BaseModel):
+    target: Optional[str] = Field(None, description="IP o rango (autodetecta si se omite)")
+
+class DiscoverAllRequest(BaseModel):
+    network: Optional[str] = Field(None, description="Prefijo /24, ej. 192.168.1 (autodetecta si se omite)")
 
 class C2Command(BaseModel):
     session_id: str
@@ -181,6 +187,18 @@ def _validate_ip_or_subnet(target: str) -> Optional[str]:
 # FASTAPI APP
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _detect_local_subnet() -> str:
+    """Detecta el prefijo /24 de la interfaz de red local activa (ej. '192.168.1')."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        my_ip = s.getsockname()[0]
+        s.close()
+        return ".".join(my_ip.split(".")[:3])
+    except Exception:
+        return "192.168.1"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"[sealctl] SourceSeal Red Team Backend v3.2 en {HOST}:{PORT}")
@@ -234,64 +252,197 @@ async def api_health():
 # TOPOLOGY — sockets reales, no random
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def _probe_host(ip: str, ports: List[int], timeout: float = 1.5) -> Dict:
-    """Probe real de un host via TCP connect."""
-    open_ports = []
-    for port in ports:
+PORT_SERVICE_NAMES: Dict[int, str] = {
+    80: "http", 443: "https", 554: "rtsp", 22: "ssh", 23: "telnet",
+    21: "ftp", 3389: "rdp", 5900: "vnc", 8080: "http-alt", 8000: "http-alt",
+    37777: "dvr", 8554: "rtsp-alt", 53: "dns", 161: "snmp", 1900: "ssdp",
+    5000: "upnp", 9000: "web", 3306: "mysql", 5432: "postgres",
+}
+
+
+async def _probe_port(ip: str, port: int, timeout: float, sem: Optional[asyncio.Semaphore] = None) -> Optional[Dict]:
+    """Probe real de UN puerto via TCP connect (para paralelizar dentro de _probe_host)."""
+    async def _do():
         try:
             fut = asyncio.open_connection(ip, port)
             reader, writer = await asyncio.wait_for(fut, timeout=timeout)
-            # intentar leer banner
             banner = None
             try:
                 writer.write(b"HEAD / HTTP/1.0\r\n\r\n")
                 await writer.drain()
-                data = await asyncio.wait_for(reader.read(1024), timeout=1.0)
+                data = await asyncio.wait_for(reader.read(1024), timeout=0.6)
                 banner = data.decode("utf-8", errors="ignore").strip()[:200]
-            except:
+            except Exception:
                 pass
             writer.close()
             try:
                 await writer.wait_closed()
-            except:
+            except Exception:
                 pass
-            open_ports.append({"port": port, "banner": banner})
+            return {"port": port, "service": PORT_SERVICE_NAMES.get(port, "unknown"), "state": "open", "banner": banner or ""}
         except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
-            pass
-    # resolver hostname
+            return None
+
+    if sem:
+        async with sem:
+            return await _do()
+    return await _do()
+
+
+async def _probe_host(ip: str, ports: List[int], timeout: float = 1.5, sem: Optional[asyncio.Semaphore] = None) -> Dict:
+    """Probe real de un host via TCP connect — puertos verificados EN PARALELO."""
+    port_results = await asyncio.gather(*[_probe_port(ip, p, timeout, sem) for p in ports])
+    open_ports = [p for p in port_results if p]
     hostname = None
     try:
         hostname = socket.gethostbyaddr(ip)[0]
-    except:
+    except Exception:
         pass
     return {
         "ip": ip,
         "status": "up" if open_ports else "down",
         "hostname": hostname or "",
-        "ports": [p["port"] for p in open_ports],
-        "banners": {str(p["port"]): p["banner"] for p in open_ports if p["banner"]}
+        "ports": open_ports,
+        "banners": {str(p["port"]): p["banner"] for p in open_ports if p["banner"]},
     }
 
+def _classify_host_type(ports: List[Dict]) -> str:
+    """Heuristica simple de tipo de dispositivo segun puertos abiertos."""
+    port_nums = {p["port"] for p in ports}
+    if port_nums & {554, 37777, 8554}:
+        return "camera"
+    if port_nums & {80, 443} and port_nums & {53, 67, 68, 1900}:
+        return "router"
+    if port_nums & {22, 3306, 5432, 8080, 8000, 9000}:
+        return "server"
+    if port_nums & {5000, 1900, 8008, 8009}:
+        return "iot"
+    if not port_nums:
+        return "unknown"
+    return "unknown"
+
+
+def _classify_host_risk(ports: List[Dict]) -> Dict:
+    """Heuristica de riesgo segun puertos expuestos (referencia MITRE ATT&CK / CWE)."""
+    port_nums = {p["port"] for p in ports}
+    reasons: List[str] = []
+    risk = "low"
+    if port_nums & {23}:
+        reasons.append("Telnet expuesto sin cifrar (CWE-319)")
+        risk = "critical"
+    if port_nums & {21}:
+        reasons.append("FTP expuesto sin cifrar (CWE-319)")
+        risk = "high" if risk != "critical" else risk
+    if port_nums & {5900, 3389}:
+        reasons.append("Acceso remoto (VNC/RDP) expuesto — T1021 Remote Services")
+        risk = "high" if risk not in ("critical",) else risk
+    if port_nums & {554, 37777, 8554}:
+        reasons.append("Servicio de video/cámara detectado — verificar credenciales por defecto")
+        risk = "medium" if risk == "low" else risk
+    if not reasons and port_nums:
+        risk = "medium"
+        reasons.append(f"{len(port_nums)} puerto(s) abiertos detectados")
+    if not port_nums:
+        risk = "unknown"
+    return {"risk": risk, "risk_reasons": reasons}
+
+
 @app.post("/api/scan/topology", dependencies=[Depends(require_auth)])
-async def scan_topology(req: ScanRequest):
-    err = _validate_ip_or_subnet(req.target)
+async def scan_topology(req: ScanRequest = Body(default=ScanRequest())):
+    target = (req.target or "").strip() if req else ""
+    if not target:
+        target = f"{_detect_local_subnet()}.1"
+    err = _validate_ip_or_subnet(target)
     if err:
         raise HTTPException(status_code=400, detail=err)
     scan_id = generate_id()
-    base_ip = req.target.rsplit(".", 1)[0] + "."
-    # solo escanear /28 (14 hosts) por defecto para no tardar demasiado
-    host_range = range(1, 15)
-    ports_to_probe = [22, 80, 443, 3306, 8080, 3389]
-    tasks = [_probe_host(f"{base_ip}{i}", ports_to_probe) for i in host_range]
+    base_ip = target.rsplit(".", 1)[0] + "."
+    subnet = base_ip.rstrip(".")
+    # escaneo /24 acotado (1-254) con concurrencia limitada para no saturar la red
+    host_range = range(1, 255)
+    ports_to_probe = [22, 23, 21, 80, 443, 554, 3306, 8080, 3389, 5900, 37777]
+    sem = asyncio.Semaphore(40)
+
+    async def _bounded_probe(ip: str):
+        async with sem:
+            return await _probe_host(ip, ports_to_probe, timeout=0.6)
+
+    tasks = [_bounded_probe(f"{base_ip}{i}") for i in host_range]
     hosts_raw = await asyncio.gather(*tasks, return_exceptions=True)
-    hosts = [h for h in hosts_raw if isinstance(h, dict) and h["status"] == "up"]
+    hosts_up = [h for h in hosts_raw if isinstance(h, dict) and h.get("status") == "up"]
+
+    results = []
+    for h in hosts_up:
+        ports = h.get("ports", [])
+        htype = _classify_host_type(ports)
+        risk_info = _classify_host_risk(ports)
+        results.append({
+            "ip": h["ip"],
+            "mac": h.get("mac"),
+            "vendor": h.get("vendor"),
+            "ports": ports,
+            "type": htype,
+            "status": "up",
+            **risk_info,
+        })
+
     result = {
-        "scan_id": scan_id, "type": "topology", "target": req.target,
-        "timestamp": now_iso(), "hosts_found": len(hosts), "hosts": hosts
+        "scan_id": scan_id, "type": "topology", "target": target, "subnet": subnet,
+        "timestamp": now_iso(), "hosts_found": len(results), "hosts_up": len(results),
+        "hosts": results, "results": results,
     }
     scan_history.append(result)
-    await broadcast_ws({"event": "scan_complete", "type": "topology", "scan_id": scan_id, "hosts_found": len(hosts)})
+    await broadcast_ws({"event": "scan_complete", "type": "topology", "scan_id": scan_id, "hosts_found": len(results)})
     return result
+
+
+@app.post("/api/scan/cameras", dependencies=[Depends(require_auth)])
+async def scan_cameras_quick(req: CamerasScanRequest = Body(default=CamerasScanRequest())):
+    """Escaneo rapido de camaras IP (RTSP/ONVIF/DVR) sobre la LAN local o un target especifico."""
+    target = (req.target or "").strip() if req else ""
+    if not target:
+        base_ip = f"{_detect_local_subnet()}."
+    else:
+        err = _validate_ip_or_subnet(target)
+        if err:
+            raise HTTPException(status_code=400, detail=err)
+        base_ip = target.rsplit(".", 1)[0] + "."
+
+    cam_ports = [554, 80, 8080, 8000, 37777, 8554]
+    sem = asyncio.Semaphore(60)
+
+    async def probe(i: int):
+        ip = f"{base_ip}{i}"
+        async with sem:
+            for port in cam_ports:
+                try:
+                    _, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=0.5)
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
+                    proto = "rtsp" if port in (554, 8554) else "http"
+                    return {
+                        "ip": ip, "port": port, "brand": "Desconocida",
+                        "vulnerable": False, "protocol": proto,
+                        "rtsp_url": f"rtsp://{ip}:{port}/" if proto == "rtsp" else None,
+                    }
+                except Exception:
+                    continue
+        return None
+
+    results = await asyncio.gather(*[probe(i) for i in range(1, 255)])
+    cameras = [r for r in results if r]
+
+    cam_file = os.path.join(EVIDENCE_DIR, "cameras.json")
+    try:
+        with open(cam_file, "w") as f:
+            json.dump({"cameras": cameras, "total": len(cameras)}, f)
+    except Exception:
+        pass
+
+    return {"cameras": cameras, "results": cameras, "total": len(cameras)}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CAMERA DEEP SCAN — sockets reales
@@ -1746,41 +1897,180 @@ CAPTURE_PROCS: Dict[str, subprocess.Popen] = {}
 CAPTURE_DIR = os.path.join(EVIDENCE_DIR, "captures")
 os.makedirs(CAPTURE_DIR, exist_ok=True)
 
+def _analyze_pcap(pcap_path: str) -> Dict[str, Any]:
+    """Analiza un .pcap con tcpdump -r + heuristicas MITRE ATT&CK / CWE.
+    Devuelve total_packets, distribucion de protocolos, anomalias y top talkers."""
+    tcpdump = shutil.which("tcpdump")
+    result: Dict[str, Any] = {"total_packets": 0, "protocols": {}, "anomalies": [], "top_talkers": []}
+    if not tcpdump or not os.path.isfile(pcap_path):
+        result["error"] = "No se pudo leer el archivo de captura"
+        return result
+
+    try:
+        proc = subprocess.run([tcpdump, "-r", pcap_path, "-nn"], capture_output=True, text=True, timeout=30)
+        lines = [l for l in proc.stdout.splitlines() if l.strip()]
+    except Exception as e:
+        result["error"] = f"Error leyendo captura: {e}"
+        return result
+
+    result["total_packets"] = len(lines)
+    protocols: Dict[str, int] = {}
+    src_dst_ports: Dict[str, set] = {}
+    src_counts: Dict[str, int] = {}
+    icmp_count = 0
+    plaintext_hits: List[tuple] = []
+    plain_ports = {21: "FTP", 23: "Telnet", 80: "HTTP", 110: "POP3", 143: "IMAP"}
+    ip_port_re = re.compile(r"IP6?\s+(\S+?)\.(\d+)\s+>\s+(\S+?)\.(\d+):")
+
+    for line in lines:
+        if line.strip().startswith("ARP") or " ARP," in line:
+            protocols["ARP"] = protocols.get("ARP", 0) + 1
+            continue
+        if "ICMP" in line:
+            protocols["ICMP"] = protocols.get("ICMP", 0) + 1
+            icmp_count += 1
+            continue
+        m = ip_port_re.search(line)
+        if m:
+            src_ip, dst_ip, dst_port = m.group(1), m.group(3), int(m.group(4))
+            src_counts[src_ip] = src_counts.get(src_ip, 0) + 1
+            src_dst_ports.setdefault(src_ip, set()).add(dst_port)
+            if "UDP" in line:
+                protocols["UDP"] = protocols.get("UDP", 0) + 1
+            elif "Flags" in line:
+                protocols["TCP"] = protocols.get("TCP", 0) + 1
+            else:
+                protocols["Other"] = protocols.get("Other", 0) + 1
+            if dst_port in plain_ports:
+                plaintext_hits.append((src_ip, dst_ip, dst_port))
+        else:
+            protocols["Other"] = protocols.get("Other", 0) + 1
+
+    result["protocols"] = protocols
+    anomalies: List[Dict] = []
+
+    for src_ip, ports in src_dst_ports.items():
+        if len(ports) >= 8:
+            anomalies.append({
+                "type": "Posible escaneo de puertos", "severity": "high",
+                "description": f"{src_ip} contacto {len(ports)} puertos distintos — T1046 Network Service Discovery (MITRE ATT&CK)",
+            })
+
+    if icmp_count > 50:
+        anomalies.append({
+            "type": "Posible flood ICMP", "severity": "medium",
+            "description": f"{icmp_count} paquetes ICMP detectados en la ventana de captura",
+        })
+
+    seen_plain = set()
+    for src_ip, dst_ip, port in plaintext_hits:
+        key = (dst_ip, port)
+        if key in seen_plain:
+            continue
+        seen_plain.add(key)
+        proto_name = plain_ports[port]
+        anomalies.append({
+            "type": f"Protocolo sin cifrar ({proto_name})",
+            "severity": "high" if proto_name in ("Telnet", "FTP") else "medium",
+            "description": f"Trafico {proto_name} en claro hacia {dst_ip}:{port} — credenciales potencialmente expuestas (CWE-319)",
+        })
+
+    result["anomalies"] = anomalies[:15]
+    top = sorted(src_counts.items(), key=lambda x: -x[1])[:5]
+    result["top_talkers"] = [{"ip": ip, "packets": c} for ip, c in top]
+    return result
+
+
 @app.post("/api/capture/start", dependencies=[Depends(require_auth)])
 async def capture_start(interface: str = Query("any"), duration: int = Query(15)):
     tcpdump = shutil.which("tcpdump")
     if not tcpdump:
-        raise HTTPException(503, "tcpdump no instalado — instala con: pkg install tcpdump")
-    if interface == "any":
-        interface = "any"
+        raise HTTPException(503, "tcpdump no instalado — instala con: pkg install tcpdump (Termux) o apt install tcpdump (Linux)")
+
     capture_id = f"cap_{int(time.time())}"
     outfile = os.path.join(CAPTURE_DIR, f"{capture_id}.pcap")
     try:
         proc = subprocess.Popen(
             [tcpdump, "-i", interface, "-c", str(duration * 100), "-w", outfile],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
-        CAPTURE_PROCS[capture_id] = proc
-        return {"capture_id": capture_id, "interface": interface, "duration": duration, "file": outfile}
     except Exception as e:
         raise HTTPException(500, f"Error iniciando captura: {e}")
+
+    # Verificar que no muera al instante (permisos root / CAP_NET_RAW / interfaz invalida)
+    await asyncio.sleep(0.4)
+    if proc.poll() is not None:
+        _, err = proc.communicate()
+        msg = (err or b"").decode(errors="ignore").strip()
+        msg = msg or "tcpdump termino inmediatamente — probablemente faltan permisos root/CAP_NET_RAW"
+        raise HTTPException(500, f"No se pudo capturar trafico: {msg}")
+
+    CAPTURE_PROCS[capture_id] = proc
+    return {"capture_id": capture_id, "interface": interface, "duration": duration, "file": outfile}
 
 @app.post("/api/capture/stop/{capture_id}", dependencies=[Depends(require_auth)])
 async def capture_stop(capture_id: str):
     proc = CAPTURE_PROCS.get(capture_id)
-    if proc and proc.poll() is None:
+    if not proc:
+        raise HTTPException(404, f"Captura {capture_id} no encontrada o ya detenida")
+    if proc.poll() is None:
         proc.terminate()
         try:
             proc.wait(timeout=5)
         except Exception:
             proc.kill()
-        del CAPTURE_PROCS[capture_id]
-        return {"ok": True, "message": f"Captura {capture_id} detenida"}
-    raise HTTPException(404, f"Captura {capture_id} no encontrada o ya detenida")
+    CAPTURE_PROCS.pop(capture_id, None)
+
+    pcap_path = os.path.join(CAPTURE_DIR, f"{capture_id}.pcap")
+    await asyncio.sleep(0.3)  # dar tiempo a que el FS flushee el archivo
+    analysis = await asyncio.to_thread(_analyze_pcap, pcap_path)
+    return {"ok": True, "message": f"Captura {capture_id} detenida", "analysis": analysis}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CAMERA DISCOVERY — descubrimiento avanzado de cámaras IP
 # ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/enhanced/discover/all", dependencies=[Depends(require_auth)])
+async def enhanced_discover_all_post(req: DiscoverAllRequest = Body(default=DiscoverAllRequest())):
+    """Variante POST — descubrimiento ONVIF/SSDP/camaras, contrato usado por el frontend."""
+    network = (req.network or "").strip() if req else ""
+    prefix = network if network else _detect_local_subnet()
+    ports = [80, 554, 8080, 8000, 37777]
+    sem = asyncio.Semaphore(60)
+
+    async def probe(i: int):
+        ip = f"{prefix}.{i}"
+        async with sem:
+            for port in ports:
+                try:
+                    _, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=0.5)
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
+                    proto = "rtsp" if port in (554, 37777) else "http"
+                    return {"ip": ip, "port": port, "brand": "Desconocida", "vulnerable": False,
+                            "protocol": proto, "rtsp_url": f"rtsp://{ip}:{port}/" if proto == "rtsp" else None}
+                except Exception:
+                    continue
+        return None
+
+    results = await asyncio.gather(*[probe(i) for i in range(1, 255)])
+    cameras = [r for r in results if r]
+    onvif_found = sum(1 for c in cameras if c["port"] == 80)
+    ssdp_found = sum(1 for c in cameras if c["port"] in (8080, 8000))
+
+    cam_file = os.path.join(EVIDENCE_DIR, "cameras.json")
+    try:
+        with open(cam_file, "w") as f:
+            json.dump({"cameras": cameras, "total": len(cameras)}, f)
+    except Exception:
+        pass
+
+    return {"network": prefix, "cameras": cameras, "onvif_found": onvif_found,
+            "ssdp_found": ssdp_found, "total": len(cameras)}
+
 
 @app.get("/api/enhanced/discover/all", dependencies=[Depends(require_auth)])
 async def enhanced_discover_all(subnet: str = Query("")):
@@ -1919,19 +2209,28 @@ async def iot_scan_local():
         subnet = "192.168.1.0/24"
     return await iot_scan_network({"cidr": subnet})
 
-@app.get("/api/iot/video-urls", dependencies=[Depends(require_auth)])
-async def iot_video_urls(ip: str = Query(...), user: str = Query(""), pass_: str = Query("", alias="pass")):
-    auth = ""
-    if user and pass_:
-        auth = f"{user}:{pass_}@"
-    urls = [
+def _build_video_urls(ip: str, user: str = "", pass_: str = "") -> List[Dict]:
+    auth = f"{user}:{pass_}@" if (user and pass_) else ""
+    return [
         {"url": f"rtsp://{auth}{ip}:554/Streaming/Channels/101", "type": "rtsp", "label": "Hikvision Canal 1"},
         {"url": f"rtsp://{auth}{ip}:554/Streaming/Channels/102", "type": "rtsp", "label": "Hikvision Canal 2"},
         {"url": f"rtsp://{auth}{ip}:554/cam/realmonitor?channel=1&subtype=0", "type": "rtsp", "label": "Dahua Canal 1"},
-        {"url": f"rtsp://{auth}{ip}:554/live/ch00_0", "type": "rtsp", "label": "Genérico"},
+        {"url": f"rtsp://{auth}{ip}:554/live/ch00_0", "type": "rtsp", "label": "Generico"},
         {"url": f"http://{ip}/onvif/device_service", "type": "onvif", "label": "ONVIF Device Service"},
     ]
-    return {"ip": ip, "urls": urls}
+
+
+@app.get("/api/iot/video-urls", dependencies=[Depends(require_auth)])
+async def iot_video_urls(ip: str = Query(...), user: str = Query(""), pass_: str = Query("", alias="pass")):
+    urls = _build_video_urls(ip, user, pass_)
+    return {"ip": ip, "urls": urls, "video_sources": urls}
+
+
+@app.get("/api/scan/video-urls", dependencies=[Depends(require_auth)])
+async def scan_video_urls(ip: str = Query(...), user: str = Query(""), pass_: str = Query("", alias="pass")):
+    """Alias del endpoint de deteccion de video — contrato que usa NetworkTopology.tsx."""
+    urls = _build_video_urls(ip, user, pass_)
+    return {"ip": ip, "video_sources": urls, "urls": urls}
 
 @app.get("/api/iot/snapshot", dependencies=[Depends(require_auth)])
 async def iot_snapshot(ip: str = Query(...), port: int = Query(80), path: str = Query("/"),
@@ -2195,7 +2494,7 @@ async def latest_report():
         return {"findings": [], "summary": "Error leyendo reporte"}
 
 @app.get("/api/history", dependencies=[Depends(require_auth)])
-async def scan_history():
+async def get_evidence_reports_history():
     history = []
     if os.path.isdir(EVIDENCE_DIR):
         for f in sorted(os.listdir(EVIDENCE_DIR), reverse=True):
