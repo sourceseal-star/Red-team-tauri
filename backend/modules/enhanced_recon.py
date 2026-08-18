@@ -427,17 +427,36 @@ def extract_ssl_info(ip: str, port: int = 443) -> Optional[Dict]:
 # ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
+def _real_subnet_prefix() -> str:
+    """Detecta el prefijo /24 REAL del dispositivo (via socket UDP trick, sin
+    depender de rutas). Se usa como fallback cuando el cliente no manda
+    'network' -- antes el default hardcodeado '192.168.1' escaneaba una red
+    que casi nunca coincide con la red real (hotspots Android suelen usar
+    192.168.43.x, 192.168.49.x, etc.), por eso ONVIF/SSDP/camaras siempre
+    salian en 0 aunque hubiera dispositivos reales."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+        parts = local_ip.split(".")
+        return f"{parts[0]}.{parts[1]}.{parts[2]}"
+    except Exception:
+        return "192.168.1"
+
 @router.get("/discover/all")
-async def full_discovery_get(network: str = "192.168.1"):
+async def full_discovery_get(network: str = None):
     """Alias GET del POST /discover/all — el frontend usa GET"""
     return await full_discovery(network)
 
 @router.post("/discover/all")
-async def full_discovery(network: str = "192.168.1"):
+async def full_discovery(network: str = None):
     """
     Descubrimiento completo: ONVIF + SSDP + TCP scan + credenciales + SNMP + NetBIOS + mDNS
     Timeout total ~16s (ONVIF 4s + SSDP 4s + mDNS 2s + scan 8s). Nunca bloquea el event loop.
     """
+    if not network:
+        network = _real_subnet_prefix()
     all_cameras = []
     all_hosts = []
 

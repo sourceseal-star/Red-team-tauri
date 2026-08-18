@@ -716,25 +716,92 @@ async def _fingerprint_host(ip: str) -> dict:
     return {"type": dev_type, "vendor": vendor, "risk": risk, "risk_reasons": risk_reasons,
             "ports": sorted(open_ports.keys()), "banners": open_ports}
 
+# ── Descubrimiento de hosts SIN nmap/root ────────────────────────────────────
+# Por que: nmap -sn (ping scan) usa ICMP echo + ARP + TCP SYN "half-open",
+# todo via raw sockets que requieren CAP_NET_RAW. En Termux sin root, el
+# binario de nmap tipicamente NO tiene esa capacidad seteada -> nmap se
+# ejecuta pero descubre 0 hosts SIEMPRE, sin importar cuantos dispositivos
+# reales haya en la red (camaras, routers, etc.). Este fallback usa TCP
+# connect() normal (sin privilegios especiales): un RST/ConnectionRefused
+# confirma que el host esta VIVO (alguien respondio, aunque el puerto este
+# cerrado) -- no solo un timeout indica host caido.
+_DISCOVERY_PORTS = [80, 443, 22, 554, 8080, 8000, 23, 21, 445, 139, 53,
+                     8443, 62078, 1900, 37777, 8081, 88]
+
+async def _tcp_host_alive(ip: str, ports: list, timeout: float = 0.5) -> bool:
+    for port in ports:
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(ip, port), timeout=timeout)
+            writer.close()
+            try: await writer.wait_closed()
+            except: pass
+            return True  # conexion abierta = vivo
+        except ConnectionRefusedError:
+            return True  # RST = el host respondio, esta vivo (puerto cerrado)
+        except (asyncio.TimeoutError, OSError):
+            continue  # sin respuesta en este puerto, probar el siguiente
+    return False
+
+async def _discover_hosts_tcp(subnet: str) -> list:
+    """Escanea el /24 completo via TCP connect puro. Funciona en Termux
+    sin root, sin depender de raw sockets ni de que nmap tenga privilegios."""
+    try:
+        base = subnet.split("/")[0].rsplit(".", 1)[0] + "."
+    except Exception:
+        return []
+    sem = asyncio.Semaphore(64)
+    async def check(i):
+        ip = f"{base}{i}"
+        async with sem:
+            return ip if await _tcp_host_alive(ip, _DISCOVERY_PORTS) else None
+    results = await asyncio.gather(*[check(i) for i in range(1, 255)])
+    return [ip for ip in results if ip]
+
+@app.get("/api/network/info")
+async def network_info():
+    """Info de red REAL instantanea (sin escaneo). Usada por el frontend para
+    auto-poblar el campo de subred en vez de depender de un '192.168.1'
+    hardcodeado que casi nunca coincide con la red real del dispositivo
+    (hotspots Android suelen usar 192.168.43.x, 192.168.49.x, etc.)."""
+    subnet = await asyncio.to_thread(subnet_from_iface)
+    net = _detect_local_network()
+    return {"subnet": subnet, "local_ip": net.get("ip", ""),
+            "local_hostname": socket.gethostname() if hasattr(socket, "gethostname") else ""}
+
 @app.post("/api/scan/topology")
 async def scan_topology():
     subnet = await asyncio.to_thread(subnet_from_iface)
     ok, out = await _nmap_or_empty(["nmap", "-sn", "-T4", "-n", "--max-retries", "1", subnet], timeout=90)
-    if not ok:
-        return JSONResponse({"error": out, "results": [], "subnet": subnet,
-                            "hint": "Instala nmap: pkg install nmap" if "no instalado" in out else None},
-                           status_code=500)
     hosts, current = [], None
-    for line in out.splitlines():
-        if "Nmap scan report for" in line:
-            ip = line.split()[-1].strip("()")
-            current = {"ip": ip, "mac": None, "vendor": None, "ports": [], "type": "unknown", "status": "up"}
-            hosts.append(current)
-        elif current and "MAC Address" in line:
-            parts = line.split()
-            if len(parts) >= 3:
-                current["mac"] = parts[2]
-                if len(parts) > 3: current["vendor"] = " ".join(parts[3:]).strip("()") or "unknown"
+    nmap_note = None
+    if not ok:
+        # nmap no disponible o fallo -- no abortar, usar el fallback TCP.
+        nmap_note = out
+    else:
+        for line in out.splitlines():
+            if "Nmap scan report for" in line:
+                ip = line.split()[-1].strip("()")
+                current = {"ip": ip, "mac": None, "vendor": None, "ports": [], "type": "unknown", "status": "up"}
+                hosts.append(current)
+            elif current and "MAC Address" in line:
+                parts = line.split()
+                if len(parts) >= 3:
+                    current["mac"] = parts[2]
+                    if len(parts) > 3: current["vendor"] = " ".join(parts[3:]).strip("()") or "unknown"
+
+    # Fallback: si nmap fallo o encontro 0 hosts, es casi siempre porque el
+    # binario no tiene CAP_NET_RAW en Termux (comun sin root) -- ICMP/ARP/SYN
+    # crudo no funcionan sin esa capacidad y nmap -sn se queda en silencio con
+    # "0 hosts up" en vez de dar un error claro. TCP connect() puro SI funciona
+    # sin privilegios especiales: un RST confirma host vivo aunque el puerto
+    # este cerrado. Sin este fallback, camaras/routers reales nunca aparecen.
+    used_tcp_fallback = False
+    if len(hosts) == 0:
+        used_tcp_fallback = True
+        tcp_ips = await _discover_hosts_tcp(subnet)
+        hosts = [{"ip": ip, "mac": None, "vendor": None, "ports": [], "type": "unknown", "status": "up"}
+                 for ip in tcp_ips]
 
     # Clasificar tipo + riesgo real de cada host (en paralelo, sin bloquear)
     if hosts:
@@ -753,11 +820,13 @@ async def scan_topology():
             if fp["vendor"] and not h.get("vendor"):
                 h["vendor"] = fp["vendor"]
 
-    await broadcast({"type": "progress", "payload": f"Topología: {len(hosts)} hosts en {subnet}"})
+    await broadcast({"type": "progress", "payload": f"Topología: {len(hosts)} hosts en {subnet}" + (" (via TCP fallback)" if used_tcp_fallback else "")})
     local_ip = _detect_local_network().get("ip", "")
     local_hostname = socket.gethostname() if hasattr(socket, "gethostname") else ""
     return {"results": hosts, "hosts_up": len(hosts), "subnet": subnet,
-            "local_ip": local_ip, "local_hostname": local_hostname}
+            "local_ip": local_ip, "local_hostname": local_hostname,
+            "method": "tcp-connect" if used_tcp_fallback else "nmap",
+            "nmap_note": nmap_note if used_tcp_fallback else None}
 
 # ── Cámaras ──────────────────────────────────────────────────────────────────
 CAM_PORTS = [554, 80, 443, 8000, 8080, 37777, 8554]

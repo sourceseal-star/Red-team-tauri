@@ -58,8 +58,18 @@ export default function OSINTAdvancedPanel() {
   const [error, setError] = useState<string | null>(null);
   const [showJson, setShowJson] = useState(false);
 
+  const PRIVATE_IP_RE = /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
+
   const execute = useCallback(async () => {
     if (!input.trim() && activeTab !== 'results') return;
+    // Shodan/Censys solo indexan direcciones PUBLICAS de internet -- jamas
+    // van a tener datos de una IP de tu red local (192.168.x, 10.x, etc.),
+    // no es un bug, es como funcionan esos servicios. Avisar antes de pegarle
+    // a la API para no confundir 'sin datos' con 'esta roto'.
+    if ((activeTab === 'shodan' || activeTab === 'censys') && PRIVATE_IP_RE.test(input.trim())) {
+      setError(`${input.trim()} es una IP privada de tu red local. Shodan/Censys solo indexan IPs publicas de internet -- nunca van a devolver datos de tu router o camaras locales. Usa esto solo con IPs publicas.`);
+      return;
+    }
     setLoading(true);
     setError(null);
     setResult(null);
@@ -120,7 +130,18 @@ export default function OSINTAdvancedPanel() {
           data = await apiCall(`${base}/results`);
           break;
       }
-      setResult(data);
+      // Varios endpoints (shodan, virustotal, censys, github) devuelven
+      // HTTP 200 con un campo 'error' embebido en vez de un status HTTP de
+      // error (ej sin API key, o key invalida -> HTTP 401 de Shodan pasado
+      // como texto). apiCall() solo revisa el status HTTP, así que sin esto
+      // se mostraba 'Exito' en verde con un error adentro -- confuso y
+      // parecia que el sistema devolvia datos falsos/simulados.
+      if (data && typeof data === 'object' && !Array.isArray(data) && data.error) {
+        setError(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+        setResult(null);
+      } else {
+        setResult(data);
+      }
     } catch (e: any) {
       setError(e?.message || 'Error');
     } finally {

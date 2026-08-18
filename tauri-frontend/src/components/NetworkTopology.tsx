@@ -149,7 +149,19 @@ export default function NetworkTopology() {
     setScanning(true)
     addLog('Descubrimiento completo (ONVIF + SSDP + SNMP)...')
     try {
-      const net = subnet.split('.').slice(0, 3).join('.') || '192.168.1'
+      // Si aun no se corrio 'Escanear Red', subnet esta vacio -- antes esto
+      // caia a un '192.168.1' hardcodeado que casi nunca es la red real
+      // (hotspots Android suelen usar otro rango), por eso ONVIF/SSDP/
+      // camaras siempre salian en 0. Ahora se pide la subred real al backend.
+      let net = subnet.split('.').slice(0, 3).join('.')
+      if (!net) {
+        try {
+          const infoRes = await fetch('/api/network/info', { headers: authHeadersGet() })
+          const info = await infoRes.json()
+          net = (info.subnet || '').split('/')[0].split('.').slice(0, 3).join('.') || '192.168.1'
+          setSubnet(info.subnet || '')
+        } catch { net = '192.168.1' }
+      }
       const r = await fetch('/api/enhanced/discover/all', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ network: net }) })
       const data = await r.json()
       setCameras(data.cameras || [])

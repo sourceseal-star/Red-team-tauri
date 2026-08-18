@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Camera, Scan, Shield, AlertTriangle, Play, Key, Save, Wifi } from 'lucide-react';
+import { getApiKey } from '../lib/api';
+
+function ccHeaders(): Record<string, string> {
+  const key = getApiKey()
+  return key ? { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }
+}
 
 export default function CameraCommandCenter() {
   const [network, setNetwork] = useState('192.168.1');
@@ -10,6 +16,22 @@ export default function CameraCommandCenter() {
 
   const addLog = (msg: string) => setLogs(prev => [msg, ...prev].slice(0, 50));
 
+  // Auto-detectar la subred REAL del dispositivo al montar -- antes el
+  // campo quedaba fijo en '192.168.1' y si tu red real es otra (comun en
+  // hotspots Android: 192.168.43.x, 192.168.49.x, etc.) el escaneo siempre
+  // apuntaba a una red vacia y por eso nunca aparecian camaras/routers.
+  useEffect(() => {
+    fetch('/api/network/info', { headers: ccHeaders() })
+      .then(r => r.json())
+      .then(data => {
+        if (data.subnet) {
+          const prefix = data.subnet.split('/')[0].split('.').slice(0, 3).join('.');
+          if (prefix) setNetwork(prefix);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const runDiscovery = async () => {
     setScanning(true);
     setCameras([]);
@@ -17,7 +39,7 @@ export default function CameraCommandCenter() {
     try {
       const res = await fetch('/api/enhanced/discover/all', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: ccHeaders(),
         body: JSON.stringify({ network })
       });
       const data = await res.json();
@@ -32,7 +54,7 @@ export default function CameraCommandCenter() {
 
   const loadSaved = async () => {
     try {
-      const res = await fetch('/api/enhanced/cameras');
+      const res = await fetch('/api/enhanced/cameras', { headers: ccHeaders() });
       const data = await res.json();
       setCameras(data.cameras || []);
     } catch (e) { console.error(e); }
