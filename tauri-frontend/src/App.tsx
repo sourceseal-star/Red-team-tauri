@@ -13,7 +13,7 @@ import WiFiPanel from './components/WiFiPanel';
 import BlackMirrorPanel from './components/BlackMirrorPanel';
 import ControlTower from './components/ControlTower';
 import ServiceControlPanel from './components/ServiceControlPanel';
-import ConfigEditor from './routes/ConfigEditor';
+import SystemSettings from './components/SystemSettings';
 import { MurcielagoPanel } from './components/MurcielagoPanel';
 import NetworkTopology from './components/NetworkTopology';
 import Terminal from './routes/Terminal';
@@ -47,7 +47,7 @@ function App() {
       {module === 'terminal' && <Terminal />}
       {module === 'tower' && <ControlTower />}
       {module === 'topology' && <NetworkTopology />}
-      {module === 'settings' && <ConfigEditor />}
+      {module === 'settings' && <SystemSettings />}
       {module === 'osint_adv' && <OSINTAdvancedPanel />}
       {module === 'interceptor' && <InterceptorAdvancedPanel />}
     </AppShell>

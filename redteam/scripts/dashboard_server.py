@@ -743,6 +743,24 @@ async def _tcp_host_alive(ip: str, ports: list, timeout: float = 0.5) -> bool:
             continue  # sin respuesta en este puerto, probar el siguiente
     return False
 
+def _get_scan_ports() -> list:
+    """Lee los puertos configurados por el usuario en ops_config.json.
+    Si no hay config o esta vacio, usa los defaults del codigo."""
+    try:
+        ops = _load_ops()
+        ports_str = ops.get("scan_ports", "")
+        if ports_str:
+            return [int(p.strip()) for p in ports_str.split(",") if p.strip().isdigit()]
+    except Exception:
+        pass
+    return _DISCOVERY_PORTS
+
+def _get_scan_timeout() -> float:
+    try:
+        return float(_load_ops().get("scan_timeout", 0.5))
+    except Exception:
+        return 0.5
+
 async def _discover_hosts_tcp(subnet: str) -> list:
     """Escanea el /24 completo via TCP connect puro. Funciona en Termux
     sin root, sin depender de raw sockets ni de que nmap tenga privilegios."""
@@ -750,11 +768,13 @@ async def _discover_hosts_tcp(subnet: str) -> list:
         base = subnet.split("/")[0].rsplit(".", 1)[0] + "."
     except Exception:
         return []
+    ports = _get_scan_ports()
+    timeout = _get_scan_timeout()
     sem = asyncio.Semaphore(64)
     async def check(i):
         ip = f"{base}{i}"
         async with sem:
-            return ip if await _tcp_host_alive(ip, _DISCOVERY_PORTS) else None
+            return ip if await _tcp_host_alive(ip, ports, timeout) else None
     results = await asyncio.gather(*[check(i) for i in range(1, 255)])
     return [ip for ip in results if ip]
 
@@ -771,7 +791,12 @@ async def network_info():
 
 @app.post("/api/scan/topology")
 async def scan_topology():
-    subnet = await asyncio.to_thread(subnet_from_iface)
+    # Si el usuario configuro una subred manual en Settings, usarla
+    ops_subnet = _load_ops().get("scan_subnet", "")
+    if ops_subnet and "/" in ops_subnet:
+        subnet = ops_subnet
+    else:
+        subnet = await asyncio.to_thread(subnet_from_iface)
     ok, out = await _nmap_or_empty(["nmap", "-sn", "-T4", "-n", "--max-retries", "1", subnet], timeout=90)
     hosts, current = [], None
     nmap_note = None
@@ -1563,6 +1588,137 @@ async def settings_post(request: Request):
     current.update(body)
     _save_json(SETTINGS_FILE, current)
     return {"ok": True}
+
+# ═══ Config operacional: API keys + config de escaneo + estado del backend ═══
+# Antes solo se podian setear via variables de entorno (imposible de cambiar
+# desde el telefono sin editar archivos a mano). Ahora se guardan en
+# settings.json y se cargan en memoria al arrancar -- el usuario puede
+# configurar TODO desde el panel sin tocar Termux.
+
+OPS_FILE = DATA_DIR / "ops_config.json"
+
+DEFAULT_OPS = {
+    "shodan_api_key": "",
+    "virustotal_api_key": "",
+    "abuseipdb_key": "",
+    "github_token": "",
+    "scan_subnet": "",           # vacío = auto-detectar
+    "scan_ports": "80,443,22,554,8080,8000,23,21,445,139,53,8443,37777,8081,88",
+    "scan_timeout": 0.5,         # segundos por puerto TCP
+    "scan_max_hosts": 254,
+    "backend_port": 8001,
+}
+
+def _load_ops():
+    if not OPS_FILE.exists():
+        _save_json(OPS_FILE, DEFAULT_OPS)
+    data = _load_json(OPS_FILE, DEFAULT_OPS)
+    # Merge con defaults para campos nuevos que no existan
+    for k, v in DEFAULT_OPS.items():
+        data.setdefault(k, v)
+    return data
+
+def _save_ops(data: dict):
+    _save_json(OPS_FILE, data)
+
+def _apply_ops_to_env(ops: dict):
+    """Inyecta las API keys guardadas como variables de entorno para que
+    los modulos que ya leen os.environ las pueble automáticamente."""
+    key_map = {
+        "shodan_api_key": "SHODAN_API_KEY",
+        "virustotal_api_key": "VIRUSTOTAL_API_KEY",
+        "abuseipdb_key": "ABUSEIPDB_KEY",
+        "github_token": "GITHUB_TOKEN",
+    }
+    for cfg_key, env_key in key_map.items():
+        val = ops.get(cfg_key, "")
+        if val:
+            os.environ[env_key] = val
+
+# Cargar al arrancar
+_apply_ops_to_env(_load_ops())
+
+@app.get("/api/ops/config")
+async def ops_config_get():
+    """Devuelve toda la configuración operacional (API keys, escaneo, backend).
+    Las API keys se devuelven enmascaradas (solo primeros 4 + últimos 4 chars)."""
+    ops = _load_ops()
+    safe = dict(ops)
+    for k in ("shodan_api_key", "virustotal_api_key", "abuseipdb_key", "github_token"):
+        v = safe.get(k, "")
+        if v and len(v) > 12:
+            safe[k] = v[:4] + "••••" + v[-4:]
+        elif v:
+            safe[k] = "••••"
+    # Info del backend en vivo
+    safe["backend_port"] = SERVER_PORT if 'SERVER_PORT' in globals() else 8001
+    safe["backend_pid"] = os.getpid()
+    safe["backend_uptime"] = int(time.time() - START_TIME) if 'START_TIME' in globals() else 0
+    safe["has_nmap"] = subprocess.run(["which", "nmap"], capture_output=True).returncode == 0
+    return safe
+
+@app.post("/api/ops/config")
+async def ops_config_post(request: Request):
+    """Guarda la configuración operacional. Si se cambia una API key,
+    se inyecta en os.environ inmediatamente para que los módulos la usen
+    sin necesidad de reiniciar el backend."""
+    try: body = await request.json()
+    except: body = {}
+    current = _load_ops()
+    # Solo actualizar campos que vengan en el body (patch, no replace)
+    for k, v in body.items():
+        if k in DEFAULT_OPS:
+            # Si el valor viene enmascarado (con ••••), no sobrescribir el real
+            if isinstance(v, str) and "••••" in v:
+                continue
+            current[k] = v
+    _save_ops(current)
+    _apply_ops_to_env(current)
+    return {"ok": True, "applied": True}
+
+@app.post("/api/ops/test-key")
+async def ops_test_key(request: Request):
+    """Prueba si una API key funciona antes de guardarla."""
+    try: body = await request.json()
+    except: body = {}
+    service = body.get("service", "")
+    key = body.get("key", "")
+    if not service or not key:
+        return JSONResponse({"error": "service y key son requeridos"}, status_code=400)
+
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=8) as c:
+            if service == "shodan":
+                r = await c.get("https://api.shodan.io/api-info?key=" + key)
+                data = r.json()
+                if r.status_code == 200:
+                    return {"ok": True, "info": f"Credits: {data.get('query_credits', '?')}, Plan: {data.get('plan', '?')}"}
+                return {"ok": False, "error": f"HTTP {r.status_code}: {data}"}
+            elif service == "virustotal":
+                r = await c.get("https://www.virustotal.com/api/v3/users/me",
+                               headers={"x-apikey": key})
+                if r.status_code == 200:
+                    return {"ok": True, "info": "API key válida"}
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            elif service == "abuseipdb":
+                r = await c.get("https://api.abuseipdb.com/api/v2/check?ipAddress=8.8.8.8",
+                               headers={"Key": key, "Accept": "application/json"})
+                if r.status_code == 200:
+                    return {"ok": True, "info": "API key válida"}
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            elif service == "github":
+                r = await c.get("https://api.github.com/user",
+                               headers={"Authorization": f"token {key}"})
+                if r.status_code == 200:
+                    data = r.json()
+                    return {"ok": True, "info": f"Usuario: {data.get('login', '?')}"}
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            return {"ok": False, "error": f"Servicio '{service}' no soportado"}
+    except httpx.TimeoutException:
+        return {"ok": False, "error": "Timeout — sin internet o API caída"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  ENDPOINTS — AUTH (básico, sin mocks)

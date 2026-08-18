@@ -168,14 +168,42 @@ async def whois_lookup(domain: str) -> Dict[str, Any]:
             "country": w.country,
         }
     except ImportError:
+        # Intentar binario whois
         import subprocess
         try:
             proc = subprocess.run(
                 ["whois", domain], capture_output=True, text=True, timeout=10
             )
-            result["raw"] = {"cli_output": proc.stdout[:2000]}
-        except Exception as e:
-            result["raw"] = {"error": str(e)}
+            if proc.stdout and proc.stdout.strip():
+                result["raw"] = {"cli_output": proc.stdout[:2000]}
+            else:
+                raise FileNotFoundError("whois vacio")
+        except Exception:
+            # Fallback: RDAP (sin binario, solo HTTP)
+            try:
+                import httpx
+                import asyncio as _aio
+                async def _rdap():
+                    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as c:
+                        r = await c.get(f"https://rdap.org/domain/{domain}")
+                        if r.status_code == 200:
+                            d = r.json()
+                            events = {e.get("eventAction",""): e.get("eventDate","")
+                                      for e in d.get("events",[])}
+                            ns = [n.get("ldhName","") for n in d.get("nameservers",[])]
+                            result["raw"] = {
+                                "source": "rdap",
+                                "registrar": None,
+                                "creation_date": events.get("registration",""),
+                                "expiration_date": events.get("expiration",""),
+                                "name_servers": ns,
+                                "status": d.get("status",[]),
+                            }
+                        else:
+                            result["raw"] = {"error": f"whois no instalado y RDAP HTTP {r.status_code}. Instala: pkg install whois"}
+                await _rdap()
+            except Exception as e2:
+                result["raw"] = {"error": f"whois no instalado y RDAP fallo: {e2}. Instala: pkg install whois"}
     except Exception as e:
         result["raw"] = {"error": str(e)}
 
@@ -521,55 +549,162 @@ async def api_google_search(
 # SHODAN HOST LOOKUP
 # ============================================================================
 
+# ── Enriquecimiento local para IPs privadas ──────────────────────────
+import ipaddress as _ipaddr
+import re as _re
+
+_LOCAL_PORTS = [22, 23, 53, 80, 443, 554, 1883, 37777, 5000, 8000, 8080, 8443, 8554, 9000]
+_SVC_NAMES = {22:"ssh", 23:"telnet", 53:"dns", 80:"http", 443:"https", 554:"rtsp",
+              1883:"mqtt", 37777:"dahua-dvr", 5000:"http", 8000:"http-alt",
+              8080:"http-proxy", 8443:"https-alt", 8554:"rtsp-alt", 9000:"http"}
+
+def _is_private_ip(ip: str) -> bool:
+    try:
+        return _ipaddr.ip_address(ip).is_private
+    except ValueError:
+        return False
+
+def _get_mac(ip: str):
+    try:
+        import subprocess as _sp
+        out = _sp.check_output(["ip", "neigh", "show", ip],
+                               stderr=_sp.DEVNULL, timeout=3).decode()
+        for tok in out.split():
+            if _re.fullmatch(r"([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", tok):
+                return tok.lower()
+    except Exception:
+        pass
+    return None
+
+async def _ping_latency(ip: str):
+    try:
+        import subprocess as _sp
+        out = _sp.check_output(["ping", "-c", "1", "-W", "1", ip],
+                               stderr=_sp.DEVNULL, timeout=3).decode()
+        m = _re.search(r"time[=<]([\d.]+)", out)
+        if m:
+            return float(m.group(1))
+    except Exception:
+        pass
+    return None
+
+def _guess_type(ports):
+    ps = {p["port"] for p in ports}
+    if ps & {554, 8554, 37777, 8000}:
+        return "camera"
+    if ps & {23, 80, 443} and len(ps) >= 2:
+        return "router"
+    if ps & {1883}:
+        return "iot"
+    return "unknown"
+
+async def _local_enrich(ip: str) -> dict:
+    """Escaneo local real: puertos TCP, MAC, latencia, tipo inferido."""
+    import asyncio as _aio
+    ports = []
+    for p in _LOCAL_PORTS:
+        try:
+            fut = _aio.open_connection(ip, p, limit=1)
+            reader, writer = await _aio.wait_for(fut, timeout=1.0)
+            banner = ""
+            try:
+                data = await _aio.wait_for(reader.read(256), timeout=0.5)
+                banner = data.decode(errors="replace").strip()[:80]
+            except _aio.TimeoutError:
+                pass
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+            ports.append({"port": p, "service": _SVC_NAMES.get(p, "unknown"),
+                          "state": "open", "banner": banner})
+        except (_aio.TimeoutError, ConnectionRefusedError, OSError):
+            continue
+    from datetime import datetime as _dt
+    return {
+        "ip": ip, "mac": _get_mac(ip), "vendor": None, "hostname": None,
+        "latency_ms": await _ping_latency(ip), "ports": ports,
+        "type": _guess_type(ports), "first_seen": _dt.now().isoformat(),
+    }
+
+
 @osint_router.get("/shodan/{ip}")
 async def api_shodan(ip: str):
     """
     Shodan host lookup — NIST SP 800-150.
-    Requiere SHODAN_API_KEY. Sin key, retorna info basica de la IP.
+    Para IPs privadas: enriquecimiento local real (puertos, MAC, latencia).
+    Para IPs publicas: Shodan real (requiere SHODAN_API_KEY).
     """
-    shodan_key = os.environ.get("SHODAN_API_KEY", "")
 
-    if shodan_key:
-        try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    f"https://api.shodan.io/shodan/host/{ip}",
-                    params={"key": shodan_key},
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return {
-                        "ip": ip,
-                        "source": "shodan",
-                        "hostnames": data.get("hostnames", []),
-                        "org": data.get("org", ""),
-                        "os": data.get("os", ""),
-                        "ports": data.get("ports", []),
-                        "services": [
-                            {"port": s.get("port"), "product": s.get("product", ""),
-                             "version": s.get("version", ""), "banner": (s.get("data", "") or "")[:200]}
-                            for s in data.get("data", [])
-                        ],
-                        "country": data.get("country_name", ""),
-                        "city": data.get("city", ""),
-                        "isp": data.get("isp", ""),
-                        "tags": data.get("tags", []),
-                        "vulns": data.get("vulns", []),
-                    }
-                elif resp.status_code == 404:
-                    return {"ip": ip, "source": "shodan", "error": "No data found"}
-                else:
-                    return {"ip": ip, "source": "shodan", "error": f"HTTP {resp.status_code}"}
-        except Exception as e:
-            return {"ip": ip, "source": "shodan", "error": str(e)}
-
-    # Sin key: info basica
+    # Validacion estricta
     try:
-        hostname = socket.gethostbyaddr(ip)[0]
-    except Exception:
-        hostname = None
-    return {"ip": ip, "source": "basic", "hostname": hostname, "note": "Configura SHODAN_API_KEY para datos completos"}
+        _ipaddr.ip_address(ip)
+    except ValueError:
+        from fastapi.responses import JSONResponse as _JR
+        return _JR({"status": "error", "error": f"IP invalida: {ip}"}, status_code=422)
+
+    # IP PRIVADA -> enriquecimiento local real + advertencia
+    if _is_private_ip(ip):
+        host = await _local_enrich(ip)
+        return {
+            "ip": ip,
+            "status": "local",
+            "warning": "IP privada: Shodan solo indexa internet publico. "
+                       "Estos datos son REALES, obtenidos por escaneo local de tu red.",
+            "source": "escaneo-local",
+            "hostnames": [],
+            "org": None, "os": None,
+            "ports": [p["port"] for p in host["ports"]],
+            "services": host["ports"],
+            "mac": host["mac"],
+            "latency_ms": host["latency_ms"],
+            "type": host["type"],
+            "country": "Local Network",
+            "city": None, "isp": None,
+            "tags": [], "vulns": [],
+        }
+
+    # IP PUBLICA -> Shodan real
+    shodan_key = os.environ.get("SHODAN_API_KEY", "")
+    if not shodan_key:
+        from fastapi.responses import JSONResponse as _JR
+        return _JR({"ip": ip, "status": "error",
+                     "error": "SHODAN_API_KEY no configurada. "
+                              "Usa una IP privada (192.168.x.x) para escaneo local."},
+                    status_code=503)
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"https://api.shodan.io/shodan/host/{ip}",
+                params={"key": shodan_key},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "ip": ip, "status": "shodan", "source": "shodan",
+                    "hostnames": data.get("hostnames", []),
+                    "org": data.get("org", ""),
+                    "os": data.get("os", ""),
+                    "ports": data.get("ports", []),
+                    "services": [
+                        {"port": s.get("port"), "product": s.get("product", ""),
+                         "version": s.get("version", ""), "banner": (s.get("data", "") or "")[:200]}
+                        for s in data.get("data", [])
+                    ],
+                    "country": data.get("country_name", ""),
+                    "city": data.get("city", ""),
+                    "isp": data.get("isp", ""),
+                    "tags": data.get("tags", []),
+                    "vulns": data.get("vulns", []),
+                }
+            elif resp.status_code == 404:
+                return {"ip": ip, "status": "error", "source": "shodan", "error": f"Shodan no tiene datos publicos para {ip}"}
+            else:
+                return {"ip": ip, "status": "error", "source": "shodan", "error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"ip": ip, "status": "error", "source": "shodan", "error": str(e)}
 
 
 # ============================================================================

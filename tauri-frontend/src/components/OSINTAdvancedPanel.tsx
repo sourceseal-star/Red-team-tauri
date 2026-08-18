@@ -66,8 +66,10 @@ export default function OSINTAdvancedPanel() {
     // van a tener datos de una IP de tu red local (192.168.x, 10.x, etc.),
     // no es un bug, es como funcionan esos servicios. Avisar antes de pegarle
     // a la API para no confundir 'sin datos' con 'esta roto'.
-    if ((activeTab === 'shodan' || activeTab === 'censys') && PRIVATE_IP_RE.test(input.trim())) {
-      setError(`${input.trim()} es una IP privada de tu red local. Shodan/Censys solo indexan IPs publicas de internet -- nunca van a devolver datos de tu router o camaras locales. Usa esto solo con IPs publicas.`);
+    // Shodan: las IPs privadas ahora se enriquecen localmente (puertos, MAC, latencia)
+    // Censys: si sigue solo indexando publicas, avisar
+    if (activeTab === 'censys' && PRIVATE_IP_RE.test(input.trim())) {
+      setError(`${input.trim()} es una IP privada. Censys solo indexa IPs publicas. Para escaneo local usa el tab Shodan.`);
       return;
     }
     setLoading(true);
@@ -160,8 +162,10 @@ export default function OSINTAdvancedPanel() {
     URL.revokeObjectURL(url);
   };
 
-  const placeholder = activeTab === 'threat' || activeTab === 'shodan' || activeTab === 'censys'
+  const placeholder = activeTab === 'threat' || activeTab === 'censys'
     ? '8.8.8.8'
+    : activeTab === 'shodan'
+    ? '8.8.8.8 o 192.168.1.1 (local)'
     : activeTab === 'headers' ? 'https://example.com'
     : activeTab === 'email' ? 'user@example.com'
     : activeTab === 'social' || activeTab === 'github' ? 'username'

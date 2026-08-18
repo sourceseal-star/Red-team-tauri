@@ -39,15 +39,34 @@ export function clearApiKey() {
 export function authUrl(path: string): string {
   const key = getApiKey()
   const sep = path.includes('?') ? '&' : '?'
-  return BASE + path + (key ? `${sep}token=${encodeURIComponent(key)}` : '')
+  return getBaseUrl() + path + (key ? `${sep}token=${encodeURIComponent(key)}` : '')
+}
+
+// URL base configurable — el usuario puede cambiarla desde el panel de
+// Settings. Si no se seta, se usa "/api" (que el proxy de Vite redirige
+// a 127.0.0.1:8001). Si se seta (ej "http://192.168.1.50:8001/api"),
+// el frontend conecta directamente a esa URL sin pasar por el proxy.
+const BASE_URL_KEY = 'backend_base_url'
+
+export function getBaseUrl(): string {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const custom = localStorage.getItem(BASE_URL_KEY)
+    if (custom) return custom.replace(/\/$/, '')
+  }
+  return '/api'
+}
+
+export function setBaseUrl(url: string) {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    if (url) localStorage.setItem(BASE_URL_KEY, url)
+    else localStorage.removeItem(BASE_URL_KEY)
+  }
 }
 
 function authHeaders(): Record<string, string> {
   const key = getApiKey()
   return key ? { 'Authorization': `Bearer ${key}` } : {}
 }
-
-const BASE = "/api"
 
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(BASE + path, { headers: { ...authHeaders() } })
