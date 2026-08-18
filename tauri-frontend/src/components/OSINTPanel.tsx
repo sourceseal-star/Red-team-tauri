@@ -4,6 +4,12 @@ import {
   Check, X, Download, Lock, Network, Fingerprint, Users, Globe2,
   ChevronDown, ChevronUp, RefreshCw, Cpu, ExternalLink
 } from 'lucide-react';
+import { getApiKey } from '../lib/api';
+
+function osintHeaders(): Record<string, string> {
+  const key = getApiKey()
+  return key ? { 'Authorization': `Bearer ${key}` } : {}
+}
 
 export interface WhoisData { domain?: string; registrar?: string; created_date?: string; creation_date?: string; expiry_date?: string; expiration_date?: string; nameservers?: string[]; parsed?: Record<string, any>; }
 export interface SubdomainItem { subdomain: string; ip?: string; source?: string; }
@@ -280,8 +286,15 @@ export default function OSINTPanel() {
 
     try {
       const url = tool ? tool.endpoint(target.trim()) : `/api/osint/${id}/${target.trim()}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const res = await fetch(url, { headers: osintHeaders() });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}))
+        const detail = errBody.error || res.statusText
+        if (res.status === 401) throw new Error('Token invalido. Cierra sesion y vuelve a entrar.')
+        if (res.status === 503) throw new Error(`${detail}. Configura la API key en .env`)
+        if (res.status === 504) throw new Error('Timeout — el servidor tardo mas de 20s. Intenta con un dominio mas simple.')
+        throw new Error(`HTTP ${res.status}: ${detail}`)
+      }
       const data = await res.json();
       setResults(prev => ({ ...prev, [id]: data }));
       setActiveTab(id);
@@ -298,7 +311,7 @@ export default function OSINTPanel() {
     setLoadingTool('export');
     setError(null);
     try {
-      const res = await fetch(`/api/osint/export/${target.trim()}`);
+      const res = await fetch(`/api/osint/export/${target.trim()}`, { headers: osintHeaders() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

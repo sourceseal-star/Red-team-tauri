@@ -303,12 +303,16 @@ async def security_middleware(request: Request, call_next):
         if key != API_KEY:
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
-    # Timeout global: ningún endpoint puede bloquear el event loop más de 30s
+    # Timeout: los escaneos de red (nmap, ONVIF) pueden tardar hasta 60s en
+    # Termux. El resto de endpoints se limita a 25s para evitar cuelgues.
+    _scan_paths = ("/api/scan/", "/api/enhanced/discover", "/api/network/cameras",
+                   "/api/iot/scan")
+    _timeout = 60.0 if any(path.startswith(p) for p in _scan_paths for path in [request.url.path]) else 25.0
     try:
-        return await asyncio.wait_for(call_next(request), timeout=20.0)
+        return await asyncio.wait_for(call_next(request), timeout=_timeout)
     except asyncio.TimeoutError:
         return JSONResponse(
-            {"error": "Request timeout", "detail": "La operación tardó más de 30 segundos. Intenta con un rango más pequeño."},
+            {"error": "Request timeout", "detail": f"La operación tardó más de {_timeout:.0f}s. Intenta con un rango más pequeño."},
             status_code=504
         )
 
@@ -408,8 +412,8 @@ def _nmap_or_empty(args: list, timeout: int = 60) -> tuple:
     try:
         out = subprocess.check_output(args, stderr=subprocess.DEVNULL, timeout=timeout).decode(errors="ignore")
         return True, out
-    except FileNotFoundError: return False, "nmap no instalado"
-    except subprocess.TimeoutExpired: return False, "timeout"
+    except FileNotFoundError: return False, "nmap no instalado. Ejecuta: pkg install nmap"
+    except subprocess.TimeoutExpired: return False, "timeout — nmap tardo mas de lo esperado. Intenta con un rango mas pequeno (ej /28)"
     except Exception as e: return False, str(e)
 
 # ── Terminal allowlist ───────────────────────────────────────────────────────
@@ -713,9 +717,11 @@ async def _fingerprint_host(ip: str) -> dict:
 @app.post("/api/scan/topology")
 async def scan_topology():
     subnet = subnet_from_iface()
-    ok, out = _nmap_or_empty(["nmap", "-sn", "-T3", subnet], timeout=60)
+    ok, out = _nmap_or_empty(["nmap", "-sn", "-T3", subnet], timeout=55)
     if not ok:
-        return JSONResponse({"error": out, "results": [], "subnet": subnet}, status_code=500)
+        return JSONResponse({"error": out, "results": [], "subnet": subnet,
+                            "hint": "Instala nmap: pkg install nmap" if "no instalado" in out else None},
+                           status_code=500)
     hosts, current = [], None
     for line in out.splitlines():
         if "Nmap scan report for" in line:

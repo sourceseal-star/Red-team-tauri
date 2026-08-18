@@ -38,7 +38,14 @@ function authHeaders(): Record<string, string> {
 
 async function apiCall<T>(url: string, opts?: RequestInit): Promise<T> {
   const r = await fetch(url, { ...opts, headers: authHeaders() });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  if (!r.ok) {
+    const errBody = await r.json().catch(() => ({}))
+    const detail = errBody.error || r.statusText
+    if (r.status === 401) throw new Error('Token invalido. Cierra sesion y vuelve a entrar.')
+    if (r.status === 503) throw new Error(`${detail}. Verifica que el binario o API key este configurado.`)
+    if (r.status === 504) throw new Error('Timeout — intenta con un objetivo mas simple.')
+    throw new Error(`HTTP ${r.status}: ${detail}`)
+  }
   return r.json();
 }
 

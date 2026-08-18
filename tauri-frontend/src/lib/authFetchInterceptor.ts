@@ -64,8 +64,11 @@ export function installAuthFetchInterceptor() {
       if (hadToken) {
         localStorage.removeItem('api_token')
         console.warn('[auth] Token invalido/vencido — cerrando sesion automaticamente')
-        window.location.reload()
       }
+      // Siempre forzar re-login cuando llega 401, sin importar si habia token o no.
+      // Antes, si NO habia token y llegaba 401, la app quedaba colgada mostrando
+      // paneles vacios sin forma de salir al login.
+      window.location.reload()
     }
 
     return response

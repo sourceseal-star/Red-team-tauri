@@ -83,6 +83,7 @@ export default function NetworkTopology() {
   const [hosts, setHosts] = useState<Host[]>([])
   const [cameras, setCameras] = useState<Camera[]>([])
   const [scanning, setScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
   const [subnet, setSubnet] = useState('')
   const [localIp, setLocalIp] = useState('')
   const [localHostname, setLocalHostname] = useState('')
@@ -114,11 +115,19 @@ export default function NetworkTopology() {
   const runScan = async () => {
     setScanning(true)
     setSelectedHost(null)
+    setScanError(null)
     addLog('Iniciando escaneo de topologia...')
     try {
       const r = await fetch('/api/scan/topology', { method: 'POST', headers: authHeaders() })
+      if (!r.ok) {
+        const errData = await r.json().catch(() => ({}))
+        const msg = errData.error || `HTTP ${r.status}: ${r.statusText}`
+        addLog(`Error: ${msg}`)
+        setScanError(msg)
+        return
+      }
       const data = await r.json()
-      if (data.error) { addLog(`Error: ${data.error}`); return }
+      if (data.error) { addLog(`Error: ${data.error}`); setScanError(data.error); return }
       setHosts(data.results || [])
       setSubnet(data.subnet || '')
       setLocalIp(data.local_ip || '')
@@ -253,6 +262,15 @@ export default function NetworkTopology() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Vista principal */}
         <div className="lg:col-span-2 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
+          {scanError && hosts.length === 0 && (
+            <div className="mb-3 p-3 rounded-lg border border-red-500/40 bg-red-500/10 text-red-300 text-sm flex items-center gap-2">
+              <AlertCircle size={16} className="shrink-0" />
+              <span>{scanError}</span>
+              <button onClick={() => setScanError(null)} className="ml-auto text-red-400 hover:text-red-200">
+                <X size={14} />
+              </button>
+            </div>
+          )}
           {view === 'topology' && (
             <div className="relative bg-slate-900/30" style={{ minHeight: '500px' }}>
               <svg ref={svgRef} className="w-full h-full" viewBox="0 0 800 500" style={{ minHeight: '500px' }}>
@@ -348,7 +366,7 @@ export default function NetworkTopology() {
               {positionedNodes.length === 0 && !scanning && (
                 <div className="absolute inset-0 flex items-center justify-center flex-col gap-2 text-slate-600">
                   <Network size={32} className="opacity-30" />
-                  <span className="text-sm">Sin datos. Ejecuta un escaneo para ver la topologia.</span>
+                  <span className="text-sm">{scanError ? `Error: ${scanError}` : 'Sin datos. Ejecuta un escaneo para ver la topologia.'}</span>
                 </div>
               )}
             </div>
