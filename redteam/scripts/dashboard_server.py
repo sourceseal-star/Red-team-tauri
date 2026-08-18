@@ -307,7 +307,7 @@ async def security_middleware(request: Request, call_next):
     # Termux. El resto de endpoints se limita a 25s para evitar cuelgues.
     _scan_paths = ("/api/scan/", "/api/enhanced/discover", "/api/network/cameras",
                    "/api/iot/scan")
-    _timeout = 60.0 if any(path.startswith(p) for p in _scan_paths for path in [request.url.path]) else 25.0
+    _timeout = 100.0 if any(path.startswith(p) for p in _scan_paths for path in [request.url.path]) else 25.0
     try:
         return await asyncio.wait_for(call_next(request), timeout=_timeout)
     except asyncio.TimeoutError:
@@ -408,13 +408,23 @@ def _detect_local_network() -> dict:
     parts = local_ip.split(".")
     return {"ip": local_ip, "mask": "255.255.255.0", "cidr": f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"}
 
-def _nmap_or_empty(args: list, timeout: int = 60) -> tuple:
+def _nmap_or_empty_sync(args: list, timeout: int = 60) -> tuple:
     try:
         out = subprocess.check_output(args, stderr=subprocess.DEVNULL, timeout=timeout).decode(errors="ignore")
         return True, out
     except FileNotFoundError: return False, "nmap no instalado. Ejecuta: pkg install nmap"
     except subprocess.TimeoutExpired: return False, "timeout — nmap tardo mas de lo esperado. Intenta con un rango mas pequeno (ej /28)"
     except Exception as e: return False, str(e)
+
+async def _nmap_or_empty(args: list, timeout: int = 60) -> tuple:
+    # CRITICO: subprocess.check_output() es BLOQUEANTE. Si se llama directo
+    # desde un endpoint async, congela TODO el event loop mientras corre —
+    # el timeout del middleware (asyncio.wait_for) no puede cancelarlo porque
+    # nunca cede control (no hay await de por medio), asi que el proceso
+    # sigue vivo de fondo bloqueando el resto del backend aunque el cliente
+    # ya recibio "Request timeout". Se ejecuta en un thread aparte para que
+    # el loop quede libre y el timeout real corte a tiempo.
+    return await asyncio.to_thread(_nmap_or_empty_sync, args, timeout)
 
 # ── Terminal allowlist ───────────────────────────────────────────────────────
 ALLOWED_CMDS = {"ls","cat","pwd","whoami","date","uptime","ps","top","grep",
@@ -717,7 +727,7 @@ async def _fingerprint_host(ip: str) -> dict:
 @app.post("/api/scan/topology")
 async def scan_topology():
     subnet = subnet_from_iface()
-    ok, out = _nmap_or_empty(["nmap", "-sn", "-T3", subnet], timeout=55)
+    ok, out = await _nmap_or_empty(["nmap", "-sn", "-T4", "-n", "--max-retries", "1", subnet], timeout=90)
     if not ok:
         return JSONResponse({"error": out, "results": [], "subnet": subnet,
                             "hint": "Instala nmap: pkg install nmap" if "no instalado" in out else None},
@@ -807,7 +817,7 @@ async def scan_routers():
 @app.get("/api/iot")
 async def scan_iot():
     subnet = subnet_from_iface()
-    ok, out = _nmap_or_empty(["nmap", "-sV", "-p", "1883,5683,502,47808", "-T3", subnet], timeout=90)
+    ok, out = await _nmap_or_empty(["nmap", "-sV", "-p", "1883,5683,502,47808", "-T3", subnet], timeout=90)
     if not ok:
         return JSONResponse({"error": out, "results": [], "raw": ""}, status_code=500)
     return {"results": out.splitlines(), "raw": out[:8000]}
@@ -1883,7 +1893,7 @@ os.makedirs(EVIDENCE_CACHE_DIR, exist_ok=True)
 async def _get_topology_data():
     """Obtiene los datos reales de topología reutilizando scan_topology."""
     subnet = subnet_from_iface()
-    ok, out = _nmap_or_empty(["nmap", "-sn", "-T3", subnet], timeout=60)
+    ok, out = await _nmap_or_empty(["nmap", "-sn", "-T3", subnet], timeout=60)
     if not ok:
         return {"devices": [], "subnet": subnet, "error": out, "timestamp": datetime.now().isoformat()}
 
