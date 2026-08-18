@@ -225,6 +225,26 @@ app.add_middleware(
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# MODULE ROUTERS — OSINT Advanced + Interceptor Advanced
+# ═══════════════════════════════════════════════════════════════════════════════
+
+try:
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from backend.modules.osint_advanced import osint_router
+    app.include_router(osint_router)
+    print("[sealctl] OSINT Advanced router cargado")
+except Exception as e:
+    print(f"[sealctl] WARNING: No se pudo cargar osint_router: {e}")
+
+try:
+    from redteam.tlsproxy.interceptor_advanced import interceptor_router
+    app.include_router(interceptor_router)
+    print("[sealctl] Interceptor Advanced router cargado")
+except Exception as e:
+    print(f"[sealctl] WARNING: No se pudo cargar interceptor_router: {e}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # HEALTH (sin auth)
 # ═══════════════════════════════════════════════════════════════════════════════
 

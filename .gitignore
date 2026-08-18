@@ -52,3 +52,5 @@ motor_cierre.db
 redteam/scripts/.auth/
 motor_cierre/backend/.auth/
 .env
+enhanced_recon.db
+evidence/*.db
