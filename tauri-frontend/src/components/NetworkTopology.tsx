@@ -84,6 +84,8 @@ export default function NetworkTopology() {
   const [cameras, setCameras] = useState<Camera[]>([])
   const [scanning, setScanning] = useState(false)
   const [subnet, setSubnet] = useState('')
+  const [localIp, setLocalIp] = useState('')
+  const [localHostname, setLocalHostname] = useState('')
   const [selectedHost, setSelectedHost] = useState<Host | null>(null)
   const [filterRisk, setFilterRisk] = useState('all')
   const [filterType, setFilterType] = useState('all')
@@ -119,6 +121,8 @@ export default function NetworkTopology() {
       if (data.error) { addLog(`Error: ${data.error}`); return }
       setHosts(data.results || [])
       setSubnet(data.subnet || '')
+      setLocalIp(data.local_ip || '')
+      setLocalHostname(data.local_hostname || '')
       addLog(`Topologia: ${data.hosts_up} hosts en ${data.subnet}`)
       addLog('Buscando camaras ONVIF/RTSP...')
       const camRes = await fetch('/api/scan/cameras', { method: 'POST', headers: authHeaders() })
@@ -263,11 +267,22 @@ export default function NetworkTopology() {
                   </filter>
                 </defs>
 
-                {/* Centro — este dispositivo */}
-                <circle cx={400} cy={250} r={60} fill="url(#centerGlow)" />
-                <circle cx={400} cy={250} r={30} fill="#0c4a6e" stroke="#06b6d4" strokeWidth="2" filter="url(#nodeGlow)" />
-                <text x={400} y={247} textAnchor="middle" fill="#06b6d4" fontSize="11" fontWeight="bold" fontFamily="monospace">YO</text>
-                <text x={400} y={260} textAnchor="middle" fill="#64748b" fontSize="8" fontFamily="monospace">{subnet || '192.168.1'}.x</text>
+                {/* Centro — este dispositivo (host local) */}
+                <circle cx={400} cy={250} r={64} fill="url(#centerGlow)">
+                  {scanning && <animate attributeName="r" values="60;70;60" dur="2s" repeatCount="indefinite" />}
+                </circle>
+                <circle cx={400} cy={250} r={30} fill="none" stroke="#06b6d4" strokeWidth="1" opacity="0.35">
+                  <animate attributeName="r" values="30;40;30" dur="2.5s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0.4;0;0.4" dur="2.5s" repeatCount="indefinite" />
+                </circle>
+                <circle cx={400} cy={250} r={26} fill="#0c1e2e" stroke="#06b6d4" strokeWidth="2" filter="url(#nodeGlow)" />
+                <foreignObject x={385} y={235} width="30" height="30">
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%' }}>
+                    <Server size={16} color="#06b6d4" />
+                  </div>
+                </foreignObject>
+                <text x={400} y={293} textAnchor="middle" fill="#e2e8f0" fontSize="10" fontWeight="bold" fontFamily="monospace">{localHostname ? localHostname.toUpperCase() : 'ESTE DISPOSITIVO'}</text>
+                <text x={400} y={306} textAnchor="middle" fill="#64748b" fontSize="9" fontFamily="monospace">{localIp || `${subnet || '192.168.1'}.x`}</text>
 
                 {/* Lineas — hilos */}
                 {positionedNodes.map((n, i) => {

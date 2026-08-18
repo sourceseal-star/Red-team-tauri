@@ -746,7 +746,10 @@ async def scan_topology():
                 h["vendor"] = fp["vendor"]
 
     await broadcast({"type": "progress", "payload": f"Topología: {len(hosts)} hosts en {subnet}"})
-    return {"results": hosts, "hosts_up": len(hosts), "subnet": subnet}
+    local_ip = _detect_local_network().get("ip", "")
+    local_hostname = socket.gethostname() if hasattr(socket, "gethostname") else ""
+    return {"results": hosts, "hosts_up": len(hosts), "subnet": subnet,
+            "local_ip": local_ip, "local_hostname": local_hostname}
 
 # ── Cámaras ──────────────────────────────────────────────────────────────────
 CAM_PORTS = [554, 80, 443, 8000, 8080, 37777, 8554]
@@ -3018,19 +3021,53 @@ def _stop_capture_internal(session_id: str):
         try:
             result = subprocess.run(["tcpdump", "-r", pcap_file, "-n", "-tttt"],
                                      capture_output=True, text=True, timeout=30)
-            arp_count, syn_count = 0, 0
-            port_scan_ips = {}
+            ip_port_re = re.compile(r'IP6?\s+([\d\.:a-fA-F]+)\.(\d+)\s+>\s+([\d\.:a-fA-F]+)\.(\d+):')
+            protocols: dict = {}
+            talkers: dict = {}
+            listeners: dict = {}
+            dst_ports: dict = {}
+            arp_count, syn_count, icmp_count = 0, 0, 0
+            port_scan_ips: dict = {}
+
+            def _bump(d: dict, k, n: int = 1):
+                d[k] = d.get(k, 0) + n
 
             for line in result.stdout.split('\n'):
+                if not line.strip():
+                    continue
                 if "ARP" in line:
                     arp_count += 1
+                    _bump(protocols, "ARP")
+                    continue
+                if "ICMP" in line:
+                    icmp_count += 1
+                    _bump(protocols, "ICMP")
+                    continue
+                m = ip_port_re.search(line)
+                if not m:
+                    _bump(protocols, "OTHER")
+                    continue
+                src_ip, src_port, dst_ip, dst_port = m.groups()
+                _bump(talkers, src_ip)
+                _bump(listeners, dst_ip)
+                is_udp = " UDP" in line or ("length" in line and "Flags" not in line and "seq" not in line)
+                svc = SERVICE_NAMES.get(int(dst_port), None) if dst_port.isdigit() else None
+                svc_src = SERVICE_NAMES.get(int(src_port), None) if src_port.isdigit() else None
+                if dst_port in ("53",) or src_port in ("53",):
+                    _bump(protocols, "DNS")
+                elif dst_port in ("443", "8443") or src_port in ("443", "8443"):
+                    _bump(protocols, "HTTPS/TLS")
+                elif dst_port in ("80", "8080", "8000") or src_port in ("80", "8080", "8000"):
+                    _bump(protocols, "HTTP")
+                elif is_udp:
+                    _bump(protocols, "UDP")
+                else:
+                    _bump(protocols, "TCP")
                 if "Flags [S]" in line and "length 0" in line:
                     syn_count += 1
-                    parts = line.split()
-                    if len(parts) > 2:
-                        src_ip = parts[2].split('.')[0:4]
-                        src_ip_str = '.'.join(src_ip)
-                        port_scan_ips[src_ip_str] = port_scan_ips.get(src_ip_str, 0) + 1
+                    _bump(port_scan_ips, src_ip)
+                label = svc or svc_src or (f"{dst_port}/tcp" if not is_udp else f"{dst_port}/udp")
+                _bump(dst_ports, label)
 
             if arp_count > 50:
                 stats["anomalies"].append({
@@ -3047,10 +3084,19 @@ def _stop_capture_internal(session_id: str):
                         "source": ip, "count": count
                     })
 
-            stats["protocols"] = {
-                "ARP": arp_count, "TCP_SYN": syn_count,
-                "OTHER": max(0, stats["total_packets"] - arp_count - syn_count)
-            }
+            stats["protocols"] = protocols
+            stats["top_talkers"] = [
+                {"ip": ip, "packets": c} for ip, c in
+                sorted(talkers.items(), key=lambda x: -x[1])[:6]
+            ]
+            stats["top_destinations"] = [
+                {"ip": ip, "packets": c} for ip, c in
+                sorted(listeners.items(), key=lambda x: -x[1])[:6]
+            ]
+            stats["top_services"] = [
+                {"service": s, "packets": c} for s, c in
+                sorted(dst_ports.items(), key=lambda x: -x[1])[:6]
+            ]
         except Exception as e:
             stats["error"] = str(e)
 
