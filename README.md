@@ -1,4 +1,4 @@
-# SourceSeal Console Pro v3.2 — Sala de Guerra Unificada
+# SourceSeal Console Pro v4.0 — Sala de Guerra Unificada
 
 > **Consola de operaciones de seguridad ofensiva y defensiva.**  
 > Topología + Cámaras + Ultrasonidos + Threat Intel + Exploits + Captura de tráfico.
@@ -46,6 +46,8 @@ bash sync.sh
 | 📤 **Evidencia Blindada** | Hash SHA-256 + blockchain + PDF con QR + modo offline | ✅ |
 | 🪤 **Honeypot** | Honeypot + canary tokens | ✅ |
 | 🔍 **OSINT** | Shodan + WHOIS + geolocalización | ✅ |
+| 🔍 **开源情报高级版** | OSINT v4.0: Google, Shodan, VirusTotal, Censys, GitHub, Social | ✅ |
+| 🛡️ **网络拦截高级版** | Interceptor v4.0: MITM + SQLi/XSS/XXE/LFI/LDAP/NoSQL detection | ✅ |
 
 ---
 
@@ -57,6 +59,7 @@ bash sync.sh
 - **Grafo**: vis-network | **Mapas**: Leaflet | **Iconos**: lucide-react
 - **Audio**: Web Audio API (emisor) + numpy FFT (receptor)
 - **Cache**: SQLite
+- **i18n**: Español / 简体中文 / English
 
 ## Identidad visual SourceSeal
 
@@ -64,4 +67,4 @@ Cyan `#00e5ff` · Amber `#fbbf24` · Red `#ff3b5c` · Green `#00ff88`
 
 ---
 
-*SourceSeal / Red-Team-Tauri v3.2 · 2026*
+*SourceSeal / Red-Team-Tauri v4.0 · 2026*

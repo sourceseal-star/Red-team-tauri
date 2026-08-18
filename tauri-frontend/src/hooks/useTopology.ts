@@ -96,7 +96,7 @@ export function useTopology() {
     store.setError(null);
     store.pushLog('⏳ Refrescando topología...');
     try {
-      const key = useScanStore.getState().apiKey || localStorage.getItem('api_token')
+      const key = getApiKey() || localStorage.getItem('api_token');
       const res = await fetch('/api/scan/topology', {
         method: 'POST',
         headers: key ? { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },

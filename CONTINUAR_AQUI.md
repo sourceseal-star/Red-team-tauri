@@ -1,10 +1,10 @@
 # SourceSeal Console — Estado del Proyecto
 
 **Ultima actualizacion:** 2026-08-14
-**Version:** 3.2-unified
+**Version:** 4.0-unified
 **Repositorio:** https://github.com/sourceseal-star/Red-team-tauri
 **Branch:** main
-**Ultimo commit:** 658c023 (optimizacion endpoints + middleware anti-bloqueo)
+**Ultimo commit:** eebc43b (optimizacion endpoints + middleware anti-bloqueo)
 
 ---
 
@@ -16,22 +16,31 @@
 
 ## Pendientes prioritarios (siguiente sesion)
 
-1. **Configurar keystore en GitHub Secrets** — KEYSTORE_BASE64, KEY_ALIAS, STORE_PASSWORD, KEY_PASSWORD
-2. **Reducir permisos shell** en `src-tauri/capabilities/default.json` — quitar shell:allow-spawn, shell:allow-execute
-3. **Habilitar CSP** en `src-tauri/tauri.conf.json` — reemplazar "csp": null con CSP real
-4. **Cambiar identifier** — de com.sourceseal.console a com.sourceseal.securityconsole
-5. **Probar Integrity Check en produccion**
-6. **Probar flujo de autodestruccion de sellos**
-7. **Verificar build de APK** despues de reducir permisos
+### ✅ RESUELTOS (18-ago-2026)
+1. ~~Configurar keystore en GitHub Secrets~~ — PENDIENTE MANUAL
+2. ~~Reducir permisos shell~~ — HECHO (solo core:default + shell:allow-open)
+3. ~~Habilitar CSP~~ — HECHO (CSP real configurado)
+4. ~~Cambiar identifier~~ — HECHO (com.sourceseal.securityconsole)
+5. ~~Integrar módulos v4.0~~ — HECHO (OSINT + Interceptor conectados a redteam/scripts/dashboard_server.py)
+6. ~~Deps Python v4.0~~ — HECHO (dnspython, beautifulsoup4, python-whois en replit.nix + start-termux.sh)
+7. ~~i18n dashboard~~ — HECHO (ES/ZH/EN con selector, módulos nuevos en chino simplificado)
 
-## Cambios ya hechos (commit 658c023, en GitHub)
+### ⏳ PENDIENTES
+1. **Configurar keystore en GitHub Secrets** — KEYSTORE_BASE64, KEY_ALIAS, STORE_PASSWORD, KEY_PASSWORD
+2. **Probar Integrity Check en produccion**
+3. **Probar flujo de autodestruccion de sellos**
+4. **Verificar build de APK** despues de reducir permisos
+5. **Probar en Termux** — bash start-termux.sh
+6. **Probar en Replit** — bash replit_start.sh
+
+## Cambios ya hechos (commit eebc43b, en GitHub)
 
 - /api/network/radio: 2min → 4s (paralelizado)
 - /api/enhanced/discover/all: bloqueo total → 13s con respuesta parcial
 - Middleware: timeout 20s en todos los endpoints (504 si se cuelga, server sigue vivo)
 - Todas las funciones bloqueantes movidas a thread pool
 
-## Arquitectura actual (v3.2-unified)
+## Arquitectura actual (v4.0-unified)
 
 ```
 Red-team-tauri/

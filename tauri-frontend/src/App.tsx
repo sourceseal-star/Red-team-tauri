@@ -17,6 +17,9 @@ import ConfigEditor from './routes/ConfigEditor';
 import { MurcielagoPanel } from './components/MurcielagoPanel';
 import NetworkTopology from './components/NetworkTopology';
 import Terminal from './routes/Terminal';
+import OSINTAdvancedPanel from './components/OSINTAdvancedPanel';
+import InterceptorAdvancedPanel from './components/InterceptorAdvancedPanel';
+import { LanguageProvider } from './i18n/LanguageContext';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -25,6 +28,7 @@ function App() {
   if (!token) return <BiometricLogin onLogin={setToken} />;
 
   return (
+    <LanguageProvider>
     <AppShell activeModule={module} onNavigate={setModule}>
       {module === 'warroom' && <WarRoom />}
       {module === 'cameras' && <CameraCommandCenter />}
@@ -44,7 +48,10 @@ function App() {
       {module === 'tower' && <ControlTower />}
       {module === 'topology' && <NetworkTopology />}
       {module === 'settings' && <ConfigEditor />}
+      {module === 'osint_adv' && <OSINTAdvancedPanel />}
+      {module === 'interceptor' && <InterceptorAdvancedPanel />}
     </AppShell>
+    </LanguageProvider>
   );
 }
 

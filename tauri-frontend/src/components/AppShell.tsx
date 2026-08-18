@@ -4,7 +4,8 @@ import {
   Terminal, Settings, Bell, Search, Menu, X, ChevronRight,
   Zap, Lock, Eye, Fingerprint, Bug, FileText, Network,
   Sun, Moon, LogOut
-} from 'lucide-react';
+} from 'lucide-react'
+import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 
 // ==========================================
 // CONTEXTOS GLOBALES
@@ -40,6 +41,8 @@ const MODULES = [
     { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
   { id: 'topology', label: 'Topología', icon: Network, color: 'text-cyan-400', badge: null },
   { id: 'settings', label: 'Config', icon: Settings, color: 'text-slate-500', badge: null },
+  { id: 'osint_adv', label: '开源情报高级版', icon: Globe, color: 'text-indigo-400', badge: 'v4.0' },
+  { id: 'interceptor', label: '网络拦截高级版', icon: Lock, color: 'text-red-400', badge: 'v4.0' },
 ];
 
 // ==========================================
@@ -222,6 +225,7 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
           <div className="flex items-center gap-2">
             <Shield size={18} className="text-cyan-400" />
             <span className="text-sm font-bold text-white tracking-tight hidden sm:inline">SourceSeal</span>
+          <LanguageSwitcher />
           </div>
 
           {/* Breadcrumbs */}

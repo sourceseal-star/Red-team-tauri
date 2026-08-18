@@ -1,5 +1,5 @@
 # 🛡️ MANUAL OPERATIVO — Red-Team-Tauri / SourceSeal
-## SourceSeal Console v3.2
+## SourceSeal Console v4.0
 
 > **Backend Python/FastAPI + frontend React/Vite.**
 > El arranque unificado sirve API y frontend real en el puerto 8001.
@@ -228,6 +228,65 @@ Respuesta JSON cruda del último análisis.
 
 ---
 
+
+## 5.1 API v4.0 — OSINT AVANZADO
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/osint/whois/{domain}` | WHOIS lookup |
+| GET | `/api/osint/dns/{domain}` | DNS recon (A, MX, TXT, NS, SPF, DMARC) |
+| POST | `/api/osint/subdomains` | Enumeración de subdominios |
+| GET | `/api/osint/threat-intel/{ip}` | Threat intelligence IP |
+| POST | `/api/osint/email` | Email OSINT |
+| GET | `/api/osint/headers?url=` | HTTP header fingerprinting |
+| GET | `/api/osint/full/{domain}` | OSINT completo |
+| GET | `/api/osint/results` | Resultados guardados BD |
+| GET | `/api/osint/google?q=` | Google Custom Search |
+| GET | `/api/osint/shodan/{ip}` | Shodan host lookup |
+| GET | `/api/osint/virustotal/{indicator}` | VirusTotal lookup |
+| GET | `/api/osint/censys/{ip}` | Censys lookup |
+| GET | `/api/osint/github/{username}` | GitHub user recon |
+| POST | `/api/osint/social` | Social media username search |
+
+## 5.2 API v4.0 — INTERCEPTOR AVANZADO
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/api/interceptor/analyze/request` | Analizar request HTTP |
+| POST | `/api/interceptor/analyze/response` | Analizar response HTTP |
+| GET | `/api/interceptor/flows` | Flujos interceptados |
+| GET | `/api/interceptor/alerts` | Alertas de inyección |
+| GET | `/api/interceptor/stats` | Estadísticas SIEM |
+| DELETE | `/api/interceptor/flows` | Limpiar BD |
+| POST | `/api/interceptor/decode` | Decodificar payload |
+| GET | `/api/interceptor/cert/{host}` | Análisis certificado SSL |
+| POST | `/api/interceptor/analyze/user-agent` | Analizar User-Agent |
+| GET | `/api/interceptor/rate-check/{ip}` | Rate limit check |
+
+### Detecciones del Interceptor (CWE)
+- SQL Injection (CWE-89)
+- XSS (CWE-79)
+- Command Injection (CWE-78)
+- Path Traversal (CWE-22)
+- SSRF (CWE-918)
+- XXE (CWE-611)
+- LFI/RFI (CWE-98)
+- LDAP Injection (CWE-90)
+- NoSQL Injection (CWE-943)
+
+### API Keys opcionales (v4.0)
+```bash
+export SHODAN_API_KEY="tu-key"
+export VIRUSTOTAL_API_KEY="tu-key"
+export ABUSEIPDB_API_KEY="tu-key"
+export CENSYS_API_ID="tu-id"
+export CENSYS_API_SECRET="tu-secret"
+export GOOGLE_API_KEY="tu-key"
+export GOOGLE_CSE_ID="tu-cse-id"
+export GITHUB_TOKEN="tu-token"
+```
+Los módulos funcionan sin keys con fallbacks graceful.
+
 ## 6. SOLUCIÓN DE PROBLEMAS
 
 ### Página vacía / blanco
@@ -307,6 +366,15 @@ Es normal — 254 hosts × 15 puertos = 3,810 probes TCP.
 El SSE streaming muestra resultados en vivo, no esperes al final.
 
 ---
+
+
+### 🌐 Internacionalización (i18n)
+
+El dashboard soporta 3 idiomas: Español, 简体中文, English.
+- Selector de idioma en la barra superior
+- Los módulos v4.0 usan nombres en chino simplificado
+- Datos y elementos de la interfaz son traducibles
+- Preferencia guardada en localStorage
 
 ## ARQUITECTURA
 

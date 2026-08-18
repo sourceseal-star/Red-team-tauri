@@ -133,6 +133,24 @@ except Exception as _er_err:
     _ENHANCED_RECON_OK = False
     print(f"[WARN] enhanced_recon import falló: {_er_err}", flush=True)
 
+# ── OSINT Advanced v4.0 (Google, Shodan, VirusTotal, Censys, Social) ─────────
+try:
+    from modules.osint_advanced import osint_router
+    _OSINT_ADVANCED_OK = True
+    print("[OSINT-ADVANCED] Módulo v4.0 cargado: WHOIS + DNS + Shodan + VirusTotal + Google + Social")
+except Exception as _oa_err:
+    _OSINT_ADVANCED_OK = False
+    print(f"[WARN] osint_advanced import falló: {_oa_err}", flush=True)
+
+# ── Interceptor Advanced v4.0 (XXE, LFI/RFI, LDAP, NoSQL, SQLi, XSS, SSRF) ──
+try:
+    from tlsproxy.interceptor_advanced import interceptor_router
+    _INTERCEPTOR_ADVANCED_OK = True
+    print("[INTERCEPTOR-ADVANCED] Módulo v4.0 cargado: MITM + Injection Detection + SIEM")
+except Exception as _ia_err:
+    _INTERCEPTOR_ADVANCED_OK = False
+    print(f"[WARN] interceptor_advanced import falló: {_ia_err}", flush=True)
+
 API_KEY = os.environ.get("REDTEAM_API_KEY", "").strip()
 
 # ── Motor de Cierre (leads/checkout/metrics) — antes corria como un 2do
@@ -146,7 +164,7 @@ API_KEY = os.environ.get("REDTEAM_API_KEY", "").strip()
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Red-Team Tauri · Unified Dashboard Backend",
-    version="3.0-unified",
+    version="4.0-unified",
     description="Backend único: escaneo + servicios + SOAR + TIP + RASP + terminal + canary + honeypot + dist/",
 )
 
@@ -154,6 +172,16 @@ app = FastAPI(
 if _ENHANCED_RECON_OK:
     app.include_router(enhanced_recon_router)
     print("[ENHANCED-RECON] Router montado en /api/enhanced/*")
+
+# ── Include OSINT Advanced v4.0 router ─────────────────────────────────────
+if _OSINT_ADVANCED_OK:
+    app.include_router(osint_router)
+    print("[OSINT-ADVANCED] Router montado en /api/osint/* (v4.0: Google, Shodan, VT, Social)")
+
+# ── Include Interceptor Advanced v4.0 router ──────────────────────────────
+if _INTERCEPTOR_ADVANCED_OK:
+    app.include_router(interceptor_router)
+    print("[INTERCEPTOR-ADVANCED] Router montado en /api/interceptor/* (v4.0: MITM + SIEM)")
 
 # ── API Key (obligatoria) ────────────────────────────────────────────────────
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
