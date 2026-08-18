@@ -307,7 +307,7 @@ async def security_middleware(request: Request, call_next):
     # Termux. El resto de endpoints se limita a 25s para evitar cuelgues.
     _scan_paths = ("/api/scan/", "/api/enhanced/discover", "/api/network/cameras",
                    "/api/iot/scan")
-    _timeout = 100.0 if any(path.startswith(p) for p in _scan_paths for path in [request.url.path]) else 25.0
+    _timeout = 150.0 if any(path.startswith(p) for p in _scan_paths for path in [request.url.path]) else 25.0
     try:
         return await asyncio.wait_for(call_next(request), timeout=_timeout)
     except asyncio.TimeoutError:
@@ -585,24 +585,16 @@ def _detect_router_brand(banner_text: str) -> str:
         if pattern.search(banner_text): return brand
     return "Unknown"
 
-def _http_banner(host: str, port: int, path: str = "/", timeout: float = 3.0, use_https: bool = False) -> dict:
+async def _http_banner(host: str, port: int, path: str = "/", timeout: float = 2.0, use_https: bool = False) -> dict:
+    """Versión async con httpx.AsyncClient — la versión anterior usaba
+    urllib.request.urlopen() BLOQUEANTE y congelaba el event loop."""
     scheme = "https" if use_https else "http"
     url = f"{scheme}://{host}:{port}{path}"
     try:
-        ctx = None
-        if use_https:
-            ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-        req = urllib.request.Request(url, headers={"User-Agent": "SourceSeal-NetScan/3.0"})
-        opener = urllib.request.build_opener(
-            urllib.request.HTTPSHandler(context=ctx) if use_https else urllib.request.HTTPHandler())
-        with opener.open(req, timeout=timeout) as resp:
-            server = resp.headers.get("Server", "")
-            body_preview = resp.read(512).decode("utf-8", errors="replace")
-            return {"ok": True, "status": resp.status, "server": server,
-                    "body_preview": body_preview[:200], "url": url}
-    except urllib.error.HTTPError as e:
-        return {"ok": False, "status": e.code, "server": e.headers.get("Server", "") if e.headers else "",
-                "body_preview": "", "url": url}
+        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout, verify=False) as client:
+            resp = await client.get(url, headers={"User-Agent": "SourceSeal-NetScan/3.0"})
+            return {"ok": True, "status": resp.status_code, "server": resp.headers.get("Server", ""),
+                    "body_preview": resp.text[:200], "url": url}
     except Exception as e:
         return {"ok": False, "status": 0, "server": "", "body_preview": "", "url": url, "error": str(e)[:100]}
 
@@ -704,7 +696,7 @@ async def _fingerprint_host(ip: str) -> dict:
         http_banner = {}
         for http_port, is_https in ((80, False), (8080, False), (443, True), (8443, True)):
             if http_port in open_ports:
-                http_banner = _http_banner(ip, http_port, timeout=1.5, use_https=is_https)
+                http_banner = await _http_banner(ip, http_port, timeout=1.5, use_https=is_https)
                 break
         combined = (http_banner.get("server", "") + " " + http_banner.get("body_preview", "")
                     + " " + " ".join(open_ports.values()))
@@ -726,7 +718,7 @@ async def _fingerprint_host(ip: str) -> dict:
 
 @app.post("/api/scan/topology")
 async def scan_topology():
-    subnet = subnet_from_iface()
+    subnet = await asyncio.to_thread(subnet_from_iface)
     ok, out = await _nmap_or_empty(["nmap", "-sn", "-T4", "-n", "--max-retries", "1", subnet], timeout=90)
     if not ok:
         return JSONResponse({"error": out, "results": [], "subnet": subnet,
@@ -773,7 +765,7 @@ CAM_PORTS = [554, 80, 443, 8000, 8080, 37777, 8554]
 @app.post("/api/network/cameras")
 @app.post("/api/scan/cameras")
 async def scan_cameras():
-    subnet = subnet_from_iface()
+    subnet = await asyncio.to_thread(subnet_from_iface)
     base = subnet.rsplit(".", 1)[0] + "."
     rtsp_tasks = [tcp_check(f"{base}{i}", 554, timeout=1.0) for i in range(1, 255)]
     rtsp_banners = await asyncio.gather(*rtsp_tasks)
@@ -796,7 +788,7 @@ ROUTER_PORTS = [80, 443, 22, 23, 8080, 8443, 1900]
 @app.post("/api/scan/routers")
 @app.get("/api/network/routers")
 async def scan_routers():
-    subnet = subnet_from_iface()
+    subnet = await asyncio.to_thread(subnet_from_iface)
     base = subnet.rsplit(".", 1)[0] + "."
     candidates = [f"{base}{i}" for i in (1, 2, 3, 4, 254)]
     results = []
@@ -816,7 +808,7 @@ async def scan_routers():
 @app.post("/api/scan/iot")
 @app.get("/api/iot")
 async def scan_iot():
-    subnet = subnet_from_iface()
+    subnet = await asyncio.to_thread(subnet_from_iface)
     ok, out = await _nmap_or_empty(["nmap", "-sV", "-p", "1883,5683,502,47808", "-T3", subnet], timeout=90)
     if not ok:
         return JSONResponse({"error": out, "results": [], "raw": ""}, status_code=500)
@@ -827,10 +819,10 @@ async def scan_iot():
 async def scan_wifi():
     iface = "wlan0"
     try:
-        out = subprocess.check_output(["iwlist", iface, "scan"], timeout=20, stderr=subprocess.DEVNULL).decode()
+        out = await asyncio.to_thread(lambda: subprocess.check_output(["iwlist", iface, "scan"], timeout=20, stderr=subprocess.DEVNULL).decode())
     except FileNotFoundError:
         try:
-            out = subprocess.check_output(["iw", "dev", iface, "scan"], timeout=20, stderr=subprocess.DEVNULL).decode()
+            out = await asyncio.to_thread(lambda: subprocess.check_output(["iw", "dev", iface, "scan"], timeout=20, stderr=subprocess.DEVNULL).decode())
         except Exception as e:
             return JSONResponse({"error": f"iwlist/iw no disponible: {e}"}, status_code=500)
     except Exception as e:
@@ -1289,9 +1281,9 @@ async def run_scan(request: Request, target: str = Query(None)):
     try:
         orchestrator = ROOT / "runner" / "orchestrator.py"
         if orchestrator.exists():
-            result = subprocess.run(
-                [sys.executable, str(orchestrator), "--target", target, "--backend", target, "--output", str(REPORTS)],
-                capture_output=True, text=True, timeout=180, cwd=str(ROOT))
+            result = await asyncio.to_thread(
+                lambda: subprocess.run([sys.executable, str(orchestrator), "--target", target, "--backend", target, "--output", str(REPORTS)],
+                capture_output=True, text=True, timeout=180, cwd=str(ROOT)))
             _scan_state["last_result"] = result.stdout[:4000]
             _scan_state["progress"] = "completed"
             return {"status": "completed", "output": result.stdout[:4000], "errors": result.stderr[:2000]}
@@ -2303,7 +2295,7 @@ async def traceroute_route(target_ip: str = Query(...)):
     """Traceroute real a una IP objetivo."""
     try:
         cmd = ["traceroute", "-n", "-m", "15", "-w", "2", target_ip]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
+        proc = await asyncio.to_thread(lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=25))
         hops = []
         for line in proc.stdout.split('\n'):
             parts = line.strip().split()
@@ -2332,7 +2324,7 @@ async def traceroute_route(target_ip: str = Query(...)):
         # Fallback: usar nmap --traceroute si traceroute no está instalado
         try:
             cmd = ["nmap", "-sn", "--traceroute", target_ip]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
+            proc = await asyncio.to_thread(lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=25))
             hops = []
             for line in proc.stdout.split('\n'):
                 if 'traceroute' in line.lower() or 'hop' in line.lower():
@@ -2358,9 +2350,9 @@ async def ultrasonic_receive(duration: int = 6):
         )
 
     try:
-        result = subprocess.run(
-            ["python3", receiver_script, "--duration", str(duration)],
-            capture_output=True, text=True, timeout=duration + 10
+        result = await asyncio.to_thread(
+            lambda: subprocess.run(["python3", receiver_script, "--duration", str(duration)],
+            capture_output=True, text=True, timeout=duration + 10)
         )
         message = None
         for line in result.stdout.split('\n'):
@@ -2464,7 +2456,7 @@ async def motion_detect(rtsp_url: str = Query(...), threshold: float = 0.02, dur
             "-frame_pts", "1", f"{frames_dir}/frame_%04d.png",
             "-t", str(duration), "-y"
         ]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=duration + 5)
+        proc = await asyncio.to_thread(lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=duration + 5))
 
         captures = []
         for fname in sorted(os.listdir(frames_dir)) if os.path.exists(frames_dir) else []:
@@ -3995,7 +3987,7 @@ async def wifi_scan():
 
     # Intento 1: termux-wifi-scaninfo (no requiere root)
     try:
-        result = subprocess.run(["termux-wifi-scaninfo"], capture_output=True, text=True, timeout=15)
+        result = await asyncio.to_thread(lambda: subprocess.run(["termux-wifi-scaninfo"], capture_output=True, text=True, timeout=15))
         if result.returncode == 0:
             data = json.loads(result.stdout)
             for net in data:
@@ -4014,7 +4006,7 @@ async def wifi_scan():
 
     # Intento 2: iw (Linux/Kali, requiere root en Android)
     try:
-        result = subprocess.run(["iw", "dev", "wlan0", "scan"], capture_output=True, text=True, timeout=20)
+        result = await asyncio.to_thread(lambda: subprocess.run(["iw", "dev", "wlan0", "scan"], capture_output=True, text=True, timeout=20))
         if result.returncode == 0:
             current = {}
             for line in result.stdout.split("\n"):
@@ -4062,7 +4054,7 @@ async def wifi_scan():
 
     # Intento 3: airodump-ng (requiere modo monitor + root)
     try:
-        subprocess.run(["which", "airodump-ng"], capture_output=True, check=True)
+        await asyncio.to_thread(lambda: subprocess.run(["which", "airodump-ng"], capture_output=True, check=True))
         csv_file = os.path.join(WIFI_CAPTURES_DIR, "scan-01.csv")
         for f in os.listdir(WIFI_CAPTURES_DIR):
             if f.startswith("scan-"):
@@ -4113,7 +4105,7 @@ async def wifi_capture_handshake(bssid: str, ssid: str = "", channel: int = 1, d
 
     # Verificar modo monitor
     try:
-        result = subprocess.run(["iwconfig"], capture_output=True, text=True, timeout=5)
+        result = await asyncio.to_thread(lambda: subprocess.run(["iwconfig"], capture_output=True, text=True, timeout=5))
         if "wlan0mon" not in result.stdout:
             return JSONResponse({
                 "error": "Interfaz wlan0mon no encontrada",
@@ -4137,7 +4129,7 @@ async def wifi_capture_handshake(bssid: str, ssid: str = "", channel: int = 1, d
         cap_file_real = cap_file + "-01.cap"
         has_handshake = False
         if os.path.exists(cap_file_real):
-            check = subprocess.run(["aircrack-ng", cap_file_real], capture_output=True, text=True)
+            check = await asyncio.to_thread(lambda: subprocess.run(["aircrack-ng", cap_file_real], capture_output=True, text=True))
             has_handshake = "handshake" in check.stdout.lower()
 
         if bssid in _wifi_active_captures:
