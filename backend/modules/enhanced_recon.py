@@ -453,7 +453,7 @@ async def full_discovery_get(network: str = None):
 async def full_discovery(network: str = None):
     """
     Descubrimiento completo: ONVIF + SSDP + TCP scan + credenciales + SNMP + NetBIOS + mDNS
-    Timeout total ~16s (ONVIF 4s + SSDP 4s + mDNS 2s + scan 8s). Nunca bloquea el event loop.
+    Timeout total ~30s (ONVIF 4s + SSDP 4s + mDNS 2s + scan 20s). Nunca bloquea el event loop.
     """
     if not network:
         network = _real_subnet_prefix()
@@ -465,7 +465,7 @@ async def full_discovery(network: str = None):
         onvif_cams = await asyncio.wait_for(onvif_discover(2.0), timeout=4.0)
     except (asyncio.TimeoutError, Exception) as e:
         onvif_cams = []
-        print(f"[DISCOVER] ONVIF error: {e}")
+        print(f"[DISCOVER] ONVIF multicast falló (común en Android/Termux): {e}")
 
     try:
         ssdp_devices = await asyncio.wait_for(ssdp_discover(2.0), timeout=4.0)
@@ -480,8 +480,8 @@ async def full_discovery(network: str = None):
         print(f"[DISCOVER] mDNS error: {e}")
 
     # 2. Escanear /24 en puertos clave — paralelo con semaphore y timeout por host
-    ports_to_scan = [80, 81, 82, 88, 443, 554, 8000, 8080, 8081, 8554, 37777, 8900]
-    semaphore = asyncio.Semaphore(200)
+    ports_to_scan = [80, 81, 82, 88, 443, 554, 8000, 8080, 8081, 8554, 37777, 8900, 23, 22, 5000, 8888]
+    semaphore = asyncio.Semaphore(100)
 
     async def check_host(ip: str):
         async with semaphore:
@@ -490,13 +490,30 @@ async def full_discovery(network: str = None):
             for port in ports_to_scan:
                 try:
                     fut = asyncio.open_connection(ip, port)
-                    reader, writer = await asyncio.wait_for(fut, timeout=0.2)
+                    reader, writer = await asyncio.wait_for(fut, timeout=0.5)
                     host_data["open_ports"].append(port)
                     writer.close()
                     try: await writer.wait_closed()
                     except: pass
-                    # Si es puerto de cámara, escanear a fondo
+                    # Si es puerto de cámara (HTTP o RTSP), escanear a fondo
                     if port in [80, 81, 82, 88, 443, 8000, 8080, 8081, 37777, 8900]:
+                        try:
+                            cam = await asyncio.wait_for(scan_camera_full(ip, port), timeout=3.0)
+                            if cam and (cam.get("accessible_urls") or cam.get("snapshot_url") or cam.get("rtsp_working")):
+                                all_cameras.append(cam)
+                        except (asyncio.TimeoutError, Exception):
+                            pass
+                    # Si es puerto RTSP (554/8554), agregar como cámara RTSP-only
+                    if port in [554, 8554]:
+                        rtsp_url = f"rtsp://{ip}:{port}/"
+                        # Evitar duplicados
+                        if not any(c.get("ip") == ip for c in all_cameras):
+                            all_cameras.append({
+                                "ip": ip, "port": port, "brand": "generic",
+                                "accessible_urls": [], "working_credentials": None,
+                                "rtsp_working": rtsp_url, "snapshot_url": None,
+                                "source": "rtsp-tcp-scan"
+                            })
                         try:
                             cam = await asyncio.wait_for(scan_camera_full(ip, port), timeout=3.0)
                             if cam and (cam.get("accessible_urls") or cam.get("snapshot_url")):
@@ -557,7 +574,7 @@ async def full_discovery(network: str = None):
     # Crear tareas con nombres para poder cancelarlas
     task_group = [asyncio.create_task(t) for t in tasks]
     try:
-        await asyncio.wait_for(asyncio.gather(*task_group, return_exceptions=True), timeout=8.0)
+        await asyncio.wait_for(asyncio.gather(*task_group, return_exceptions=True), timeout=20.0)
     except asyncio.TimeoutError:
         print("[DISCOVER] Timeout global alcanzado, cancelando tareas pendientes")
         for t in task_group:

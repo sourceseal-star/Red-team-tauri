@@ -11,7 +11,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 //   Decode, Certificate, User-Agent, Rate Check
 // ═══════════════════════════════════════════════════════════════════
 
-type Tab = 'request' | 'response' | 'flows' | 'alerts' | 'stats' | 'decode' | 'cert' | 'useragent' | 'ratecheck';
+type Tab = 'request' | 'response' | 'flows' | 'alerts' | 'stats' | 'decode' | 'cert' | 'useragent' | 'ratecheck' | 'capture';
 
 const TABS: { id: Tab; icon: typeof Shield; color: string }[] = [
   { id: 'request',   icon: FileWarning,  color: 'text-red-400' },
@@ -23,6 +23,7 @@ const TABS: { id: Tab; icon: typeof Shield; color: string }[] = [
   { id: 'cert',       icon: KeyRound,     color: 'text-blue-400' },
   { id: 'useragent',  icon: Bug,          color: 'text-pink-400' },
   { id: 'ratecheck',  icon: Activity,     color: 'text-teal-400' },
+  { id: 'capture',    icon: Eye,          color: 'text-emerald-400' },
 ];
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -87,6 +88,11 @@ export default function InterceptorAdvancedPanel() {
   // Rate check form
   const [rateIp, setRateIp] = useState('');
 
+  // Capture form
+  const [captureActive, setCaptureActive] = useState(false);
+  const [capturePort, setCapturePort] = useState('8888');
+  const [captureFlows, setCaptureFlows] = useState<any[]>([]);
+
   // Auto-refresh for flows/alerts
   const [autoRefresh, setAutoRefresh] = useState(false);
 
@@ -147,6 +153,9 @@ export default function InterceptorAdvancedPanel() {
         case 'ratecheck':
           data = await apiCall(`${base}/rate-check/${encodeURIComponent(rateIp)}`);
           break;
+        case 'capture':
+          data = await apiCall(`${base}/capture/status`);
+          break;
       }
       setResult(data);
     } catch (e: any) {
@@ -158,7 +167,7 @@ export default function InterceptorAdvancedPanel() {
 
   // Auto-refresh
   useEffect(() => {
-    if (!autoRefresh || (activeTab !== 'flows' && activeTab !== 'alerts')) return;
+    if (!autoRefresh || (activeTab !== 'flows' && activeTab !== 'alerts' && activeTab !== 'capture')) return;
     const interval = setInterval(() => execute(), 5000);
     return () => clearInterval(interval);
   }, [autoRefresh, activeTab, execute]);
@@ -169,6 +178,25 @@ export default function InterceptorAdvancedPanel() {
       setResult(null);
     } catch (e: any) {
       setError(e?.message || 'Error');
+    }
+  };
+
+  const startCapture = async () => {
+    try {
+      await apiCall(`/api/interceptor/capture/start?port=${capturePort}`, { method: 'POST' });
+      setCaptureActive(true);
+    } catch (e: any) {
+      setError(e?.message || 'Error al iniciar captura');
+    }
+  };
+
+  const stopCapture = async () => {
+    try {
+      const data = await apiCall('/api/interceptor/capture/stop', { method: 'POST' });
+      setCaptureActive(false);
+      setResult(data);
+    } catch (e: any) {
+      setError(e?.message || 'Error al detener captura');
     }
   };
 
@@ -240,6 +268,62 @@ export default function InterceptorAdvancedPanel() {
           />
           Auto-refresh (5s)
         </label>
+      )}
+
+      {/* Capture tab */}
+      {activeTab === 'capture' && (
+        <div className="space-y-3">
+          <div className="bg-emerald-950/30 border border-emerald-800/40 rounded-lg p-3 space-y-2">
+            <p className="text-xs text-emerald-400 font-mono">
+              Captura de tráfico REAL — honeypot TCP que registra conexiones entrantes con análisis de inyecciones.
+            </p>
+            <div className="flex gap-2">
+              <input value={capturePort} onChange={e => setCapturePort(e.target.value)} disabled={captureActive}
+                placeholder="Puerto (8888)"
+                className="px-3 py-2 text-sm bg-slate-900 border border-slate-800 rounded-lg text-slate-200 font-mono w-32 disabled:opacity-50" />
+              {!captureActive ? (
+                <button onClick={startCapture}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded-lg">
+                  ▶ Iniciar Captura
+                </button>
+              ) : (
+                <button onClick={stopCapture}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg">
+                  ⏹ Detener
+                </button>
+              )}
+              {captureActive && (
+                <span className="text-xs text-emerald-400 flex items-center gap-1 animate-pulse">● CAPTURANDO</span>
+              )}
+            </div>
+          </div>
+
+          {result?.flows && result.flows.length > 0 ? (
+            <div className="space-y-1.5">
+              <div className="text-xs text-slate-500 font-mono">Conexiones capturadas: {result.flows.length}</div>
+              {result.flows.slice().reverse().map((flow: any, i: number) => (
+                <div key={i} className={`p-2 rounded border text-xs font-mono ${
+                  flow.alerts && flow.alerts !== '[]' ? 'bg-red-950/40 border-red-800' : 'bg-slate-900 border-slate-700'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-cyan-400">{flow.src_ip}:{flow.dst_port}</span>
+                    <span className="text-slate-500">{flow.timestamp?.split('T')[1]?.split('.')[0]}</span>
+                  </div>
+                  {flow.path && <div className="text-slate-300 truncate mt-0.5">{flow.path}</div>}
+                  {flow.raw_data && <div className="text-slate-500 truncate mt-0.5 text-[10px]">{flow.raw_data}</div>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center text-slate-600 text-sm py-6">
+              {captureActive ? 'Esperando conexiones entrantes...' : 'Inicia la captura para ver tráfico real.'}
+            </div>
+          )}
+
+          {autoRefresh && activeTab === 'capture' && (
+            <div className="text-[10px] text-slate-500 font-mono">Auto-refresh activo (5s) — las conexiones aparecen automáticamente.</div>
+          )}
+        </div>
       )}
 
       {/* Forms per tab */}

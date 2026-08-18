@@ -885,3 +885,187 @@ async def api_rate_check(ip: str):
     """Verifica el rate de un IP especifico."""
     detector = RateLimitDetector()
     return detector.check(ip)
+
+
+# ============================================================================
+# CAPTURA DE TRÁFICO REAL — Sniffer pasivo + Honeypot de captura
+# ============================================================================
+
+class _TrafficCapture:
+    """Captura conexiones TCP entrantes para análisis de tráfico real."""
+    def __init__(self):
+        self.active = False
+        self.server = None
+        self.captured_flows = []
+
+    async def start_capture(self, port: int = 8888):
+        """Inicia un servidor TCP honeypot que captura intentos de conexión."""
+        if self.active:
+            return {"status": "already_running", "port": port}
+        self.active = True
+        self.captured_flows = []
+        try:
+            self.server = await asyncio.start_server(
+                self._handle_connection, '0.0.0.0', port
+            )
+            return {"status": "started", "port": port}
+        except OSError as e:
+            self.active = False
+            return {"status": "error", "error": str(e)}
+
+    async def _handle_connection(self, reader, writer):
+        """Maneja una conexión entrante — captura y analiza."""
+        peer = writer.get_extra_info('peername')
+        peer_ip = peer[0] if peer else "unknown"
+        peer_port = peer[1] if peer else 0
+
+        flow_id = hashlib.md5(f"{peer_ip}:{peer_port}:{time.time()}".encode()).hexdigest()[:12]
+
+        # Leer datos (con timeout)
+        try:
+            data = await asyncio.wait_for(reader.read(4096), timeout=5.0)
+            raw_data = data.decode('utf-8', errors='replace')[:500]
+        except asyncio.TimeoutError:
+            raw_data = ""
+
+        # Analizar con el detector de inyecciones
+        alerts = []
+        if raw_data:
+            detector = InjectionDetector()
+            detected = detector.analyze(raw_data)
+            for d in detected:
+                alerts.append({
+                    "alert_type": d.get("type", "unknown"),
+                    "severity": d.get("severity", "info"),
+                    "payload": raw_data[:100],
+                    "pattern_matched": d.get("pattern", ""),
+                    "cwe": d.get("cwe", ""),
+                    "mitre": d.get("mitre", ""),
+                })
+
+        # Log el flow
+        flow = {
+            "id": flow_id,
+            "src_ip": peer_ip,
+            "dst_host": "localhost",
+            "dst_port": 8888,
+            "method": "TCP",
+            "path": raw_data.split('\n')[0][:100] if raw_data else "",
+            "status_code": 0,
+            "request_headers": {},
+            "response_headers": {},
+            "request_size": len(data) if raw_data else 0,
+            "response_size": 0,
+            "duration_ms": 0,
+            "alerts": json.dumps(alerts),
+            "timestamp": datetime.datetime.now().isoformat(),
+            "raw_data": raw_data[:200],
+        }
+        self.captured_flows.append(flow)
+
+        # Guardar en DB
+        try:
+            siem = SIEMLogger()
+            siem.log_flow(flow_id, peer_ip, "localhost", 8888,
+                         "TCP", raw_data[:100], 0, {}, {},
+                         len(raw_data), 0, 0, alerts)
+        except Exception:
+            pass
+
+        # Responder con datos falsos (deception)
+        try:
+            writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+            await writer.drain()
+        except Exception:
+            pass
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+    async def stop_capture(self):
+        """Detiene la captura."""
+        self.active = False
+        if self.server:
+            self.server.close()
+            try:
+                await self.server.wait_closed()
+            except Exception:
+                pass
+            self.server = None
+        return {"status": "stopped", "captured": len(self.captured_flows)}
+
+    def get_captured(self, limit: int = 50):
+        return self.captured_flows[-limit:]
+
+
+_traffic_capture = _TrafficCapture()
+
+
+@interceptor_router.post("/capture/start")
+async def api_start_capture(port: int = Query(8888, ge=1, le=65535)):
+    """Inicia un honeypot TCP que captura conexiones entrantes para análisis real."""
+    result = await _traffic_capture.start_capture(port)
+    return result
+
+
+@interceptor_router.post("/capture/stop")
+async def api_stop_capture():
+    """Detiene la captura de tráfico."""
+    return await _traffic_capture.stop_capture()
+
+
+@interceptor_router.get("/capture/status")
+async def api_capture_status():
+    """Estado de la captura — muestra las conexiones capturadas."""
+    return {
+        "active": _traffic_capture.active,
+        "captured": len(_traffic_capture.captured_flows),
+        "flows": _traffic_capture.get_captured(50),
+    }
+
+
+@interceptor_router.post("/inject-flow")
+async def api_inject_flow(flow: dict):
+    """Inyecta un flow manualmente al interceptor para análisis (para testing)."""
+    flow_id = hashlib.md5(f"{time.time()}".encode()).hexdigest()[:12]
+    src_ip = flow.get("src_ip", "manual")
+    dst_host = flow.get("dst_host", "unknown")
+    dst_port = flow.get("dst_port", 0)
+    method = flow.get("method", "GET")
+    path = flow.get("path", "/")
+    body = flow.get("body", "")
+
+    detector = InjectionDetector()
+    alerts = detector.analyze(f"{method} {path} {body}")
+
+    request_analyzer = RequestAnalyzer()
+    req_analysis = request_analyzer.analyze(method, path, {}, body)
+
+    all_alerts = []
+    for a in alerts + req_analysis.get("alerts", []):
+        all_alerts.append({
+            "alert_type": a.get("type", a.get("category", "unknown")),
+            "severity": a.get("severity", "info"),
+            "payload": (path + " " + body)[:200],
+            "pattern_matched": a.get("pattern", a.get("pattern_matched", "")),
+            "cwe": a.get("cwe", ""),
+            "mitre": a.get("mitre", ""),
+        })
+
+    try:
+        siem = SIEMLogger()
+        siem.log_flow(flow_id, src_ip, dst_host, dst_port,
+                     method, path, 0, {}, {},
+                     len(body), 0, 0, all_alerts)
+    except Exception:
+        pass
+
+    return {
+        "flow_id": flow_id,
+        "alerts": all_alerts,
+        "alert_count": len(all_alerts),
+        "analysis": req_analysis,
+    }
