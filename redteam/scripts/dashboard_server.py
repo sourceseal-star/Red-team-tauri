@@ -287,7 +287,9 @@ except Exception as e:
 # == END CORSET + TRIAGE + OSINT INTEGRATION ================================"
 
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
-                   allow_methods=["GET", "POST", "DELETE", "PATCH"], allow_headers=["X-API-Key", "Content-Type", "Authorization"])
+                   allow_methods=["GET", "POST", "DELETE", "PATCH", "OPTIONS"], 
+                   allow_headers=["X-API-Key", "Content-Type", "Authorization"],
+                   expose_headers=["*"])
 
 # ── Rate limiting (simple, en memoria) ───────────────────────────────────────
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "60"))  # requests por minuto por IP
@@ -1513,6 +1515,24 @@ async def report_history():
 @app.get("/api/config")
 async def config_list():
     return _list_config_files()
+
+@app.post("/api/config")
+async def config_update(request: Request):
+    """Actualiza un archivo de configuración (compat con frontend)."""
+    try:
+        body = await request.json()
+    except:
+        body = {}
+    path = body.get("path", "")
+    file_content = body.get("content", "")
+    if not path or not _safe_path(path):
+        return JSONResponse({"error": "invalid or missing path"}, status_code=400)
+    full = ROOT / path
+    try:
+        full.write_text(file_content[:65536])
+        return {"ok": True, "path": path, "message": "Config actualizada"}
+    except Exception as e:
+        return JSONResponse({"error": f"write error: {str(e)}"}, status_code=500)
 
 @app.get("/api/config/read")
 async def config_read(path: str = Query(...)):
@@ -5598,3 +5618,91 @@ if __name__ == "__main__":
     _seed_v2_if_empty()
     print("═" * 60, flush=True)
     uvicorn.run(app, host=host, port=port, log_level="info")
+# ═════════════════════════════════════════════════════════════════════════════
+#  COMPATIBILITY ENDPOINTS — Frontend usa paths sin /v2/
+# ═════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/alerts/stream")
+async def compat_alerts_stream(request: Request):
+    """SSE para alertas en tiempo real — alias de /api/v2/alerts/stream."""
+    token = request.query_params.get("token", "")
+    if API_KEY and token and token != API_KEY:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    async def event_stream():
+        last_id = 0
+        while True:
+            try:
+                alerts = db_v2.get_alerts(limit=50)
+                new = [a for a in alerts if a.get("id", 0) > last_id]
+                for a in new:
+                    a["metadata"] = json.loads(a.get("metadata", "{}"))
+                    yield f"data: {json.dumps(a, default=str)}\n\n"
+                    last_id = max(last_id, a.get("id", 0))
+            except Exception:
+                yield 'data: ' + json.dumps({'error': 'db_unavailable', 'timestamp': datetime.utcnow().isoformat()}) + '\n\n'
+            await asyncio.sleep(3)
+    return StreamingResponse(event_stream(), media_type="text/event-stream", 
+                            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"})
+
+@app.get("/api/alerts")
+async def compat_alerts_list(limit: int = 100):
+    """Lista alertas — alias de /api/v2/alerts."""
+    try:
+        return {"status": "success", "alerts": db_v2.get_alerts(limit=limit), "count": len(db_v2.get_alerts(limit=limit))}
+    except Exception as e:
+        return {"status": "error", "alerts": [], "error": str(e)}
+
+@app.get("/api/export")
+async def compat_export_json():
+    """Exporta todo en JSON — alias de /api/v2/export/json."""
+    try:
+        hosts = db_v2.get_hosts(limit=500)
+        cameras = db_v2.get_cameras()
+        alerts = db_v2.get_alerts(limit=500)
+        iocs = db_v2.get_iocs()
+        data = {
+            "exported_at": datetime.utcnow().isoformat(),
+            "hosts": hosts, "cameras": cameras, "alerts": alerts, "iocs": iocs
+        }
+        return Response(
+            content=json.dumps(data, indent=2, ensure_ascii=False, default=str),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=redteam_export.json"}
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Export failed: {str(e)}"}, status_code=500)
+
+@app.get("/api/export/csv")
+async def compat_export_csv():
+    """Exporta todo en CSV — alias de /api/v2/export/csv."""
+    try:
+        hosts = db_v2.get_hosts(limit=500)
+        cameras = db_v2.get_cameras()
+        alerts = db_v2.get_alerts(limit=500)
+        lines = ["type,ip/hostname,severity/risk,details,timestamp"]
+        for h in hosts:
+            lines.append(f"host,{h.get('ip','')},{h.get('risk_score',0)},{h.get('os_guess','')},{datetime.fromtimestamp(h.get('last_seen',0)).isoformat()}")
+        for c in cameras:
+            lines.append(f"camera,{c.get('ip','')},,{c.get('vendor','')} {c.get('model','')},{datetime.fromtimestamp(c.get('last_seen',0)).isoformat()}")
+        for a in alerts:
+            lines.append(f"alert,,{a.get('severity','')},{a.get('title','')},{datetime.fromtimestamp(a.get('ts',0)).isoformat()}")
+        return Response(
+            content="\n".join(lines),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=redteam_export.csv"}
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Export failed: {str(e)}"}, status_code=500)
+
+@app.post("/api/export")
+async def compat_export_post(request: Request):
+    """POST /api/export — acepta formato en el body."""
+    try:
+        body = await request.json()
+    except:
+        body = {}
+    fmt = body.get("format", "json")
+    if fmt == "csv":
+        return await compat_export_csv()
+    return await compat_export_json()
+
