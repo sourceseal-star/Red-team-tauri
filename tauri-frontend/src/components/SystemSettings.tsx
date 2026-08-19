@@ -28,7 +28,9 @@ export default function SystemSettings() {
 
   const authH = useCallback(() => {
     const k = getApiKey();
-    return k ? { 'Authorization': `Bearer ${k}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+    const h: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (k) h['Authorization'] = `Bearer ${k}`;
+    return h;
   }, []);
 
   const load = useCallback(async () => {
