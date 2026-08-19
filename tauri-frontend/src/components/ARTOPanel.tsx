@@ -288,7 +288,7 @@ const StatsOverview: React.FC = () => {
 
 // 🎯 Componente de Operaciones
 const OperationsTab: React.FC = () => {
-  const { operations, executeOperation, isLoading, error } = useARTO();
+  const { operations, executeOperation, isLoading, error, refreshData } = useARTO();
   const [target, setTarget] = useState('');
   const [operationType, setOperationType] = useState<OperationType>('scan');
 
@@ -341,7 +341,7 @@ const OperationsTab: React.FC = () => {
       <div style={styles.card}>
         <div style={styles.cardHeader}>
           <h3 style={styles.cardTitle}>Operaciones Recientes</h3>
-          <button style={styles.buttonSecondary} onClick={() => executeOperation('scan', 'example.com')}>
+          <button style={styles.buttonSecondary} onClick={() => refreshData()}>
             🔄 Refrescar
           </button>
         </div>
