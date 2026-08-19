@@ -22,8 +22,8 @@ export interface ReverseIpData { ip?: string; hostname?: string; domains?: strin
 
 const TOOLS = [
   { id: 'whois', label: 'WHOIS', icon: FileText, endpoint: (t: string) => `/api/osint/whois/${t}`, color: 'border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10', active: 'bg-cyan-500/20 text-cyan-300 border-cyan-500' },
-  { id: 'subdomains', label: 'Subdominios', icon: Server, endpoint: (t: string) => `/api/osint/subdomains/${t}?brute=true`, color: 'border-purple-500/40 text-purple-300 hover:bg-purple-500/10', active: 'bg-purple-500/20 text-purple-300 border-purple-500' },
-  { id: 'emails', label: 'Emails', icon: Mail, endpoint: (t: string) => `/api/osint/emails/${t}`, color: 'border-amber-500/40 text-amber-300 hover:bg-amber-500/10', active: 'bg-amber-500/20 text-amber-300 border-amber-500' },
+  { id: 'subdomains', label: 'Subdominios', icon: Server, endpoint: (t: string) => `/api/osint/v2/subdomains/${t}`, color: 'border-purple-500/40 text-purple-300 hover:bg-purple-500/10', active: 'bg-purple-500/20 text-purple-300 border-purple-500' },
+  { id: 'emails', label: 'Emails', icon: Mail, endpoint: (t: string) => `/api/osint/v2/full-scan`, color: 'border-amber-500/40 text-amber-300 hover:bg-amber-500/10', active: 'bg-amber-500/20 text-amber-300 border-amber-500' },
   { id: 'dns', label: 'DNS', icon: Network, endpoint: (t: string) => `/api/osint/dns/${t}`, color: 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10', active: 'bg-emerald-500/20 text-emerald-300 border-emerald-500' },
   { id: 'headers', label: 'Headers', icon: Globe2, endpoint: (t: string) => `/api/osint/headers/${t}`, color: 'border-blue-500/40 text-blue-300 hover:bg-blue-500/10', active: 'bg-blue-500/20 text-blue-300 border-blue-500' },
   { id: 'cert', label: 'SSL Cert', icon: Lock, endpoint: (t: string) => `/api/osint/cert/${t}`, color: 'border-rose-500/40 text-rose-300 hover:bg-rose-500/10', active: 'bg-rose-500/20 text-rose-300 border-rose-500' },
@@ -286,7 +286,15 @@ export default function OSINTPanel() {
 
     try {
       const url = tool ? tool.endpoint(target.trim()) : `/api/osint/${id}/${target.trim()}`;
-      const res = await fetch(url, { headers: osintHeaders() });
+      // Emails usa POST (v2 full-scan con auto-detección)
+      const isPost = id === 'emails';
+      const fetchOpts: RequestInit = { headers: osintHeaders() };
+      if (isPost) {
+        fetchOpts.method = 'POST';
+        fetchOpts.headers = { ...osintHeaders(), 'Content-Type': 'application/json' };
+        fetchOpts.body = JSON.stringify({ target: target.trim(), scan_type: 'auto' });
+      }
+      const res = await fetch(url, fetchOpts);
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}))
         const detail = errBody.error || res.statusText
