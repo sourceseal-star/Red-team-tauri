@@ -241,8 +241,33 @@ class AttackSimulator:
 # ── Wrappers para módulos existentes ──────────────────────────────────────
 
 class _recon_module_wrapper:
-    """Wrapper que delega al módulo enhanced_recon existente."""
-    pass
+    """Wrapper que delega al OSINT real (backend/modules/osint_bridge.py).
+
+    Originalmente vacío (pass), causaba AttributeError en full_scan/quick_scan
+    durante operaciones autónomas de ARTO. Conecta al osint_bridge v2 que
+    ya expone datos reales (WHOIS+DNS+Subdominios+ThreatIntel).
+    """
+
+    async def full_scan(self, target: str) -> dict:
+        from modules.osint_bridge import full_scan as _full_scan, FullScanRequest
+        result = await _full_scan(FullScanRequest(target=target, scan_type="auto"))
+        findings = [
+            {"type": key, "severity": "info", "data": value}
+            for key, value in (result.get("results") or {}).items()
+        ]
+        return {
+            **result,
+            "findings": findings,
+            "metrics": {
+                "malicious_indicators": result.get("malicious_indicators", 0),
+                "threat_level": result.get("threat_level", "LOW"),
+            },
+        }
+
+    async def quick_scan(self, target: str) -> dict:
+        from modules.osint_bridge import quick_scan as _quick_scan
+        result = await _quick_scan(target, "auto")
+        return {**result, "findings": []}
 
 
 class _InterceptorWrapper:
