@@ -206,6 +206,7 @@ class ARTO:
         
         # 3. Evaluación de riesgo
         risk_assessment = await self.risk_assessor.assess_risk(scan_result, threat_analysis)
+        risk_assessment = risk_assessment.to_dict()
         
         # 4. Decidir acción basada en resultados
         decision = await self.decision_engine.decide_action({
