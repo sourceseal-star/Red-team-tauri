@@ -41,8 +41,8 @@ const MODULES = [
     { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
   { id: 'topology', label: 'Topología', icon: Network, color: 'text-cyan-400', badge: null },
   { id: 'settings', label: 'Config', icon: Settings, color: 'text-slate-500', badge: null },
-  { id: 'osint_adv', label: '开源情报高级版', icon: Globe, color: 'text-indigo-400', badge: 'v4.0' },
-  { id: 'interceptor', label: '网络拦截高级版', icon: Lock, color: 'text-red-400', badge: 'v4.0' },
+  { id: 'osint_adv', label: 'OSINT Avanzado', icon: Globe, color: 'text-indigo-400', badge: 'v4.0' },
+  { id: 'interceptor', label: 'Interceptor Avanzado', icon: Lock, color: 'text-red-400', badge: 'v4.0' },
 ];
 
 // ==========================================
