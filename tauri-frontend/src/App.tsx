@@ -20,6 +20,8 @@ import Terminal from './routes/Terminal';
 import OSINTAdvancedPanel from './components/OSINTAdvancedPanel';
 import InterceptorAdvancedPanel from './components/InterceptorAdvancedPanel';
 import { LanguageProvider } from './i18n/LanguageContext';
+import { ARTOProvider } from './components/ARTOProvider';
+import ARTOPanel from './components/ARTOPanel';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -29,6 +31,7 @@ function App() {
 
   return (
     <LanguageProvider>
+    <ARTOProvider>
     <AppShell activeModule={module} onNavigate={setModule}>
       {module === 'warroom' && <WarRoom />}
       {module === 'cameras' && <CameraCommandCenter />}
@@ -50,7 +53,13 @@ function App() {
       {module === 'settings' && <SystemSettings />}
       {module === 'osint_adv' && <OSINTAdvancedPanel />}
       {module === 'interceptor' && <InterceptorAdvancedPanel />}
+      {module === 'arto' && (
+        <ARTOProvider>
+          <ARTOPanel />
+        </ARTOProvider>
+      )}
     </AppShell>
+    </ARTOProvider>
     </LanguageProvider>
   );
 }

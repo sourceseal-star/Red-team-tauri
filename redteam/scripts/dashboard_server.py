@@ -26,6 +26,7 @@ Endpoints:
   NETWORK:     /api/network/cameras|radio|routers|stats
   IoT:         /api/iot, /api/iot/video-urls, /api/iot/snapshot, /api/iot/stream
   WEBSOCKET:   /ws
+  ARTO:        /api/arto/* (AI autónomo — start/stop/operation/predict/defend)
   HEALTH:      /api/health
   FRONTEND:    SPA fallback → dist/index.html
 """
@@ -198,6 +199,18 @@ try:
     print("[INTERCEPTOR-BRIDGE] Router v2 montado en /api/interceptor/v2/*")
 except Exception as _ib_err:
     print(f"[WARN] interceptor_bridge v2 import fallo: {_ib_err}", flush=True)
+
+# ── ARTO — Automated Red Team Operations (AI autónomo) ────────────────────
+try:
+    sys.path.insert(0, str(BASE.parent / "arto"))
+    sys.path.insert(0, str(BASE.parent))
+    from arto.api.arto_router import router as arto_router
+    app.include_router(arto_router)
+    _ARTO_OK = True
+    print("[ARTO] Router montado en /api/arto/* (AI autónomo de operaciones)")
+except Exception as _arto_err:
+    _ARTO_OK = False
+    print(f"[WARN] ARTO import falló: {_arto_err}", flush=True)
 
 # ── API Key (obligatoria) ────────────────────────────────────────────────────
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)

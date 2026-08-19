@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Shield, Camera, Radio, Globe, Wifi, Activity,
   Terminal, Settings, Bell, Search, Menu, X, ChevronRight,
   Zap, Lock, Eye, Fingerprint, Bug, FileText, Network,
-  Sun, Moon, LogOut
+  Sun, Moon, LogOut, Cpu
 } from 'lucide-react'
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 
@@ -43,6 +43,7 @@ const MODULES = [
   { id: 'settings', label: 'Config', icon: Settings, color: 'text-slate-500', badge: null },
   { id: 'osint_adv', label: 'OSINT Avanzado', icon: Globe, color: 'text-indigo-400', badge: 'v4.0' },
   { id: 'interceptor', label: 'Interceptor Avanzado', icon: Lock, color: 'text-red-400', badge: 'v4.0' },
+  { id: 'arto', label: 'ARTO AI', icon: Cpu, color: 'text-orange-400', badge: 'AI' },
 ];
 
 // ==========================================
