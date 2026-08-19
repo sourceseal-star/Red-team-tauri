@@ -3,6 +3,7 @@ import {
   Bell, AlertTriangle, AlertCircle, Info, CheckCircle2,
   X, Filter, RefreshCw, Clock, ShieldAlert
 } from "lucide-react";
+import { getApiKey, getBaseUrl } from '../lib/api';
 
 interface Alert {
   id: number;
@@ -27,7 +28,12 @@ export default function AlertsPanel() {
   const [connected, setConnected] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const eventSourceRef = useRef<EventSource | null>(null);
-  const API = (window as any).__API__ || "http://localhost:8001";
+  // Antes: hardcodeado a "http://localhost:8001" -- rompia si el dashboard
+  // se abre por la IP de WiFi (ej. http://192.168.1.50:8001) en vez de
+  // localhost, porque "localhost" en el navegador del OTRO dispositivo no
+  // apunta al telefono. Usar la misma base URL relativa que el resto de
+  // paneles (getBaseUrl() = '/api', mismo origen siempre).
+  const API = getBaseUrl();
 
   useEffect(() => {
     fetchAlerts();
@@ -39,7 +45,10 @@ export default function AlertsPanel() {
 
   const fetchAlerts = async () => {
     try {
-      const res = await fetch(`${API}/api/alerts?limit=100`);
+      const key = getApiKey();
+      const res = await fetch(`${API}/alerts?limit=100`, {
+        headers: key ? { 'Authorization': `Bearer ${key}` } : {}
+      });
       const data = await res.json();
       setAlerts(data.alerts || []);
       setUnreadCount((data.alerts || []).filter((a: Alert) => !a.acknowledged).length);
@@ -50,7 +59,13 @@ export default function AlertsPanel() {
 
   const connectSSE = () => {
     try {
-      const es = new EventSource(`${API}/api/alerts/stream`);
+      // EventSource nativo del navegador NO soporta headers custom (no hay
+      // forma de mandar Authorization). El backend acepta el token por
+      // query string SOLO para paths que terminan en /stream (ver
+      // security_middleware en dashboard_server.py).
+      const key = getApiKey();
+      const url = `${API}/alerts/stream${key ? `?token=${encodeURIComponent(key)}` : ''}`;
+      const es = new EventSource(url);
       eventSourceRef.current = es;
 
       es.onopen = () => setConnected(true);

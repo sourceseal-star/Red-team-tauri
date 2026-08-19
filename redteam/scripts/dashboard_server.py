@@ -331,6 +331,15 @@ def _safe_path(path: str) -> bool:
 async def security_middleware(request: Request, call_next):
     path = request.url.path
 
+    # Preflight CORS (OPTIONS) nunca lleva Authorization -- es requisito del
+    # spec de CORS que el navegador lo envie sin credenciales. Si el
+    # middleware de auth lo bloquea con 401, el CORSMiddleware nunca llega
+    # a responder el preflight y el navegador aborta la request real con
+    # un error de red (no HTTP status legible por el frontend). Dejar pasar
+    # OPTIONS sin autenticar -- es inofensivo, no ejecuta logica de negocio.
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     # Rate limiting en TODAS las rutas
     client_ip = request.client.host if request.client else "unknown"
     if not _rate_check(client_ip):
@@ -355,6 +364,13 @@ async def security_middleware(request: Request, call_next):
             auth_header = request.headers.get("Authorization", "")
             if auth_header.startswith("Bearer "):
                 key = auth_header[7:]
+        # Endpoints SSE (EventSource del navegador) NO PUEDEN mandar headers
+        # custom -- es una limitacion del propio API EventSource, no un bug
+        # de implementacion. El unico canal disponible es la query string.
+        # Restringido SOLO a paths de streaming para no exponer el token via
+        # query param (logs/referrer) en el resto de la API.
+        if not key and path.endswith("/stream"):
+            key = request.query_params.get("token", "")
         if key != API_KEY:
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
 

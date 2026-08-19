@@ -3,8 +3,8 @@
   "virustotal_api_key": "",
   "abuseipdb_key": "",
   "github_token": "",
-  "scan_subnet": "10.0.0.0/24",
-  "scan_ports": "80,443,554",
+  "scan_subnet": "192.168.1.0/24",
+  "scan_ports": "80,443,554,8080,8000,23",
   "scan_timeout": 0.5,
   "scan_max_hosts": 254,
   "backend_port": 8001

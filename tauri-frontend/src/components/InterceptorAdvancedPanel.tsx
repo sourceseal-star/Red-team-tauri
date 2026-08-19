@@ -510,7 +510,39 @@ export default function InterceptorAdvancedPanel() {
               {Object.entries(result).slice(0, 8).map(([key, val]) => (
                 <div key={key} className="p-3 rounded-lg bg-slate-900 border border-slate-800">
                   <p className="text-xs text-slate-500 uppercase">{key.replace(/_/g, ' ')}</p>
-                  <p className="text-lg font-bold text-slate-200 mt-1">{String(val)}</p>
+                  {/* val puede ser numero/string (render directo), array (lista de badges),
+                      o un objeto anidado como by_severity:{critical:1,high:2} -- String(val)
+                      en ese caso da literalmente "[object Object]". Desglosar cada caso. */}
+                  {val === null || val === undefined ? (
+                    <p className="text-lg font-bold text-slate-200 mt-1">-</p>
+                  ) : Array.isArray(val) ? (
+                    val.length === 0 ? (
+                      <p className="text-lg font-bold text-slate-200 mt-1">-</p>
+                    ) : (
+                      <div className="mt-1 space-y-0.5">
+                        {val.slice(0, 5).map((item, i) => (
+                          <p key={i} className="text-xs font-mono text-slate-300 truncate">
+                            {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+                          </p>
+                        ))}
+                      </div>
+                    )
+                  ) : typeof val === 'object' ? (
+                    Object.keys(val).length === 0 ? (
+                      <p className="text-lg font-bold text-slate-200 mt-1">-</p>
+                    ) : (
+                      <div className="mt-1 space-y-0.5">
+                        {Object.entries(val).slice(0, 5).map(([subKey, subVal]) => (
+                          <p key={subKey} className="text-xs text-slate-300 flex justify-between gap-2">
+                            <span className="text-slate-500 truncate">{subKey}</span>
+                            <span className="font-mono font-bold text-slate-200">{String(subVal)}</span>
+                          </p>
+                        ))}
+                      </div>
+                    )
+                  ) : (
+                    <p className="text-lg font-bold text-slate-200 mt-1">{String(val)}</p>
+                  )}
                 </div>
               ))}
             </div>
