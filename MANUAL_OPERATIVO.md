@@ -771,3 +771,56 @@ Red-team-tauri/
 - Integración OSINT Advanced: Google, Shodan, VirusTotal, Censys, GitHub, Social
 - Interceptor Advanced: XXE, LFI/RFI, LDAP, NoSQL, cert, UA, decoder
 - i18n: Español, 简体中文, English
+
+
+### v4.1 (2026-08-19) — commit 4b3a540 — Verificación de integración
+
+**Aclaración importante sobre el backend en uso:**
+
+> ⚠️ `arrancar.sh` ejecuta `redteam/scripts/dashboard_server.py` (5600 líneas, 154 endpoints).
+> NO usa `backend/dashboard_server.py` (130KB, 85 endpoints, sin v2).
+>
+> El archivo `backend/dashboard_server.py` es una versión anterior/paralela que NO tiene los endpoints `/api/v2/*`.
+> Toda la funcionalidad v4 (SQLite, topology, IoT, alertas SSE, SOAR, export, settings) está integrada en `redteam/scripts/dashboard_server.py`.
+>
+> El zip original `redteam-dashboard-v4.zip` contenía `dashboard_server_v2.py` (749 líneas) como backend independiente con solo los 20 endpoints v2. Ese archivo fue **fusionado** dentro del dashboard_server.py existente en lugar de reemplazarlo, conservando los 60+ endpoints originales (MURCIÉLAGO, OSINT, Enhanced Recon, AbuseIPDB, Shodan, honeypot, C2, forensics, etc.).
+>
+> Los componentes del frontend en el repo (`tauri-frontend/src/components/`) están adaptados respecto al zip original:
+> - Usan URLs relativas `/api/` en lugar de `window.__API__`
+> - Incluyen `authHeaders()` con `getApiKey()` para autenticación
+> - Esto los hace compatibles con el proxy de Vite y el backend unificado
+
+**Endpoints `/api/v2/*` confirmados en `redteam/scripts/dashboard_server.py`:**
+
+| Método | Endpoint | Función |
+|--------|----------|---------|
+| GET | `/api/v2/topology/hosts` | Lista de hosts con filtros |
+| GET | `/api/v2/topology/graph` | Grafo de red (nodos + aristas) |
+| POST | `/api/v2/topology/hosts` | Agregar host manual |
+| GET | `/api/v2/iot/cameras` | Cámaras descubiertas |
+| POST | `/api/v2/iot/cameras` | Agregar cámara |
+| GET | `/api/v2/iot/snapshot/{camera_id}` | Snapshot JPEG de cámara |
+| POST | `/api/v2/iot/brute/{camera_id}` | Test credenciales por defecto |
+| GET | `/api/v2/alerts` | Alertas recientes |
+| POST | `/api/v2/alerts` | Crear alerta |
+| GET | `/api/v2/alerts/stream` | SSE stream en tiempo real |
+| POST | `/api/v2/alerts/{alert_id}/ack` | Acknowledge alerta |
+| GET | `/api/v2/threatintel/iocs` | IOCs persistentes |
+| POST | `/api/v2/threatintel/iocs` | Agregar IOC |
+| GET | `/api/v2/soar/playbooks` | Playbooks guardados |
+| POST | `/api/v2/soar/playbooks` | Guardar playbook |
+| POST | `/api/v2/soar/execute/{playbook_id}` | Ejecutar playbook |
+| GET | `/api/v2/settings` | Configuración persistente |
+| POST | `/api/v2/settings` | Guardar configuración |
+| GET | `/api/v2/export/{fmt}` | Exportar JSON/CSV |
+| POST | `/api/v2/reports/generate` | Generar reporte |
+
+**Componentes frontend confirmados:**
+
+| Archivo | Tamaño | Estado |
+|---------|--------|--------|
+| `TopologyPanel.tsx` | 16KB | ✅ Importado en App.tsx, reemplaza NetworkTopology |
+| `IoTCameras.tsx` | 8KB | ✅ Importado en App.tsx, URLs relativas + auth |
+| `AlertsPanel.tsx` | 7.5KB | ✅ Importado en App.tsx, SSE con token |
+| `ExportPanel.tsx` | 4.7KB | ✅ Importado en App.tsx, exports con token |
+| `AppShell.tsx` | 17KB | ✅ 3 módulos nuevos en menú (Topología, IoT, Alertas, Exportar) |
