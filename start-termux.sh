@@ -40,7 +40,7 @@ echo -e "${G}[python] $(python3 --version)${N}"
 
 # ─── 3. Verificar dependencias Python ──────────────────────────────────
 echo -e "${Y}[deps] Verificando dependencias Python...${N}"
-python3 -c "import fastapi, uvicorn, httpx, pydantic" 2>/dev/null || {
+python3 -c "import fastapi, uvicorn, httpx, pydantic, psutil, aiohttp, dns, bs4, whois" 2>/dev/null || {
   echo -e "${Y}[deps] Instalando dependencias faltantes...${N}"
   pip install -q fastapi uvicorn httpx pydantic psutil aiohttp dnspython beautifulsoup4 python-whois 2>&1 | tail -3
 }

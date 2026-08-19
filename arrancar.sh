@@ -41,7 +41,7 @@ echo -e "${G}  OK Sistema listo${N}"
 
 # ─── 4. DEPENDENCIAS PYTHON ──────────────────────────────────────────
 echo -e "${C}[4/7] Verificando dependencias Python...${N}"
-python3 -c "import fastapi, uvicorn, httpx, pydantic, psutil" 2>/dev/null || {
+python3 -c "import fastapi, uvicorn, httpx, pydantic, psutil, aiohttp" 2>/dev/null || {
   pip install -q fastapi uvicorn httpx pydantic psutil aiohttp 2>&1 | tail -3
 }
 echo -e "${G}  OK Python listo${N}"
