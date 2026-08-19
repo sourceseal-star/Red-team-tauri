@@ -32,6 +32,7 @@ from .core.prediction_engine import PredictionEngine
 from .core.action_engine import ActionEngine
 from .core.behavior_analyzer import BehaviorAnalyzer
 from .modules.attack_simulator import AttackSimulator
+from .modules.vpn_interceptor import VpnInterceptor, vpn_interceptor
 from .modules.defense_orchestrator import DefenseOrchestrator
 from .modules.report_generator import ReportGenerator
 from .memory.memory_storage import MemoryStorage
@@ -67,6 +68,7 @@ class ARTO:
         self.attack_simulator = AttackSimulator()
         self.defense_orchestrator = DefenseOrchestrator()
         self.report_generator = ReportGenerator()
+        self.vpn_interceptor = vpn_interceptor
         
         # Utilidades
         self.memory = MemoryStorage()

@@ -7,6 +7,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useARTO } from './ARTOProvider';
 import {
+import TrafficCapturePanel from './TrafficCapturePanel';
   Operation,
   Prediction,
   Threat,
@@ -614,7 +615,9 @@ const ARTOPanel: React.FC = () => {
       case 'threats':
         return <ThreatsTab />;
       case 'simulations':
-        return <SimulationsTab />;
+        return <SimulationsTab />
+      case 'traffic':
+        return <TrafficCapturePanel />;;
       default:
         return <OperationsTab />;
     }

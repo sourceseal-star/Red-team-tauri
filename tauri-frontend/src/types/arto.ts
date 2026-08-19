@@ -414,3 +414,80 @@ export type ViewType =
   | 'threats'
   | 'reports'
   | 'simulations';
+
+
+// ============================================
+// TIPOS DE TRÁFICO (VPN)
+// ============================================
+
+export type TrafficType = 
+  | 'tcp'
+  | 'udp'
+  | 'icmp'
+  | 'http'
+  | 'https'
+  | 'dns'
+  | 'arp'
+  | 'unknown';
+
+export interface CapturedPacket {
+  packet_id: string;
+  timestamp: string;
+  src_ip: string;
+  dst_ip: string;
+  src_port: number;
+  dst_port: number;
+  protocol: TrafficType;
+  payload: string;
+  length: number;
+}
+
+export interface TrafficAnalysis {
+  analysis_id: string;
+  timestamp: string;
+  packet_count: number;
+  threats: TrafficThreat[];
+  anomalies: TrafficAnomaly[];
+  statistics: TrafficStats;
+  top_connections: TrafficConnection[];
+}
+
+export interface TrafficThreat {
+  type: string;
+  rule_id: string;
+  name: string;
+  severity: string;
+  description: string;
+  packet: CapturedPacket;
+  details: Record<string, any>;
+  timestamp: string;
+}
+
+export interface TrafficAnomaly {
+  type: string;
+  name: string;
+  severity: string;
+  description: string;
+  packet: CapturedPacket;
+  details: Record<string, any>;
+  timestamp: string;
+}
+
+export interface TrafficStats {
+  total_packets: number;
+  packets_by_protocol: Record<string, number>;
+  total_bytes: number;
+  connections: Record<string, TrafficConnection>;
+  threats_detected: number;
+  anomalies_detected: number;
+  start_time: string;
+  uptime?: number;
+}
+
+export interface TrafficConnection {
+  count: number;
+  bytes: number;
+  first_seen: string;
+  last_seen: string;
+  connection?: string;
+}

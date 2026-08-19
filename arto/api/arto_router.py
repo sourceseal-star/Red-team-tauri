@@ -384,3 +384,116 @@ async def get_all_stats():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+# ============================================
+# 🔌 Endpoints de Captura de Tráfico (VPN)
+# ============================================
+
+@router.post("/traffic/start")
+async def start_traffic_capture():
+    """Inicia la captura de tráfico"""
+    try:
+        from arto.modules.vpn_interceptor import vpn_interceptor
+        await vpn_interceptor.start()
+        return {
+            "status": "success",
+            "message": "Captura de tráfico iniciada",
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.post("/traffic/stop")
+async def stop_traffic_capture():
+    """Detiene la captura de tráfico"""
+    try:
+        from arto.modules.vpn_interceptor import vpn_interceptor
+        await vpn_interceptor.stop()
+        return {
+            "status": "success",
+            "message": "Captura de tráfico detenida",
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/traffic/stats")
+async def get_traffic_stats():
+    """Obtiene estadísticas de tráfico"""
+    try:
+        from arto.modules.vpn_interceptor import vpn_interceptor
+        stats = await vpn_interceptor.get_stats()
+        return {
+            "status": "success",
+            "stats": stats,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/traffic/packets")
+async def get_captured_packets(limit: int = 100):
+    """Obtiene paquetes capturados"""
+    try:
+        from arto.modules.vpn_interceptor import vpn_interceptor
+        packets = await vpn_interceptor.get_captured_packets(limit)
+        return {
+            "status": "success",
+            "packets": packets,
+            "count": len(packets),
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/traffic/analysis")
+async def get_traffic_analysis():
+    """Obtiene análisis completo de tráfico"""
+    try:
+        from arto.modules.vpn_interceptor import vpn_interceptor
+        analysis = await vpn_interceptor.get_analysis()
+        return {
+            "status": "success",
+            "analysis": analysis.to_dict(),
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.post("/traffic/clear")
+async def clear_traffic_stats():
+    """Limpia estadísticas de tráfico"""
+    try:
+        from arto.modules.vpn_interceptor import vpn_interceptor
+        await vpn_interceptor.clear_stats()
+        return {
+            "status": "success",
+            "message": "Estadísticas de tráfico limpias",
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )

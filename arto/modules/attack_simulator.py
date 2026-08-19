@@ -60,6 +60,9 @@ class AttackSimulator:
         self._initialized = False
         self._monitoring = False
         self._templates = self._build_templates()
+        # VpnInterceptor para captura de tráfico real
+        from .vpn_interceptor import VpnInterceptor
+        self.vpn_interceptor = VpnInterceptor()
 
     def _build_templates(self) -> List[AttackTemplate]:
         """Construye las plantillas de ataque predefinidas."""
@@ -123,8 +126,10 @@ class AttackSimulator:
             print(f"[ARTO] AttackSimulator: interceptor no disponible ({e}) — modo degradado")
             self.interceptor = _DegradedInterceptor()
 
+        # Inicializar VpnInterceptor
+        await self.vpn_interceptor.start()
         self._initialized = True
-        print("[ARTO] AttackSimulator inicializado")
+        print("[ARTO] AttackSimulator inicializado (con VpnInterceptor)")
 
     async def get_templates(self) -> List[AttackTemplate]:
         """Retorna las plantillas de ataque disponibles."""
