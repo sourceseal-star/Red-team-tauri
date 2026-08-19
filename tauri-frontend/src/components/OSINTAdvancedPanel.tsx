@@ -13,7 +13,20 @@ import { osintApi } from '../api/osintApi';
 //   Headers, Full, Results, Google, Shodan, VirusTotal, Censys, GitHub, Social
 // ═══════════════════════════════════════════════════════════════════
 
-type Tab = 'whois' | 'dns' | 'subdomains' | 'threat' | 'email' | 'headers' | 'full' | 'google' | 'shodan' | 'virustotal' | 'censys' | 'github' | 'social' | 'results';
+type Tab = 'whois' | 'dns' | 'subdomains' | 'threat' | 'email' | 'headers' | 'full' | 'search' | 'shodan' | 'virustotal' | 'censys' | 'github' | 'social' | 'results';
+
+type SearchEngine = 'duckduckgo' | 'bing' | 'yahoo' | 'brave' | 'yandex' | 'google' | 'tor' | 'all';
+
+const SEARCH_ENGINES: { id: SearchEngine; label: string }[] = [
+  { id: 'all',        label: '🌐 Todos' },
+  { id: 'duckduckgo',  label: '🦆 DuckDuckGo' },
+  { id: 'bing',        label: '🔍 Bing' },
+  { id: 'yahoo',       label: '🔮 Yahoo' },
+  { id: 'brave',       label: '🦁 Brave' },
+  { id: 'yandex',     label: '🔴 Yandex' },
+  { id: 'google',      label: '👔 Google CSE' },
+  { id: 'tor',         label: '🧅 Tor (Ahmia)' },
+];
 
 const TABS: { id: Tab; icon: typeof Globe; color: string }[] = [
   { id: 'whois',      icon: Server,      color: 'text-cyan-400' },
@@ -23,7 +36,7 @@ const TABS: { id: Tab; icon: typeof Globe; color: string }[] = [
   { id: 'email',      icon: Mail,        color: 'text-amber-400' },
   { id: 'headers',    icon: Fingerprint, color: 'text-indigo-400' },
   { id: 'full',       icon: FileText,    color: 'text-green-400' },
-  { id: 'google',     icon: Search,      color: 'text-sky-400' },
+  { id: 'search',     icon: Search,      color: 'text-sky-400' },
   { id: 'shodan',     icon: Eye,         color: 'text-orange-400' },
   { id: 'virustotal', icon: Shield,      color: 'text-rose-400' },
   { id: 'censys',     icon: Database,    color: 'text-teal-400' },
@@ -58,6 +71,7 @@ export default function OSINTAdvancedPanel() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [showJson, setShowJson] = useState(false);
+  const [selectedEngine, setSelectedEngine] = useState<SearchEngine>('all');
   const [fullScanLoading, setFullScanLoading] = useState(false);
   const [fullScanResult, setFullScanResult] = useState<any>(null);
 
@@ -126,8 +140,8 @@ export default function OSINTAdvancedPanel() {
         case 'full':
           data = await apiCall(`${base}/full/${encodeURIComponent(input)}`);
           break;
-        case 'google':
-          data = await apiCall(`${base}/google?q=${encodeURIComponent(input)}`);
+        case 'search':
+          data = await apiCall(`${base}/search?q=${encodeURIComponent(input)}&engine=${selectedEngine}&num=15`);
           break;
         case 'shodan':
           data = await apiCall(`${base}/shodan/${encodeURIComponent(input)}`);
@@ -189,7 +203,7 @@ export default function OSINTAdvancedPanel() {
     : activeTab === 'email' ? 'user@example.com'
     : activeTab === 'social' || activeTab === 'github' ? 'username'
     : activeTab === 'virustotal' ? '8.8.8.8 or domain.com'
-    : activeTab === 'google' ? 'search query'
+    : activeTab === 'search' ? 'search query (site:target.com, intitle:admin, etc.)'
     : 'example.com';
 
   return (
@@ -241,6 +255,25 @@ export default function OSINTAdvancedPanel() {
           );
         })}
       </div>
+
+      {/* Engine selector (only for search tab) */}
+      {activeTab === 'search' && (
+        <div className="flex flex-wrap gap-1.5">
+          {SEARCH_ENGINES.map(eng => (
+            <button
+              key={eng.id}
+              onClick={() => setSelectedEngine(eng.id)}
+              className={`px-2.5 py-1 text-xs rounded-md transition ${
+                selectedEngine === eng.id
+                  ? 'bg-sky-900/50 border border-sky-700 text-sky-300'
+                  : 'bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {eng.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Search bar */}
       {activeTab !== 'results' && (

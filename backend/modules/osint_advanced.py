@@ -962,3 +962,363 @@ async def api_social_search(req: OSINTRequest):
 
     found = [r for r in results if r["exists"]]
     return {"username": username, "found": found, "total_found": len(found), "total_checked": len(results)}
+
+
+# ============================================================================
+# MULTI-ENGINE SEARCH — DuckDuckGo, Bing, Yahoo, Brave, Yandex, Tor
+# ============================================================================
+
+SUPPORTED_ENGINES = [
+    "duckduckgo", "bing", "yahoo", "brave", "yandex", "google", "tor", "all"
+]
+
+# User-Agent rotatorio para evitar bloqueos
+_UAS = [
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
+]
+
+
+async def _search_duckduckgo(client, query: str, num: int) -> List[Dict]:
+    """DuckDuckGo HTML — sin API key, scraping ligero."""
+    resp = await client.get(
+        "https://html.duckduckgo.com/html/",
+        params={"q": query},
+        headers={"User-Agent": _UAS[0]},
+    )
+    results = []
+    if resp.status_code == 200:
+        # DDG usa result__a para links y result__snippet
+        blocks = re.findall(
+            r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</(?:a|span)',
+            resp.text, re.DOTALL
+        )
+        for url, title, snippet in blocks[:num]:
+            if "uddg=" in url:
+                from urllib.parse import parse_qs, urlparse as up, unquote
+                parsed = up(url)
+                qs = parse_qs(parsed.query)
+                url = unquote(qs.get("uddg", [url])[0])
+            results.append({
+                "title": re.sub(r"<[^>]+>", "", title).strip(),
+                "link": url.strip(),
+                "snippet": re.sub(r"<[^>]+>", "", snippet).strip(),
+                "engine": "duckduckgo",
+            })
+    return results
+
+
+async def _search_bing(client, query: str, num: int) -> List[Dict]:
+    """Bing — scraping HTML, sin API key."""
+    resp = await client.get(
+        "https://www.bing.com/search",
+        params={"q": query, "count": str(num)},
+        headers={"User-Agent": _UAS[1]},
+    )
+    results = []
+    if resp.status_code == 200:
+        blocks = re.findall(
+            r'<h2><a[^>]*href="([^"]+)"[^>]*>(.*?)</a></h2>.*?<p[^>]*>(.*?)</p>',
+            resp.text, re.DOTALL
+        )
+        for url, title, snippet in blocks[:num]:
+            if url.startswith("/"):
+                url = "https://www.bing.com" + url
+            results.append({
+                "title": re.sub(r"<[^>]+>", "", title).strip(),
+                "link": url.strip(),
+                "snippet": re.sub(r"<[^>]+>", "", snippet).strip(),
+                "engine": "bing",
+            })
+    return results
+
+
+async def _search_yahoo(client, query: str, num: int) -> List[Dict]:
+    """Yahoo Search — scraping HTML."""
+    resp = await client.get(
+        "https://search.yahoo.com/search",
+        params={"p": query, "n": str(num)},
+        headers={"User-Agent": _UAS[2]},
+    )
+    results = []
+    if resp.status_code == 200:
+        blocks = re.findall(
+            r'<a[^>]*class="[^"]*ac-algo[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?<span[^>]*>(.*?)</span>',
+            resp.text, re.DOTALL
+        )
+        for url, title, snippet in blocks[:num]:
+            results.append({
+                "title": re.sub(r"<[^>]+>", "", title).strip(),
+                "link": url.strip(),
+                "snippet": re.sub(r"<[^>]+>", "", snippet).strip(),
+                "engine": "yahoo",
+            })
+    return results
+
+
+async def _search_brave(client, query: str, num: int) -> List[Dict]:
+    """Brave Search — scraping HTML (sin API key).
+    Brave también tiene API oficial en api.search.brave.com si hay key."""
+    brave_key = os.environ.get("BRAVE_API_KEY", "")
+    if brave_key:
+        try:
+            resp = await client.get(
+                "https://api.search.brave.com/res/v1/web/search",
+                params={"q": query, "count": num},
+                headers={
+                    "X-Subscription-Token": brave_key,
+                    "Accept": "application/json",
+                },
+            )
+            results = []
+            if resp.status_code == 200:
+                data = resp.json()
+                for item in data.get("web", {}).get("results", [])[:num]:
+                    results.append({
+                        "title": item.get("title", ""),
+                        "link": item.get("url", ""),
+                        "snippet": item.get("description", ""),
+                        "engine": "brave",
+                    })
+            return results
+        except Exception:
+            pass
+    # Fallback: scraping HTML
+    resp = await client.get(
+        "https://search.brave.com/search",
+        params={"q": query},
+        headers={"User-Agent": _UAS[3]},
+    )
+    results = []
+    if resp.status_code == 200:
+        blocks = re.findall(
+            r'<a[^>]*class="[^"]*result-header[^"]*"[^>]*href="([^"]+)"[^>]*>.*?<span[^>]*>(.*?)</span>',
+            resp.text, re.DOTALL
+        )
+        for url, title in blocks[:num]:
+            results.append({
+                "title": re.sub(r"<[^>]+>", "", title).strip(),
+                "link": url.strip(),
+                "snippet": "",
+                "engine": "brave",
+            })
+    return results
+
+
+async def _search_yandex(client, query: str, num: int) -> List[Dict]:
+    """Yandex Search — scraping HTML."""
+    resp = await client.get(
+        "https://yandex.com/search",
+        params={"text": query},
+        headers={"User-Agent": _UAS[0], "Accept-Language": "en-US,en;q=0.9"},
+    )
+    results = []
+    if resp.status_code == 200:
+        # Yandex usa organic__url para links
+        blocks = re.findall(
+            r'class="organic__url"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+            resp.text, re.DOTALL
+        )
+        for url, title in blocks[:num]:
+            results.append({
+                "title": re.sub(r"<[^>]+>", "", title).strip(),
+                "link": url.strip(),
+                "snippet": "",
+                "engine": "yandex",
+            })
+    return results
+
+
+async def _search_google(client, query: str, num: int) -> List[Dict]:
+    """Google Custom Search API (si hay key) o fallback a DuckDuckGo."""
+    google_key = os.environ.get("GOOGLE_API_KEY", "")
+    cse_id = os.environ.get("GOOGLE_CSE_ID", "")
+    if google_key and cse_id:
+        try:
+            resp = await client.get(
+                "https://www.googleapis.com/customsearch/v1",
+                params={"key": google_key, "cx": cse_id, "q": query, "num": num},
+            )
+            results = []
+            if resp.status_code == 200:
+                for item in resp.json().get("items", [])[:num]:
+                    results.append({
+                        "title": item.get("title", ""),
+                        "link": item.get("link", ""),
+                        "snippet": item.get("snippet", ""),
+                        "engine": "google",
+                    })
+            return results
+        except Exception:
+            pass
+    # Sin key -> no devolver nada, el caller con "all" usará DDG
+    return []
+
+
+async def _search_tor(client, query: str, num: int) -> List[Dict]:
+    """Tor search via Ahmia (onion search) — sin proxy Tor requerido.
+    Ahmia expone resultados en clearnet."""
+    try:
+        resp = await client.get(
+            "https://ahmia.fi/search/",
+            params={"q": query},
+            headers={"User-Agent": _UAS[0]},
+        )
+        results = []
+        if resp.status_code == 200:
+            # Ahmia usa li con clase resultado
+            blocks = re.findall(
+                r'<h4[^>]*><a[^>]*href="([^"]+)"[^>]*>(.*?)</a></h4>.*?<p[^>]*>(.*?)</p>',
+                resp.text, re.DOTALL
+            )
+            for url, title, snippet in blocks[:num]:
+                # Ahima puede devolver links .onion o links a ahmia
+                if "ahmia.fi" in url and "onion" not in url:
+                    # extraer el onion real del redirect
+                    onion_match = re.search(r'([a-z0-9]{16,56}\.onion)', resp.text)
+                    if onion_match:
+                        url = "http://" + onion_match.group(1)
+                results.append({
+                    "title": re.sub(r"<[^>]+>", "", title).strip(),
+                    "link": url.strip(),
+                    "snippet": re.sub(r"<[^>]+>", "", snippet).strip(),
+                    "engine": "tor",
+                })
+        return results
+    except Exception:
+        return []
+
+
+_SEARCH_FUNCS = {
+    "duckduckgo": _search_duckduckgo,
+    "bing": _search_bing,
+    "yahoo": _search_yahoo,
+    "brave": _search_brave,
+    "yandex": _search_yandex,
+    "google": _search_google,
+    "tor": _search_tor,
+}
+
+
+@osint_router.get("/search")
+async def multi_engine_search(
+    q: str = Query(..., description="Consulta de busqueda"),
+    engine: str = Query("duckduckgo", description=f"Motor: {', '.join(SUPPORTED_ENGINES)}"),
+    num: int = Query(10, ge=1, le=30, description="Resultados por motor"),
+):
+    """
+    Multi-Engine Search OSINT — NIST SP 800-115 §A.1.
+    
+    Motores soportados:
+    - duckduckgo: HTML scraping (sin API key)
+    - bing: HTML scraping (sin API key)
+    - yahoo: HTML scraping (sin API key)
+    - brave: API oficial (si BRAVE_API_KEY) o HTML scraping
+    - yandex: HTML scraping (sin API key)
+    - google: Custom Search API (si GOOGLE_API_KEY + GOOGLE_CSE_ID)
+    - tor: Ahmia.fi onion search (sin Tor browser requerido)
+    - all: Ejecuta TODOS los motores en paralelo, deduplica resultados
+    """
+    import httpx
+    import random
+
+    ua = random.choice(_UAS)
+    timeout = httpx.Timeout(15.0, connect=10.0)
+
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, verify=False) as client:
+        if engine == "all":
+            tasks = []
+            for eng, func in _SEARCH_FUNCS.items():
+                tasks.append(func(client, q, num))
+            raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            all_results = []
+            errors = []
+            engines_used = []
+            for eng, res in zip(_SEARCH_FUNCS.keys(), raw_results):
+                if isinstance(res, Exception):
+                    errors.append(f"{eng}: {str(res)[:80]}")
+                else:
+                    all_results.extend(res)
+                    if res:
+                        engines_used.append(eng)
+
+            # Deduplicar por URL
+            seen = set()
+            deduped = []
+            for r in all_results:
+                key = r.get("link", "").rstrip("/").lower()
+                if key and key not in seen:
+                    seen.add(key)
+                    deduped.append(r)
+
+            return {
+                "query": q,
+                "engine": "all",
+                "engines_used": engines_used,
+                "results": deduped[:num * len(engines_used)],
+                "total": len(deduped),
+                "errors": errors,
+            }
+        elif engine in _SEARCH_FUNCS:
+            try:
+                results = await _SEARCH_FUNCS[engine](client, q, num)
+                return {
+                    "query": q,
+                    "engine": engine,
+                    "results": results,
+                    "total": len(results),
+                }
+            except Exception as e:
+                return {
+                    "query": q,
+                    "engine": engine,
+                    "results": [],
+                    "total": 0,
+                    "error": str(e),
+                }
+        else:
+            return {
+                "query": q,
+                "engine": engine,
+                "results": [],
+                "total": 0,
+                "error": f"Motor no soportado. Usa: {', '.join(SUPPORTED_ENGINES)}",
+            }
+
+
+@osint_router.get("/search/engines")
+async def list_search_engines():
+    """Lista los motores de búsqueda disponibles y su estado."""
+    engines = []
+    for eng in SUPPORTED_ENGINES:
+        info = {
+            "engine": eng,
+            "requires_key": False,
+            "has_key": True,
+            "description": "",
+        }
+        if eng == "google":
+            info["requires_key"] = True
+            info["has_key"] = bool(os.environ.get("GOOGLE_API_KEY"))
+            info["description"] = "Google Custom Search API (requiere GOOGLE_API_KEY + GOOGLE_CSE_ID)"
+        elif eng == "brave":
+            info["requires_key"] = False
+            info["has_key"] = bool(os.environ.get("BRAVE_API_KEY"))
+            info["description"] = "Brave Search — API oficial (opcional BRAVE_API_KEY) o HTML scraping"
+        elif eng == "duckduckgo":
+            info["description"] = "DuckDuckGo HTML — sin API key, scraping"
+        elif eng == "bing":
+            info["description"] = "Bing Search — sin API key, scraping"
+        elif eng == "yahoo":
+            info["description"] = "Yahoo Search — sin API key, scraping"
+        elif eng == "yandex":
+            info["description"] = "Yandex Search — sin API key, scraping"
+        elif eng == "tor":
+            info["description"] = "Tor onion search via Ahmia.fi — sin Tor browser requerido"
+        elif eng == "all":
+            info["description"] = "Ejecuta TODOS los motores en paralelo, deduplica resultados"
+        engines.append(info)
+    return {"engines": engines, "total": len(engines)}

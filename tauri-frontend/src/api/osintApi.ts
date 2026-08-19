@@ -84,3 +84,39 @@ export const osintApi = {
     return r.json()
   },
 }
+
+// ═════════════════════════════════════════════════════════════
+// Multi-Engine Search — 7 motores + "all"
+// ═════════════════════════════════════════════════════════════
+
+export type SearchEngine = 'duckduckgo' | 'bing' | 'yahoo' | 'brave' | 'yandex' | 'google' | 'tor' | 'all';
+
+export interface SearchResult {
+  title: string;
+  link: string;
+  snippet: string;
+  engine: string;
+}
+
+export interface MultiSearchResult {
+  query: string;
+  engine: string;
+  engines_used?: string[];
+  results: SearchResult[];
+  total: number;
+  errors?: string[];
+}
+
+export const searchApi = {
+  search: async (q: string, engine: SearchEngine = 'all', num: number = 10): Promise<MultiSearchResult> => {
+    const r = await fetch(`${OSINT_BASE}/search?q=${encodeURIComponent(q)}&engine=${engine}&num=${num}`, { headers: authH() })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    return r.json()
+  },
+
+  engines: async () => {
+    const r = await fetch(`${OSINT_BASE}/search/engines`, { headers: authH() })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    return r.json()
+  },
+}
