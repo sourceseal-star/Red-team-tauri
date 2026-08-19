@@ -3,6 +3,9 @@
 # SourceSeal Console — Termux (Android) — Backend Python completo
 # FastAPI :8001 con dist/ estático, enhanced_recon, cameras, topology
 # =====================================================================
+# v2: Usa git commit hash para detectar cambios y forzar rebuild
+#     cuando el codigo fuente se actualiza via git pull.
+# =====================================================================
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,6 +17,7 @@ GATEWAY_PORT="${GATEWAY_PORT:-8080}"
 START_GATEWAY="${START_GATEWAY:-1}"
 
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[0;33m'; C='\033[0;36m'; N='\033[0m'
+HASH_FILE="$SCRIPT_DIR/tauri-frontend/.build-hash"
 
 echo ""
 echo -e "  ${C}╔══════════════════════════════════════════════╗${N}"
@@ -50,7 +54,6 @@ echo ""
 # ─── 4. Verificar/crear .env ────────────────────────────────────────────
 if [ ! -f "$SCRIPT_DIR/.env" ]; then
   API_KEY=$(openssl rand -hex 24)
-  # ABUSEIPDB_KEY: si ya está en el entorno (ej. exportada manualmente), usarla
   ABUSE_LINE=""
   if [ -n "$ABUSEIPDB_KEY" ]; then
     ABUSE_LINE="ABUSEIPDB_KEY=${ABUSEIPDB_KEY}"
@@ -70,7 +73,6 @@ EOF
   fi
 else
   echo -e "${G}[env] .env existe${N}"
-  # Si ABUSEIPDB_KEY está en el entorno pero no en .env, agregarla
   if [ -n "$ABUSEIPDB_KEY" ] && ! grep -q "ABUSEIPDB_KEY" "$SCRIPT_DIR/.env"; then
     echo "ABUSEIPDB_KEY=${ABUSEIPDB_KEY}" >> "$SCRIPT_DIR/.env"
     echo -e "${G}[env] ABUSEIPDB_KEY agregada a .env existente${N}"
@@ -79,34 +81,55 @@ fi
 export $(cat "$SCRIPT_DIR/.env" | grep -v '^#' | xargs)
 echo ""
 
-# ─── 5. Build frontend ─────────────────────────────────────────────────
-# Siempre reconstruir si el codigo fuente cambio desde el ultimo build.
-# Antes solo compilaba si dist/index.html no existia, lo que significaba
-# que los fixes de codigo nunca se veian en el dashboard sin borrar dist/
-# manualmente. Ahora se compara el timestamp de los .tsx mas recientes
-# contra el de dist/index.html -- si el fuente es mas nuevo, se recompila.
+# ─── 5. Build frontend (con deteccion por git commit hash) ─────────────
+# Estrategia: guardar el hash del commit de git la ultima vez que se
+# compilo. Si el hash actual difiere (ej. despues de git pull), o si
+# no existe dist/, forzar rebuild. Esto es 100% confiable.
 NEED_BUILD=0
+REASON=""
+
 if [ ! -f "$SCRIPT_DIR/tauri-frontend/dist/index.html" ]; then
   NEED_BUILD=1
+  REASON="dist/ no existe"
 else
-  # Encontrar el .tsx/.ts mas reciente en src/
-  NEWEST_SRC=$(find "$SCRIPT_DIR/tauri-frontend/src" -name "*.tsx" -o -name "*.ts" 2>/dev/null | xargs stat -c '%Y %n' 2>/dev/null | sort -rn | head -1 | awk '{print $1}')
-  DIST_TS=$(stat -c '%Y' "$SCRIPT_DIR/tauri-frontend/dist/index.html" 2>/dev/null || echo 0)
-  if [ -n "$NEWEST_SRC" ] && [ "$NEWEST_SRC" -gt "$DIST_TS" ]; then
+  CURRENT_HASH=""
+  if command -v git >/dev/null 2>&1 && [ -d "$SCRIPT_DIR/.git" ]; then
+    CURRENT_HASH=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null | cut -c1-12)
+  fi
+
+  SAVED_HASH=""
+  if [ -f "$HASH_FILE" ]; then
+    SAVED_HASH=$(cat "$HASH_FILE" 2>/dev/null | tr -d '[:space:]')
+  fi
+
+  if [ -n "$CURRENT_HASH" ] && [ "$CURRENT_HASH" != "$SAVED_HASH" ]; then
     NEED_BUILD=1
-    echo -e "${Y}[build] Codigo fuente mas reciente que dist/ -- recompilando...${N}"
+    REASON="git commit cambio ($SAVED_HASH -> $CURRENT_HASH)"
+  elif [ -z "$CURRENT_HASH" ] && [ -z "$SAVED_HASH" ]; then
+    # Fallback: no git, usar timestamp check
+    NEWEST_SRC=$(find "$SCRIPT_DIR/tauri-frontend/src" \( -name "*.tsx" -o -name "*.ts" \) 2>/dev/null | xargs stat -c '%Y %n' 2>/dev/null | sort -rn | head -1 | awk '{print $1}')
+    DIST_TS=$(stat -c '%Y' "$SCRIPT_DIR/tauri-frontend/dist/index.html" 2>/dev/null || echo 0)
+    if [ -n "$NEWEST_SRC" ] && [ "$NEWEST_SRC" -gt "$DIST_TS" ]; then
+      NEED_BUILD=1
+      REASON="timestamp src/ mas reciente que dist/"
+    fi
   fi
 fi
 
 if [ "$NEED_BUILD" = "1" ]; then
-  echo -e "${Y}[build] Compilando frontend...${N}"
+  echo -e "${Y}[build] Rebuild necesario: ${REASON}${N}"
+  echo -e "${Y}[build] Compilando frontend... (puede tardar 1-2 min)${N}"
   cd "$SCRIPT_DIR/tauri-frontend"
   if [ ! -d "node_modules" ]; then
+    echo -e "${Y}[build] Instalando dependencias npm...${N}"
     npm install --legacy-peer-deps 2>&1 | tail -5
   fi
   npm run build 2>&1 | tail -10
   cd "$SCRIPT_DIR"
   if [ -f "$SCRIPT_DIR/tauri-frontend/dist/index.html" ]; then
+    if command -v git >/dev/null 2>&1 && [ -d "$SCRIPT_DIR/.git" ]; then
+      git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null | cut -c1-12 > "$HASH_FILE"
+    fi
     echo -e "${G}[build] Frontend compilado OK${N}"
   else
     echo -e "${R}[build] ERROR: build fallo. El dashboard usara el dist anterior si existe.${N}"
@@ -148,7 +171,7 @@ if [ "$START_GATEWAY" = "1" ]; then
   if [ "$GATEWAY_READY" = "1" ]; then
     echo -e "${G}[gateway] OK en :${GATEWAY_PORT}${N}"
   else
-    echo -e "${Y}[gateway] No disponible; el dashboard principal continuará en :${PORT}${N}"
+    echo -e "${Y}[gateway] No disponible; el dashboard principal continuara en :${PORT}${N}"
     GATEWAY_PID=""
   fi
 fi
