@@ -90,7 +90,9 @@ fi
 echo "[start] Sistema unificado corriendo:"
 echo "        -> Backend + Frontend: http://0.0.0.0:$PORT"
 echo "        -> Scanner: REAL (cero mocks)"
+echo "        -> ARTO AI: AUTO-START (motor autónomo de operaciones)"
 echo "        -> Health: http://localhost:$PORT/api/health"
+echo "        -> ARTO Status: http://localhost:$PORT/api/arto/status"
 
 cleanup() {
   echo "[start] Apagando..."

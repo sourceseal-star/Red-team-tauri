@@ -201,6 +201,7 @@ except Exception as _ib_err:
     print(f"[WARN] interceptor_bridge v2 import fallo: {_ib_err}", flush=True)
 
 # ── ARTO — Automated Red Team Operations (AI autónomo) ────────────────────
+_ARTO_OK = False
 try:
     sys.path.insert(0, str(BASE.parent / "arto"))
     sys.path.insert(0, str(BASE.parent))
@@ -208,6 +209,29 @@ try:
     app.include_router(arto_router)
     _ARTO_OK = True
     print("[ARTO] Router montado en /api/arto/* (AI autónomo de operaciones)")
+
+    # Auto-inicializar ARTO al arrancar el servidor
+    @app.on_event("startup")
+    async def _arto_auto_start():
+        global _ARTO_OK
+        try:
+            from arto import arto as _arto_instance
+            await _arto_instance.start()
+            print("[ARTO] ✅ Sistema ARTO inicializado y listo para operar")
+        except Exception as _e:
+            print(f"[ARTO] ⚠ No se pudo inicializar ARTO: {_e}")
+            _ARTO_OK = False
+
+    @app.on_event("shutdown")
+    async def _arto_auto_stop():
+        try:
+            from arto import arto as _arto_instance
+            if _arto_instance.running:
+                await _arto_instance.stop()
+                print("[ARTO] Sistema ARTO detenido correctamente")
+        except Exception:
+            pass
+
 except Exception as _arto_err:
     _ARTO_OK = False
     print(f"[WARN] ARTO import falló: {_arto_err}", flush=True)
@@ -4997,5 +5021,6 @@ if __name__ == "__main__":
     print(f"  → psutil: {'OK' if HAS_PSUTIL else 'NOT AVAILABLE'}", flush=True)
     print(f"  → geo_intel: {'OK' if _GEO_INTEL_OK else 'NOT AVAILABLE'}", flush=True)
     print(f"  → Sin mocks. Sin dummy data. Solo datos reales.", flush=True)
+    print(f"  → ARTO AI: {'OK' if _ARTO_OK else 'NOT AVAILABLE'}", flush=True)
     print("═" * 60, flush=True)
     uvicorn.run(app, host=host, port=port, log_level="info")
