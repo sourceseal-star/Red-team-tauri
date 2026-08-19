@@ -69,13 +69,13 @@ function authHeaders(): Record<string, string> {
 }
 
 async function get<T>(path: string): Promise<T> {
-  const r = await fetch(BASE + path, { headers: { ...authHeaders() } })
+  const r = await fetch(getBaseUrl() + path, { headers: { ...authHeaders() } })
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
   return r.json()
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
-  const r = await fetch(BASE + path, {
+  const r = await fetch(getBaseUrl() + path, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -85,14 +85,14 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function del<T>(path: string): Promise<T> {
-  const r = await fetch(BASE + path, { method: "DELETE", headers: { ...authHeaders() } })
+  const r = await fetch(getBaseUrl() + path, { method: "DELETE", headers: { ...authHeaders() } })
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
   return r.json()
 }
 
 /** GET con header X-Api-Key para rutas de escaneo de red protegidas. */
 async function getWithKey<T>(path: string, apiKey: string): Promise<T> {
-  const r = await fetch(BASE + path, {
+  const r = await fetch(getBaseUrl() + path, {
     headers: { "X-Api-Key": apiKey },
   })
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)

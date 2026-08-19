@@ -399,14 +399,44 @@ def subnet_from_iface(iface: str = None) -> str:
     return net["cidr"]
 
 def _detect_local_network() -> dict:
+    # 1) psutil: enumerar interfaces reales y elegir la primera IP privada
+    #    no-loopback. Mas confiable que el truco del socket UDP en Android/
+    #    Termux -- el sandboxing de la app puede hacer que connect() no
+    #    refleje la interfaz Wi-Fi real y caiga silenciosamente a loopback,
+    #    lo que rompia la topologia mostrando "127.0.0.0/24" (red inutil).
+    if HAS_PSUTIL:
+        try:
+            for _iface, addrs in psutil.net_if_addrs().items():
+                for addr in addrs:
+                    if addr.family == socket.AF_INET:
+                        ip = addr.address
+                        if ip.startswith("127.") or ip.startswith("169.254."):
+                            continue
+                        try:
+                            if ipaddress.ip_address(ip).is_private:
+                                parts = ip.split(".")
+                                return {"ip": ip, "mask": addr.netmask or "255.255.255.0",
+                                        "cidr": f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"}
+                        except ValueError:
+                            continue
+        except Exception:
+            pass
+    # 2) Fallback: truco del socket UDP (no exige permisos especiales).
+    #    Se descarta explicitamente si devuelve loopback -- eso nunca es
+    #    la red real y antes se aceptaba tal cual.
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         local_ip = s.getsockname()[0]
         s.close()
-    except: local_ip = "127.0.0.1"
-    parts = local_ip.split(".")
-    return {"ip": local_ip, "mask": "255.255.255.0", "cidr": f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"}
+        if not local_ip.startswith("127."):
+            parts = local_ip.split(".")
+            return {"ip": local_ip, "mask": "255.255.255.0", "cidr": f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"}
+    except Exception:
+        pass
+    # 3) Ultimo recurso real -- si esto se ve en la UI, revisar permisos de
+    #    red de Termux o si hay Wi-Fi activo.
+    return {"ip": "127.0.0.1", "mask": "255.255.255.0", "cidr": "127.0.0.0/24"}
 
 def _nmap_or_empty_sync(args: list, timeout: int = 60) -> tuple:
     try:

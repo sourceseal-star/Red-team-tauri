@@ -34,6 +34,12 @@ interface Camera {
   onvif_url?: string
 }
 
+// Con mas hosts que esto, el grafo circular (hub-and-spoke) se vuelve
+// ilegible -- 255 nodos apretados en un solo anillo se ven como una
+// mancha de color sin informacion util. Por encima del umbral se usa
+// una cuadricula donde cada host sigue siendo legible y clickeable.
+const GRID_THRESHOLD = 40
+
 const RISK_COLORS: Record<string, string> = {
   low: '#22c55e',
   medium: '#eab308',
@@ -221,7 +227,7 @@ export default function NetworkTopology() {
           <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <Network size={20} className="text-cyan-400" />
             Topologia de Red
-            {subnet && <span className="text-xs text-slate-500 font-mono ml-2">{subnet}/24</span>}
+            {subnet && <span className="text-xs text-slate-500 font-mono ml-2">{subnet}</span>}
           </h2>
           <div className="flex items-center gap-2">
             <button onClick={runScan} disabled={scanning} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs rounded-lg flex items-center gap-1.5 disabled:opacity-50">
@@ -285,6 +291,32 @@ export default function NetworkTopology() {
           )}
           {view === 'topology' && (
             <div className="relative bg-slate-900/30" style={{ minHeight: '500px' }}>
+              {positionedNodes.length > GRID_THRESHOLD ? (
+                <div className="p-4 overflow-y-auto" style={{ maxHeight: '560px' }}>
+                  <div className="text-[10px] text-slate-500 mb-3 flex items-center gap-1.5">
+                    <Fingerprint size={11} />
+                    Red grande ({positionedNodes.length} hosts) — vista de cuadricula para que cada host se pueda leer y clickear (el grafo circular se vuelve ilegible con tantos nodos)
+                  </div>
+                  <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(58px, 1fr))' }}>
+                    {positionedNodes.map((n, i) => {
+                      const color = RISK_COLORS[n.risk] || RISK_COLORS.unknown
+                      const isSel = selectedHost?.ip === n.ip
+                      const Icon = TYPE_ICONS[n.type] || Globe
+                      return (
+                        <button key={`g-${i}`} onClick={() => { setSelectedHost(n); setShowAll(false) }}
+                          className="flex flex-col items-center gap-1 p-1.5 rounded-lg border transition-all hover:scale-105"
+                          style={{ backgroundColor: isSel ? `${color}30` : `${color}12`, borderColor: color, borderWidth: isSel ? 2 : 1 }}
+                          title={`${n.ip}\nTipo: ${n.type}\nRiesgo: ${RISK_LABELS[n.risk] || n.risk}\nPuertos: ${n.ports.map((p: any) => p.port).join(', ') || 'Ninguno'}\nMAC: ${n.mac || 'N/D'}\nVendor: ${n.vendor || 'N/D'}`}>
+                          <Icon size={13} color={color} />
+                          <span className="font-mono text-[9px] leading-none" style={{ color }}>{n.ip.split('.').pop()}</span>
+                          {n.ports.length > 0 && <span className="text-[7px] text-slate-500 leading-none">{n.ports.length}p</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <>
               <svg ref={svgRef} className="w-full h-full" viewBox="0 0 800 500" style={{ minHeight: '500px' }}>
                 <defs>
                   <radialGradient id="centerGlow">
@@ -363,6 +395,8 @@ export default function NetworkTopology() {
 
                 {scanning && <text x={400} y={480} textAnchor="middle" fill="#06b6d4" fontSize="11" fontFamily="monospace">Escaneando red...</text>}
               </svg>
+                </>
+              )}
 
               {/* Leyenda */}
               <div className="absolute top-3 right-3 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-lg p-2 space-y-1">
