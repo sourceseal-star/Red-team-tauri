@@ -13,5 +13,6 @@
     pkgs.python312Packages.dnspython
     pkgs.python312Packages.beautifulsoup4
     pkgs.python312Packages.python-whois
+    pkgs.python312Packages.aiohttp
   ];
 }

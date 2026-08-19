@@ -6,10 +6,14 @@ Recopila y analiza información de amenazas de múltiples fuentes.
 
 import asyncio
 import datetime
-import aiohttp
 import json
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
+
+try:
+    import aiohttp  # noqa: F401  (reservado para futuros feeds HTTP de threat intel)
+except ImportError:
+    aiohttp = None
 
 
 @dataclass
