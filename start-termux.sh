@@ -79,19 +79,41 @@ fi
 export $(cat "$SCRIPT_DIR/.env" | grep -v '^#' | xargs)
 echo ""
 
-# ─── 5. Build frontend si no existe dist/ ──────────────────────────────
+# ─── 5. Build frontend ─────────────────────────────────────────────────
+# Siempre reconstruir si el codigo fuente cambio desde el ultimo build.
+# Antes solo compilaba si dist/index.html no existia, lo que significaba
+# que los fixes de codigo nunca se veian en el dashboard sin borrar dist/
+# manualmente. Ahora se compara el timestamp de los .tsx mas recientes
+# contra el de dist/index.html -- si el fuente es mas nuevo, se recompila.
+NEED_BUILD=0
 if [ ! -f "$SCRIPT_DIR/tauri-frontend/dist/index.html" ]; then
-  echo -e "${Y}[build] Frontend no compilado. Compilando...${N}"
+  NEED_BUILD=1
+else
+  # Encontrar el .tsx/.ts mas reciente en src/
+  NEWEST_SRC=$(find "$SCRIPT_DIR/tauri-frontend/src" -name "*.tsx" -o -name "*.ts" 2>/dev/null | xargs stat -c '%Y %n' 2>/dev/null | sort -rn | head -1 | awk '{print $1}')
+  DIST_TS=$(stat -c '%Y' "$SCRIPT_DIR/tauri-frontend/dist/index.html" 2>/dev/null || echo 0)
+  if [ -n "$NEWEST_SRC" ] && [ "$NEWEST_SRC" -gt "$DIST_TS" ]; then
+    NEED_BUILD=1
+    echo -e "${Y}[build] Codigo fuente mas reciente que dist/ -- recompilando...${N}"
+  fi
+fi
+
+if [ "$NEED_BUILD" = "1" ]; then
+  echo -e "${Y}[build] Compilando frontend...${N}"
   cd "$SCRIPT_DIR/tauri-frontend"
   if [ ! -d "node_modules" ]; then
     npm install --legacy-peer-deps 2>&1 | tail -5
   fi
   npm run build 2>&1 | tail -10
   cd "$SCRIPT_DIR"
-  echo -e "${G}[build] Frontend compilado${N}"
+  if [ -f "$SCRIPT_DIR/tauri-frontend/dist/index.html" ]; then
+    echo -e "${G}[build] Frontend compilado OK${N}"
+  else
+    echo -e "${R}[build] ERROR: build fallo. El dashboard usara el dist anterior si existe.${N}"
+  fi
   echo ""
 else
-  echo -e "${G}[build] Frontend ya compilado (dist/)${N}"
+  echo -e "${G}[build] Frontend ya compilado y actualizado (dist/)${N}"
   echo ""
 fi
 

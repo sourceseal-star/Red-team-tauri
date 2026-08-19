@@ -234,7 +234,7 @@ except Exception as e:
 # == END CORSET + TRIAGE + OSINT INTEGRATION ================================"
 
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
-                   allow_methods=["GET", "POST", "DELETE", "PATCH"], allow_headers=["X-API-Key", "Content-Type"])
+                   allow_methods=["GET", "POST", "DELETE", "PATCH"], allow_headers=["X-API-Key", "Content-Type", "Authorization"])
 
 # ── Rate limiting (simple, en memoria) ───────────────────────────────────────
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "60"))  # requests por minuto por IP
