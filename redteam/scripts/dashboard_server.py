@@ -892,7 +892,7 @@ async def scan_routers():
         ports_map = {p: b for p, b in zip(ROUTER_PORTS, banners)}
         if any(banners):
             # Detectar marca via HTTP banner
-            http_banner = _http_banner(ip, 80, timeout=2.0)
+            http_banner = await _http_banner(ip, 80, timeout=2.0)
             vendor = _detect_router_brand(http_banner.get("server", "") + " " + http_banner.get("body_preview", ""))
             results.append({"ip": ip, "ports": ports_map, "type": "router",
                            "vendor": vendor, "first_seen": datetime.now().isoformat()})
@@ -2800,22 +2800,56 @@ async def get_ip_reputation(ip: str):
             "cached": True
         }
 
-    data = await _check_abuseipdb(ip)
-    if "error" in data:
-        raise HTTPException(status_code=503, detail=data["error"])
+    # Intentar AbuseIPDB si hay API key
+    if _abuseipdb_key:
+        data = await _check_abuseipdb(ip)
+        if "error" not in data:
+            _cache_ip(ip, data)
+            score = data.get("abuseConfidenceScore", 0)
+            return {
+                "ip": ip, "abuse_score": score,
+                "country": data.get("countryCode", "Unknown"),
+                "isp": data.get("isp", "Unknown"),
+                "total_reports": data.get("totalReports", 0),
+                "last_reported": data.get("lastReportedAt", "Never"),
+                "is_tor": data.get("isTor", False),
+                "verdict": "MALICIOUS" if score > 75 else "SUSPICIOUS" if score > 25 else "CLEAN",
+                "cached": False,
+                "source": "abuseipdb"
+            }
 
-    _cache_ip(ip, data)
-    score = data.get("abuseConfidenceScore", 0)
-    return {
-        "ip": ip, "abuse_score": score,
-        "country": data.get("countryCode", "Unknown"),
-        "isp": data.get("isp", "Unknown"),
-        "total_reports": data.get("totalReports", 0),
-        "last_reported": data.get("lastReportedAt", "Never"),
-        "is_tor": data.get("isTor", False),
-        "verdict": "MALICIOUS" if score > 75 else "SUSPICIOUS" if score > 25 else "CLEAN",
-        "cached": False
-    }
+    # Fallback: ipwho.is (gratis, sin API key)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"https://ipwho.is/{ip}")
+            if resp.status_code == 200:
+                geo = resp.json()
+                if geo.get("success", True):
+                    fallback_data = {
+                        "abuseConfidenceScore": 0,
+                        "countryCode": geo.get("country_code", "Unknown"),
+                        "isp": geo.get("connection", {}).get("isp", geo.get("connection", {}).get("org", "Unknown")),
+                        "totalReports": 0,
+                        "lastReportedAt": "Never",
+                        "isTor": False
+                    }
+                    _cache_ip(ip, fallback_data)
+                    return {
+                        "ip": ip, "abuse_score": 0,
+                        "country": fallback_data["countryCode"],
+                        "isp": fallback_data["isp"],
+                        "total_reports": 0,
+                        "last_reported": "Never",
+                        "is_tor": False,
+                        "verdict": "CLEAN",
+                        "cached": False,
+                        "source": "ipwho.is (sin API key)",
+                        "note": "Sin AbuseIPDB key — datos geográficos únicamente"
+                    }
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=503, detail="No se pudo consultar reputación de IP. Configura ABUSEIPDB_KEY para análisis completo.")
 
 @app.post("/api/intel/bulk-check")
 async def bulk_check_ips(request: Request):
@@ -3030,7 +3064,7 @@ async def investigate_camera(ip: str, port: int = 80):
     ip_investigation = await investigate_ip(ip)
 
     # 2. Detección de marca/modelo
-    banner = _http_banner(ip, port, "/", timeout=5.0)
+    banner = await _http_banner(ip, port, "/", timeout=5.0)
     brand = _detect_camera_brand(banner.get("server", "") + " " + banner.get("body_preview", ""))
 
     # 3. Detección de streams de video
@@ -3405,8 +3439,8 @@ async def _fetch_crtsh(domain: str) -> list:
     url = f"https://crt.sh/?q=%.{domain}&output=json"
     results = []
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, timeout=30)
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
                 seen = set()
@@ -3442,6 +3476,7 @@ async def _brute_subdomains(domain: str, max_concurrent: int = 50) -> list:
     async def check_one(sub: str):
         full = f"{sub}.{domain}"
         async with semaphore:
+            # Método 1: dig si está disponible
             try:
                 proc = await asyncio.create_subprocess_exec(
                     "dig", "+short", full,
@@ -3451,6 +3486,13 @@ async def _brute_subdomains(domain: str, max_concurrent: int = 50) -> list:
                 ip = stdout.decode().strip().split("\n")[0]
                 if ip and not ip.startswith(";") and ip:
                     found.append({"subdomain": full, "source": "brute-force", "ip": ip, "status": "resolved"})
+                    return
+            except Exception:
+                pass
+            # Método 2: socket.gethostbyname (fallback, funciona en Termux sin dig)
+            try:
+                ip = await asyncio.to_thread(socket.gethostbyname, full)
+                found.append({"subdomain": full, "source": "brute-force", "ip": ip, "status": "resolved"})
             except Exception:
                 pass
 

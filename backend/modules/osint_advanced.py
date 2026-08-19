@@ -114,7 +114,16 @@ _init_db()
 # ============================================================================
 
 class OSINTRequest(BaseModel):
-    target: str = Field(..., description="Dominio, IP o email a investigar")
+    target: str = Field(None, description="Dominio, IP o email a investigar")
+    domain: str = Field(None, description="Alias de target (compatibilidad)")
+
+    def __init__(self, **data):
+        # Aceptar tanto "target" como "domain"
+        if "domain" in data and "target" not in data:
+            data["target"] = data["domain"]
+        if "target" not in data and "domain" not in data:
+            raise ValueError("Falta 'target' o 'domain'")
+        super().__init__(**data)
 
 
 # ============================================================================
