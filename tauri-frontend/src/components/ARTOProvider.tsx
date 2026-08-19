@@ -68,13 +68,18 @@ export function ARTOProvider({
         setThreats(threatsResponse.data?.threats || []);
       }
 
-      // Iniciar el sistema si autoStart está activado
-      if (autoStart && statusResponse.data?.running === false) {
-        await artoApi.start();
-        // Recargar estado después de iniciar
-        const newStatusResponse = await artoApi.getStatus();
-        if (newStatusResponse.status === 'success') {
-          setSystemStats(newStatusResponse.data || null);
+      // Iniciar el sistema si autoStart está activado (una sola vez)
+      if (autoStart && statusResponse.data?.running === false && statusResponse.status === 'success') {
+        try {
+          await artoApi.start();
+          // Recargar estado después de iniciar
+          const newStatusResponse = await artoApi.getStatus();
+          if (newStatusResponse.status === 'success') {
+            setSystemStats(newStatusResponse.data || null);
+          }
+        } catch (e) {
+          // ARTO no pudo iniciar — no reintentar en cada polling
+          console.warn('[ARTO] Auto-start falló:', e);
         }
       }
     } catch (err) {
@@ -126,8 +131,11 @@ export function ARTOProvider({
   // 🔄 Actualizar datos periódicamente
   useEffect(() => {
     const interval = setInterval(() => {
-      loadInitialData();
-    }, 30000); // Cada 30 segundos
+      // Solo polling si ARTO está activo — evita rate limit cuando está inactivo
+      if (systemStats?.running) {
+        loadInitialData();
+      }
+    }, 60000); // Cada 60 segundos — reduce rate limit pressure
 
     return () => clearInterval(interval);
   }, [loadInitialData]);
