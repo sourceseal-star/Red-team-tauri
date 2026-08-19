@@ -279,6 +279,21 @@ export default function OSINTPanel() {
   const runTool = async (toolId?: string) => {
     const id = toolId || selectedTool;
     if (!target.trim()) { setError('Ingresa un dominio, IP o usuario'); return; }
+    // Validar que el target sea apropiado para la herramienta
+    const t = target.trim();
+    const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t);
+    const isIP = /^(\d{1,3}\.){3}\d{1,3}$/.test(t);
+    const isDomain = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/.test(t);
+    // WHOIS, Subdominios, DNS requieren dominio/IP (no email)
+    if (['whois', 'subdomains', 'dns'].includes(id) && isEmail) {
+      setError(`${id === 'whois' ? 'WHOIS' : id === 'subdomains' ? 'Subdominios' : 'DNS'} requiere un dominio o IP, no un email`);
+      return;
+    }
+    // Threat Intel requiere IP
+    if (id === 'threat' && !isIP && !isDomain) {
+      setError('Threat Intel requiere una IP válida');
+      return;
+    }
     setError(null);
     setLoadingTool(id);
     const tool = TOOLS.find(t => t.id === id);
