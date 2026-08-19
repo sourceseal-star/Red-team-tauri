@@ -636,7 +636,7 @@ class ARTO:
     
     async def get_knowledge_stats(self) -> Dict:
         """Obtiene estadísticas de la base de conocimiento"""
-        return await self.knowledge_base.get_stats()
+        return await self.knowledge_base.get_knowledge_stats()
     
     async def event_stream(self):
         """Generador de eventos en tiempo real"""
@@ -669,7 +669,7 @@ class ARTO:
             "predictions_count": len(self.predictions),
             "threats_count": len(self.threats),
             "memory_stats": await self.memory.get_stats(),
-            "knowledge_stats": await self.knowledge_base.get_stats()
+            "knowledge_stats": await self.knowledge_base.get_knowledge_stats()
         }
 
 
