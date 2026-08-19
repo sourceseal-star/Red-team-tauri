@@ -50,17 +50,31 @@ echo ""
 # ─── 4. Verificar/crear .env ────────────────────────────────────────────
 if [ ! -f "$SCRIPT_DIR/.env" ]; then
   API_KEY=$(openssl rand -hex 24)
+  # ABUSEIPDB_KEY: si ya está en el entorno (ej. exportada manualmente), usarla
+  ABUSE_LINE=""
+  if [ -n "$ABUSEIPDB_KEY" ]; then
+    ABUSE_LINE="ABUSEIPDB_KEY=${ABUSEIPDB_KEY}"
+  fi
   cat > "$SCRIPT_DIR/.env" << EOF
 REDTEAM_API_KEY=${API_KEY}
 HOST=${HOST}
 PORT=${PORT}
 ALLOWED_ORIGINS=http://localhost:${PORT},http://127.0.0.1:${PORT}
+${ABUSE_LINE}
 EOF
   chmod 600 "$SCRIPT_DIR/.env"
   echo -e "${G}[env] .env creado. API Key: ${API_KEY:0:8}...${N}"
   echo -e "${Y}[env] GUARDA TU KEY: ${API_KEY}${N}"
+  if [ -n "$ABUSEIPDB_KEY" ]; then
+    echo -e "${G}[env] ABUSEIPDB_KEY guardada en .env${N}"
+  fi
 else
   echo -e "${G}[env] .env existe${N}"
+  # Si ABUSEIPDB_KEY está en el entorno pero no en .env, agregarla
+  if [ -n "$ABUSEIPDB_KEY" ] && ! grep -q "ABUSEIPDB_KEY" "$SCRIPT_DIR/.env"; then
+    echo "ABUSEIPDB_KEY=${ABUSEIPDB_KEY}" >> "$SCRIPT_DIR/.env"
+    echo -e "${G}[env] ABUSEIPDB_KEY agregada a .env existente${N}"
+  fi
 fi
 export $(cat "$SCRIPT_DIR/.env" | grep -v '^#' | xargs)
 echo ""
