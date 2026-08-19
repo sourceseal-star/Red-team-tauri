@@ -85,12 +85,29 @@ async def websocket_endpoint(websocket: WebSocket):
 @router.get("/status")
 async def get_status():
     """Obtiene el estado actual del sistema ARTO"""
-    status = await arto.get_status()
-    return {
-        "status": "success",
-        "data": status,
-        "timestamp": datetime.datetime.now().isoformat()
-    }
+    try:
+        status = await arto.get_status()
+        return {
+            "status": "success",
+            "data": status,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "data": {
+                "running": getattr(arto, 'running', False),
+                "operations_count": len(getattr(arto, 'operations', [])),
+                "predictions_count": len(getattr(arto, 'predictions', [])),
+                "threats_count": len(getattr(arto, 'threats', [])),
+                "memory_stats": {},
+                "knowledge_stats": {},
+                "error": str(e)
+            },
+            "timestamp": datetime.datetime.now().isoformat()
+        }
 
 
 @router.post("/start")
@@ -104,10 +121,26 @@ async def start_system():
             "timestamp": datetime.datetime.now().isoformat()
         }
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        import traceback
+        traceback.print_exc()
+        # Intentar recovery: limpiar y reintentar una vez
+        try:
+            if hasattr(arto, 'memory') and arto.memory:
+                arto.memory.initialized = False
+                arto.memory.conn = None
+            if hasattr(arto, 'knowledge_base') and arto.knowledge_base:
+                arto.knowledge_base.initialized = False
+            await start_arto()
+            return {
+                "status": "success",
+                "message": "ARTO iniciado (tras recovery)",
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+        except Exception as e2:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Start failed: {e}. Recovery also failed: {e2}"
+            )
 
 
 @router.post("/stop")
@@ -121,6 +154,8 @@ async def stop_system():
             "timestamp": datetime.datetime.now().isoformat()
         }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -166,13 +201,24 @@ async def autonomous_operation(
 @router.get("/operations")
 async def get_operations():
     """Obtiene todas las operaciones ejecutadas"""
-    operations = await arto.get_operations()
-    return {
-        "status": "success",
-        "count": len(operations),
-        "operations": operations,
-        "timestamp": datetime.datetime.now().isoformat()
-    }
+    try:
+        operations = await arto.get_operations()
+        return {
+            "status": "success",
+            "count": len(operations),
+            "operations": operations,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "count": 0,
+            "operations": [],
+            "error": str(e),
+            "timestamp": datetime.datetime.now().isoformat()
+        }
 
 
 @router.get("/operations/{operation_id}")
@@ -199,13 +245,24 @@ async def get_operation(operation_id: str):
 @router.get("/predictions")
 async def get_predictions():
     """Obtiene todas las predicciones"""
-    predictions = await arto.get_predictions()
-    return {
-        "status": "success",
-        "count": len(predictions),
-        "predictions": predictions,
-        "timestamp": datetime.datetime.now().isoformat()
-    }
+    try:
+        predictions = await arto.get_predictions()
+        return {
+            "status": "success",
+            "count": len(predictions),
+            "predictions": predictions,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "count": 0,
+            "predictions": [],
+            "error": str(e),
+            "timestamp": datetime.datetime.now().isoformat()
+        }
 
 
 @router.post("/predict")
@@ -258,13 +315,24 @@ async def respond_to_threat(request: Dict):
 @router.get("/threats")
 async def get_threats():
     """Obtiene todas las amenazas detectadas"""
-    threats = await arto.get_threats()
-    return {
-        "status": "success",
-        "count": len(threats),
-        "threats": threats,
-        "timestamp": datetime.datetime.now().isoformat()
-    }
+    try:
+        threats = await arto.get_threats()
+        return {
+            "status": "success",
+            "count": len(threats),
+            "threats": threats,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "count": 0,
+            "threats": [],
+            "error": str(e),
+            "timestamp": datetime.datetime.now().isoformat()
+        }
 
 
 # 🎭 Endpoints de Simulación
@@ -300,13 +368,24 @@ async def simulate_attack(request: Dict):
 @router.get("/templates")
 async def get_templates():
     """Obtiene todas las plantillas de ataque"""
-    templates = await arto.attack_simulator.get_templates()
-    return {
-        "status": "success",
-        "count": len(templates),
-        "templates": {name: template.to_dict() for name, template in templates.items()},
-        "timestamp": datetime.datetime.now().isoformat()
-    }
+    try:
+        templates = await arto.attack_simulator.get_templates()
+        return {
+            "status": "success",
+            "count": len(templates),
+            "templates": {name: template.to_dict() for name, template in templates.items()},
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "count": 0,
+            "templates": {},
+            "error": str(e),
+            "timestamp": datetime.datetime.now().isoformat()
+        }
 
 
 # 📊 Endpoints de Análisis
