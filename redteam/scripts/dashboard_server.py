@@ -4947,6 +4947,579 @@ async def bm_chaos_status():
 # == END BLACK MIRROR ================================================
 
 # ═════════════════════════════════════════════════════════════════════════════
+#  SQLite PERSISTENCE — Topología, IoT, Alertas, SOAR, Settings, IOCs
+#  (Merge del backend v3.1-enhanced — conserva auth existente con API key)
+# ═════════════════════════════════════════════════════════════════════════════
+
+import sqlite3 as _sqlite3_v2
+
+DB_PATH_V2 = BASE.parent / "redteam.db"
+
+class DatabaseV2:
+    def __init__(self, path):
+        self.path = path
+        self._init_db()
+
+    def _conn(self):
+        c = _sqlite3_v2.connect(str(self.path), check_same_thread=False)
+        c.row_factory = _sqlite3_v2.Row
+        return c
+
+    def _init_db(self):
+        with self._conn() as c:
+            c.executescript("""
+                CREATE TABLE IF NOT EXISTS v2_hosts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ip TEXT UNIQUE NOT NULL,
+                    hostname TEXT,
+                    mac TEXT,
+                    os_guess TEXT,
+                    risk_score INTEGER DEFAULT 0,
+                    first_seen REAL,
+                    last_seen REAL,
+                    ports TEXT DEFAULT '[]',
+                    tags TEXT DEFAULT '[]',
+                    metadata TEXT DEFAULT '{}'
+                );
+                CREATE TABLE IF NOT EXISTS v2_cameras (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ip TEXT NOT NULL,
+                    port INTEGER DEFAULT 80,
+                    vendor TEXT,
+                    model TEXT,
+                    snapshot_url TEXT,
+                    credentials_tested INTEGER DEFAULT 0,
+                    credentials_found TEXT DEFAULT '[]',
+                    last_seen REAL
+                );
+                CREATE TABLE IF NOT EXISTS v2_alerts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    severity TEXT NOT NULL,
+                    title TEXT,
+                    message TEXT,
+                    source TEXT,
+                    ts REAL,
+                    metadata TEXT DEFAULT '{}',
+                    acknowledged INTEGER DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS v2_iocs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ioc_type TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    source TEXT,
+                    confidence INTEGER DEFAULT 50,
+                    ts REAL
+                );
+                CREATE TABLE IF NOT EXISTS v2_playbooks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    steps TEXT DEFAULT '[]',
+                    created_at REAL
+                );
+                CREATE TABLE IF NOT EXISTS v2_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                );
+            """)
+
+    # ── Hosts ──
+    def get_hosts(self, limit=100, offset=0, search="", risk_min=0, risk_max=100, tag=""):
+        q = "SELECT * FROM v2_hosts WHERE risk_score >= ? AND risk_score <= ?"
+        params = [risk_min, risk_max]
+        if search:
+            q += " AND (ip LIKE ? OR hostname LIKE ? OR os_guess LIKE ?)"
+            s = f"%{search}%"
+            params += [s, s, s]
+        if tag:
+            q += " AND tags LIKE ?"
+            params += [f"%\"{tag}\"%"]
+        q += " ORDER BY last_seen DESC LIMIT ? OFFSET ?"
+        params += [limit, offset]
+        with self._conn() as c:
+            rows = c.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def insert_host(self, ip, hostname="", mac="", os_guess="", risk_score=0, ports=None, tags=None, metadata=None):
+        now = time.time()
+        with self._conn() as c:
+            c.execute("""INSERT OR REPLACE INTO v2_hosts
+                (ip, hostname, mac, os_guess, risk_score, first_seen, last_seen, ports, tags, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (ip, hostname, mac, os_guess, risk_score, now, now,
+                 json.dumps(ports or []), json.dumps(tags or []), json.dumps(metadata or {})))
+            c.commit()
+        return True
+
+    def get_graph(self):
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM v2_hosts").fetchall()
+        nodes = []
+        edges = []
+        for r in rows:
+            d = dict(r)
+            risk = d.get("risk_score", 0)
+            color = "#ef4444" if risk >= 70 else "#f59e0b" if risk >= 40 else "#22c55e"
+            nodes.append({
+                "id": d["ip"], "label": d.get("hostname") or d["ip"],
+                "group": d.get("os_guess", "unknown"), "value": max(5, risk),
+                "color": color, "title": f"{d['ip']} ({d.get('os_guess','?')}) risk={risk}"
+            })
+            if not d["ip"].endswith(".1"):
+                gateway = ".".join(d["ip"].split(".")[:3]) + ".1"
+                edges.append({"from": gateway, "to": d["ip"]})
+        return {"nodes": nodes, "edges": edges}
+
+    # ── Cameras ──
+    def get_cameras(self):
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM v2_cameras ORDER BY last_seen DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def insert_camera(self, ip, port=80, vendor="", model="", snapshot_url=""):
+        now = time.time()
+        with self._conn() as c:
+            c.execute("""INSERT INTO v2_cameras
+                (ip, port, vendor, model, snapshot_url, credentials_tested, credentials_found, last_seen)
+                VALUES (?, ?, ?, ?, ?, 0, '[]', ?)""",
+                (ip, port, vendor, model, snapshot_url, now))
+            cid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
+            c.commit()
+        return cid
+
+    def update_camera_creds(self, cam_id, tested, found):
+        with self._conn() as c:
+            c.execute("UPDATE v2_cameras SET credentials_tested=?, credentials_found=? WHERE id=?",
+                      (tested, json.dumps(found), cam_id))
+            c.commit()
+
+    # ── Alerts ──
+    def get_alerts(self, limit=100):
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM v2_alerts ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_alert(self, severity, title, message, source="", metadata=None):
+        now = time.time()
+        with self._conn() as c:
+            c.execute("INSERT INTO v2_alerts (severity, title, message, source, ts, metadata, acknowledged) VALUES (?,?,?,?,?,?,0)",
+                      (severity, title, message, source, now, json.dumps(metadata or {})))
+            c.commit()
+        return True
+
+    def ack_alert(self, alert_id):
+        with self._conn() as c:
+            c.execute("UPDATE v2_alerts SET acknowledged=1 WHERE id=?", (alert_id,))
+            c.commit()
+
+    # ── IOCs ──
+    def get_iocs(self, ioc_type=""):
+        q = "SELECT * FROM v2_iocs"
+        params = []
+        if ioc_type:
+            q += " WHERE ioc_type=?"
+            params.append(ioc_type)
+        q += " ORDER BY ts DESC"
+        with self._conn() as c:
+            rows = c.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def insert_ioc(self, ioc_type, value, source="", confidence=50):
+        now = time.time()
+        with self._conn() as c:
+            c.execute("INSERT INTO v2_iocs (ioc_type, value, source, confidence, ts) VALUES (?,?,?,?,?)",
+                      (ioc_type, value, source, confidence, now))
+            c.commit()
+        return True
+
+    # ── Playbooks ──
+    def get_playbooks(self):
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM v2_playbooks ORDER BY created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def save_playbook(self, name, description="", steps=None):
+        now = time.time()
+        with self._conn() as c:
+            c.execute("INSERT INTO v2_playbooks (name, description, steps, created_at) VALUES (?,?,?,?)",
+                      (name, description, json.dumps(steps or []), now))
+            pid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
+            c.commit()
+        return pid
+
+    # ── Settings ──
+    def get_settings(self):
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM v2_settings").fetchall()
+        return {r["key"]: r["value"] for r in rows}
+
+    def set_setting(self, key, value):
+        with self._conn() as c:
+            c.execute("INSERT OR REPLACE INTO v2_settings (key, value) VALUES (?,?)", (key, str(value)))
+            c.commit()
+        return True
+
+
+db_v2 = DatabaseV2(DB_PATH_V2)
+
+# ── Seed demo data (solo si la DB está vacía) ──
+def _seed_v2_if_empty():
+    with db_v2._conn() as c:
+        count = c.execute("SELECT COUNT(*) FROM v2_hosts").fetchone()[0]
+    if count > 0:
+        return
+    print("[DB-V2] Seeding demo data...")
+    demo_hosts = [
+        ("192.168.1.1", "router.local", "", "Router/AP", 10, [80, 443, 22]),
+        ("192.168.1.10", "cam-sala.local", "", "IP Camera Hikvision", 65, [80, 554, 8000]),
+        ("192.168.1.15", "dvr-nvr.local", "", "DVR Hikvision", 75, [80, 554, 8000, 8200]),
+        ("192.168.1.20", "workstation-01", "", "Windows 10", 30, [445, 3389]),
+        ("192.168.1.25", "printer-hp.local", "", "HP Printer", 15, [80, 443, 9100]),
+        ("192.168.1.100", "unknown-device", "", "Unknown", 50, [23, 80]),
+    ]
+    for ip, host, mac, os_g, risk, ports in demo_hosts:
+        db_v2.insert_host(ip, hostname=host, mac=mac, os_guess=os_g, risk_score=risk, ports=ports,
+                          tags=["demo"])
+    demo_cams = [
+        ("192.168.1.10", 80, "Hikvision", "DS-2CD2142FWD-I", "/ISAPI/Streaming/channels/101/picture"),
+        ("192.168.1.15", 80, "Hikvision", "DS-7108NI-Q1", "/cgi-bin/snapshot.cgi"),
+    ]
+    for ip, port, vendor, model, snap in demo_cams:
+        db_v2.insert_camera(ip, port, vendor, model, snap)
+    db_v2.add_alert("warning", "Cámara Hikvision detectada", "Credenciales por defecto posibles", "iot_scanner", {"ip": "192.168.1.10"})
+    db_v2.add_alert("info", "Nuevo host descubierto", "Router gateway detectado", "arp_scan", {"ip": "192.168.1.1"})
+    db_v2.add_alert("critical", "Puerto Telnet abierto", "192.168.1.100:23 sin autenticación", "port_scan", {"ip": "192.168.1.100", "port": 23})
+    db_v2.insert_ioc("ip", "192.168.1.100", "port_scan", 80)
+    db_v2.insert_ioc("port", "23", "telnet_exposed", 90)
+    print("[DB-V2] Demo data seeded.")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  ENDPOINTS V2 — Topología, IoT Cameras, Alertas, Export, SOAR, Settings, IOCs
+#  (Usan el mismo middleware de auth con API key que el resto del sistema)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/v2/topology/hosts")
+async def v2_list_hosts(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    search: str = Query(""),
+    risk_min: int = Query(0, ge=0, le=100),
+    risk_max: int = Query(100, ge=0, le=100),
+    tag: str = Query(""),
+):
+    hosts = db_v2.get_hosts(limit=limit, offset=offset, search=search, risk_min=risk_min, risk_max=risk_max, tag=tag)
+    for h in hosts:
+        h["ports"] = json.loads(h.get("ports", "[]"))
+        h["tags"] = json.loads(h.get("tags", "[]"))
+        h["metadata"] = json.loads(h.get("metadata", "{}"))
+    return {"hosts": hosts, "count": len(hosts)}
+
+@app.get("/api/v2/topology/graph")
+async def v2_topology_graph():
+    return db_v2.get_graph()
+
+@app.post("/api/v2/topology/hosts")
+async def v2_add_host(request: Request):
+    try:
+        body = await request.json()
+    except:
+        body = {}
+    ip = body.get("ip", "")
+    if not ip:
+        return JSONResponse({"error": "ip required"}, status_code=400)
+    db_v2.insert_host(
+        ip, hostname=body.get("hostname", ""), mac=body.get("mac", ""),
+        os_guess=body.get("os_guess", ""), risk_score=body.get("risk_score", 0),
+        ports=body.get("ports", []), tags=body.get("tags", []),
+        metadata=body.get("metadata", {})
+    )
+    return {"ok": True, "ip": ip}
+
+@app.get("/api/v2/iot/cameras")
+async def v2_list_cameras():
+    cams = db_v2.get_cameras()
+    for c in cams:
+        c["credentials_found"] = json.loads(c.get("credentials_found", "[]"))
+    return {"cameras": cams}
+
+@app.post("/api/v2/iot/cameras")
+async def v2_add_camera(request: Request):
+    try:
+        body = await request.json()
+    except:
+        body = {}
+    ip = body.get("ip", "")
+    if not ip:
+        return JSONResponse({"error": "ip required"}, status_code=400)
+    cid = db_v2.insert_camera(ip, body.get("port", 80), body.get("vendor", ""),
+                               body.get("model", ""), body.get("snapshot_url", ""))
+    return {"ok": True, "id": cid}
+
+@app.get("/api/v2/iot/snapshot/{camera_id}")
+async def v2_camera_snapshot(camera_id: int):
+    cams = db_v2.get_cameras()
+    cam = next((c for c in cams if c["id"] == camera_id), None)
+    if not cam:
+        return JSONResponse({"error": "camera not found"}, status_code=404)
+    ip = cam["ip"]
+    port = cam["port"]
+    snap_path = cam["snapshot_url"]
+    # URLs comunes para Hikvision, Dahua, ONVIF
+    candidate_urls = [
+        f"http://{ip}:{port}{snap_path}",
+        f"http://{ip}:{port}/ISAPI/Streaming/channels/101/picture",
+        f"http://{ip}:{port}/cgi-bin/snapshot.cgi",
+        f"http://{ip}:{port}/snap.jpg",
+        f"http://{ip}:{port}/onvif/snapshot",
+        f"http://{ip}:{port}/image/jpeg.cgi",
+    ]
+    import httpx as _httpx
+    for url in candidate_urls:
+        try:
+            async with _httpx.AsyncClient(timeout=5.0) as client:
+                r = await client.get(url)
+                if r.status_code == 200 and "image" in r.headers.get("content-type", ""):
+                    return Response(content=r.content, media_type="image/jpeg")
+        except:
+            continue
+    return JSONResponse({"error": "snapshot no disponible"}, status_code=502)
+
+@app.post("/api/v2/iot/brute/{camera_id}")
+async def v2_brute_camera(camera_id: int):
+    cams = db_v2.get_cameras()
+    cam = next((c for c in cams if c["id"] == camera_id), None)
+    if not cam:
+        return JSONResponse({"error": "camera not found"}, status_code=404)
+    ip = cam["ip"]
+    port = cam["port"]
+    # 14 combinaciones comunes de credenciales por defecto
+    CREDS = [
+        ("admin", "admin"), ("admin", "12345"), ("admin", "pass"),
+        ("admin", ""), ("admin", "password"), ("admin", "hikvision"),
+        ("root", "root"), ("root", ""), ("root", "pass"),
+        ("user", "user"), ("guest", "guest"), ("service", "service"),
+        ("supervisor", "supervisor"), ("dahua", "dahua"),
+    ]
+    found = []
+    tested = 0
+    import httpx as _httpx
+    for user, passwd in CREDS:
+        tested += 1
+        url = f"http://{ip}:{port}/ISAPI/System/deviceInfo"
+        try:
+            async with _httpx.AsyncClient(timeout=3.0) as client:
+                r = await client.get(url, auth=(user, passwd))
+                if r.status_code == 200 and "<" in r.text:
+                    found.append({"user": user, "pass": passwd, "status": 200})
+                    break
+                elif r.status_code == 401:
+                    continue
+                else:
+                    found.append({"user": user, "pass": passwd, "status": r.status_code})
+        except:
+            continue
+    db_v2.update_camera_creds(camera_id, tested, found)
+    return {"tested": tested, "found": found, "camera_id": camera_id}
+
+@app.get("/api/v2/alerts")
+async def v2_get_alerts(limit: int = Query(100, ge=1, le=500)):
+    alerts = db_v2.get_alerts(limit=limit)
+    for a in alerts:
+        a["metadata"] = json.loads(a.get("metadata", "{}"))
+    return {"alerts": alerts}
+
+@app.post("/api/v2/alerts")
+async def v2_create_alert(request: Request):
+    try:
+        body = await request.json()
+    except:
+        body = {}
+    severity = body.get("severity", "info")
+    title = body.get("title", "")
+    message = body.get("message", "")
+    source = body.get("source", "")
+    metadata = body.get("metadata", {})
+    db_v2.add_alert(severity, title, message, source, metadata)
+    return {"ok": True}
+
+@app.get("/api/v2/alerts/stream")
+async def v2_alerts_stream(request: Request):
+    # Soporta token via query param para EventSource (que no manda headers)
+    token = request.query_params.get("token", "")
+    if API_KEY and token and token != API_KEY:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    async def event_stream():
+        last_id = 0
+        while True:
+            alerts = db_v2.get_alerts(limit=10)
+            new = [a for a in alerts if a["id"] > last_id]
+            for a in new:
+                a["metadata"] = json.loads(a.get("metadata", "{}"))
+                yield f"data: {json.dumps(a)}\n\n"
+                last_id = max(last_id, a["id"])
+            await asyncio.sleep(3)
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+@app.post("/api/v2/alerts/{alert_id}/ack")
+async def v2_ack_alert(alert_id: int):
+    db_v2.ack_alert(alert_id)
+    return {"ok": True}
+
+@app.get("/api/v2/threatintel/iocs")
+async def v2_list_iocs(ioc_type: str = Query("")):
+    return {"iocs": db_v2.get_iocs(ioc_type)}
+
+@app.post("/api/v2/threatintel/iocs")
+async def v2_add_ioc(request: Request):
+    try:
+        body = await request.json()
+    except:
+        body = {}
+    ioc_type = body.get("ioc_type", "")
+    value = body.get("value", "")
+    if not ioc_type or not value:
+        return JSONResponse({"error": "ioc_type and value required"}, status_code=400)
+    db_v2.insert_ioc(ioc_type, value, body.get("source", ""), body.get("confidence", 50))
+    return {"ok": True}
+
+@app.get("/api/v2/soar/playbooks")
+async def v2_list_playbooks():
+    pbs = db_v2.get_playbooks()
+    for p in pbs:
+        p["steps"] = json.loads(p.get("steps", "[]"))
+    return {"playbooks": pbs}
+
+@app.post("/api/v2/soar/playbooks")
+async def v2_save_playbook(request: Request):
+    try:
+        body = await request.json()
+    except:
+        body = {}
+    name = body.get("name", "")
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    pid = db_v2.save_playbook(name, body.get("description", ""), body.get("steps", []))
+    return {"ok": True, "id": pid}
+
+@app.post("/api/v2/soar/execute/{playbook_id}")
+async def v2_execute_playbook(playbook_id: int):
+    pbs = db_v2.get_playbooks()
+    pb = next((p for p in pbs if p["id"] == playbook_id), None)
+    if not pb:
+        return JSONResponse({"error": "playbook not found"}, status_code=404)
+    steps = json.loads(pb.get("steps", "[]"))
+    results = []
+    for i, step in enumerate(steps):
+        results.append({
+            "step": i + 1,
+            "action": step.get("action", "unknown"),
+            "status": "simulated",
+            "message": f"Ejecutado: {step.get('action', '?')}"
+        })
+    db_v2.add_alert("info", "Playbook ejecutado", f"PB#{playbook_id}: {pb['name']}", "soar")
+    return {"results": results, "playbook": pb["name"]}
+
+@app.get("/api/v2/settings")
+async def v2_get_settings():
+    return {"settings": db_v2.get_settings()}
+
+@app.post("/api/v2/settings")
+async def v2_set_setting(request: Request):
+    try:
+        body = await request.json()
+    except:
+        body = {}
+    key = body.get("key", "")
+    value = body.get("value", "")
+    if not key:
+        return JSONResponse({"error": "key required"}, status_code=400)
+    db_v2.set_setting(key, value)
+    return {"ok": True}
+
+@app.get("/api/v2/export/{fmt}")
+async def v2_export(fmt: str):
+    if fmt not in ("json", "csv"):
+        return JSONResponse({"error": "formato no soportado. Usa json o csv"}, status_code=400)
+
+    hosts = db_v2.get_hosts(limit=500)
+    cameras = db_v2.get_cameras()
+    alerts = db_v2.get_alerts(limit=500)
+    iocs = db_v2.get_iocs()
+
+    if fmt == "json":
+        data = {
+            "exported_at": datetime.utcnow().isoformat(),
+            "hosts": hosts, "cameras": cameras, "alerts": alerts, "iocs": iocs
+        }
+        return Response(
+            content=json.dumps(data, indent=2, ensure_ascii=False, default=str),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=redteam_export.json"}
+        )
+    elif fmt == "csv":
+        lines = ["type,ip/hostname,severity/risk,details,timestamp"]
+        for h in hosts:
+            lines.append(f"host,{h['ip']},{h.get('risk_score',0)},{h.get('os_guess','')},{datetime.fromtimestamp(h.get('last_seen',0)).isoformat()}")
+        for c in cameras:
+            lines.append(f"camera,{c['ip']},,{c.get('vendor','')} {c.get('model','')},{datetime.fromtimestamp(c.get('last_seen',0)).isoformat()}")
+        for a in alerts:
+            lines.append(f"alert,,{a['severity']},{a['title']},{datetime.fromtimestamp(a.get('ts',0)).isoformat()}")
+        return Response(
+            content="\n".join(lines),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=redteam_export.csv"}
+        )
+
+@app.post("/api/v2/reports/generate")
+async def v2_generate_report(request: Request):
+    try:
+        body = await request.json()
+    except:
+        body = {}
+    report_type = body.get("type", "executive")
+    hosts = db_v2.get_hosts(limit=500)
+    cameras = db_v2.get_cameras()
+    alerts = db_v2.get_alerts(limit=500)
+    iocs = db_v2.get_iocs()
+
+    high_risk = [h for h in hosts if h.get("risk_score", 0) >= 70]
+    critical_alerts = [a for a in alerts if a["severity"] == "critical"]
+
+    report = {
+        "type": report_type,
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "total_hosts": len(hosts),
+            "total_cameras": len(cameras),
+            "total_alerts": len(alerts),
+            "total_iocs": len(iocs),
+            "high_risk_hosts": len(high_risk),
+            "critical_alerts": len(critical_alerts),
+        },
+        "high_risk_hosts": high_risk,
+        "cameras": cameras,
+        "critical_alerts": critical_alerts,
+        "recommendations": [
+            "Cambiar credenciales por defecto en cámaras detectadas",
+            "Cerrar puertos innecesarios (Telnet, FTP)",
+            "Segmentar IoT en VLAN dedicada",
+            "Habilitar HTTPS en paneles administrativos",
+        ] if high_risk or cameras else ["No se encontraron riesgos críticos"],
+    }
+
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    reports_dir = ROOT / "reports"
+    reports_dir.mkdir(exist_ok=True)
+    path = reports_dir / f"report_{report_type}_{ts}.json"
+    path.write_text(json.dumps(report, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+    return {"report": report, "path": str(path)}
+
+# == END V2 MERGE ==
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 #  FRONTEND ESTÁTICO — SPA
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -5022,5 +5595,6 @@ if __name__ == "__main__":
     print(f"  → geo_intel: {'OK' if _GEO_INTEL_OK else 'NOT AVAILABLE'}", flush=True)
     print(f"  → Sin mocks. Sin dummy data. Solo datos reales.", flush=True)
     print(f"  → ARTO AI: {'OK' if _ARTO_OK else 'NOT AVAILABLE'}", flush=True)
+    _seed_v2_if_empty()
     print("═" * 60, flush=True)
     uvicorn.run(app, host=host, port=port, log_level="info")

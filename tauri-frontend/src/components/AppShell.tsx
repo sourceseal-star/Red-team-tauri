@@ -1,7 +1,7 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import {
   LayoutDashboard, Shield, Camera, Radio, Globe, Wifi, Activity,
-  Terminal, Settings, Bell, Search, Menu, X, ChevronRight,
+  Terminal, Settings, Bell, Search, Menu, X, ChevronRight, Download, Camera,
   Zap, Lock, Eye, Fingerprint, Bug, FileText, Network,
   Sun, Moon, LogOut, Cpu
 } from 'lucide-react'
@@ -40,6 +40,9 @@ const MODULES = [
   { id: 'terminal', label: 'Terminal', icon: Terminal, color: 'text-slate-400', badge: null },
     { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
   { id: 'topology', label: 'Topología', icon: Network, color: 'text-cyan-400', badge: null },
+  { id: 'iot', label: 'IoT Cámaras', icon: Camera, color: 'text-red-400', badge: 'new' },
+  { id: 'alerts', label: 'Alertas', icon: Bell, color: 'text-yellow-400', badge: 'live' },
+  { id: 'export', label: 'Exportar', icon: Download, color: 'text-green-400', badge: null },
   { id: 'settings', label: 'Config', icon: Settings, color: 'text-slate-500', badge: null },
   { id: 'osint_adv', label: 'OSINT Avanzado', icon: Globe, color: 'text-indigo-400', badge: 'v4.0' },
   { id: 'interceptor', label: 'Interceptor Avanzado', icon: Lock, color: 'text-red-400', badge: 'v4.0' },

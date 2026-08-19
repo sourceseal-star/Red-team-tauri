@@ -15,7 +15,11 @@ import ControlTower from './components/ControlTower';
 import ServiceControlPanel from './components/ServiceControlPanel';
 import SystemSettings from './components/SystemSettings';
 import { MurcielagoPanel } from './components/MurcielagoPanel';
-import NetworkTopology from './components/NetworkTopology';
+import TopologyPanel from './components/TopologyPanel';
+import IoTCameras from './components/IoTCameras';
+import AlertsPanel from './components/AlertsPanel';
+import ExportPanel from './components/ExportPanel';
+// NetworkTopology reemplazado por TopologyPanel (v4 merge)
 import Terminal from './routes/Terminal';
 import OSINTAdvancedPanel from './components/OSINTAdvancedPanel';
 import InterceptorAdvancedPanel from './components/InterceptorAdvancedPanel';
@@ -49,7 +53,10 @@ function App() {
       {module === 'services' && <ServiceControlPanel />}
       {module === 'terminal' && <Terminal />}
       {module === 'tower' && <ControlTower />}
-      {module === 'topology' && <NetworkTopology />}
+      {module === 'topology' && <TopologyPanel />}
+      {module === 'iot' && <IoTCameras />}
+      {module === 'alerts' && <AlertsPanel />}
+      {module === 'export' && <ExportPanel />}
       {module === 'settings' && <SystemSettings />}
       {module === 'osint_adv' && <OSINTAdvancedPanel />}
       {module === 'interceptor' && <InterceptorAdvancedPanel />}
