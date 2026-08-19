@@ -127,14 +127,88 @@ class ARTO:
         """Inicia el sistema ARTO"""
         print("🚀 Iniciando ARTO...")
         
-        # Inicializar componentes
-        await self.memory.initialize()
-        await self.knowledge_base.initialize()
-        await self.threat_intel.initialize()
-        await self.learning_engine.load_memory()
-        await self.prediction_engine.load_models()
-        await self.attack_simulator.initialize()
-        await self.defense_orchestrator.initialize()
+        # Inicializar componentes con recovery individual
+        _init_errors = []
+        
+        try:
+            await self.memory.initialize()
+            print("[ARTO] Memory: OK")
+        except Exception as e:
+            print(f"[ARTO] Memory init FAILED: {e}")
+            _init_errors.append(f"memory: {e}")
+            # Intentar recrear desde cero
+            try:
+                import os
+                if hasattr(self.memory, 'db_path') and os.path.exists(self.memory.db_path):
+                    os.remove(self.memory.db_path)
+                    print(f"[ARTO] Removed corrupt {self.memory.db_path}")
+                self.memory.conn = None
+                self.memory.initialized = False
+                await self.memory.initialize()
+                print("[ARTO] Memory: OK (after recovery)")
+            except Exception as e2:
+                print(f"[ARTO] Memory recovery FAILED: {e2}")
+                _init_errors.append(f"memory_recovery: {e2}")
+        
+        try:
+            await self.knowledge_base.initialize()
+            print("[ARTO] KnowledgeBase: OK")
+        except Exception as e:
+            print(f"[ARTO] KnowledgeBase init FAILED: {e}")
+            _init_errors.append(f"knowledge_base: {e}")
+            # Intentar recrear desde cero
+            try:
+                import os
+                if hasattr(self.knowledge_base, 'db_path') and os.path.exists(self.knowledge_base.db_path):
+                    os.remove(self.knowledge_base.db_path)
+                    print(f"[ARTO] Removed corrupt {self.knowledge_base.db_path}")
+                self.knowledge_base.initialized = False
+                await self.knowledge_base.initialize()
+                print("[ARTO] KnowledgeBase: OK (after recovery)")
+            except Exception as e2:
+                print(f"[ARTO] KnowledgeBase recovery FAILED: {e2}")
+                _init_errors.append(f"knowledge_base_recovery: {e2}")
+        
+        try:
+            await self.threat_intel.initialize()
+            print("[ARTO] ThreatIntel: OK")
+        except Exception as e:
+            print(f"[ARTO] ThreatIntel init FAILED: {e}")
+            _init_errors.append(f"threat_intel: {e}")
+        
+        try:
+            await self.learning_engine.load_memory()
+            print("[ARTO] LearningEngine: OK")
+        except Exception as e:
+            print(f"[ARTO] LearningEngine load FAILED: {e}")
+            _init_errors.append(f"learning_engine: {e}")
+        
+        try:
+            await self.prediction_engine.load_models()
+            print("[ARTO] PredictionEngine: OK")
+        except Exception as e:
+            print(f"[ARTO] PredictionEngine load FAILED: {e}")
+            _init_errors.append(f"prediction_engine: {e}")
+        
+        try:
+            await self.attack_simulator.initialize()
+            print("[ARTO] AttackSimulator: OK")
+        except Exception as e:
+            print(f"[ARTO] AttackSimulator init FAILED: {e}")
+            _init_errors.append(f"attack_simulator: {e}")
+        
+        try:
+            await self.defense_orchestrator.initialize()
+            print("[ARTO] DefenseOrchestrator: OK")
+        except Exception as e:
+            print(f"[ARTO] DefenseOrchestrator init FAILED: {e}")
+            _init_errors.append(f"defense_orchestrator: {e}")
+        
+        if _init_errors:
+            print(f"[ARTO] ⚠ Inicializado con {len(_init_errors)} errores: {_init_errors}")
+            print("[ARTO] ⚡ Operando en modo degradado — funciones limitadas")
+        else:
+            print("[ARTO] ✅ Todos los componentes inicializados correctamente")
         
         self.running = True
         print("✅ ARTO listo para operar")
@@ -143,8 +217,14 @@ class ARTO:
         """Detiene el sistema ARTO"""
         print("🛑 Deteniendo ARTO...")
         self.running = False
-        await self.memory.save()
-        await self.knowledge_base.save()
+        try:
+            await self.memory.save()
+        except Exception as e:
+            print(f"[ARTO] Warning: memory.save() failed: {e}")
+        try:
+            await self.knowledge_base.save()
+        except Exception as e:
+            print(f"[ARTO] Warning: knowledge_base.save() failed: {e}")
         print("✅ ARTO detenido")
     
     async def autonomous_operation(self, target: str, operation_type: str = "scan") -> Dict:
@@ -665,13 +745,23 @@ class ARTO:
     
     async def get_status(self) -> Dict:
         """Obtiene el estado actual del sistema"""
+        try:
+            memory_stats = await self.memory.get_stats()
+        except Exception as e:
+            print(f"[ARTO] Warning: memory.get_stats() failed: {e}")
+            memory_stats = {"error": str(e)}
+        try:
+            knowledge_stats = await self.knowledge_base.get_knowledge_stats()
+        except Exception as e:
+            print(f"[ARTO] Warning: knowledge_base.get_knowledge_stats() failed: {e}")
+            knowledge_stats = {"error": str(e)}
         return {
             "running": self.running,
             "operations_count": len(self.operations),
             "predictions_count": len(self.predictions),
             "threats_count": len(self.threats),
-            "memory_stats": await self.memory.get_stats(),
-            "knowledge_stats": await self.knowledge_base.get_knowledge_stats()
+            "memory_stats": memory_stats,
+            "knowledge_stats": knowledge_stats
         }
 
 
