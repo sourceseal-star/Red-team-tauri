@@ -1,5 +1,5 @@
 # 🛡️ MANUAL OPERATIVO — Red-Team-Tauri / SourceSeal
-## SourceSeal Console v4.1
+## SourceSeal Console v5.0 — ARTO
 
 > **Backend Python/FastAPI + frontend React/Vite.**
 > El arranque unificado sirve API y frontend real en el puerto 8001.
@@ -14,8 +14,10 @@
 3. [Arranque](#3-arranque)
 4. [Dashboard — Pestañas](#4-dashboard--pestañas)
 5. [API — Endpoints](#5-api--endpoints)
-6. [Solución de Problemas](#6-solución-de-problemas)
-7. [Changelog](#7-changelog)
+6. [ARTO — Sistema AI Autónomo](#6-arto--sistema-ai-autónomo)
+7. [VPN — Captura de Tráfico](#7-vpn--captura-de-tráfico)
+8. [Solución de Problemas](#8-solución-de-problemas)
+9. [Changelog](#9-changelog)
 
 ---
 
@@ -380,7 +382,216 @@ Los módulos funcionan sin keys con fallbacks graceful.
 
 ---
 
-## 6. SOLUCIÓN DE PROBLEMAS
+## 6. ARTO — SISTEMA AI AUTÓNOMO
+
+### 6.1 ¿Qué es ARTO?
+
+ARTO (Automated Red Team Operations) es un sistema de operaciones autónomas
+de red team con inteligencia artificial. Se ejecuta como parte del backend
+FastAPI y se inicia automáticamente al arrancar el servidor.
+
+### 6.2 Arquitectura
+
+```
+arto/
+├── __init__.py              # Clase ARTO principal + start/stop
+├── core/
+│   ├── decision_engine.py   # Toma de decisiones autónomas
+│   ├── learning_engine.py   # Aprendizaje adaptativo
+│   ├── prediction_engine.py # Predicción de amenazas
+│   ├── action_engine.py     # Ejecución de acciones autónomas
+│   └── behavior_analyzer.py# Análisis de comportamiento
+├── modules/
+│   ├── attack_simulator.py  # Simulación de ataques (integra enhanced_recon + interceptor)
+│   ├── vpn_interceptor.py   # Captura de tráfico real via VpnService
+│   ├── defense_orchestrator.py # Orquestación de defensa
+│   └── report_generator.py  # Generación de informes
+├── memory/
+│   ├── memory_storage.py    # Persistencia en SQLite
+│   └── knowledge_base.py    # Base de conocimiento
+├── utils/
+│   ├── threat_intelligence.py # Feeds de amenazas
+│   ├── risk_assessor.py     # Evaluación de riesgos
+│   ├── pattern_recognizer.py # Reconocimiento de patrones
+│   ├── anomaly_detector.py  # Detección de anomalías
+│   └── temporal_analyzer.py # Análisis temporal
+├── api/
+│   └── arto_router.py       # Router FastAPI con 23 endpoints
+└── models/
+    ├── action.py            # Modelo de acción
+    ├── decision.py          # Modelo de decisión
+    ├── knowledge.py         # Modelo de conocimiento
+    ├── prediction.py        # Modelo de predicción
+    ├── report.py            # Modelo de informe
+    └── threat.py            # Modelo de amenaza
+```
+
+### 6.3 Arranque automático
+
+ARTO se inicializa automáticamente cuando `dashboard_server.py` arranca,
+mediante eventos de FastAPI:
+
+- **Startup**: inicializa memoria SQLite, knowledge_base, threat_intel,
+  learning_engine, prediction_engine, attack_simulator (con enhanced_recon +
+  interceptor), defense_orchestrator y vpn_interceptor.
+- **Shutdown**: guarda memoria y knowledge_base en SQLite.
+
+**No requiere llamada manual a `/api/arto/start`** — ARTO ya está corriendo
+cuando el health check pasa.
+
+### 6.4 Endpoints ARTO
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/api/arto/status` | Estado del sistema ARTO |
+| POST | `/api/arto/start` | Iniciar ARTO (manual) |
+| POST | `/api/arto/stop` | Detener ARTO |
+| POST | `/api/arto/operation/{type}` | Ejecutar operación (scan, simulate, monitor, investigate, defend) |
+| GET | `/api/arto/operations` | Listar operaciones |
+| GET | `/api/arto/operations/{id}` | Detalle de operación |
+| GET | `/api/arto/predictions` | Predicciones de amenazas |
+| POST | `/api/arto/predict` | Generar predicción |
+| POST | `/api/arto/defend` | Ejecutar defensa autónoma |
+| POST | `/api/arto/simulate` | Simular ataque |
+| GET | `/api/arto/threats` | Lista de amenazas |
+| GET | `/api/arto/templates` | Plantillas de ataque disponibles |
+| POST | `/api/arto/analyze/behavior` | Analizar comportamiento |
+| GET | `/api/arto/memory/stats` | Estadísticas de memoria SQLite |
+| GET | `/api/arto/knowledge/stats` | Estadísticas de knowledge base |
+| GET | `/api/arto/stats` | Estadísticas generales |
+| WS | `/api/arto/ws` | WebSocket para eventos en tiempo real |
+
+### 6.5 Frontend ARTO
+
+El panel de ARTO se encuentra en el sidebar con el ícono Cpu y badge "AI".
+Tiene 5 pestañas:
+
+1. **🎯 Operaciones** — Escaneo, simulación, monitoreo, investigación, defensa
+2. **🔮 Predicciones** — Predicciones de amenazas con 24h de anticipación
+3. **🛡️ Amenazas** — Lista de amenazas activas
+4. **🎭 Simulaciones** — Plantillas de ataque (Web, Red, API, Auth, Social)
+5. **🔌 Tráfico** — Captura de tráfico en tiempo real (VPN)
+
+### 6.6 Persistencia
+
+ARTO usa SQLite (`arto/data/arto_memory.db`) para almacenar:
+- Decisiones tomadas
+- Resultados de operaciones
+- Patrones aprendidos
+- Predicciones generadas
+- Base de conocimiento
+
+Los datos persisten entre reinicios. Al detener el servidor, el evento
+`shutdown` guarda todo correctamente.
+
+### 6.7 Integración con módulos existentes
+
+ARTO se conecta automáticamente con:
+- **enhanced_recon.py** — OSINT local (ONVIF, SSDP, SNMP, NetBIOS, mDNS)
+- **interceptor.py** — Interceptor TLS (MITM, SQLi, XSS, SSRF, LFI/RFI)
+- **vpn_interceptor.py** — Captura de tráfico via Android VpnService
+
+Si un módulo no está disponible, ARTO funciona en modo degradado sin errores.
+
+---
+
+## 7. VPN — CAPTURA DE TRÁFICO
+
+### 7.1 ¿Qué hace?
+
+La captura de tráfico usa Android VpnService para interceptar TODO el tráfico
+del dispositivo (TCP, UDP, ICMP, HTTP, HTTPS, DNS) **sin root**. Los paquetes
+se envían al backend Python donde ARTO los analiza con 6 reglas:
+
+| Regla | Severidad | Descripción |
+|-------|-----------|-------------|
+| Port Scanning | HIGH | Múltiples conexiones a puertos diferentes en poco tiempo |
+| Brute Force | CRITICAL | Múltiples intentos de conexión fallidos |
+| Data Exfiltration | HIGH | Transferencia de grandes cantidades de datos |
+| C2 Communication | CRITICAL | Comunicación con servidores C2 conocidos |
+| DNS Tunneling | HIGH | Tráfico DNS sospechoso |
+| Beaconing | MEDIUM | Comunicación periódica con servidor externo |
+
+### 7.2 Endpoints de tráfico
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/api/arto/traffic/start` | Iniciar captura de tráfico |
+| POST | `/api/arto/traffic/stop` | Detener captura |
+| GET | `/api/arto/traffic/stats` | Estadísticas de tráfico |
+| GET | `/api/arto/traffic/packets` | Paquetes capturados (?limit=100) |
+| GET | `/api/arto/traffic/analysis` | Análisis completo |
+| POST | `/api/arto/traffic/clear` | Limpiar estadísticas |
+
+### 7.3 Android VpnService
+
+Los archivos Java van en el proyecto Tauri (NO en el backend Python):
+
+```
+android/app/src/main/java/com/redteam/tauri/vpn/
+├── ARTOVpnService.java  # Servicio VPN que intercepta tráfico
+├── VpnManager.java      # Gestor de VPN (start/stop/envío)
+```
+
+Permisos necesarios en `AndroidManifest.xml`:
+```xml
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.BIND_VPN_SERVICE" />
+<service android:name=".vpn.ARTOVpnService"
+         android:permission="android.permission.BIND_VPN_SERVICE"
+         android:foregroundServiceType="vpn">
+    <intent-filter>
+        <action android:name="android.net.VpnService" />
+    </intent-filter>
+</service>
+```
+
+### 7.4 Requisitos VPN
+
+- Android 5.0+ (API 21)
+- Solo una VPN activa a la vez
+- El usuario debe aprobar la conexión VPN manualmente
+- El servicio muestra una notificación permanente
+
+---
+
+## 8. SOLUCIÓN DE PROBLEMAS
+
+### Problemas con ARTO
+
+**ARTO no arranca:**
+```bash
+# Verificar si ARTO está activo
+curl localhost:8001/api/arto/status
+
+# Si responde error, revisar logs del backend:
+# En Termux:
+python3 redteam/scripts/dashboard_server.py 2>&1 | grep ARTO
+
+# En Replit:
+# Revisar la consola de Replit, buscar líneas con [ARTO]
+```
+
+**ARTO no inicializa (modo degradado):**
+- ARTO funciona en modo degradado si enhanced_recon o interceptor no están disponibles
+- No es un error fatal — ARTO sigue operando con capacidades reducidas
+- Para integración completa, asegurar que `backend/modules/enhanced_recon.py` existe
+
+**Error en memoria SQLite:**
+```bash
+# La base de datos está en arto/data/arto_memory.db
+# Si se corrompe, eliminarla y se recrea automáticamente:
+rm -f arto/data/arto_memory.db
+# Reiniciar el servidor
+```
+
+**VpnInterceptor no recibe paquetes:**
+- El VpnService (Java) debe estar activo en Android
+- Verificar que no haya otra VPN activa
+- El usuario debe aprobar el diálogo de VPN
+- Verificar que el backend Python esté corriendo en el puerto 8001
+
+### Problemas generales
 
 ### Página vacía / blanco
 
@@ -509,7 +720,33 @@ Red-team-tauri/
 └── docs/
 ```
 
-## 7. CHANGELOG
+## 9. CHANGELOG
+
+### v1.1.0 ARTO VPN (2026-08-19) — commit d63dba2
+
+**VPN Interceptor:**
+- `vpn_interceptor.py` — captura de tráfico real via VpnService (sin root)
+- 6 reglas de detección: port scan, brute force, data exfiltration, C2, DNS tunneling, beaconing
+- `TrafficCapturePanel.tsx` — panel con stats en vivo, filtros, amenazas, conexiones
+- `ARTOVpnService.java` + `VpnManager.java` — VpnService nativo de Android
+- 6 nuevos endpoints: `/api/arto/traffic/*`
+- Nueva pestaña "🔌 Tráfico" en ARTOPanel
+- Integración con attack_simulator
+
+### v1.0.0 ARTO (2026-08-19) — commits d0f7251, 9a63de4
+
+**Sistema ARTO completo:**
+- 29 archivos Python (core, modules, memory, utils, api, models)
+- 5 motores AI: decisiones, aprendizaje, predicción, acciones, comportamiento
+- Attack simulator integrado con enhanced_recon + interceptor
+- Defense orchestrator + report generator
+- Memoria SQLite persistente + knowledge base
+- Threat intelligence, risk assessor, anomaly detector
+- Router FastAPI con 17 endpoints + WebSocket en `/api/arto/*`
+- Frontend: ARTOPanel (5 pestañas), ARTOProvider, artoApi, artoWebsocket
+- Integrado en sidebar (ícono Cpu, badge "AI")
+- Auto-start en dashboard_server.py (startup/shutdown events)
+- Auto-start en arrancar.sh (Termux) y replit_start.sh (Replit)
 
 ### v4.1 (2026-08-18) — commits 259f28c, dd59d0d
 

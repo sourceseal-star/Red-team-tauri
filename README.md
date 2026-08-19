@@ -1,70 +1,55 @@
-# SourceSeal Console Pro v4.0 — Sala de Guerra Unificada
+# Red-Team-Tauri / SourceSeal Console v5.0
 
-> **Consola de operaciones de seguridad ofensiva y defensiva.**  
-> Topología + Cámaras + Ultrasonidos + Threat Intel + Exploits + Captura de tráfico.
+Sistema de operaciones de red team con ARTO (AI autónomo) + VPN interceptor.
 
-**📖 [MANUAL OPERATIVO COMPLETO](./MANUAL_OPERATIVO.md)** — Instalación, comandos, API y troubleshooting.
-
----
-
-## Inicio rápido
+## Arranque rápido
 
 ### Termux (Android)
 ```bash
 git clone https://github.com/sourceseal-star/Red-team-tauri.git
 cd Red-team-tauri
-bash termux_setup.sh
-bash start-termux.sh
+bash arrancar.sh
 ```
 
-### Replit / Local (Linux/Mac)
+### Replit
 ```bash
 bash replit_start.sh
-# → http://localhost:8001
 ```
 
-### Sincronizar cambios
-```bash
-bash sync.sh
+## Componentes
+
+- **Backend**: FastAPI en puerto 8001 (unificado)
+- **Frontend**: React/Vite compilado a `dist/`
+- **ARTO**: Sistema AI autónomo (29 archivos Python)
+- **VPN**: Captura de tráfico via Android VpnService (sin root)
+- **Módulos**: enhanced_recon, interceptor, OSINT advanced, honeypot
+
+## Estructura
+
+```
+Red-team-tauri/
+├── redteam/scripts/     # Backend FastAPI (dashboard_server.py)
+├── backend/modules/     # enhanced_recon, OSINT, interceptor
+├── arto/                # Sistema ARTO (AI autónomo)
+│   ├── core/            # 5 motores AI
+│   ├── modules/         # attack_simulator, vpn_interceptor, defense
+│   ├── memory/          # SQLite + knowledge_base
+│   ├── utils/           # threat_intel, risk, anomaly
+│   ├── api/             # Router FastAPI (23 endpoints)
+│   └── models/          # Modelos de datos
+├── tauri-frontend/      # Frontend React/Vite
+├── android/             # VpnService Java (Tauri)
+└── scripts/             # Deploy scripts
 ```
 
----
+## Documentación
 
-## Módulos
+- [MANUAL_OPERATIVO.md](MANUAL_OPERATIVO.md) — Manual completo
+- Endpoints ARTO: `/api/arto/*`
+- Health check: `/api/health`
 
-| Módulo | Descripción | Estado |
-|---|---|---|
-| 🗺️ **Topología** | Grafo interactivo (vis-network) + traceroute + geolocalización | ✅ |
-| 📹 **Cámaras** | Detección IP, snapshots, RTSP→HLS, detección de movimiento | ✅ |
-| 🦇 **MURCIÉLAGO** | Comunicación por ultrasonidos 18-20 kHz (Web Audio API + FFT) | ✅ |
-| 🌐 **Threat Intel** | AbuseIPDB + cache SQLite + verdict semafórico | ✅ |
-| 🎯 **Exploit Matcher** | ExploitDB offline + match HIGH/MEDIUM/LOW | ✅ |
-| 📡 **Packet Analyzer** | tcpdump + detección ARP storm / port scan | ✅ |
-| 🔍 **OSINT Engine** | crt.sh + brute force + WHOIS + emails + metadatos | ✅ |
-| 📶 **WiFi Scanner** | termux-api / iw / airodump-ng + captura + crackeo | ✅ |
-| 🌑 **Black Mirror** | Canary Forge + Shadow Twin + Ghostprint + Chaos Fingerprint | ✅ |
-| 📤 **Evidencia Blindada** | Hash SHA-256 + blockchain + PDF con QR + modo offline | ✅ |
-| 🪤 **Honeypot** | Honeypot + canary tokens | ✅ |
-| 🔍 **OSINT** | Shodan + WHOIS + geolocalización | ✅ |
-| 🔍 **开源情报高级版** | OSINT v4.0: Google, Shodan, VirusTotal, Censys, GitHub, Social | ✅ |
-| 🛡️ **网络拦截高级版** | Interceptor v4.0: MITM + SQLi/XSS/XXE/LFI/LDAP/NoSQL detection | ✅ |
+## Changelog
 
----
-
-## Stack
-
-- **Backend**: FastAPI + Uvicorn + httpx + WebSocket (puerto 8001)
-- **Frontend**: React 18 + TypeScript + Vite
-- **Estado**: Zustand
-- **Grafo**: vis-network | **Mapas**: Leaflet | **Iconos**: lucide-react
-- **Audio**: Web Audio API (emisor) + numpy FFT (receptor)
-- **Cache**: SQLite
-- **i18n**: Español / 简体中文 / English
-
-## Identidad visual SourceSeal
-
-Cyan `#00e5ff` · Amber `#fbbf24` · Red `#ff3b5c` · Green `#00ff88`
-
----
-
-*SourceSeal / Red-Team-Tauri v4.0 · 2026*
+- **v5.0** ARTO + VPN (2026-08-19) — commits d0f7251, 9a63de4, d63dba2
+- **v4.1** Topología + Traffic Analyzer (2026-08-18)
+- **v4.0** OSINT Advanced + Interceptor Advanced (2026-08-14)
