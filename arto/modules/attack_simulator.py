@@ -36,6 +36,17 @@ class AttackTemplate:
     steps: List[str] = field(default_factory=list)
     severity: str = "medium"
     target_type: str = "network"
+    
+    def to_dict(self) -> Dict:
+        """Serializa a diccionario para la API."""
+        return {
+            "name": self.name,
+            "attack_type": self.attack_type.value if hasattr(self.attack_type, 'value') else str(self.attack_type),
+            "description": self.description,
+            "steps": self.steps,
+            "severity": self.severity,
+            "target_type": self.target_type
+        }
 
 
 @dataclass
