@@ -6,8 +6,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useARTO } from './ARTOProvider';
-import {
 import TrafficCapturePanel from './TrafficCapturePanel';
+import {
   Operation,
   Prediction,
   Threat,
@@ -198,7 +198,7 @@ const styles = {
   trHover: {
     backgroundColor: '#334155'
   },
-  badge: (severity: RiskLevel | ThreatSeverity) => {
+  badge: (severity: RiskLevel | ThreatSeverity) => ({
     padding: '4px 10px',
     borderRadius: '12px',
     fontSize: '11px',
@@ -210,8 +210,8 @@ const styles = {
       severity === 'medium' ? '#78350f' :
       severity === 'low' ? '#065f46' : '#064e3b',
     color: '#fff'
-  },
-  statusBadge: (status: string) => {
+  }),
+  statusBadge: (status: string) => ({
     padding: '4px 10px',
     borderRadius: '12px',
     fontSize: '11px',
@@ -222,7 +222,7 @@ const styles = {
       status === 'success' ? '#16a34a' :
       status === 'failed' ? '#dc2626' : '#64748b',
     color: '#fff'
-  },
+  }),
   emptyState: {
     textAlign: 'center' as const,
     padding: '40px 20px',
