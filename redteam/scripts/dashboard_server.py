@@ -5540,48 +5540,6 @@ async def v2_generate_report(request: Request):
 # == END V2 MERGE ==
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-#  FRONTEND ESTÁTICO — SPA
-# ═════════════════════════════════════════════════════════════════════════════
-
-if DIST.exists() and DIST.is_dir():
-    assets_dir = DIST / "assets"
-    if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-
-    @app.get("/{full_path:path}")
-    async def spa_fallback(full_path: str):
-        if not full_path:
-            index = DIST / "index.html"
-            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
-        # NUNCA servir el SPA para rutas API — devuelve 404 JSON
-        # Si empieza con un prefijo conocido de API/backend, no servir el SPA.
-        # El catch-all está registrado antes que muchas rutas API, asi que
-        # si no excluimos estas, las captura y devuelve 404 JSON.
-        if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/")):
-            return JSONResponse({"error": "not found"}, status_code=404)
-        if full_path.startswith("assets/"):
-            candidate = DIST / full_path
-            if candidate.exists() and candidate.is_file():
-                return FileResponse(candidate)
-            return JSONResponse({"error": "not found"}, status_code=404)
-        candidate = DIST / full_path
-        if candidate.exists() and candidate.is_file():
-            return FileResponse(candidate)
-        index = DIST / "index.html"
-        return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
-else:
-    @app.get("/{full_path:path}")
-    async def no_dist_fallback(full_path: str):
-        if full_path.startswith(("api/", "canary/", "ws", "health", "motor/", "hls/")):
-            return JSONResponse({"error": "not found"}, status_code=404)
-        return JSONResponse({"status": "ok", "backend": "red-team-tauri-unified",
-                            "dist_built": False, "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})"})
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-#  MAIN — debe ir al FINAL para que todos los @app endpoints se registren
-# ═════════════════════════════════════════════════════════════════════════════
 
 # COMPATIBILITY ENDPOINTS - Frontend usa paths sin /v2/
 
@@ -5657,6 +5615,51 @@ async def compat_export_post(request: Request):
     if body.get("format") == "csv":
         return await compat_export_csv()
     return await compat_export_json()
+
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  FRONTEND ESTÁTICO — SPA
+# ═════════════════════════════════════════════════════════════════════════════
+
+if DIST.exists() and DIST.is_dir():
+    assets_dir = DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        if not full_path:
+            index = DIST / "index.html"
+            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
+        # NUNCA servir el SPA para rutas API — devuelve 404 JSON
+        # Si empieza con un prefijo conocido de API/backend, no servir el SPA.
+        # El catch-all está registrado antes que muchas rutas API, asi que
+        # si no excluimos estas, las captura y devuelve 404 JSON.
+        if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/")):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if full_path.startswith("assets/"):
+            candidate = DIST / full_path
+            if candidate.exists() and candidate.is_file():
+                return FileResponse(candidate)
+            return JSONResponse({"error": "not found"}, status_code=404)
+        candidate = DIST / full_path
+        if candidate.exists() and candidate.is_file():
+            return FileResponse(candidate)
+        index = DIST / "index.html"
+        return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
+else:
+    @app.get("/{full_path:path}")
+    async def no_dist_fallback(full_path: str):
+        if full_path.startswith(("api/", "canary/", "ws", "health", "motor/", "hls/")):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return JSONResponse({"status": "ok", "backend": "red-team-tauri-unified",
+                            "dist_built": False, "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})"})
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  MAIN — debe ir al FINAL para que todos los @app endpoints se registren
+# ═════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     import uvicorn
