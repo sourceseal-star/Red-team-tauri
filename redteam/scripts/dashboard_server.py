@@ -5619,6 +5619,195 @@ async def compat_export_post(request: Request):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+import sqlite3
+# =====================================================
+# KRAKEN v4.0 — NSE Exploit Scanner
+# =====================================================
+KRAKEN_DB = BASE / "data" / "kraken_v4.db"
+
+KRAKEN_NSE_SCRIPTS = [
+    "ssh-brute", "ftp-anon", "ftp-brute",
+    "smb-os-discovery", "smb-enum-shares", "smb-vuln-*",
+    "http-auth-finder", "http-vuln-*",
+    "rtsp-url-brute", "mysql-empty-password",
+    "pgsql-brute", "redis-info",
+    "rdp-vuln-ms12-020", "snmp-info",
+]
+
+KRAKEN_PORTS = "21,22,23,25,80,110,139,143,443,445,554,993,995,1723,3306,3389,5432,5900,6379,8080,8443,27017"
+
+_kraken_running = False
+
+def _kraken_init_db():
+    KRAKEN_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(KRAKEN_DB))
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS hosts (ip TEXT PRIMARY KEY, last_seen TEXT, os TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS exploits (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT, port INTEGER, service TEXT, vulnerability TEXT, cve TEXT, attempted_at TEXT, success INTEGER DEFAULT 0, output TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS scan_log (id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT, started_at TEXT, hosts_found INTEGER, exploits_found INTEGER)")
+    conn.commit()
+    conn.close()
+
+def _kraken_parse_xml(xml_data: str):
+    import xml.etree.ElementTree as ET
+    if not xml_data:
+        return []
+    try:
+        root = ET.fromstring(xml_data)
+    except ET.ParseError:
+        return []
+    hosts = []
+    for host in root.findall('host'):
+        addr = host.find('address')
+        if addr is None:
+            continue
+        ip = addr.get('addr', 'unknown')
+        status = host.find('status')
+        if status is None or status.get('state') != 'up':
+            continue
+        os_elem = host.find('os/osmatch')
+        os_name = os_elem.get('name') if os_elem is not None else 'Unknown'
+        host_data = {"ip": ip, "os": os_name, "exploits": []}
+        for port in host.findall('ports/port'):
+            port_id = port.get('portid')
+            service = port.find('service')
+            service_name = service.get('name') if service is not None else 'unknown'
+            for script in port.findall('script'):
+                script_id = script.get('id')
+                output = script.get('output', '')
+                keywords = ['VULNERABLE', 'password', 'credentials', 'anonymous', 'Null', 'brute', 'weak', 'empty password', 'default']
+                found = any(k.lower() in output.lower() for k in keywords)
+                if found:
+                    cve_match = re.search(r'(CVE-\d{4}-\d{4,7})', output)
+                    cve = cve_match.group(1) if cve_match else 'N/A'
+                    host_data['exploits'].append({
+                        'port': int(port_id), 'service': service_name,
+                        'script': script_id, 'vulnerability': output[:200],
+                        'cve': cve, 'success': 1
+                    })
+        if host_data['exploits']:
+            hosts.append(host_data)
+    return hosts
+
+def _kraken_save(target, hosts_data):
+    conn = sqlite3.connect(str(KRAKEN_DB))
+    c = conn.cursor()
+    total = 0
+    for host in hosts_data:
+        ip = host['ip']
+        c.execute("INSERT OR REPLACE INTO hosts (ip, last_seen, os) VALUES (?, ?, ?)",
+                  (ip, datetime.now().isoformat(), host['os']))
+        for exp in host['exploits']:
+            c.execute("INSERT INTO exploits (ip, port, service, vulnerability, cve, attempted_at, success, output) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                      (ip, exp['port'], exp['service'], exp['vulnerability'], exp['cve'],
+                       datetime.now().isoformat(), exp['success'], exp['vulnerability']))
+            if exp['success']:
+                total += 1
+    c.execute("INSERT INTO scan_log (target, started_at, hosts_found, exploits_found) VALUES (?, ?, ?, ?)",
+              (target, datetime.now().isoformat(), len(hosts_data), total))
+    conn.commit()
+    conn.close()
+    return total
+
+def _kraken_scan_sync(target: str):
+    scripts_str = ','.join(KRAKEN_NSE_SCRIPTS)
+    cmd = ['nmap', '-sV', '-O', '--script', scripts_str, '-p', KRAKEN_PORTS, '-oX', '-', target]
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        out, err = proc.communicate(timeout=180)
+        if proc.returncode != 0:
+            return None, err[:200] if err else 'nmap error'
+        return out, None
+    except FileNotFoundError:
+        return None, 'nmap no instalado. Instala con: pkg install nmap'
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        return None, 'Timeout (180s)'
+    except Exception as e:
+        return None, str(e)
+
+@app.get("/api/kraken/scan")
+async def kraken_scan(target: str = "192.168.1.0/24"):
+    """Ejecuta escaneo NSE contra un target."""
+    _kraken_init_db()
+    loop = asyncio.get_event_loop()
+    xml_data, error = await loop.run_in_executor(None, _kraken_scan_sync, target)
+    if error:
+        return JSONResponse({"status": "error", "error": error}, status_code=503)
+    hosts = _kraken_parse_xml(xml_data)
+    total = _kraken_save(target, hosts)
+    return {"status": "ok", "target": target, "hosts_found": len(hosts),
+            "exploits_found": total, "hosts": hosts}
+
+@app.get("/api/kraken/results")
+async def kraken_results(limit: int = 50):
+    """Devuelve resultados almacenados."""
+    _kraken_init_db()
+    conn = sqlite3.connect(str(KRAKEN_DB))
+    c = conn.cursor()
+    c.execute("SELECT ip, port, service, vulnerability, cve, success, attempted_at FROM exploits ORDER BY attempted_at DESC LIMIT ?", (limit,))
+    exploits = [{"ip": r[0], "port": r[1], "service": r[2], "vulnerability": r[3], "cve": r[4], "success": bool(r[5]), "attempted_at": r[6]} for r in c.fetchall()]
+    c.execute("SELECT ip, last_seen, os FROM hosts ORDER BY last_seen DESC")
+    hosts = [{"ip": r[0], "last_seen": r[1], "os": r[2]} for r in c.fetchall()]
+    c.execute("SELECT target, started_at, hosts_found, exploits_found FROM scan_log ORDER BY started_at DESC LIMIT 20")
+    scans = [{"target": r[0], "started_at": r[1], "hosts_found": r[2], "exploits_found": r[3]} for r in c.fetchall()]
+    conn.close()
+    return {"exploits": exploits, "hosts": hosts, "scans": scans}
+
+@app.get("/api/kraken/priorities")
+async def kraken_priorities():
+    """IPs priorizadas por numero de exploits exitosos."""
+    _kraken_init_db()
+    conn = sqlite3.connect(str(KRAKEN_DB))
+    c = conn.cursor()
+    c.execute("SELECT ip, COUNT(*) as cnt, GROUP_CONCAT(DISTINCT service) as services FROM exploits WHERE success=1 GROUP BY ip ORDER BY cnt DESC LIMIT 10")
+    priorities = [{"ip": r[0], "exploit_count": r[1], "services": r[2]} for r in c.fetchall()]
+    conn.close()
+    return {"priorities": priorities}
+
+@app.get("/api/kraken/scripts")
+async def kraken_scripts():
+    """Lista de scripts NSE configurados."""
+    return {"scripts": KRAKEN_NSE_SCRIPTS, "ports": KRAKEN_PORTS}
+
+@app.post("/api/kraken/daemon/start")
+async def kraken_daemon_start(target: str = "192.168.1.0/24", interval: int = 3600):
+    """Inicia el daemon de escaneo periodico."""
+    global _kraken_running
+    if _kraken_running:
+        return JSONResponse({"status": "already_running", "target": target}, status_code=409)
+    _kraken_running = True
+    def _daemon_loop():
+        global _kraken_running
+        _kraken_init_db()
+        while _kraken_running:
+            xml, err = _kraken_scan_sync(target)
+            if xml:
+                hosts = _kraken_parse_xml(xml)
+                _kraken_save(target, hosts)
+            import time as _t
+            for _ in range(interval // 10):
+                if not _kraken_running:
+                    break
+                _t.sleep(10)
+    import threading
+    t = threading.Thread(target=_daemon_loop, daemon=True)
+    t.start()
+    return {"status": "started", "target": target, "interval": interval}
+
+@app.post("/api/kraken/daemon/stop")
+async def kraken_daemon_stop():
+    """Detiene el daemon."""
+    global _kraken_running
+    _kraken_running = False
+    return {"status": "stopped"}
+
+@app.get("/api/kraken/daemon/status")
+async def kraken_daemon_status():
+    """Estado del daemon."""
+    return {"running": _kraken_running}
+
+
 #  FRONTEND ESTÁTICO — SPA
 # ═════════════════════════════════════════════════════════════════════════════
 

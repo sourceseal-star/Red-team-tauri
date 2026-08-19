@@ -8,7 +8,7 @@ import CameraCommandCenter from './components/CameraCommandCenter';
 import IntelPanel from './components/IntelPanel';
 import ExploitMatrix from './components/ExploitMatrix';
 import TrafficMonitor from './components/TrafficMonitor';
-import OSINTPanel from './components/OSINTPanel';
+import KrakenPanel from './components/KrakenPanel';
 import WiFiPanel from './components/WiFiPanel';
 import BlackMirrorPanel from './components/BlackMirrorPanel';
 import ControlTower from './components/ControlTower';
@@ -46,7 +46,7 @@ function App() {
           <TrafficMonitor />
         </div>
       )}
-      {module === 'osint' && <OSINTPanel />}
+      {module === 'osint' && <KrakenPanel />}
       {module === 'wifi' && <WiFiPanel />}
       {module === 'ultra' && <MurcielagoPanel />}
       {module === 'blackmirror' && <BlackMirrorPanel />}

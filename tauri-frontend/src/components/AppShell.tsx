@@ -32,7 +32,7 @@ const MODULES = [
   { id: 'warroom', label: 'War Room', icon: LayoutDashboard, color: 'text-cyan-400', badge: null },
   { id: 'cameras', label: 'Cámaras', icon: Camera, color: 'text-red-400', badge: 'live' },
   { id: 'threat', label: 'Threat Intel', icon: Shield, color: 'text-amber-400', badge: null },
-  { id: 'osint', label: 'OSINT', icon: Globe, color: 'text-purple-400', badge: null },
+  { id: 'osint', label: 'KRAKEN', icon: Bug, color: 'text-red-400', badge: 'v4.0' },
   { id: 'wifi', label: 'WiFi', icon: Wifi, color: 'text-green-400', badge: null },
   { id: 'ultra', label: 'Ultrasonidos', icon: Radio, color: 'text-pink-400', badge: null },
   { id: 'blackmirror', label: 'Black Mirror', icon: Eye, color: 'text-rose-400', badge: null },
@@ -360,6 +360,7 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
                     {activeModule === 'warroom' && 'Vista unificada de todos los sistemas'}
                     {activeModule === 'cameras' && 'Descubrimiento y control de cámaras IP'}
                     {activeModule === 'threat' && 'Inteligencia de amenazas y reputación'}
+                    {activeModule === 'osint' && 'Motor de explotacion con scripts NSE de nmap'}
                   </p>
                 </div>
                 <div className="flex gap-2">
