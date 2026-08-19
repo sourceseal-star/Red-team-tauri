@@ -4,6 +4,7 @@ import {
   RefreshCw, Loader2, KeyRound, FileWarning, Bug, Key
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
+import { interceptorApi } from '../api/interceptorApi';
 
 // ═══════════════════════════════════════════════════════════════════
 // 网络拦截高级版 — Interceptor Advanced v4.0 Panel
@@ -92,6 +93,13 @@ export default function InterceptorAdvancedPanel() {
   const [captureActive, setCaptureActive] = useState(false);
   const [capturePort, setCapturePort] = useState('8888');
   const [captureFlows, setCaptureFlows] = useState<any[]>([]);
+
+  // V2: Full stats and flow analysis
+  const [v2Stats, setV2Stats] = useState<any>(null);
+  const [v2Flows, setV2Flows] = useState<any[]>([]);
+  const [v2Alerts, setV2Alerts] = useState<any[]>([]);
+  const [selectedFlowAnalysis, setSelectedFlowAnalysis] = useState<any>(null);
+  const [analyzingFlow, setAnalyzingFlow] = useState(false);
 
   // Auto-refresh for flows/alerts
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -195,10 +203,50 @@ export default function InterceptorAdvancedPanel() {
       const data = await apiCall('/api/interceptor/capture/stop', { method: 'POST' });
       setCaptureActive(false);
       setResult(data);
+      await loadV2Data();
     } catch (e: any) {
       setError(e?.message || 'Error al detener captura');
     }
   };
+
+  // V2: Load stats, flows, and alerts from the bridge
+  const loadV2Data = async () => {
+    try {
+      const [stats, flows, alerts] = await Promise.all([
+        interceptorApi.getStats(),
+        interceptorApi.getFlows(50),
+        interceptorApi.getAlerts(50),
+      ]);
+      setV2Stats(stats);
+      setV2Flows(flows.flows || []);
+      setV2Alerts(alerts.alerts || []);
+    } catch (e: any) {
+      // Silencioso - el proxy puede no estar activo
+    }
+  };
+
+  // V2: Analyze a specific flow in depth
+  const analyzeFlowV2 = async (flowId: string) => {
+    setAnalyzingFlow(true);
+    setSelectedFlowAnalysis(null);
+    try {
+      const analysis = await interceptorApi.analyzeFlow(flowId);
+      setSelectedFlowAnalysis(analysis);
+    } catch (e: any) {
+      setError(e?.message || 'Error al analizar flujo');
+    } finally {
+      setAnalyzingFlow(false);
+    }
+  };
+
+  // Auto-load v2 data when capture tab is active
+  useEffect(() => {
+    if (activeTab === 'capture') {
+      loadV2Data();
+      const interval = setInterval(loadV2Data, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab]);
 
   const exportJson = () => {
     if (!result) return;

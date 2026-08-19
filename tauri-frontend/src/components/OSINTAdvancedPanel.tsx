@@ -2,9 +2,10 @@ import { useState, useCallback } from 'react';
 import {
   Globe, Search, Server, Mail, Shield, FileText, Database,
   Download, RefreshCw, Loader2, AlertCircle, CheckCircle2,
-  Eye, Network, Fingerprint, Github, Users
+  Eye, Network, Fingerprint, Github, Users, Zap
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
+import { osintApi } from '../api/osintApi';
 
 // ═══════════════════════════════════════════════════════════════════
 // 开源情报高级版 — OSINT Advanced v4.0 Panel
@@ -57,6 +58,24 @@ export default function OSINTAdvancedPanel() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [showJson, setShowJson] = useState(false);
+  const [fullScanLoading, setFullScanLoading] = useState(false);
+  const [fullScanResult, setFullScanResult] = useState<any>(null);
+
+  const runFullScanV2 = async () => {
+    if (!input.trim()) return;
+    setFullScanLoading(true);
+    setError(null);
+    setResult(null);
+    setFullScanResult(null);
+    try {
+      const data = await osintApi.fullScan(input.trim());
+      setFullScanResult(data);
+    } catch (e: any) {
+      setError(e?.message || 'Error en Full Scan v2');
+    } finally {
+      setFullScanLoading(false);
+    }
+  };
 
   const PRIVATE_IP_RE = /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
 
@@ -190,6 +209,15 @@ export default function OSINTAdvancedPanel() {
               <Download size={14} /> {t('export')}
             </button>
           )}
+          <button
+            onClick={runFullScanV2}
+            disabled={fullScanLoading || !input.trim()}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-indigo-600/80 border border-indigo-500 text-white hover:bg-indigo-500 disabled:opacity-50 transition"
+            title="Escaneo combinado v2: WHOIS + DNS + Subdominios + Threat Intel en una sola llamada"
+          >
+            {fullScanLoading ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+            Full Scan v2
+          </button>
         </div>
       </div>
 

@@ -183,6 +183,22 @@ if _INTERCEPTOR_ADVANCED_OK:
     app.include_router(interceptor_router)
     print("[INTERCEPTOR-ADVANCED] Router montado en /api/interceptor/* (v4.0: MITM + SIEM)")
 
+# ── OSINT Bridge v2 (full-scan, quick-scan, search unificado) ──────────────
+try:
+    from modules.osint_bridge import router as osint_bridge_router
+    app.include_router(osint_bridge_router)
+    print("[OSINT-BRIDGE] Router v2 montado en /api/osint/v2/*")
+except Exception as _ob_err:
+    print(f"[WARN] osint_bridge v2 import fallo: {_ob_err}", flush=True)
+
+# ── Interceptor Bridge v2 (control, flows, alerts, stats, analyze) ──────────
+try:
+    from tlsproxy.interceptor_bridge import router as interceptor_bridge_router
+    app.include_router(interceptor_bridge_router)
+    print("[INTERCEPTOR-BRIDGE] Router v2 montado en /api/interceptor/v2/*")
+except Exception as _ib_err:
+    print(f"[WARN] interceptor_bridge v2 import fallo: {_ib_err}", flush=True)
+
 # ── API Key (obligatoria) ────────────────────────────────────────────────────
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
