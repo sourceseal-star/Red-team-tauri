@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Globe, Shield, AlertTriangle } from 'lucide-react';
+import { Globe } from 'lucide-react';
 import { useScanStore } from '../hooks/useScanStore';
 import { getApiKey } from '../lib/api';
 

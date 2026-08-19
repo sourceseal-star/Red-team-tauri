@@ -4,7 +4,7 @@
  * Proporciona métodos para interactuar con la API de ARTO.
  */
 
-import { APIResponse, Operation, Prediction, Threat, Report, SimulationResult, SystemStats, OSINTScanResult } from '../types/arto';
+import { APIResponse, Operation, Prediction, Threat, SimulationResult, SystemStats, OSINTScanResult } from '../types/arto';
 
 const API_BASE_URL = '/api/arto';
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useScanStore } from '../../hooks/useScanStore';
-import { Wifi, Camera, Send, Mic, Radio, Sliders, Activity } from 'lucide-react';
+import { Wifi, Camera, Send, Mic, Radio, Sliders } from 'lucide-react';
 import IntelPanel from '../IntelPanel';
 import ExploitMatrix from '../ExploitMatrix';
 import TrafficMonitor from '../TrafficMonitor';

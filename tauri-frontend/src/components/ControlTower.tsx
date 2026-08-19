@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Server, Globe, Cloud, Cpu, HardDrive, Wifi, RefreshCw, Activity, Database, AlertTriangle, Radio } from 'lucide-react';
+import { Server, Globe, Cloud, Cpu, RefreshCw, Activity, Database, AlertTriangle } from 'lucide-react';
 
 // URL del orquestador de federación — configurable via env o localhost:8080
 const ORCHESTRATOR_URL = (import.meta as any).env?.VITE_ORCHESTRATOR_URL || 'http://127.0.0.1:8080';
