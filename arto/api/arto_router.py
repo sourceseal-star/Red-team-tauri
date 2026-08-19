@@ -373,7 +373,13 @@ async def get_templates():
         return {
             "status": "success",
             "count": len(templates),
-            "templates": {name: template.to_dict() for name, template in templates.items()},
+            "templates": (
+                {t.name: t.to_dict() for t in templates if hasattr(t, "name") and hasattr(t, "to_dict")}
+                if isinstance(templates, list) else
+                {name: t.to_dict() for name, t in templates.items()}
+                if isinstance(templates, dict) else
+                {}
+            ),
             "timestamp": datetime.datetime.now().isoformat()
         }
     except Exception as e:
