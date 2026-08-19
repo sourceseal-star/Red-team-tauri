@@ -21,6 +21,7 @@ class DecisionType(Enum):
     MONITOR = "monitor"
     INVESTIGATE = "investigate"
     LOG_AND_CONTINUE = "log_and_continue"
+    ANALYZE = "analyze"
     IGNORE = "ignore"
 
 
