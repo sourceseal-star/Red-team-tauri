@@ -29,7 +29,18 @@ class ARTOWebSocketClient {
   private reconnectTimeout: NodeJS.Timeout | null = null;
 
   constructor(config: WebSocketConfig = {}) {
-    this.url = config.url || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/arto/ws`;
+    this.url = config.url || (() => {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const base = localStorage.getItem('backend_base_url') || '';
+      // Si hay URL custom, extraer host de ahi; si no, usar el actual
+      if (base) {
+        try {
+          const u = new URL(base);
+          return `${proto}//${u.host}/ws`;
+        } catch { /* fallback abajo */ }
+      }
+      return `${proto}//${window.location.host}/ws`;
+    })();
     this.reconnectInterval = config.reconnectInterval || 5000; // 5 segundos
     this.maxReconnectAttempts = config.maxReconnectAttempts || 10;
   }
