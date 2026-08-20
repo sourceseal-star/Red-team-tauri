@@ -306,6 +306,14 @@ No usar `pip install pydantic` — las deps vienen de `replit.nix`:
 find ~/.local/lib/python3.12/site-packages -maxdepth 1 -iname "pydantic*" -exec rm -rf {} +
 ```
 
+### ARTO en modo degradado (OSINT no funciona)
+Si ARTO aparece corriendo pero las operaciones de scan devuelven vacío:
+- **Causa (resuelta 2026-08-20):** Conflicto de paquetes Python `modules` entre
+  `arto/modules/` y `backend/modules/` — Python solo podía resolver uno.
+- **Fix:** Ya aplicado en el repo. Hacer `git pull` y reiniciar.
+- **Verificar:** `GET /api/arto/status` -> `"running": true`
+- **Probar:** `POST /api/arto/operation/scan` con body `{"target": "example.com"}`
+
 ---
 
 ## 📦 DESPLIEGUE

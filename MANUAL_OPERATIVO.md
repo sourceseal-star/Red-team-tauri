@@ -488,10 +488,16 @@ Los datos persisten entre reinicios. Al detener el servidor, el evento
 
 ARTO se conecta automáticamente con:
 - **enhanced_recon.py** — OSINT local (ONVIF, SSDP, SNMP, NetBIOS, mDNS)
+- **osint_bridge.py** — OSINT v2 (WHOIS + DNS + Subdominios + Threat Intel) via `_recon_module_wrapper`
 - **interceptor.py** — Interceptor TLS (MITM, SQLi, XSS, SSRF, LFI/RFI)
 - **vpn_interceptor.py** — Captura de tráfico via Android VpnService
 
 Si un módulo no está disponible, ARTO funciona en modo degradado sin errores.
+
+> **FIX (2026-08-20):** El `_recon_module_wrapper` ahora reordena `sys.path` antes
+> de importar `modules.osint_bridge`, resolviendo el conflicto de paquetes
+> `modules` entre `arto/modules/` y `backend/modules/`. Antes de este fix,
+> ARTO caía silenciosamente en modo degradado y nunca ejecutaba OSINT real.
 
 ---
 
@@ -574,6 +580,12 @@ python3 redteam/scripts/dashboard_server.py 2>&1 | grep ARTO
 
 **ARTO no inicializa (modo degradado):**
 - ARTO funciona en modo degradado si enhanced_recon o interceptor no están disponibles
+- **FIX (2026-08-20):** Si ARTO aparece como "degradado" pero los módulos SÍ están
+  presentes, el problema era un conflicto de paquetes Python `modules` entre
+  `arto/modules/` y `backend/modules/`. Ya está resuelto — al hacer `git pull`
+  y reiniciar, ARTO debería conectar OSINT correctamente.
+- Para verificar: `GET /api/arto/status` debería mostrar `"running": true`
+  y las operaciones de scan deberían devolver datos reales (no vacíos).
 - No es un error fatal — ARTO sigue operando con capacidades reducidas
 - Para integración completa, asegurar que `backend/modules/enhanced_recon.py` existe
 
