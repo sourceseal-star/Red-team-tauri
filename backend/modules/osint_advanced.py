@@ -131,30 +131,38 @@ class OSINTRequest(BaseModel):
 # ============================================================================
 
 def _dns_resolve(domain: str, record_type: str = "A") -> List[str]:
-    """Resuelve registros DNS usando socket stdlib (sin dependencias externas)."""
+    """Resuelve registros DNS. Intenta dig, fallback a Google DNS-over-HTTPS."""
     try:
         if record_type == "A":
             return list(set(socket.gethostbyname_ex(domain)[2]))
-        elif record_type == "MX":
-            import subprocess
+        
+        # Intentar dig primero
+        import subprocess
+        try:
             result = subprocess.run(
-                ["dig", "+short", "MX", domain], capture_output=True, text=True, timeout=5
+                ["dig", "+short", record_type, domain],
+                capture_output=True, text=True, timeout=5
             )
-            return [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
-        elif record_type == "TXT":
-            import subprocess
-            result = subprocess.run(
-                ["dig", "+short", "TXT", domain], capture_output=True, text=True, timeout=5
-            )
-            return [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
-        elif record_type == "NS":
-            import subprocess
-            result = subprocess.run(
-                ["dig", "+short", "NS", domain], capture_output=True, text=True, timeout=5
-            )
-            return [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+            if result.returncode == 0 and result.stdout.strip():
+                return [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        
+        # Fallback: Google DNS-over-HTTPS (sin binarios externos)
+        import urllib.request
+        import json as _json
+        url = f"https://dns.google/resolve?name={domain}&type={record_type}"
+        req = urllib.request.Request(url, headers={"Accept": "application/dns-json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read().decode())
+        answers = data.get("Answer", [])
+        return [a.get("data", "") for a in answers if a.get("type") == _record_type_num(record_type)]
     except Exception:
         return []
+
+def _record_type_num(rtype: str) -> int:
+    """Convierte tipo DNS string a número (para Google DoH)."""
+    return {"A": 1, "MX": 15, "TXT": 16, "NS": 2, "CNAME": 5}.get(rtype, 1)
 
 
 async def whois_lookup(domain: str) -> Dict[str, Any]:
@@ -212,7 +220,28 @@ async def whois_lookup(domain: str) -> Dict[str, Any]:
                             result["raw"] = {"error": f"whois no instalado y RDAP HTTP {r.status_code}. Instala: pkg install whois"}
                 await _rdap()
             except Exception as e2:
-                result["raw"] = {"error": f"whois no instalado y RDAP fallo: {e2}. Instala: pkg install whois"}
+                # Ultimo fallback: urllib (stdlib, sin dependencias)
+                try:
+                    import urllib.request
+                    req = urllib.request.Request(
+                        f"https://rdap.org/domain/{domain}",
+                        headers={"Accept": "application/rdap+json"}
+                    )
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        d = json.loads(resp.read().decode())
+                        events = {e.get("eventAction",""): e.get("eventDate","")
+                                  for e in d.get("events",[])}
+                        ns = [n.get("ldhName","") for n in d.get("nameservers",[])]
+                        result["raw"] = {
+                            "source": "rdap-urllib",
+                            "registrar": None,
+                            "creation_date": events.get("registration",""),
+                            "expiration_date": events.get("expiration",""),
+                            "name_servers": ns,
+                            "status": d.get("status",[]),
+                        }
+                except Exception as e3:
+                    result["raw"] = {"error": f"whois no instalado y todos los fallbacks fallaron: {e3}. Instala: pkg install whois"}
     except Exception as e:
         result["raw"] = {"error": str(e)}
 
@@ -260,6 +289,21 @@ async def subdomain_enumeration(domain: str, max_results: int = 50) -> Dict[str,
     return {"domain": domain, "subdomains": found, "total": len(found)}
 
 
+
+def _apply_geo(geo_data: dict, result: dict):
+    """Aplica datos de geolocalización al resultado de threat intel."""
+    result["factors"].append({
+        "factor": "Country",
+        "value": geo_data.get("country", "?"),
+    })
+    conn_type = geo_data.get("connection", {}).get("type")
+    if conn_type in ("hosting", "tor"):
+        result["factors"].append({
+            "factor": "Hosting/Tor",
+            "value": conn_type,
+        })
+        result["score"] += 10
+
 async def threat_intel_lookup(ip: str) -> Dict[str, Any]:
     """
     Threat Intelligence lookup — NIST SP 800-150 (Guide to Cyber Threat Information Sharing).
@@ -291,22 +335,22 @@ async def threat_intel_lookup(ip: str) -> Dict[str, Any]:
         except Exception:
             pass
 
+    # Geo IP lookup — intentar httpx, fallback a urllib
     try:
         import httpx
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f"https://ipwho.is/{ip}")
             if resp.status_code == 200:
-                geo = resp.json()
-                result["factors"].append({
-                    "factor": "Country",
-                    "value": geo.get("country", "?"),
-                })
-                if geo.get("connection", {}).get("type") in ("hosting", "tor"):
-                    result["factors"].append({
-                        "factor": "Hosting/Tor",
-                        "value": geo["connection"]["type"],
-                    })
-                    result["score"] += 10
+                _apply_geo(geo_data=resp.json(), result=result)
+    except ImportError:
+        # Fallback: urllib (stdlib)
+        try:
+            import urllib.request
+            req = urllib.request.Request(f"https://ipwho.is/{ip}")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                _apply_geo(geo_data=json.loads(resp.read().decode()), result=result)
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -378,6 +422,26 @@ async def email_osint(email: str) -> Dict[str, Any]:
     return result
 
 
+
+def _apply_headers(headers: dict, status_code: int, result: dict):
+    """Aplica headers HTTP al resultado de fingerprinting."""
+    result["headers"] = {
+        "server": headers.get("server", headers.get("Server", "Desconocido")),
+        "x_powered_by": headers.get("x-powered-by", headers.get("X-Powered-By", "Desconocido")),
+        "content_type": headers.get("content-type", headers.get("Content-Type", "Desconocido")),
+        "status_code": status_code,
+    }
+    security = {}
+    for h in ["strict-transport-security", "x-frame-options",
+               "x-content-type-options", "content-security-policy",
+               "x-xss-protection", "referrer-policy",
+               "permissions-policy"]:
+        val = headers.get(h) or headers.get(h.title())
+        security[h] = "present" if val else "missing"
+    result["security_headers"] = security
+    result["security_score"] = sum(1 for v in security.values() if v == "present")
+    result["security_total"] = len(security)
+
 async def header_fingerprint(url: str) -> Dict[str, Any]:
     """
     HTTP Header Fingerprinting — NIST SP 800-115 §3.2.
@@ -388,7 +452,17 @@ async def header_fingerprint(url: str) -> Dict[str, Any]:
         import httpx
         async with httpx.AsyncClient(timeout=10, follow_redirects=True, verify=False) as client:
             resp = await client.get(url)
-            headers = dict(resp.headers)
+            _apply_headers(resp.headers, resp.status_code, result)
+    except ImportError:
+        # Fallback: urllib
+        import urllib.request
+        import ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
+            _apply_headers(dict(resp.headers.items()), resp.status, result)
 
             result["headers"] = {
                 "server": headers.get("server", "Desconocido"),
@@ -537,21 +611,35 @@ async def api_google_search(
                 params={"q": q},
                 headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
             )
-            results = []
-            if resp.status_code == 200:
-                # Parsear resultados basico con regex
-                links = re.findall(r'class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)', resp.text)
-                for url, title in links[:num]:
-                    # Limpiar URL de redirect de DDG
-                    if "uddg=" in url:
-                        from urllib.parse import parse_qs, urlparse as up
-                        parsed = up(url)
-                        qs = parse_qs(parsed.query)
-                        url = unquote(qs.get("uddg", [url])[0])
-                    results.append({"title": title.strip(), "link": url, "snippet": "", "displayLink": ""})
-            return {"query": q, "engine": "duckduckgo", "results": results, "total": len(results)}
+            return _parse_ddg_results(resp.text, q, num)
+    except ImportError:
+        # Fallback: urllib (stdlib)
+        try:
+            import urllib.request
+            import urllib.parse as _up
+            url = f"https://html.duckduckgo.com/html/?q={_up.quote(q)}"
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return _parse_ddg_results(resp.read().decode(), q, num)
+        except Exception as e:
+            return {"query": q, "engine": "none", "results": [], "error": str(e)}
     except Exception as e:
         return {"query": q, "engine": "none", "results": [], "error": str(e)}
+
+def _parse_ddg_results(html: str, q: str, num: int) -> dict:
+    """Parsea resultados de DuckDuckGo HTML."""
+    results = []
+    links = re.findall(r'class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)', html)
+    for url, title in links[:num]:
+        if "uddg=" in url:
+            from urllib.parse import parse_qs, urlparse as up, unquote
+            parsed = up(url)
+            qs = parse_qs(parsed.query)
+            url = unquote(qs.get("uddg", [url])[0])
+        results.append({"title": title.strip(), "link": url, "snippet": "", "displayLink": ""})
+    return {"query": q, "engine": "duckduckgo", "results": results, "total": len(results)}
 
 
 # ============================================================================
