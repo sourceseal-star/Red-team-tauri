@@ -5622,6 +5622,23 @@ async def compat_export_csv():
     except Exception as e:
         return JSONResponse({"error": f"Export failed: {str(e)}"}, status_code=500)
 
+@app.get("/api/export/json")
+async def compat_export_json_explicit():
+    """Alias explicito de /api/export para que ExportPanel.tsx (que pide /api/export/{fmt}) funcione con fmt=json."""
+    return await compat_export_json()
+
+@app.get("/api/export/pcap")
+async def compat_export_pcap():
+    return JSONResponse(
+        {"error": "PCAP no disponible: requiere scapy + permisos raw socket. No soportado en Termux sin root."},
+        status_code=501
+    )
+
+@app.post("/api/reports/generate")
+async def compat_reports_generate(request: Request):
+    """Alias de /api/v2/reports/generate sin el prefijo /v2/ (asi lo llama ExportPanel.tsx)."""
+    return await v2_generate_report(request)
+
 @app.post("/api/export")
 async def compat_export_post(request: Request):
     try:
@@ -5727,7 +5744,7 @@ def _kraken_save(target, hosts_data):
 
 def _kraken_scan_sync(target: str):
     scripts_str = ','.join(KRAKEN_NSE_SCRIPTS)
-    cmd = ['nmap', '-sV', '-O', '--script', scripts_str, '-p', KRAKEN_PORTS, '-oX', '-', target]
+    cmd = ['nmap', '-sV', '--script', scripts_str, '-p', KRAKEN_PORTS, '-oX', '-', target]  # -O quitado: requiere root, abortaba el scan completo en Termux sin privilegios
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         out, err = proc.communicate(timeout=180)

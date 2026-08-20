@@ -60,11 +60,7 @@ function App() {
       {module === 'settings' && <SystemSettings />}
       {module === 'osint_adv' && <OSINTAdvancedPanel />}
       {module === 'interceptor' && <InterceptorAdvancedPanel />}
-      {module === 'arto' && (
-        <ARTOProvider>
-          <ARTOPanel />
-        </ARTOProvider>
-      )}
+      {module === 'arto' && <ARTOPanel />}
     </AppShell>
     </ARTOProvider>
     </LanguageProvider>

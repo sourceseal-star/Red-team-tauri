@@ -54,7 +54,7 @@ def init_db():
 def run_nse_scan(target):
     scripts_str = ",".join(NSE_SCRIPTS)
     cmd = [
-        "nmap", "-sV", "-O", "--script", scripts_str,
+        "nmap", "-sV", "--script", scripts_str,  # -O quitado: requiere root, abortaba el scan completo en Termux sin privilegios
         "-p", KRAKEN_PORTS, "-oX", "-", target
     ]
     log(f"Ejecutando NSE contra {target}...")
