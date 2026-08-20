@@ -105,8 +105,15 @@ if [ ! -d "node_modules" ]; then
   npm install --legacy-peer-deps 2>&1 | tail -3
 fi
 npm run build 2>&1 | tail -5
+# CRITICO: el backend sirve estaticamente desde redteam/scripts/dist/
+# Si no se copia el build, sirve el dist viejo del repo
+echo -e "${C}  Copiando build a redteam/scripts/dist/...${N}"
+if [ -d "$ROOT/redteam/scripts/dist" ]; then
+  find "$ROOT/redteam/scripts/dist" -mindepth 1 -delete 2>/dev/null
+fi
+cp -r "$ROOT/tauri-frontend/dist/." "$ROOT/redteam/scripts/dist/"
 cd "$ROOT"
-echo -e "${G}  OK Frontend compilado${N}"
+echo -e "${G}  OK Frontend compilado y copiado${N}"
 
 # ─── 7. ARRANCAR BACKEND ──────────────────────────────────────────────
 echo -e "${C}[7/7] Arrancando backend...${N}"
