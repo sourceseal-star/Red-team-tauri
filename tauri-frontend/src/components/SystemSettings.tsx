@@ -36,7 +36,7 @@ export default function SystemSettings() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(getBaseUrl() + '/ops/config', { headers: authH() });
+      const r = await fetch(getBaseUrl() + '/api/ops/config', { headers: authH() });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       setOps(data);
@@ -57,7 +57,7 @@ export default function SystemSettings() {
   const checkHealth = useCallback(async () => {
     setHealth('checking');
     try {
-      const r = await fetch(getBaseUrl() + '/health', { headers: authH() });
+      const r = await fetch(getBaseUrl() + '/api/health', { headers: authH() });
       setHealth(r.ok ? 'ok' : 'err');
     } catch { setHealth('err'); }
   }, [authH]);
@@ -74,7 +74,7 @@ export default function SystemSettings() {
   const saveNetwork = async () => {
     setSaving(true);
     try {
-      const r = await fetch(getBaseUrl() + '/ops/config', {
+      const r = await fetch(getBaseUrl() + '/api/ops/config', {
         method: 'POST', headers: authH(),
         body: JSON.stringify({ scan_subnet: subnet, scan_ports: scanPorts, scan_timeout: scanTimeout })
       });
@@ -89,7 +89,7 @@ export default function SystemSettings() {
     if (!value || value.includes('••••')) { setMsg({ type: 'err', text: 'Ingresa un valor nuevo' }); return; }
     setSaving(true);
     try {
-      const r = await fetch(getBaseUrl() + '/ops/config', {
+      const r = await fetch(getBaseUrl() + '/api/ops/config', {
         method: 'POST', headers: authH(),
         body: JSON.stringify({ [keyName]: value })
       });
@@ -106,7 +106,7 @@ export default function SystemSettings() {
     setTesting(service);
     setTestResult(prev => ({ ...prev, [service]: { ok: false, info: 'Probando...' } }));
     try {
-      const r = await fetch(getBaseUrl() + '/ops/test-key', {
+      const r = await fetch(getBaseUrl() + '/api/ops/test-key', {
         method: 'POST', headers: authH(),
         body: JSON.stringify({ service, key })
       });

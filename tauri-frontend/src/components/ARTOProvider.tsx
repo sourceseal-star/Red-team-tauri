@@ -260,6 +260,7 @@ export function ARTOProvider({
   // 🎯 Contexto a proveer
   const contextValue: ARTOContext = {
     arto: null, // Se puede usar artoApi directamente
+    systemStats,
     operations,
     predictions,
     threats,

@@ -390,12 +390,19 @@ export interface APIResponse<T> {
 // 🎯 Interfaz de Contexto ARTO
 export interface ARTOContext {
   arto: any;
+  systemStats: SystemStats | null;
   operations: Operation[];
   predictions: Prediction[];
   threats: Threat[];
   reports: Report[];
   isLoading: boolean;
   error: string | null;
+  executeOperation: (operationType: any, target: string) => Promise<any>;
+  predictAttacks: (timeHorizon?: number) => Promise<any>;
+  respondToThreat: (threat: Threat) => Promise<any>;
+  scanTarget: (target: string, scanType?: any) => Promise<any>;
+  simulateAttack: (templateName: string, target: string) => Promise<any>;
+  refreshData: () => Promise<void>;
 }
 
 // 🎨 Tipos de Panel
