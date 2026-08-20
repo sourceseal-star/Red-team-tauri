@@ -872,12 +872,16 @@ async def api_analyze_cert(host: str, port: int = Query(443, ge=1, le=65535)):
 
 
 class UserAgentModel(BaseModel):
-    ua: str = Field(..., description="User-Agent a analizar")
+    ua: str = Field("", description="User-Agent a analizar")
+    user_agent: str = Field("", description="User-Agent (alias alternativo)")
+
+    def get_ua(self) -> str:
+        return self.user_agent if self.user_agent else self.ua
 
 @interceptor_router.post("/analyze/user-agent")
 async def api_analyze_ua(req: UserAgentModel):
     """Analiza un User-Agent en busca de herramientas de ataque."""
-    return analyze_user_agent(req.ua)
+    return analyze_user_agent(req.get_ua())
 
 
 @interceptor_router.get("/rate-check/{ip}")
