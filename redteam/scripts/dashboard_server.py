@@ -3753,16 +3753,20 @@ DISPOSABLE_DOMAINS = {
     "getnada.com", "dispostable.com", "tempail.com", "guerrillamailblock.com"
 }
 
+# (platforma, url, [patrones_html_que_indican_no_existe])
+# None = confiar solo en status code (GitHub, GitLab dan 404 real)
+# Patrones verificados contra HTML real (no strings de i18n del JS bundle)
 SOCIAL_PLATFORMS = [
-    ("GitHub", "https://github.com/{}"),
-    ("Twitter/X", "https://x.com/{}"),
-    ("Instagram", "https://instagram.com/{}"),
-    ("YouTube", "https://youtube.com/@{}"),
-    ("TikTok", "https://tiktok.com/@{}"),
-    ("Reddit", "https://reddit.com/user/{}"),
-    ("GitLab", "https://gitlab.com/{}"),
-    ("Medium", "https://medium.com/@{}"),
-    ("Steam", "https://steamcommunity.com/id/{}"),
+    ("GitHub", "https://github.com/{}", None),
+    ("Twitter/X", "https://x.com/{}", ["User not found", "This account doesn't exist", "Account suspended"]),
+    ("Instagram", "https://instagram.com/{}", ["Sorry, this page isn't available", "Page Not Found"]),
+    ("YouTube", "https://youtube.com/@{}", ["This channel doesn't exist", "404 Not Found", "Unavailable"]),
+    ("TikTok", "https://tiktok.com/@{}", ['"statusCode":10221']),  # 10221 = user not found en TikTok API
+    ("Reddit", "https://reddit.com/user/{}", None),
+    ("GitLab", "https://gitlab.com/{}", None),
+    ("Medium", "https://medium.com/@{}", ["No user found", "404 Not Found"]),
+    ("Steam", "https://steamcommunity.com/id/{}", ["The specified profile could not be found"]),
+    ("LinkedIn", "https://www.linkedin.com/in/{}", ["Profile not found", "This profile is not available", "Page Not Found"]),
 ]
 
 def _parse_rdn_tuple(rdn):
@@ -4120,13 +4124,30 @@ async def osint_social(username: str):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
-    async def check_platform(client, platform_name: str, url_tmpl: str):
+    async def check_platform(client, platform_name: str, url_tmpl: str, not_found_patterns=None):
         url = url_tmpl.format(username)
         async with semaphore:
             try:
                 resp = await client.get(url)
                 status_code = resp.status_code
-                exists = (200 <= status_code < 300)
+                # Plataformas con 404 real: confiar en status code
+                if status_code == 429 or status_code == 403:
+                    # Rate limited / blocked: no se puede determinar
+                    exists = None
+                elif not not_found_patterns:
+                    exists = (200 <= status_code < 300)
+                else:
+                    # Plataformas que siempre devuelven 200: verificar contenido HTML
+                    if 200 <= status_code < 300:
+                        body_lower = resp.text.lower()
+                        for pattern in not_found_patterns:
+                            if pattern.lower() in body_lower:
+                                exists = False
+                                break
+                        else:
+                            exists = True
+                    else:
+                        exists = False
                 return {
                     "platform": platform_name,
                     "url": url,
@@ -4144,7 +4165,7 @@ async def osint_social(username: str):
 
     async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=headers) as client:
         results = await asyncio.gather(
-            *[check_platform(client, p, u) for p, u in SOCIAL_PLATFORMS]
+            *[check_platform(client, p, u, patterns) for p, u, patterns in SOCIAL_PLATFORMS]
         )
 
     total_found = sum(1 for r in results if r.get("exists"))
