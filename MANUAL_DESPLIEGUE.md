@@ -1,5 +1,11 @@
-# 🛡 SourceSeal Red Team - Manual de Despliegue Completo
-# Red-team-tauri v3.0
+# 🛡 SourceSeal Red Team — Manual de Despliegue Completo
+# Red-team-tauri v6.0 — ARTO + LEVIATHAN UNIFIED
+
+> **Backend único:** `redteam/scripts/dashboard_server.py` (FastAPI :8001)
+> **Frontend único:** `tauri-frontend/` (React/Vite/TypeScript)
+> **Arranque recomendado:** `bash arrancar.sh` (Termux) / `bash replit_start.sh` (Replit)
+
+---
 
 ## 📋 Tabla de Contenidos
 1. [Requisitos Previos](#requisitos)
@@ -17,69 +23,74 @@
 
 ## <a name="requisitos"></a>1. Requisitos Previos
 
-### Termux (Android)
-```bash
-pkg update && pkg upgrade -y
-pkg install python python-pip git nodejs-lts openssl -y
-pip install fastapi uvicorn aiohttp cryptography pydantic
-```
+| Componente | Versión | Nota |
+|---|---|---|
+| **Python** | 3.10+ | Backend FastAPI |
+| **Node.js** | 18+ LTS | Compilar frontend |
+| **Git** | cualquiera | Clonar/actualizar |
+| **Termux** | Desde F-Droid | NO desde Play Store |
 
-### Replit
-- Crear Repl tipo Python
-- Importar desde GitHub: `sourceseal-star/Red-team-tauri`
-- El `.replit` y `replit.nix` ya están configurados
+### Opcionales (activan funciones extra)
+
+| Herramienta | Instalación | Activa |
+|---|---|---|
+| `nmap` | `pkg install nmap` | Escaneo de puertos y topología |
+| `tcpdump` | `pkg install tcpdump` | Traffic Analyzer (captura de paquetes) |
+| `whois` | `pkg install whois` | OSINT WHOIS lookup |
+| `dig` | `pkg install bind-utils` | DNS recon |
+| `termux-api` | `pkg install termux-api` | Wake-lock + WiFi scan |
+| `iproute2` | `pkg install iproute2` | ARP discovery (SEAL tactical) |
+| `ffmpeg` | `pkg install ffmpeg` | Transcodificación RTSP→HLS |
 
 ---
 
 ## <a name="termux"></a>2. Instalación en Termux
 
 ```bash
-# 1. Clonar repositorio
+# 1. Descargar Termux de F-Droid (NO Play Store)
+#    https://f-droid.org/packages/com.termux/
+
+# 2. Permisos de almacenamiento
+termux-setup-storage
+
+# 3. Sin restricciones de batería:
+#    Ajustes → Apps → Termux → Batería → Sin restricciones
+
+# 4. Instalar Python, Node.js y herramientas
+pkg update -y && pkg upgrade -y
+pkg install -y python nodejs-lts git openssl curl
+
+# 5. Clonar repositorio
 cd ~
 git clone https://github.com/sourceseal-star/Red-team-tauri.git
 cd Red-team-tauri
 
-# 2. Sincronizar con main
-git fetch origin && git reset --hard origin/main
+# 6. (Opcional) termux-api para wake-lock
+pkg install -y termux-api
 
-# 3. Instalar dependencias Python
-pip install fastapi uvicorn aiohttp cryptography pydantic pymupdf
-
-# 4. Crear directorios necesarios
-mkdir -p ~/storage/downloads/seal_reports
-mkdir -p ~/storage/templates
-
-# 5. Limpiar caché de Python (importante si hubo errores antes)
-find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null
-
-# 6. Arrancar backend unificado
-python3 source_seal_backend_v3.py
+# 7. Arrancar (instala deps Python, compila frontend, levanta backend)
+bash arrancar.sh
 ```
-
-El servidor arranca en `http://localhost:8001`.
 
 ---
 
 ## <a name="replit"></a>3. Despliegue en Replit
 
 ```bash
-# En la consola de Replit:
+# Importar desde GitHub: sourceseal-star/Red-team-tauri
+# El .replit y replit.nix ya están configurados
+
+# Sincronizar con main
 git fetch origin && git reset --hard origin/main
 
-# Limpiar build cache
-rm -rf artifacts/api-server/dist 2>/dev/null
-
-# Instalar dependencias
-pip install fastapi uvicorn aiohttp cryptography pydantic
-
-# Arrancar (el .replit ya está configurado)
-# O manualmente:
-python3 source_seal_backend_v3.py
+# Arrancar
+bash replit_start.sh
 ```
 
 **URLs en Replit:**
-- API: `https://<tu-repl>.repl.co`
-- Docs: `https://<tu-repl>.repl.co/docs`
+- Dashboard: `https://<tu-repl>.repl.co`
+- API: `https://<tu-repl>.repl.co/api/health`
+- Docs Swagger: `https://<tu-repl>.repl.co/docs`
 - WebSocket: `wss://<tu-repl>.repl.co/ws/alerts`
 
 ---
@@ -88,85 +99,82 @@ python3 source_seal_backend_v3.py
 
 ```
 Red-team-tauri/
-├── source_seal_backend_v3.py    # ← ORQUESTADOR PRINCIPAL v3.0
-├── backend/
-│   └── dashboard_server.py      # Backend alternativo (redteam/scripts)
-├── redteam/
-│   └── scripts/
-│       └── dashboard_server.py  # Backend con OSINT + Interceptor + ARTO + SEAL
-├── arto/                        # Sistema ARTO (AI autónomo)
-│   ├── __init__.py
-│   ├── api/
-│   │   └── arto_router.py       # 16 endpoints + 6 de traffic
-│   ├── core/
-│   │   ├── decision_engine.py
-│   │   ├── learning_engine.py
-│   │   ├── prediction_engine.py
-│   │   └── action_engine.py
-│   ├── memory/
-│   │   └── memory_store.py      # SQLite persistence
-│   ├── models/
-│   └── modules/
-│       ├── attack_simulator.py
-│       ├── defense_orchestrator.py
-│       ├── report_generator.py
-│       ├── vpn_interceptor.py  # Captura tráfico VpnService
-│       └── anomaly_detector.py
-├── seal/                        # SEAL SUPER PACK
-│   ├── __init__.py
-│   ├── api/
-│   │   └── seal_api_router.py   # /devices, /scan, /alerts, /hikvision, /onvif
-│   ├── scanners/
-│   │   ├── network_sweep_ultimate.py
-│   │   ├── fingerprint_engine.py
-│   │   └── onvif_scanner.py
-│   ├── attackers/
-│   │   └── hikvision_killer.py
-│   └── utils/
-│       └── vendor_dicts.py
-├── tauri-frontend/              # Frontend React + Tauri
-│   └── src/
-│       ├── App.tsx              # Router principal (18+ módulos)
-│       ├── components/
-│       │   ├── AppShell.tsx     # Sidebar con todos los módulos
-│       │   ├── ARTOPanel.tsx    # Panel ARTO (7 pestañas)
-│       │   ├── SealPanel.tsx    # Panel SEAL (7 tabs)
-│       │   ├── TrafficCapturePanel.tsx
-│       │   └── ... (15+ paneles)
-│       └── api/
-│           ├── sealApi.ts       # Cliente SEAL
-│           └── artoApi.ts       # Cliente ARTO
-└── android/                     # Tauri Android
-    └── app/src/main/java/com/redteam/tauri/vpn/
-        ├── ARTOVpnService.java  # VpnService de Android
-        └── VpnManager.java      # Gestor VPN
+├── arrancar.sh                ← Arranque Termux (7 pasos, recomendado)
+├── start-termux.sh            ← Arranque Termux con gateway mesh opcional
+├── replit_start.sh            ← Arranque Replit
+├── quickstart.sh              ← Arranque + smoke tests automáticos
+├── sync.sh                    ← Sincronización forzada + rebuild
+├── .env.example               ← Template de API keys
+│
+├── redteam/scripts/
+│   └── dashboard_server.py    ← BACKEND ÚNICO — FastAPI :8001
+│                               ← Sirve API + frontend estático
+│                               ← 80+ endpoints unificados
+│
+├── tauri-frontend/            ← FRONTEND ÚNICO — React/Vite/TS
+│   ├── src/components/        ← 30+ componentes
+│   ├── src/api/               ← artoApi, interceptorApi, osintApi
+│   └── dist/                  ← Build output (servido por backend)
+│
+├── arto/                      ← Sistema ARTO (AI autónomo)
+│   ├── api/arto_router.py     ← 23 endpoints FastAPI
+│   ├── core/                  ← 5 motores AI
+│   ├── modules/               ← attack_simulator, vpn, defense
+│   └── memory/                ← SQLite + knowledge_base
+│
+├── seal/                      ← SEAL SUPER PACK v2.1 (independiente)
+│   ├── scanners/             ← network_sweep, onvif, fingerprint
+│   ├── attackers/             ← hikvision_killer
+│   └── api/                   ← seal_api_router (20+ endpoints)
+│
+├── leviathan_core/            ← LEVIATHAN v3.1 (módulos Red Team)
+│   ├── modules/               ← scanners(6), exploiters(5), ai(4), reporters(3)
+│   ├── api/                   ← leviathan_router + integration_router
+│   └── config/profiles.json   ← Perfiles de escaneo
+│
+├── kraken/                    ← KRAKEN v3.0 (independiente)
+├── gateway/                   ← Federación mesh (orchestrator + satellite)
+├── honeypot/                  ← Honeypot + canary tokens
+├── backend/modules/
+│   └── enhanced_recon.py      ← Reconocimiento de red optimizado
+└── android/                   ← VpnService Java (captura sin root)
 ```
+
+> ⚠️ **Backend en uso:** `redteam/scripts/dashboard_server.py` es el ÚNICO backend.
+> `backend/dashboard_server.py` es una versión anterior/paralela sin endpoints v2.
+> `source_seal_backend_v3.py` es legacy — NO usar.
 
 ---
 
 ## <a name="arranque"></a>5. Arranque del Backend
 
-### Opción A: Orquestador v3.0 (Recomendado)
+### Opción A: arrancar.sh (Recomendado — Termux)
 ```bash
-python3 source_seal_backend_v3.py
+bash arrancar.sh
 ```
-- Puerto: 8001
-- Docs Swagger: `http://localhost:8001/docs`
-- Incluye: OSINT + ARTO + SEAL + ThreatIntel + WebSocket + Reports
+Hace todo en 7 pasos: wake-lock, git pull, instalar deps, crear .env,
+compilar frontend, matar procesos anteriores, levantar backend en :8001.
 
-### Opción B: Backend dashboard_server (redteam/scripts)
+### Opción B: replit_start.sh (Replit)
 ```bash
-python3 redteam/scripts/dashboard_server.py
+bash replit_start.sh
 ```
-- Puerto: 8001
-- Incluye: OSINT Advanced + Interceptor + ARTO + SEAL
 
-### Opción C: Backend dashboard_server (backend/)
+### Opción C: quickstart.sh (Arranque + tests)
 ```bash
-python3 backend/dashboard_server.py
+bash quickstart.sh
 ```
-- Puerto: 8001
-- Incluye: OSINT Advanced + Interceptor + ARTO + SEAL
+Instala deps, compila frontend, levanta backend y ejecuta smoke tests.
+
+### Opción D: Manual
+```bash
+cd tauri-frontend && npm install --legacy-peer-deps && npm run build && cd ..
+cd redteam/scripts
+export PORT=8001 HOST=0.0.0.0
+python3 dashboard_server.py
+```
+
+→ Abrir `http://localhost:8001` en el navegador.
 
 **⚠️ Solo ejecutar UN backend a la vez (todos usan el puerto 8001).**
 
@@ -174,19 +182,28 @@ python3 backend/dashboard_server.py
 
 ## <a name="config"></a>6. Configuración
 
-### Variables de Entorno
+### Variables de Entorno (.env)
+
+El archivo `.env` se crea automáticamente con `arrancar.sh`.
+Edítalo con `nano .env`:
+
 ```bash
-# Clave de cifrado (auto-generada si no se establece)
-export SEAL_MASTER_KEY="tu-clave-base64-aqui"
+# === API KEYS OSINT (todas tienen tier gratis) ===
 
-# Threat Intelligence (opcional)
-export SHODAN_API_KEY="tu-shodan-key"
-export VIRUSTOTAL_API_KEY="tu-vt-key"
-export ABUSEIPDB_API_KEY="tu-abuseipdb-key"
+# AbuseIPDB: https://www.abuseipdb.com/account/api — gratis, 1000 checks/día
+ABUSEIPDB_KEY=tu-key-aqui
 
-# Red por defecto para escaneos
-# Se puede cambiar desde la API o UI
+# Shodan: https://www.shodan.io/dashboard — cuenta gratis
+SHODAN_API_KEY=tu-key-aqui
+
+# Hunter.io (emails): https://hunter.io/api-keys — opcional
+HUNTER_API_KEY=tu-key-aqui
 ```
+
+> ⚠️ **Importante:** La variable es `ABUSEIPDB_KEY` (sin `_API`).
+> Si una clave no funciona, verifica el nombre exacto en `.env`.
+
+Los módulos funcionan sin keys con fallbacks graceful.
 
 ### Configuración de Red
 El target de pentesting se configura desde:
@@ -199,91 +216,59 @@ El target de pentesting se configura desde:
 
 ## <a name="endpoints"></a>7. API Endpoints
 
-### Escaneo
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| POST | `/api/v1/scan` | Escaneo completo de red |
-| GET | `/api/v1/scan/quick` | Escaneo rápido (solo hosts activos) |
-| GET | `/api/v1/scan/{ip}` | Escaneo de IP específica |
+### Core
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/` | Dashboard HTML |
+| GET | `/api/health` | Estado del servidor |
+| GET | `/api/geo?ip=X` | Geolocalización (ipwho.is) |
+| GET | `/api/intel?ip=X` | Threat score |
+| GET | `/api/iot?ip=X` | Scan IoT de un host |
+| GET | `/api/full?ip=X` | Geo + Intel + IoT combinado |
+| POST | `/api/scan/network` | Scan red /24 (254 hosts) |
+| GET | `/api/scan/network/stream?subnet=X` | Scan red SSE en vivo |
+| POST | `/api/forensics/analyze` | Análisis forense (multipart) |
 
-### OSINT
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/v1/osint?username=X` | Verificar username en 14 plataformas |
-| POST | `/api/v1/osint/batch` | Verificar múltiples usernames |
+### LEVIATHAN (/api/v1/*)
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/v1/status` | Estado completo del sistema |
+| GET | `/api/v1/health` | Health check |
+| GET | `/api/v1/profiles` | Perfiles de escaneo disponibles |
+| POST | `/api/v1/scan/network` | Escaneo de red (con perfil) |
+| POST | `/api/v1/scan/cameras` | Detección de cámaras IP |
+| POST | `/api/v1/scan/rtsp` | Detección RTSP |
+| POST | `/api/v1/exploit/camera` | Explotación (auto-detect vendor) |
+| POST | `/api/v1/ai/threat-scoring` | Puntuación de amenazas |
+| POST | `/api/v1/ai/anomalies` | Detección de anomalías |
+| POST | `/api/v1/report/json` | Informe JSON |
+| POST | `/api/v1/report/html` | Informe HTML |
 
-### ARTO
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/v1/arto/analyze?target=X` | Análisis autónomo |
-| GET | `/api/v1/arto/decision?target=X` | Decisión de ARTO |
-| GET | `/api/v1/arto/predictions?timeframe=24` | Predicciones de ataques |
-| POST | `/api/v1/arto/simulate` | Simular ataque |
-
-### SEAL
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/v1/seal/network-sweep` | Network sweep completo |
-| GET | `/api/v1/seal/hikvision-attack?ip=X` | Ataque Hikvision |
-| GET | `/api/v1/seal/onvif-scan` | Escaneo ONVIF |
-| GET | `/api/v1/seal/fingerprint/{ip}` | Fingerprint de dispositivo |
-
-### Threat Intelligence
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/v1/threat/shodan/{ip}` | Shodan lookup |
-| GET | `/api/v1/threat/virustotal/{ip}` | VirusTotal lookup |
-| GET | `/api/v1/threat/abuseipdb/{ip}` | AbuseIPDB lookup |
-| GET | `/api/v1/threat/all/{ip}` | Todas las fuentes |
-
-### Alertas
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/v1/alerts` | Listar alertas activas |
-| POST | `/api/v1/alerts/{id}/resolve` | Resolver alerta |
-
-### Informes
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/v1/reports` | Listar informes |
-| GET | `/api/v1/reports/{filename}` | Descargar informe |
-
-### Estado
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/v1/health` | Estado del sistema |
-| WS | `/ws/alerts` | WebSocket de alertas en tiempo real |
-
-### ARTO Router (separado)
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/arto/health` | Estado de ARTO |
+### ARTO (/api/arto/*)
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/arto/status` | Estado de ARTO |
 | POST | `/api/arto/start` | Iniciar ARTO |
 | POST | `/api/arto/stop` | Detener ARTO |
-| GET | `/api/arto/operations` | Listar operaciones |
-| POST | `/api/arto/analyze` | Análisis autónomo |
 | POST | `/api/arto/traffic/start` | Iniciar captura VPN |
 | POST | `/api/arto/traffic/stop` | Detener captura |
 | GET | `/api/arto/traffic/stats` | Stats de tráfico |
-| GET | `/api/arto/traffic/packets` | Paquetes capturados |
 | GET | `/api/arto/traffic/analysis` | Análisis de tráfico |
 
-### SEAL Router (separado)
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/devices` | Dispositivos detectados |
-| GET | `/api/scan` | Escaneo de red |
-| GET | `/api/alerts` | Alertas SEAL |
-| GET | `/api/status` | Estado SEAL |
-| GET | `/api/hikvision/scan` | Scan Hikvision |
-| GET | `/api/onvif/scan` | Scan ONVIF |
+### OSINT (/api/osint/*)
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/osint/whois/{domain}` | WHOIS lookup |
+| GET | `/api/osint/dns/{domain}` | DNS recon (A, MX, TXT, NS, SPF, DMARC) |
+| GET | `/api/osint/shodan/{ip}` | Shodan host lookup |
+| GET | `/api/osint/full/{domain}` | OSINT completo |
+| GET | `/api/osint/google?q=` | Google Custom Search |
 
-### Integración
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/integrated/health` | Estado ARTO+SEAL |
-| GET | `/api/integrated/scan` | Scan integrado |
-| POST | `/api/integrated/attack/{ip}` | Ataque integrado |
+### Alertas
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/v1/alerts` | Listar alertas activas |
+| WS | `/ws/alerts` | WebSocket de alertas en tiempo real |
 
 ---
 
@@ -292,15 +277,8 @@ El target de pentesting se configura desde:
 ### Build del frontend
 ```bash
 cd tauri-frontend
-npm install
+npm install --legacy-peer-deps
 npm run build
-```
-
-### Build Android APK (Tauri)
-```bash
-# Requiere Android SDK + NDK
-cd tauri-frontend
-npm run tauri android build
 ```
 
 ### Módulos del Sidebar
@@ -309,72 +287,91 @@ npm run tauri android build
 3. **Threat Intel** - Intel + Exploit + Traffic
 4. **KRAKEN** - OSINT v4.0
 5. **WiFi** - WiFi tools
-6. **Ultrasonidos** - Radio
-7. **Black Mirror** - Surveillance
-8. **Servicios** - Service Control
-9. **Terminal** - Terminal remoto
-10. **Control Tower** - Tower
-11. **Topología** - Network topology
-12. **IoT Cámaras** - IoT cameras
-13. **Alertas** - Alertas en tiempo real
-14. **Exportar** - Export panel
-15. **Config** - System settings
-16. **OSINT Avanzado** - v4.0
-17. **Interceptor Avanzado** - v4.0
-18. **ARTO AI** - Panel de operaciones autónomas (badge: AI)
-19. **SEAL Pack** - Escaneo y ataque (badge: NEW)
+6. **Topología** - Network topology
+7. **IoT Cámaras** - IoT cameras
+8. **Alertas** - Alertas en tiempo real
+9. **ARTO AI** - Panel de operaciones autónomas
+10. **SEAL Pack** - Escaneo y ataque
+11. **OSINT Avanzado** - v4.0
+12. **Interceptor Avanzado** - v4.0
+
+### Build Android APK (Tauri)
+Requiere Android SDK + NDK + keystore configurado.
+Ver `SETUP_FIRMA_APK.md` para instrucciones de firma.
 
 ---
 
 ## <a name="troubleshooting"></a>9. Troubleshooting
 
-### Error: DecisionType.ANALYZE no existe
+### Página vacía / blanco
 ```bash
-# Limpiar caché de bytecode
-find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null
-# Reset a main limpio
-git fetch origin && git reset --hard origin/main
+curl http://localhost:8001/api/health
+# Si no responde:
+pkill -f "dashboard_server.py"
+bash arrancar.sh
 ```
 
-### Error: 405 Method Not Allowed
+### "python3: not found"
 ```bash
-# Los endpoints /api/arto/* requieren que ARTO esté iniciado
-# Verificar: curl http://localhost:8001/api/arto/health
-# Si no responde, iniciar ARTO: curl -X POST http://localhost:8001/api/arto/start
+pkg install -y python
 ```
 
-### Error: Redis connection refused
-El sistema usa Map en memoria por defecto. Redis NO es necesario.
-Si aparece el error, verificar que `sharedStore.ts` use `Map()` y no Redis.
-
-### Error: Port 8001 already in use
-```bash
-# Verificar qué usa el puerto
-lsof -i :8001  # Linux/Mac
-ss -tlnp | grep 8001  # Termux
-# Matar el proceso
-kill -9 <PID>
-```
-
-### Error: module 'arto' has no attribute 'start'
-```bash
-# Verificar que arto/__init__.py existe y tiene la función start
-cat arto/__init__.py | grep "async def start"
-```
-
-### Error: module 'seal' not found
-```bash
-# Verificar estructura
-ls -la seal/__init__.py
-ls -la seal/api/seal_api_router.py
-```
-
-### Frontend no compila
+### El frontend no compila
 ```bash
 cd tauri-frontend
 rm -rf node_modules package-lock.json
-npm install
+npm install --legacy-peer-deps
 npm run build
+```
+
+### Puerto 8001 ocupado
+```bash
+pkill -9 -f dashboard_server.py
+bash arrancar.sh
+```
+
+### AbuseIPDB no devuelve datos
+Verifica que en `.env` la variable se llama `ABUSEIPDB_KEY` (no `ABUSEIPDB_API_KEY`).
+```bash
+grep ABUSEIPDB .env
+# Debe mostrar: ABUSEIPDB_KEY=tu-key
+```
+
+### ARTO no arranca / modo degradado
+```bash
+curl localhost:8001/api/arto/status
+# Si responde error, reiniciar:
+pkill -f dashboard_server.py
+bash arrancar.sh
+```
+
+### Traffic Analyzer muestra error "tcpdump no instalado"
+```bash
+pkg install tcpdump
+```
+
+### Termux se cierra solo
+```bash
+pkg install -y termux-api
+termux-wake-lock
+# Ajustes → Apps → Termux → Batería → Sin restricciones
+```
+
+### git pull falla con conflictos
+```bash
+cd ~/Red-team-tauri
+git stash
+git pull origin main
+git stash pop
+# Si sigue fallando:
+git checkout . && git pull origin main
+```
+
+### Error en memoria SQLite de ARTO
+```bash
+rm -f arto/data/arto_memory.db
+# Reiniciar — se recrea automáticamente
+bash arrancar.sh
 ```
 
 ---
@@ -400,37 +397,29 @@ rm -rf tauri-frontend/node_modules tauri-frontend/dist
 git log --oneline -10
 ```
 
-### Commits recientes (v3.0)
-- `faab425` - SourceSeal Backend v3.0 orquestador completo
-- `a81699f` - SealPanel + sealApi frontend
-- `b43129b` - SEAL integrado en dashboard_server + endpoints
-- `d0f7251` - ARTO 28 archivos Python + frontend
-- `fe6e351` - Desancleado de sourceseal.co (targets configurables)
-- `c52f9d9c` - Seguridad: keystore removido de repo público
-
 ---
 
 ## 📌 Notas Importantes
 
-1. **SOLO un backend a la vez** - Todos usan puerto 8001
-2. **El orquestador v3.0 es el recomendado** - Incluye todo
-3. **SQLite se crea automáticamente** en `~/seal_tactical.db`
-4. **Los informes se guardan** en `~/storage/downloads/seal_reports/`
-5. **WebSocket requiere cliente** - Conectar a `ws://localhost:8001/ws/alerts`
-6. **Threat Intelligence necesita API keys** - Sin keys, devuelve error pero no falla
-7. **OSINT** - 9 plataformas verificables + 5 marcadas como no verificables (Instagram, LinkedIn, X, Facebook, Reddit)
+1. **SOLO un backend a la vez** — Todos usan puerto 8001
+2. **`arrancar.sh` es el arranque recomendado** — Hace todo automáticamente
+3. **`redteam/scripts/dashboard_server.py` es el backend único** — No usar otros
+4. **SQLite se crea automáticamente** — No requiere configuración manual
+5. **WebSocket requiere cliente** — Conectar a `ws://localhost:8001/ws/alerts`
+6. **Threat Intelligence necesita API keys** — Sin keys, devuelve error pero no falla
+7. **OSINT funciona sin keys** — Con fallbacks graceful
 
 ---
 
 ## 🔐 Seguridad
 
 - Cifrado AES-256 Fernet para informes sensibles
-- Keystore removido del repositorio público (commit c52f9d9c)
-- Targets NO hardcoded - configurables desde UI/API
+- Keystore removido del repositorio público
+- Targets NO hardcoded — configurables desde UI/API
 - Token Bearer para autenticación de API
-- Rate limiting en frontend (api.ts interceptor)
+- Zero-PII: emails se hashean con SHA-256 antes de almacenarse
 
 ---
 
-*Última actualización: v3.0 - SourceSeal Red Team*
-*Autor: Harold Paredes / SourceSeal*
+*Última actualización: v6.0 — ARTO + LEVIATHAN UNIFIED (2026-08-21)*
+*Ver también: `MANUAL_OPERATIVO.md` (referencia completa), `GUIA_ARRANQUE.md` (arranque rápido)*

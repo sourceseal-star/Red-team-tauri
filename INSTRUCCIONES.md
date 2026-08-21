@@ -1,40 +1,50 @@
 # ============================================================================
-# Red-Team-Tauri v4.0 — Módulos OSINT e Interceptor Avanzados
+# Red-Team-Tauri v6.0 — Módulos OSINT e Interceptor Avanzados
+# ACTUALIZADO: 2026-08-21
 # ============================================================================
+
+> **Backend único:** `redteam/scripts/dashboard_server.py` (:8001)
+> **Arranque:** `bash arrancar.sh` (Termux) / `bash replit_start.sh` (Replit)
 
 ## Instalación
 
 ```bash
-# 1. Descomprimir el ZIP en la raíz del proyecto
-unzip redteam-modules-v4.0.zip -d /path/to/Red-team-tauri/
+# 1. Clonar (si no existe)
+git clone https://github.com/sourceseal-star/Red-team-tauri.git
+cd Red-team-tauri
 
-# 2. Instalar dependencias
-pip install httpx pydantic fastapi uvicorn python-whois dnspython beautifulsoup4
+# 2. Sincronizar con main
+git fetch origin && git reset --hard origin/main
 
-# 3. Configurar API keys (opcional — los módulos funcionan sin ellas con fallbacks)
-export SHODAN_API_KEY="tu-key"
-export VIRUSTOTAL_API_KEY="tu-key"
-export ABUSEIPDB_API_KEY="tu-key"
-export CENSYS_API_ID="tu-id"
-export CENSYS_API_SECRET="tu-secret"
-export GOOGLE_API_KEY="tu-key"
-export GOOGLE_CSE_ID="tu-cse-id"
-export GITHUB_TOKEN="tu-token"
-
-# 4. Reiniciar el backend
-python3 backend/dashboard_server.py
+# 3. Arrancar (instala todo automáticamente)
+bash arrancar.sh
 ```
 
-## Endpoints nuevos
+## Configurar API Keys (opcional — todo funciona sin ellas con fallbacks)
 
-### OSINT Advanced (`/api/osint/*`)
+Editar `.env` en la raíz del repo:
+
+```bash
+nano .env
+```
+
+```bash
+ABUSEIPDB_KEY=tu-key       # https://www.abuseipdb.com/account/api (1000 checks/día gratis)
+SHODAN_API_KEY=tu-key      # https://www.shodan.io/dashboard (cuenta gratis)
+HUNTER_API_KEY=tu-key      # https://hunter.io/api-keys (opcional, emails OSINT)
+```
+
+> ⚠️ La variable es `ABUSEIPDB_KEY` (sin `_API`).
+
+## Endpoints OSINT Advanced (`/api/osint/*`)
+
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/osint/whois/{domain}` | WHOIS lookup |
 | GET | `/api/osint/dns/{domain}` | DNS recon (A, MX, TXT, NS, SPF, DMARC) |
 | POST | `/api/osint/subdomains` | Enumeración de subdominios |
 | GET | `/api/osint/threat-intel/{ip}` | Threat intelligence (AbuseIPDB, geo) |
-| POST | `/api/osint/email` | Email OSINT (MX, SPF, DMARC, hash) |
+| POST | `/api/osint/email` | Email OSINT (MX, SPF, DMARC, hash SHA-256) |
 | GET | `/api/osint/headers?url=` | HTTP header fingerprinting |
 | GET | `/api/osint/full/{domain}` | OSINT completo (WHOIS + DNS + subdominios) |
 | GET | `/api/osint/results` | Resultados guardados en BD |
@@ -43,7 +53,8 @@ python3 backend/dashboard_server.py
 | GET | `/api/osint/virustotal/{indicator}` | VirusTotal lookup |
 | POST | `/api/osint/social` | Social media username search |
 
-### Interceptor Advanced (`/api/interceptor/*`)
+## Endpoints Interceptor Advanced (`/api/interceptor/*`)
+
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | POST | `/api/interceptor/analyze/request` | Analizar request HTTP |
@@ -68,10 +79,13 @@ python3 backend/dashboard_server.py
 - NIST SP 800-115 (Technical Guide to Information Security Testing)
 - NIST SP 800-150 (Guide to Cyber Threat Information Sharing)
 - NIST SP 800-94 (Guide to Intrusion Detection and Prevention Systems)
-- NIST SP 800-92 (Guide to Computer Security Log Management)
 - MITRE ATT&CK T1190 (Exploit Public-Facing Application)
 - MITRE ATT&CK T1592 (Gather Victim Host Info)
 
 ## Arquitectura Zero-PII
 Todos los emails se hashean con SHA-256 antes de almacenarse.
 No se guarda contenido de payloads, solo metadatos y alertas.
+
+---
+
+*Ver también: `MANUAL_OPERATIVO.md` (referencia completa 995 líneas), `GUIA_ARRANQUE.md` (arranque rápido)*
