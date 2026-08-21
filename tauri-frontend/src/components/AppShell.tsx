@@ -1,7 +1,7 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import {
   LayoutDashboard, Shield, Camera, Radio, Globe, Wifi, Activity,
-  Terminal, Settings, Bell, Search, Menu, X, ChevronRight, Download, Camera,
+  Terminal, Settings, Bell, Search, Menu, X, ChevronRight, Download,
   Zap, Lock, Eye, Fingerprint, Bug, FileText, Network,
   Sun, Moon, LogOut, Cpu
 } from 'lucide-react'
@@ -264,8 +264,9 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
             </button>
 
             <button 
-              onClick={() => addToast({ type: 'info', title: 'Sin notificaciones nuevas' })}
+              onClick={() => onNavigate('alerts')}
               className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 relative transition-colors"
+              title="Ver alertas"
             >
               <Bell size={16} />
               <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-red-400 rounded-full" />
