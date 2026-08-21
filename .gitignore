@@ -81,3 +81,8 @@ tauri-frontend/dist/
 *.egg-info/
 .eggs/
 build/
+
+# ARTO runtime data (se regenera en cada arranque, no debe versionarse)
+redteam/scripts/arto_knowledge.json
+redteam/scripts/evidence/osint_results.db
+redteam/scripts/evidence/*.db
