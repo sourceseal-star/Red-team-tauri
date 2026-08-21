@@ -273,15 +273,23 @@ except Exception as _seal_err:
 _LEVIATHAN_OK = False
 try:
     sys.path.insert(0, str(BASE.parent))
+    import leviathan_core
     from leviathan_core.api.leviathan_router import router as leviathan_router
-    app.include_router(leviathan_router)
     from leviathan_core.api.integration_router import router as leviathan_integration
+    app.include_router(leviathan_router)
     app.include_router(leviathan_integration)
     _LEVIATHAN_OK = True
-    print("[LEVIATHAN] Router montado: /api/leviathan/* + /api/v1/* (unified)")
+    print("[LEVIATHAN] Router montado: /api/leviathan/* + /api/v1/* (unified)", flush=True)
+except ImportError as _lev_err:
+    import traceback
+    print(f"[WARN] LEVIATHAN import falló (ImportError): {_lev_err}", flush=True)
+    traceback.print_exc()
+    _LEVIATHAN_OK = False
 except Exception as _lev_err:
-    print(f"[WARN] LEVIATHAN import falló: {_lev_err}", flush=True)
-    print(f"[WARN] LEVIATHAN import falló: {_lev_err}", flush=True)
+    import traceback
+    print(f"[WARN] LEVIATHAN import falló (Exception): {_lev_err}", flush=True)
+    traceback.print_exc()
+    _LEVIATHAN_OK = False
 
 # ── Endpoints de integración ARTO + SEAL ──────────────────────────────────
 @app.get("/api/integrated/health")

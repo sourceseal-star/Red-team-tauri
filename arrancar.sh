@@ -56,9 +56,12 @@ python3 -c "import qrcode, reportlab" 2>/dev/null || {
   pip install -q qrcode reportlab 2>&1 | tail -2
 }
 echo -e "${G}  OK Python listo${N}"
-# LEVIATHAN dependencias (opcionales)
-python3 -c "import aiohttp, requests" 2>/dev/null || {
-  pip install -q aiohttp requests 2>&1 | tail -2
+# LEVIATHAN dependencias
+python3 -c "import aiohttp" 2>/dev/null || {
+  pip install -q aiohttp 2>&1 | tail -2
+}
+python3 -c "import requests" 2>/dev/null || {
+  pip install -q requests 2>&1 | tail -2
 }
 echo -e "${G}  OK LEVIATHAN deps verificadas${N}"
 
@@ -234,14 +237,9 @@ echo -e "${C}  ╔════════════════════�
 echo -e "${C}  ║  🦑 LEVIATHAN v3.0 — Módulos de Red Team             ║${N}"
 echo -e "${C}  ╠══════════════════════════════════════════════════════╣${N}"
 echo -e "${C}  │  22 módulos: scanners, exploiters, AI, reporters    │${N}"
-echo -e "${C}  │  API: /api/leviathan/* (router opcional)              │${N}"
-echo -e "${C}  │                                                      │${N}"
-echo -e "${C}  │  Activar en dashboard_server.py:                     │${N}"
-echo -e "${C}  │    from leviathan_core.api.leviathan_router import   │${N}"
-echo -e "${C}  │        router as leviathan_router                    │${N}"
-echo -e "${C}  │    app.include_router(leviathan_router)              │${N}"
-echo -e "${C}  │                                                      │${N}"
-echo -e "${C}  │  Frontend: cd leviathan-frontend && npm run dev      │${N}"
+echo -e "${C}  │  Auto-montado en dashboard_server.py                │${N}"
+echo -e "${C}  │  API: /api/leviathan/* + /api/v1/*                   │${N}"
+echo -e "${C}  │  Panel: sidebar → LEVIATHAN                          │${N}"
 echo -e "${C}  │  Guía: leviathan_core/README.md                      │${N}"
 echo -e "${C}  ╚══════════════════════════════════════════════════════╝${N}"
 echo ""

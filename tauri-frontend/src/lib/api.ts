@@ -456,7 +456,7 @@ export interface WiFiScanResult {
 //
 if (typeof window !== 'undefined') {
   const _origFetch = window.fetch.bind(window)
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : (input as Request).url || String(input)
     // Solo inyectar auth en peticiones a nuestra API
     if (url.includes('/api/') || url.startsWith('/api')) {
@@ -471,6 +471,16 @@ if (typeof window !== 'undefined') {
         }
       }
     }
-    return _origFetch(input, init)
+    const response = await _origFetch(input, init)
+    // Detectar 401 — token invalido o expirado. Limpiar y recargar para
+    // que el usuario vuelva a hacer login con el token actual.
+    if (response.status === 401 && !url.includes('/api/auth/')) {
+      clearApiKey()
+      // Solo recargar si no estamos ya en el login
+      if (!window.location.pathname.includes('login')) {
+        setTimeout(() => window.location.reload(), 100)
+      }
+    }
+    return response
   }
 }
