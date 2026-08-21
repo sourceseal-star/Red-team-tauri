@@ -1,7 +1,11 @@
 #!/bin/bash
 # =====================================================================
-# SourceSeal / Red-Team-Tauri -- Arranque unificado para Replit
+# SourceSeal / Red-Team-Tauri -- Arranque unificado para Replit v6.0
 # Backend + Frontend (dist/) en un solo proceso, puerto :8001
+#
+# SEAL SUPER PACK y KRAKEN están disponibles en el repo pero NO se
+# ejecutan automáticamente — son módulos independientes para uso en
+# Termux o para montar manualmente en el dashboard si se decide.
 # =====================================================================
 set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -9,7 +13,7 @@ PORT=8001
 
 echo ""
 echo "======================================================"
-echo "  SourceSeal Engine -- Replit (v3.0-unified)"
+echo "  SourceSeal Engine v6.0 -- Replit (unified)"
 echo "======================================================"
 
 # -- 1. Matar CUALQUIER proceso zombie en el puerto --
@@ -87,12 +91,18 @@ if [ "$READY" != "1" ]; then
   exit 1
 fi
 
+echo ""
 echo "[start] Sistema unificado corriendo:"
 echo "        -> Backend + Frontend: http://0.0.0.0:$PORT"
 echo "        -> Scanner: REAL (cero mocks)"
-echo "        -> ARTO AI: AUTO-START (motor autónomo de operaciones)"
+echo "        -> ARTO AI: AUTO-START (motor autonomo de operaciones)"
 echo "        -> Health: http://localhost:$PORT/api/health"
 echo "        -> ARTO Status: http://localhost:$PORT/api/arto/status"
+echo ""
+echo "[start] Modulos independientes disponibles (no auto-iniciados):"
+echo "        -> SEAL SUPER PACK v2.1: seal/docs/README.md"
+echo "        -> KRAKEN v3.0:          kraken/docs/README.md"
+echo ""
 
 cleanup() {
   echo "[start] Apagando..."
