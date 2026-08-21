@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 class DetectedCamera:
     """Representa una cámara IP detectada."""
     ip: str
-    port: int
+    port: int = 0
     vendor: Optional[str] = None
     model: Optional[str] = None
     firmware_version: Optional[str] = None

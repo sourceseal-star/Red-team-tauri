@@ -323,7 +323,10 @@ async def report_json(target: str, data: Dict = None):
     if not reporter:
         raise HTTPException(404, "json_reporter no disponible")
     try:
-        result = await asyncio.to_thread(reporter.generate, target, data or {})
+        if asyncio.iscoroutinefunction(reporter.generate):
+            result = await reporter.generate(target, data or {})
+        else:
+            result = await asyncio.to_thread(reporter.generate, target, data or {})
         return {"success": True, "data": result}
     except Exception as e:
         raise HTTPException(500, str(e)[:300])
@@ -336,7 +339,10 @@ async def report_html(target: str, data: Dict = None):
     if not reporter:
         raise HTTPException(404, "html_reporter no disponible")
     try:
-        result = await asyncio.to_thread(reporter.generate, target, data or {})
+        if asyncio.iscoroutinefunction(reporter.generate):
+            result = await reporter.generate(target, data or {})
+        else:
+            result = await asyncio.to_thread(reporter.generate, target, data or {})
         return {"success": True, "data": result}
     except Exception as e:
         raise HTTPException(500, str(e)[:300])

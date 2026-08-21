@@ -264,7 +264,10 @@ async def generate_report(req: ReportRequest):
     if not reporter:
         raise HTTPException(404, f"Reporter '{req.format}' no encontrado. Disponibles: {[r.name for r in _reporters]}")
     try:
-        result = await asyncio.to_thread(reporter.generate, req.target, req.context or {})
+        if asyncio.iscoroutinefunction(reporter.generate):
+            result = await reporter.generate(req.target, req.context or {})
+        else:
+            result = await asyncio.to_thread(reporter.generate, req.target, req.context or {})
         return {"format": req.format, "target": req.target, "result": result}
     except Exception as e:
         raise HTTPException(500, str(e)[:200])

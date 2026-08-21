@@ -26,6 +26,19 @@ class JSONReport:
     findings: Dict = field(default_factory=dict)
     recommendations: List[str] = field(default_factory=list)
 
+    def to_dict(self) -> Dict:
+        """Convierte a diccionario para serializacion JSON."""
+        return {
+            "title": self.title,
+            "target": self.target,
+            "scan_type": self.scan_type,
+            "timestamp": self.timestamp,
+            "duration": self.duration,
+            "summary": self.summary,
+            "findings": self.findings,
+            "recommendations": self.recommendations
+        }
+
 
 class JSONReporter:
     """Generador de informes JSON."""
