@@ -1,38 +1,41 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # =====================================================================
-# SourceSeal Console — ARRANQUE COMPLETO EN UN SOLO COMANDO
+# SourceSeal Console v6.0 — ARRANQUE COMPLETO EN UN SOLO COMANDO
 # Instala deps, configura API keys, compila frontend, levanta backend
 # Uso:  bash arrancar.sh
+#
+# El dashboard (dashboard_server.py) es el ÚNICO backend que arranca.
+# SEAL y KRAKEN son módulos independientes — ver info al final del script.
 # =====================================================================
 set -e
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'; B='\033[0;34m'; N='\033[0m'
+R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'; B='\033[0;34m'; M='\033[0;35m'; N='\033[0m'
 PORT="${PORT:-8001}"
 
 banner() { echo -e "\n${C}══════════════════════════════════════════════════${N}"; echo -e "${G}  $1${N}"; echo -e "${C}══════════════════════════════════════════════════${N}\n"; }
 
-banner "SourceSeal Console — Arranque Completo"
+banner "SourceSeal Console v6.0 — Arranque Completo"
 
 # ─── 1. WAKE LOCK ──────────────────────────────────────────────────────
 if command -v termux-wake-lock >/dev/null 2>&1; then
-  termux-wake-lock 2>/dev/null && echo -e "${G}[1/7] Wake-lock activo${N}"
+  termux-wake-lock 2>/dev/null && echo -e "${G}[1/8] Wake-lock activo${N}"
 else
-  echo -e "${Y}[1/7] Instala termux-api: pkg install termux-api${N}"
+  echo -e "${Y}[1/8] Instala termux-api: pkg install termux-api${N}"
 fi
 
 # ─── 2. GIT PULL ──────────────────────────────────────────────────────
-echo -e "${C}[2/7] Sincronizando código...${N}"
+echo -e "${C}[2/8] Sincronizando código...${N}"
 git stash 2>/dev/null || true
 git pull origin main 2>&1 | tail -2
 git stash pop 2>/dev/null || true
 echo -e "${G}  OK Código actualizado${N}"
 
 # ─── 3. DEPENDENCIAS SISTEMA ───────────────────────────────────────────
-echo -e "${C}[3/7] Verificando dependencias del sistema...${N}"
-pkg install -y python nodejs-lts git nmap whois bind-utils openssl-tool jq curl tcpdump 2>/dev/null | tail -3 || true
+echo -e "${C}[3/8] Verificando dependencias del sistema...${N}"
+pkg install -y python nodejs-lts git nmap whois bind-utils openssl-tool jq curl tcpdump iproute2 2>/dev/null | tail -3 || true
 # numpy via pkg (NUNCA pip en Termux/aarch64)
 if ! python3 -c "import numpy" 2>/dev/null; then
   pkg install -y python-numpy 2>/dev/null || true
@@ -40,14 +43,18 @@ fi
 echo -e "${G}  OK Sistema listo${N}"
 
 # ─── 4. DEPENDENCIAS PYTHON ──────────────────────────────────────────
-echo -e "${C}[4/7] Verificando dependencias Python...${N}"
+echo -e "${C}[4/8] Verificando dependencias Python...${N}"
 python3 -c "import fastapi, uvicorn, httpx, pydantic, psutil, aiohttp" 2>/dev/null || {
   pip install -q fastapi uvicorn httpx pydantic psutil aiohttp 2>&1 | tail -3
+}
+# cryptography — necesario para SEAL tactical engine (reportes cifrados)
+python3 -c "import cryptography" 2>/dev/null || {
+  pip install -q cryptography 2>&1 | tail -2
 }
 echo -e "${G}  OK Python listo${N}"
 
 # ─── 5. .ENV + API KEYS ───────────────────────────────────────────────
-echo -e "${C}[5/7] Configurando .env y API keys...${N}"
+echo -e "${C}[5/8] Configurando .env y API keys...${N}"
 
 if [ ! -f "$ROOT/.env" ]; then
   API_KEY=$(openssl rand -hex 24)
@@ -99,7 +106,7 @@ else
 fi
 
 # ─── 6. FRONTEND ──────────────────────────────────────────────────────
-echo -e "${C}[6/7] Compilando frontend...${N}"
+echo -e "${C}[6/8] Compilando frontend...${N}"
 cd "$ROOT/tauri-frontend"
 if [ ! -d "node_modules" ]; then
   npm install --legacy-peer-deps 2>&1 | tail -3
@@ -116,7 +123,7 @@ cd "$ROOT"
 echo -e "${G}  OK Frontend compilado y copiado${N}"
 
 # ─── 7. ARRANCAR BACKEND ──────────────────────────────────────────────
-echo -e "${C}[7/7] Arrancando backend...${N}"
+echo -e "${C}[7/8] Arrancando backend...${N}"
 
 # FIX CRITICO: "pkill + sleep 1" no garantizaba que el proceso viejo
 # soltara el puerto a tiempo. Si el nuevo proceso arrancaba con el puerto
@@ -165,7 +172,7 @@ IP_LOCAL=$(ip addr show wlan0 2>/dev/null | grep 'inet ' | awk '{print $2}' | cu
 
 echo ""
 echo -e "${G}╔══════════════════════════════════════════════════╗${N}"
-echo -e "${G}║  ✅ SOURCESEAL CONSOLE LISTO                     ║${N}"
+echo -e "${G}║  ✅ SOURCESEAL CONSOLE v6.0 LISTO                 ║${N}"
 echo -e "${G}║                                                  ║${N}"
 echo -e "${G}║  Navegador:  http://localhost:${PORT}             ║${N}"
 echo -e "${G}║  WiFi:       http://${IP_LOCAL}:${PORT}            ║${N}"
@@ -173,18 +180,45 @@ echo -e "${G}║                                                  ║${N}"
 echo -e "${G}║  Ctrl+C para detener                              ║${N}"
 echo -e "${G}╚══════════════════════════════════════════════════╝${N}"
 echo ""
-echo -e "${C}Endpoints disponibles:${N}"
-echo -e "  ${G}ARTO AI:${N}          curl localhost:${PORT}/api/arto/status"
+echo -e "${C}Endpoints principales:${N}"
+echo -e "  ${G}Health:${N}           curl localhost:${PORT}/api/health"
+echo -e "  ${G}ARTO status:${N}      curl localhost:${PORT}/api/arto/status"
 echo -e "  ${G}ARTO iniciar:${N}     curl -X POST localhost:${PORT}/api/arto/start"
-echo -e "  ${G}ARTO operación:${N}   curl -X POST localhost:${PORT}/api/arto/operation/scan -H 'Content-Type: application/json' -d '{\"target\":\"192.168.1.1\"}'"
-echo -e "  Investigar IP:    curl localhost:${PORT}/api/investigate/ip/190.X.X.X"
-echo -e "  Investigar camara: curl localhost:${PORT}/api/investigate/camera/190.X.X.X"
-echo -e "  Geo IP:           curl localhost:${PORT}/api/geo?ip=190.X.X.X"
-echo -e "  Threat Intel:     curl localhost:${PORT}/api/intel?ip=190.X.X.X"
-echo -e "  WHOIS:            curl localhost:${PORT}/api/osint/whois/dominio.com"
-echo -e "  Subdominios:      curl localhost:${PORT}/api/osint/subdomains/dominio.com?brute=true"
+echo -e "  ${G}OSINT WHOIS:${N}      curl -H 'Authorization: Bearer TOKEN' localhost:${PORT}/api/osint/whois/dominio.com"
+echo -e "  ${G}Geo IP:${N}           curl -H 'Authorization: Bearer TOKEN' 'localhost:${PORT}/api/geo?ip=8.8.8.8'"
 echo ""
 
 cd "$ROOT/redteam/scripts"
 export $(grep -v '^#' "$ROOT/.env" | xargs)
-exec python3 dashboard_server.py
+exec python3 dashboard_server.py &
+
+# ─── 8. INFO MÓDULOS OPCIONALES ───────────────────────────────────────
+echo -e "${C}[8/8] Módulos independientes disponibles:${N}"
+echo ""
+echo -e "${M}  ┌─ 🔱 SEAL SUPER PACK v2.1 ────────────────────────────┐${N}"
+echo -e "${M}  │ Escaneo de red, cámaras IP, explotación Hikvision    │${N}"
+echo -e "${M}  │                                                      │${N}"
+echo -e "${M}  │   python3 seal/scanners/network_sweep_ultimate.py \\  │${N}"
+echo -e "${M}  │     --network 192.168.0.0/24                         │${N}"
+echo -e "${M}  │                                                      │${N}"
+echo -e "${M}  │   python3 -m seal.core.tactical_engine \\             │${N}"
+echo -e "${M}  │     --network 192.168.0.0/24                         │${N}"
+echo -e "${M}  │                                                      │${N}"
+echo -e "${M}  │   python3 seal/attackers/hikvision_killer.py \\       │${N}"
+echo -e "${M}  │     192.168.0.7 --brute                              │${N}"
+echo -e "${M}  │                                                      │${N}"
+echo -e "${M}  │   Guía: seal/docs/README.md                          │${N}"
+echo -e "${M}  └──────────────────────────────────────────────────────┘${N}"
+echo ""
+echo -e "${B}  ┌─ 🐙 KRAKEN v3.0 ──────────────────────────────────────┐${N}"
+echo -e "${B}  │ Motor de explotación autónomo (SSH, SMB, etc.)       │${N}"
+echo -e "${B}  │                                                      │${N}"
+echo -e "${B}  │   cd kraken && bash termux_install.sh                │${N}"
+echo -e "${B}  │   python3 -m kraken.cli.commands --help              │${N}"
+echo -e "${B}  │                                                      │${N}"
+echo -e "${B}  │   Guía: kraken/docs/README.md                        │${N}"
+echo -e "${B}  └──────────────────────────────────────────────────────┘${N}"
+echo ""
+echo -e "${Y}  ℹ️  Estos módulos NO se ejecutan automáticamente.${N}"
+echo -e "${Y}     El dashboard (:${PORT}) es el único proceso activo.${N}"
+echo ""
