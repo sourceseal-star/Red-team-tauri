@@ -8,6 +8,7 @@ import OSINTPanel from './OSINTPanel';
 import WiFiPanel from './WiFiPanel';
 import BlackMirrorPanel from './BlackMirrorPanel';
 import ServiceControlPanel from './ServiceControlPanel';
+import LeviathanWidget from './LeviathanWidget';
 
 // Paneles disponibles para el War Room
 const PANELS = [
@@ -19,6 +20,7 @@ const PANELS = [
   { id: 'wifi', label: 'WiFi', component: WiFiPanel, default: false, span: 'lg:col-span-1' },
   { id: 'mirror', label: 'Black Mirror', component: BlackMirrorPanel, default: false, span: 'lg:col-span-1' },
   { id: 'services', label: 'Servicios', component: ServiceControlPanel, default: false, span: 'lg:col-span-2' },
+  { id: 'leviathan', label: 'LEVIATHAN', component: LeviathanWidget, default: true, span: 'lg:col-span-2 lg:row-span-2' },
 ];
 
 export default function WarRoom() {
