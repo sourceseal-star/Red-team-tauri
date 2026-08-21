@@ -1,0 +1,47 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="kraken",
+    version="3.0.0",
+    description="Motor de Explotación Autónomo con IA y Automatización",
+    author="Sealclient",
+    author_email="sealclient@protonmail.com",
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
+    python_requires=">=3.8",
+    install_requires=[
+        "click>=8.0",
+        "fastapi>=0.95",
+        "uvicorn>=0.22",
+        "sqlalchemy>=2.0",
+        "pymongo>=4.3",
+        "redis>=4.5",
+        "python-nmap>=0.7",
+        "masscan>=1.0",
+        "requests>=2.28",
+        "python-json-logger>=2.0",
+        "pydantic>=2.0",
+        "weasyprint>=58.0",
+        "streamlit>=1.25",
+        "pandas>=2.0",
+        "plotly>=5.14",
+        "scikit-learn>=1.2",
+        "python-dotenv>=1.0",
+        "pyyaml>=6.0",
+        "passlib>=1.7",
+        "cryptography>=41.0",
+    ],
+    entry_points={
+        "console_scripts": [
+            "kraken=kraken.cli.commands:main",
+            "kraken-api=kraken.api.app:main",
+            "kraken-web=kraken.web.app:main",
+        ],
+    },
+    include_package_data=True,
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+    ],
+)
