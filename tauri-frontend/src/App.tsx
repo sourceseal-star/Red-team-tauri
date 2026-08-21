@@ -27,6 +27,7 @@ import { LanguageProvider } from './i18n/LanguageContext';
 import { ARTOProvider } from './components/ARTOProvider';
 import ARTOPanel from './components/ARTOPanel';
 import SealPanel from './components/SealPanel';
+import LeviathanPanel from './components/LeviathanPanel';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -63,6 +64,7 @@ function App() {
       {module === 'interceptor' && <InterceptorAdvancedPanel />}
       {module === 'arto' && <ARTOPanel />}
       {module === 'seal' && <SealPanel />}
+      {module === 'leviathan' && <LeviathanPanel />}
     </AppShell>
     </ARTOProvider>
     </LanguageProvider>
