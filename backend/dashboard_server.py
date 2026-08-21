@@ -2453,40 +2453,46 @@ async def scan_start(payload: Dict[str, Any] = Body(default={})):
     SCAN_STATE["progress"] = "0%"
     SCAN_STATE["last_error"] = None
 
-    nmap_bin = shutil.which("nmap")
-    if nmap_bin:
-        try:
-            result = subprocess.run(
-                [nmap_bin, "-sn", target],
-                capture_output=True, text=True, timeout=60,
-            )
-            hosts = [l for l in result.stdout.split("\n") if "Nmap scan report" in l]
-            SCAN_STATE["last_result"] = {"target": target, "hosts_found": len(hosts), "raw": result.stdout[:2000]}
-        except subprocess.TimeoutExpired:
-            SCAN_STATE["last_error"] = "nmap timeout"
-        except Exception as e:
-            SCAN_STATE["last_error"] = str(e)
-    else:
-        # Fallback sin nmap: ping manual
-        try:
-            base = target.split("/")[0]
-            prefix = ".".join(base.split(".")[:3])
-            hosts_found = 0
-            for i in range(1, 255):
-                ip = f"{prefix}.{i}"
-                try:
-                    result = subprocess.run(
-                        ["ping", "-c", "1", "-W", "1", ip],
-                        capture_output=True, text=True, timeout=2,
-                    )
-                    if result.returncode == 0:
-                        hosts_found += 1
-                    SCAN_STATE["progress"] = f"{int(i/254*100)}%"
-                except Exception:
-                    pass
-            SCAN_STATE["last_result"] = {"target": target, "hosts_found": hosts_found}
-        except Exception as e:
-            SCAN_STATE["last_error"] = str(e)
+    # TCP probe sin root — mismo patron que scan_cameras y topology
+    # nmap -sn requiere raw sockets (root) en Termux; ping ICMP tambien
+    # puede fallar. TCP connect funciona sin privilegios.
+    import asyncio as _aio
+    try:
+        base = target.split("/")[0]
+        prefix = ".".join(base.split(".")[:3])
+        probe_ports = [80, 443, 22, 554, 8080, 8000]
+        sem = _aio.Semaphore(50)
+
+        async def _probe_host_tcp(ip: str):
+            async with sem:
+                for port in probe_ports:
+                    try:
+                        _, writer = await _aio.wait_for(
+                            _aio.open_connection(ip, port), timeout=0.4
+                        )
+                        writer.close()
+                        try:
+                            await writer.wait_closed()
+                        except Exception:
+                            pass
+                        return ip
+                    except Exception:
+                        continue
+                return None
+
+        tasks = [_probe_host_tcp(f"{prefix}.{i}") for i in range(1, 255)]
+        results = await _aio.gather(*tasks)
+        hosts_up = [ip for ip in results if ip]
+
+        # Actualizar progreso
+        SCAN_STATE["progress"] = "100%"
+        SCAN_STATE["last_result"] = {
+            "target": target,
+            "hosts_found": len(hosts_up),
+            "hosts": [{"ip": ip} for ip in hosts_up],
+        }
+    except Exception as e:
+        SCAN_STATE["last_error"] = str(e)
 
     SCAN_STATE["running"] = False
     SCAN_STATE["progress"] = "100%"
