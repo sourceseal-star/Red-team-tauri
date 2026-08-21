@@ -5,6 +5,34 @@ Sistema de operaciones de red team con **ARTO** (AI autónomo) + **SEAL SUPER PA
 Backend Python/FastAPI · Frontend React/Vite/TypeScript · Sin mocks · Sin dummy data.
 
 ---
+## 🦑 LEVIATHAN v3.0 — Sistema de Módulos
+
+Sistema modular de red team con 22 módulos: scanners, exploiters, AI analyzers y reporters.
+
+- **Backend:** `leviathan_core/` — módulos Python + FastAPI router (`/api/leviathan/*`)
+- **Frontend:** `leviathan-frontend/` — React 18 + Redux + Vite + Chart.js + Leaflet
+- **Aislamiento:** No modifica ni importa kraken/, seal/, o redteam/
+- **Persistencia:** Tablas `leviathan_*` en redteam.db (no interfiere con existentes)
+
+### Activar router en dashboard_server.py
+```python
+from leviathan_core.api.leviathan_router import router as leviathan_router
+app.include_router(leviathan_router)
+```
+
+### Documentación
+- `leviathan_core/README.md` — Arquitectura, endpoints, instalación
+- `leviathan_core/docs/MANUAL_OPERATIVO.md` — Flujo operativo, dependencias, Termux
+
+### Frontend
+```bash
+cd leviathan-frontend && npm install && npm run dev
+# Docker: docker build -t leviathan-frontend . && docker run -p 80:80 leviathan-frontend
+```
+
+---
+
+
 
 ## 🚀 ARRANQUE RÁPIDO — UN SOLO COMANDO
 
