@@ -1,5 +1,5 @@
 # 🛡️ MANUAL OPERATIVO — Red-Team-Tauri / SourceSeal
-## SourceSeal Console v5.0 — ARTO
+## SourceSeal Console v6.0 — ARTO + LEVIATHAN UNIFIED
 
 > **Backend Python/FastAPI + frontend React/Vite.**
 > El arranque unificado sirve API y frontend real en el puerto 8001.
@@ -160,7 +160,7 @@ ifconfig wlan0
 
 ```bash
 curl http://localhost:8001/api/health
-# Respuesta: {"status":"ok","version":"3.0-unified",...}
+# Respuesta: {"status":"ok","version":"4.0-unified",...}
 ```
 
 ### Configurar API Keys OSINT
@@ -732,7 +732,164 @@ Red-team-tauri/
 └── docs/
 ```
 
-## 9. CHANGELOG
+## 9. LEVIATHAN UNIFIED — MÓDULOS DE RED TEAM
+## 10. DETECCIÓN DE OBJETOS CON IA (ONNX)
+## 11. VERIFICACIÓN DE MÓDULOS
+
+## 9. LEVIATHAN UNIFIED — MÓDULOS DE RED TEAM
+
+### 9.1 ¿Qué es LEVIATHAN?
+
+LEVIATHAN v3.1 es el sistema de módulos de Red Team integrado en el dashboard.
+Se monta via `include_router` en `dashboard_server.py` — si falla, el dashboard sigue funcionando.
+
+**Dos routers activos:**
+- `/api/leviathan/*` — Router básico (CRUD de cameras/scans/alerts)
+- `/api/v1/*` — Router unificado (scanners, exploiters, AI, reporters)
+
+### 9.2 Arquitectura
+
+```
+leviathan_core/
+├── core/engine.py              # Motor de ejecución
+├── modules/
+│   ├── scanners/ (6)           # network, rtsp, onvif, http_fingerprint, camera, service
+│   ├── exploiters/ (5)         # hikvision_rce, dahua_backdoor, generic_brute, kraken, chain
+│   ├── ai_analyzers/ (4)       # object_detection, anomaly, behavior, threat_scoring
+│   └── reporters/ (3)          # json, html, pdf
+├── api/
+│   ├── leviathan_router.py     # /api/leviathan/*
+│   └── integration_router.py  # /api/v1/* (unificado)
+├── config/profiles.json        # Perfiles de escaneo + OPSEC + camera defaults
+└── tools/
+    ├── convert_yolo_onnx.py   # Conversión YOLOv8 a ONNX (para PC)
+    └── verify_modules.py      # Verificador de módulos
+```
+
+### 9.3 Endpoints LEVIATHAN (/api/v1/*)
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/api/v1/status` | Estado completo del sistema |
+| GET | `/api/v1/health` | Health check |
+| GET | `/api/v1/profiles` | Perfiles de escaneo disponibles |
+| POST | `/api/v1/scan/network` | Escaneo de red (con perfil) |
+| POST | `/api/v1/scan/cameras` | Detección de cámaras IP |
+| POST | `/api/v1/scan/rtsp` | Detección RTSP |
+| POST | `/api/v1/scan/onvif` | Detección ONVIF |
+| POST | `/api/v1/scan/services` | Escaneo de servicios |
+| POST | `/api/v1/exploit/camera` | Explotación (auto-detect vendor) |
+| POST | `/api/v1/exploit/chain` | Cadena de exploits |
+| POST | `/api/v1/ai/threat-scoring` | Puntuación de amenazas |
+| POST | `/api/v1/ai/anomalies` | Detección de anomalías |
+| POST | `/api/v1/ai/behavior` | Análisis de comportamiento |
+| POST | `/api/v1/report/json` | Informe JSON |
+| POST | `/api/v1/report/html` | Informe HTML |
+
+### 9.4 Perfiles de Escaneo (profiles.json)
+
+| Perfil | Concurrencia | Jitter | Uso |
+|--------|-------------|--------|-----|
+| stealth | 5 | 2-5s | Bajo riesgo de detección |
+| aggressive | 50 | 0.1-0.5s | Alto rendimiento |
+| massive | 200 | 0.05-0.2s | Miles de IPs |
+| camera_detection | 20 | 0.5-1.5s | Cámaras IP (puertos 80,443,554,8000,8080,37777) |
+
+### 9.5 Estado en el banner de arranque
+
+Al arrancar verás:
+```
+[LEVIATHAN] Router montado: /api/leviathan/* + /api/v1/* (unified)
+→ LEVIATHAN: OK
+```
+
+Si LEVIATHAN falla, el dashboard sigue funcionando y muestra `→ LEVIATHAN: NOT AVAILABLE`.
+
+## 10. DETECCIÓN DE OBJETOS CON IA (ONNX)
+
+### 10.1 ¿Por qué ONNX y no ultralytics?
+
+PyTorch (dependencia de ultralytics/YOLOv8) no compila en Termux/Android.
+`onnxruntime` sí tiene soporte ARM64 y es mucho más liviano (~50MB vs ~500MB).
+
+### 10.2 Setup (2 pasos)
+
+**Paso 1 — En PC (convertir modelo):**
+```bash
+pip install ultralytics onnx
+python3 leviathan_core/tools/convert_yolo_onnx.py
+# Genera yolov8n.onnx (~12MB)
+scp yolov8n.onnx termux:~/Red-team-tauri/redteam/models/
+```
+
+**Paso 2 — En Termux:**
+```bash
+pip install onnxruntime numpy pillow
+```
+
+El módulo `object_detection` detecta automáticamente:
+- Si hay `.onnx` → usa onnxruntime (Termux)
+- Si hay `ultralytics` → usa PyTorch (PC)
+- Si no hay nada → devuelve error con instrucciones
+
+### 10.3 Verificar
+
+```bash
+curl -X POST "http://localhost:8001/api/v1/ai/threat-scoring?target=test"   -H "Content-Type: application/json"   -d '{"image_path": "/sdcard/foto.jpg"}'
+```
+
+## 11. VERIFICACIÓN DE MÓDULOS
+
+Antes de arrancar el dashboard, verifica que todos los módulos cargan:
+
+```bash
+python3 leviathan_core/tools/verify_modules.py
+```
+
+Output esperado:
+```
+[1] DEPENDENCIAS BASE
+  ✅ fastapi                Web framework
+  ✅ uvicorn                 ASGI server
+  ✅ onnxruntime             ONNX inference (YOLOv8)
+  ...
+[5] AI ANALYZERS
+  ✅ object_detection        Detección de objetos (ONNX/ultralytics)
+  ✅ anomaly_detector        Detección de anomalías
+  ...
+TOTAL: 28/30 módulos OK
+✅ SISTEMA COMPLETO — LISTO PARA OPERAR
+```
+
+## 12. CHANGELOG
+
+### v6.0 LEVIATHAN UNIFIED (2026-08-21)
+
+**Commits: 7d7e356, 25e88e3, 497e0eb, 2af83d6**
+
+- LEVIATHAN integration router `/api/v1/*` montado en dashboard_server.py
+- `leviathan_core/api/integration_router.py` — APIRouter unificado (15.8KB)
+  - 5 scanners: network, cameras, rtsp, onvif, services
+  - 2 exploiters: camera (auto-detect vendor), chain
+  - 3 AI: threat-scoring, anomalies, behavior
+  - 2 reporters: json, html
+  - 3 system: status, health, profiles
+- `leviathan_core/config/profiles.json` — 4 perfiles de escaneo + OPSEC + camera defaults
+- `object_detection.py` v3.1 con backend ONNX (onnxruntime) para Termux
+- `convert_yolo_onnx.py` — script para convertir YOLOv8 a ONNX en PC
+- `verify_modules.py` — verificador de módulos para Termux
+- `anomaly_detector.py` — numpy hecho opcional (import muerto eliminado)
+- `arrancar.sh` fixes: tail-2 → tail -2, exec removido, wait agregado, deps LEVIATHAN
+- `dashboard_server.py`: integrated_health ahora incluye LEVIATHAN status
+- `leviathan_core/README.md` actualizado con /api/v1/* y ONNX
+
+**Adaptaciones del blueprint original:**
+- No crea `main_unified.py` (dashboard_server.py sigue como primario)
+- No usa uvloop (no compila en Termux/Android)
+- No usa ultralytics en Termux (ONNX en su lugar)
+- Imports apuntan a `leviathan_core.modules.*` (no `leviathan_modules.*`)
+- profiles.json sin secrets hardcodeados
+
 
 ### v1.1.0 ARTO VPN (2026-08-19) — commit d63dba2
 

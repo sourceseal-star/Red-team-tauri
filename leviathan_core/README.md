@@ -1,13 +1,14 @@
-# 🦑 LEVIATHAN v3.0 — Sistema de Módulos de Red Team
+# 🦑 LEVIATHAN v3.1 — Sistema de Módulos de Red Team
 
-**Versión:** 3.0.0 | **Autor:** Harold Paredes / SourceSeal Red Team  
-**Estado:** ✅ Integrado en Red-team-tauri
+**Versión:** 3.1.0 | **Autor:** Harold Paredes / SourceSeal Red Team  
+**Estado:** ✅ Integrado en Red-team-tauri via `include_router`
 
 ## Arquitectura
 
 ```
 leviathan_core/
 ├── __init__.py
+├── banner.py                  # Banner ASCII art
 ├── core/
 │   ├── __init__.py
 │   └── engine.py              # ModuleManager + LeviathanEngine
@@ -17,23 +18,29 @@ leviathan_core/
 │   ├── ai_analyzers/          # 4 módulos de análisis IA
 │   └── reporters/             # 3 generadores de informes
 ├── api/
-│   └── leviathan_router.py    # FastAPI router (/api/leviathan/*)
-└── requirements.txt
+│   ├── leviathan_router.py    # Router básico (/api/leviathan/*)
+│   └── integration_router.py # Router unificado (/api/v1/*) — NUEVO
+├── config/
+│   ├── __init__.py
+│   └── profiles.json          # Perfiles de escaneo + OPSEC + camera defaults
+├── tools/
+│   ├── __init__.py
+│   ├── convert_yolo_onnx.py   # Conversión YOLOv8 a ONNX (PC)
+│   └── verify_modules.py      # Verificador de módulos para Termux
+└── docs/
+    └── MANUAL_OPERATIVO.md
 
 leviathan-frontend/
 ├── package.json               # React 18 + Redux + Vite
-├── Dockerfile                 # Build con Node + serve con nginx
-├── nginx.conf                 # Proxy /api → backend, /ws → WebSocket
 ├── src/
-│   ├── main.tsx               # Entry point
-│   ├── App.tsx                # Router + layout
-│   ├── store/                 # Redux (ui, cameras, scans, alerts)
+│   ├── components/            # Dashboard, LiveGrid, CameraViewer, etc.
 │   ├── api/                   # Axios client + WebSocket
-│   ├── hooks/                 # useWebSocket
-│   └── components/            # Dashboard, LiveGrid, CameraViewer, etc.
+│   └── store/                 # Redux (ui, cameras, scans, alerts)
 ```
 
 ## API Endpoints
+
+### Router básico (/api/leviathan/*)
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
@@ -47,36 +54,58 @@ leviathan-frontend/
 | GET | `/api/leviathan/scans` | Historial de escaneos |
 | GET | `/api/leviathan/alerts` | Alertas activas |
 
-## Backend — Activar en dashboard_server.py
+### Router unificado (/api/v1/*) — NUEVO v3.1
 
-El router es un import opcional. Para activarlo, agregar en `redteam/scripts/dashboard_server.py`:
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/api/v1/status` | Estado completo del sistema |
+| GET | `/api/v1/health` | Health check |
+| GET | `/api/v1/profiles` | Perfiles de escaneo disponibles |
+| POST | `/api/v1/scan/network` | Escaneo de red completo |
+| POST | `/api/v1/scan/cameras` | Detección de cámaras IP |
+| POST | `/api/v1/scan/rtsp` | Detección RTSP |
+| POST | `/api/v1/scan/onvif` | Detección ONVIF |
+| POST | `/api/v1/scan/services` | Escaneo de servicios |
+| POST | `/api/v1/exploit/camera` | Explotación por vendor (auto-detect) |
+| POST | `/api/v1/exploit/chain` | Cadena de exploits |
+| POST | `/api/v1/ai/threat-scoring` | Puntuación de amenazas |
+| POST | `/api/v1/ai/anomalies` | Detección de anomalías |
+| POST | `/api/v1/ai/behavior` | Análisis de comportamiento |
+| POST | `/api/v1/report/json` | Informe JSON |
+| POST | `/api/v1/report/html` | Informe HTML |
 
-```python
-# ── LEVIATHAN modules router ───────────────────────────────────────────────
-try:
-    from leviathan_core.api.leviathan_router import router as leviathan_router
-    app.include_router(leviathan_router)
-    print("[LEVIATHAN] Router montado en /api/leviathan/*")
-except Exception as _lev_err:
-    print(f"[WARN] LEVIATHAN no disponible: {_lev_err}", flush=True)
+## Detección de Objetos con ONNX (Termux)
+
+El módulo `object_detection` v3.1 usa **onnxruntime** en vez de ultralytics/PyTorch.
+PyTorch no compila en Termux/Android, pero onnxruntime sí.
+
+### Setup (2 pasos)
+
+**Paso 1 — En PC (convertir modelo):**
+```bash
+pip install ultralytics onnx
+python3 leviathan_core/tools/convert_yolo_onnx.py
+# Genera yolov8n.onnx (~12MB)
 ```
 
-## Frontend — Desarrollo
+**Paso 2 — En Termux:**
+```bash
+pip install onnxruntime numpy pillow
+# Copiar yolov8n.onnx a redteam/models/
+scp yolov8n.onnx termux:~/Red-team-tauri/redteam/models/
+```
+
+El módulo detecta automáticamente si hay un `.onnx` disponible y lo usa.
+Si estás en PC con ultralytics, usa el `.pt` directamente.
+
+## Verificación de Módulos
 
 ```bash
-cd leviathan-frontend
-npm install
-npm run dev          # Dev server en :5173
-npm run build        # Build producción → dist/
+python3 leviathan_core/tools/verify_modules.py
 ```
 
-### Docker
-
-```bash
-cd leviathan-frontend
-docker build -t leviathan-frontend .
-docker run -p 80:80 leviathan-frontend
-```
+Verifica deps base, core, scanners, exploiters, AI, reporters.
+Reporta: `TOTAL: 28/30 módulos OK`.
 
 ## Módulos Disponibles
 
@@ -89,36 +118,48 @@ docker run -p 80:80 leviathan-frontend
 - `service_scanner` — Escaneo de puertos y servicios
 
 ### Exploiters (5)
-- `hikvision_rce` — Explotación de Hikvision
-- `dahua_backdoor` — Explotación de Dahua
+- `hikvision_rce` — Explotación de Hikvision (CVE-2021-36260)
+- `dahua_backdoor` — Explotación de Dahua (CVE-2021-31956)
 - `generic_brute` — Fuerza bruta genérica
 - `kraken_integration` — Integración con KRAKEN
 - `exploit_chain` — Encadenamiento de exploits
 
-### AI Analyzers (4)
-- `object_detection` — Detección de objetos en video
-- `anomaly_detector` — Detección de anomalías
-- `behavior_analyzer` — Análisis de comportamiento
-- `threat_scoring` — Puntuación de amenazas
+### AI Analyzers (4) — compatibles con Termux
+- `object_detection` — Detección de objetos (ONNX/ultralytics dual)
+- `anomaly_detector` — Detección de anomalías (Python puro, numpy opcional)
+- `behavior_analyzer` — Análisis de comportamiento (Python puro)
+- `threat_scoring` — Puntuación de amenazas (Python puro)
 
 ### Reporters (3)
 - `json_reporter` — Informes JSON
 - `html_reporter` — Informes HTML visuales
 - `pdf_reporter` — Informes PDF
 
-## Instalación Termux (ligera)
+## Perfiles de Escaneo (profiles.json)
+
+| Perfil | Concurrencia | Jitter | Descripción |
+|--------|-------------|--------|-------------|
+| stealth | 5 | 2-5s | Escaneo sigiloso |
+| aggressive | 50 | 0.1-0.5s | Alto rendimiento |
+| massive | 200 | 0.05-0.2s | Miles de IPs |
+| camera_detection | 20 | 0.5-1.5s | Optimizado para cámaras IP |
+
+## Instalación Termux
 
 ```bash
-pip install aiohttp requests beautifulsoup4
-# Para AI analyzers (opcional, pesado):
-# pip install opencv-python-headless numpy pillow
-# Para PDF reporter (opcional):
-# pip install weasyprint
+# Deps base (livianas, funcionan en Termux)
+pip install aiohttp requests beautifulsoup4 pydantic
+
+# Detección de objetos (ONNX — liviano)
+pip install onnxruntime numpy pillow
+
+# Verificar que todo carga
+python3 leviathan_core/tools/verify_modules.py
 ```
 
 ## Aislamiento
 
 LEVIATHAN es completamente independiente:
-- No importa ni modifica kraken/, seal/, redteam/, o dashboard_server.py
-- Sus tablas SQLite (`leviathan_*`) son propias
-- El router se monta opcionalmente — si falla, el dashboard sigue funcionando
+- No modifica kraken/, seal/, arto/, o dashboard_server.py core
+- Se monta via `include_router` — si falla, el dashboard sigue funcionando
+- El router de integración (/api/v1/*) carga módulos bajo demanda
