@@ -49,7 +49,11 @@ python3 -c "import fastapi, uvicorn, httpx, pydantic, psutil, aiohttp" 2>/dev/nu
 }
 # cryptography — necesario para SEAL tactical engine (reportes cifrados)
 python3 -c "import cryptography" 2>/dev/null || {
-  pip install -q cryptography 2>&1 | tail -2
+  pip install -q cryptography 2>&1 | tail-2
+}
+# qrcode + reportlab — generacion de QR y PDFs
+python3 -c "import qrcode, reportlab" 2>/dev/null || {
+  pip install -q qrcode reportlab 2>&1 | tail-2
 }
 echo -e "${G}  OK Python listo${N}"
 

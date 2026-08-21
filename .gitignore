@@ -55,3 +55,29 @@ motor_cierre/backend/.auth/
 enhanced_recon.db
 evidence/*.db
 redteam.db
+
+# DBs locales — no subir al repo
+*.db
+seal_*.db
+*_tactical.db
+
+# Evidence/outputs generados
+backend/evidence/
+seal/evidence/
+
+# Node
+node_modules/
+dist/
+
+# Env
+.env
+.env.local
+
+# Tauri build
+tauri-frontend/src-tauri/target/
+tauri-frontend/dist/
+
+# Python caches adicionales
+*.egg-info/
+.eggs/
+build/

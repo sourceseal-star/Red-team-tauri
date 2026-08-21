@@ -14,5 +14,9 @@
     pkgs.python312Packages.beautifulsoup4
     pkgs.python312Packages.python-whois
     pkgs.python312Packages.aiohttp
+    pkgs.python312Packages.numpy
+    pkgs.python312Packages.qrcode
+    pkgs.python312Packages.reportlab
+    pkgs.python312Packages.cryptography
   ];
 }
