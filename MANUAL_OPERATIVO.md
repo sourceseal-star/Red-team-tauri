@@ -203,8 +203,15 @@ hostname del sistema e IP local detectada automáticamente (no un
 placeholder genérico). Anillo de pulso animado durante el escaneo.
 
 1. **Botón "Auto"** — detecta tu subred automáticamente
-2. **Escribir manual** — `192.168.1.0/24`
+2. **Escribir manual** — `192.168.1.0/24` (o /22, /20, /16 — soporta cualquier CIDR)
 3. **"Escanear Red"** — empieza el escaneo SSE en vivo
+
+> **Redes grandes (/22, /20, /16):** El sistema ahora usa chunking automático
+> (lotes de 64 hosts) para no saturar la memoria del celular. Los resultados
+> aparecen en vivo a medida que encuentra hosts. El escaneo de 1022 IPs (/22)
+> tarda ~2-3 minutos pero NO colapsa el backend.
+>
+> Endpoint SSE directo: `GET /api/scan/network/stream?subnet=192.168.0.0/22`
 4. Cada host aparece al instante con su tipo:
    - 📷 Cámara (puerto 554 detectado)
    - 🔧 Router (puertos 22 + 80)
