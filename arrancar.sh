@@ -26,10 +26,19 @@ else
   echo -e "${Y}[1/8] Instala termux-api: pkg install termux-api${N}"
 fi
 
-# ─── 2. GIT PULL ──────────────────────────────────────────────────────
+# ─── 2. GIT PULL (a prueba de conflictos) ─────────────────────────────
 echo -e "${C}[2/8] Sincronizando código...${N}"
+# Descartar cambios locales en .db (siempre causan conflictos binarios)
+git checkout -- '*.db' 2>/dev/null || true
+# Stash seguro de cambios locales
 git stash 2>/dev/null || true
-git pull origin main 2>&1 | tail -2
+# Pull con rebase; si falla, reset hard al remote (el repo local es desechable)
+git pull origin main 2>&1 | tail -3
+if [ $? -ne 0 ]; then
+  echo -e "${Y}  Conflictos detectados, reseteando al remote...${N}"
+  git fetch origin main
+  git reset --hard origin/main
+fi
 git stash pop 2>/dev/null || true
 echo -e "${G}  OK Código actualizado${N}"
 

@@ -86,3 +86,5 @@ build/
 redteam/scripts/arto_knowledge.json
 redteam/scripts/evidence/osint_results.db
 redteam/scripts/evidence/*.db
+leviathan_scan_*
+leviathan_core/scans/*

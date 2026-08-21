@@ -338,7 +338,7 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 # Endpoints PÚBLICOS (no requieren API key):
 #   /api/health, /health, /healthz  → health checks
 #   /canary/callback               → intruso phone-home (debe ser accesible)
-PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish"}
+PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json"}
 
 # ── CORS lockdown ───────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
@@ -442,7 +442,7 @@ async def security_middleware(request: Request, call_next):
         return JSONResponse({"error": "Rate limit exceeded"}, status_code=429)
 
     # Health checks y canary callback son públicos
-    if path in PUBLIC_PATHS or path == "/" or path.startswith("/assets/"):
+    if path in PUBLIC_PATHS or path == "/" or path.startswith("/assets/") or path.startswith("/vite/") or path.endswith(".ico") or path.endswith(".png") or path.endswith(".svg") or path.endswith(".webmanifest"):
         return await call_next(request)
 
     # Todo lo demás requiere autenticación. El frontend envía el token emitido
