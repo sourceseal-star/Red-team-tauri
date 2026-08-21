@@ -990,66 +990,236 @@ async def api_github_recon(username: str):
 # SOCIAL MEDIA USERNAME SEARCH
 # ============================================================================
 
+# ============================================================================
+# PLATFORM DETECTION CONFIG — datos de verificación reales por sitio
+# Metodología del proyecto Sherlock (sherlock-project/sherlock,
+# sherlock_project/resources/data.json), adaptada a httpx async y
+# VALIDADA EN VIVO contra cuentas reales y username inventados antes
+# de subir esto a producción (2026-08-20).
+#
+# Por qué el checker anterior era pura alucinación: marcaba
+# "exists": true con solo status_code == 200. La mayoría de estas
+# plataformas devuelven 200 para CUALQUIER ruta — son SPAs que
+# renderizan "usuario no encontrado" con JavaScript, invisible para
+# un scraper — así que cualquier username, real o inventado, salía
+# "true". Cada plataforma tiene su propia forma real de indicar
+# "no existe": un string específico en el HTML/JSON, un endpoint de
+# API separado, o (raramente) un status_code que sí es confiable.
+#
+# Plataformas retiradas de la lista por bloqueo anti-bot verificado en
+# vivo (Instagram, LinkedIn, Facebook, Reddit, Twitter/X vía nitter):
+# devuelven la MISMA respuesta exista o no la cuenta desde este tipo
+# de origen (IP de datacenter) — cualquier resultado sería inventado.
+# Se marcan como "unreliable" en vez de adivinar.
+# ============================================================================
+
 PLATFORMS = {
-    "github": "https://github.com/{u}",
-    "twitter": "https://twitter.com/{u}",
-    "x": "https://x.com/{u}",
-    "instagram": "https://instagram.com/{u}",
-    "linkedin": "https://linkedin.com/in/{u}",
-    "facebook": "https://facebook.com/{u}",
-    "youtube": "https://youtube.com/@{u}",
-    "reddit": "https://reddit.com/user/{u}",
-    "tiktok": "https://tiktok.com/@{u}",
-    "telegram": "https://t.me/{u}",
-    "gitlab": "https://gitlab.com/{u}",
-    "medium": "https://medium.com/@{u}",
-    "pinterest": "https://pinterest.com/{u}",
-    "snapchat": "https://snapchat.com/add/{u}",
-    "twitch": "https://twitch.tv/{u}",
-    "steam": "https://steamcommunity.com/id/{u}",
+    "github": {
+        "url": "https://www.github.com/{u}",
+        "check": "status_code",
+        "regex": r"^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$",
+    },
+    "gitlab": {
+        "url": "https://gitlab.com/{u}",
+        "probe": "https://gitlab.com/api/v4/users?username={u}",
+        "check": "message_means_missing",
+        "error_msgs": ["[]"],
+        "note": "vía API oficial de GitLab",
+    },
+    "youtube": {
+        "url": "https://www.youtube.com/@{u}",
+        "check": "status_code",
+    },
+    "tiktok": {
+        "url": "https://www.tiktok.com/@{u}",
+        "check": "message_means_missing",
+        "error_msgs": ['"statusCode":10221', "Govt. of India decided to block 59 apps"],
+    },
+    "telegram": {
+        "url": "https://t.me/{u}",
+        "check": "message_means_missing",
+        "error_msgs": [
+            '<div class="tgme_page_context_link_icon">',
+            'tgme_username_link" href="tg://resolve?domain=',
+        ],
+        "regex": r"^[a-zA-Z0-9_]{3,32}[^_]$",
+        "note": "solo detecta usernames públicos indexables, no canales privados",
+    },
+    "medium": {
+        "url": "https://medium.com/@{u}",
+        "probe": "https://medium.com/feed/@{u}",
+        "check": "message_means_missing",
+        "error_msgs": ["<body"],
+        "note": "vía feed RSS",
+    },
+    "pinterest": {
+        "url": "https://www.pinterest.com/{u}/",
+        "probe": "https://www.pinterest.com/oembed.json?url=https://www.pinterest.com/{u}/",
+        "check": "status_code",
+    },
+    "snapchat": {
+        "url": "https://www.snapchat.com/add/{u}",
+        "check": "status_code",
+        "regex": r"^[a-z][a-z0-9-_.]{2,14}$",
+    },
+    "twitch": {
+        "url": "https://www.twitch.tv/{u}",
+        "check": "message_means_missing",
+        "error_msgs": [
+            "content='Twitch is the world&#39;s leading video platform and community for gamers.'"
+        ],
+    },
+    "steam": {
+        "url": "https://steamcommunity.com/id/{u}/",
+        "check": "message_means_missing",
+        "error_msgs": ["The specified profile could not be found"],
+    },
+    # --- Sin verificación confiable sin autenticación (bloqueo anti-bot
+    #     confirmado en vivo — misma respuesta exista o no la cuenta) ---
+    "instagram": {
+        "url": "https://instagram.com/{u}",
+        "check": "unreliable",
+        "note": "Instagram devuelve 200 (shell SPA) o 403 (anti-bot) igual exista o no la cuenta",
+    },
+    "linkedin": {
+        "url": "https://linkedin.com/in/{u}",
+        "check": "unreliable",
+        "note": "LinkedIn bloquea scraping no autenticado — misma respuesta exista o no la cuenta",
+    },
+    "facebook": {
+        "url": "https://facebook.com/{u}",
+        "check": "unreliable",
+        "note": "Facebook redirige a login para cualquier perfil, exista o no",
+    },
+    "reddit": {
+        "url": "https://www.reddit.com/user/{u}",
+        "check": "unreliable",
+        "note": "Reddit bloquea con 403/challenge anti-bot igual exista o no la cuenta",
+    },
+    "twitter": {
+        "url": "https://x.com/{u}",
+        "check": "unreliable",
+        "note": "x.com requiere JavaScript; los espejos públicos (nitter) están caídos",
+    },
 }
+
 
 @osint_router.post("/social")
 async def api_social_search(req: OSINTRequest):
     """
     Social media username search — MITRE ATT&CK T1589 (Gather Victim Identity Info).
-    Verifica si un username existe en 15+ plataformas via HTTP status check.
+
+    Verificación real por plataforma (no solo status_code == 200), usando la
+    metodología de Sherlock: mensajes de error específicos, endpoints de API
+    cuando existen, y validación de formato de username antes de gastar
+    requests en rutas que ninguna plataforma real aceptaría.
+
+    Plataformas sin forma confiable de verificar sin autenticación
+    (Instagram, LinkedIn, Facebook, Reddit, Twitter/X) se marcan
+    "exists": null en vez de adivinar — ver campo "note".
     """
-    username = req.target.replace("@", "").strip()
+    raw_username = req.target.replace("@", "").strip()
     results = []
     sem = asyncio.Semaphore(10)
 
-    async def check_platform(name: str, url: str):
-        full_url = url.replace("{u}", username)
+    warnings = []
+    if " " in raw_username:
+        warnings.append(
+            "El input contiene espacios — parece un nombre completo, no un "
+            "username. Ningún username real de estas plataformas admite "
+            "espacios; los resultados de las plataformas con validación de "
+            "formato saldrán como 'formato inválido'. Prueba variantes sin "
+            "espacios (ej: nombreapellido, nombre.apellido, nombre_apellido)."
+        )
+
+    async def check_platform(name: str, cfg: dict):
+        from urllib.parse import quote
+        username = quote(raw_username, safe="")
+
+        # 1. Validar formato ANTES de gastar un request — si el username no
+        #    cumple el patrón que la plataforma exige, no puede existir.
+        regex = cfg.get("regex")
+        if regex and not re.match(regex, raw_username):
+            results.append({
+                "platform": name,
+                "url": cfg["url"].replace("{u}", username),
+                "exists": False,
+                "status_code": None,
+                "note": "Formato de username inválido para esta plataforma — no se hizo la solicitud",
+            })
+            return
+
+        # 2. Plataformas sin verificación confiable sin autenticación
+        if cfg.get("check") == "unreliable":
+            results.append({
+                "platform": name,
+                "url": cfg["url"].replace("{u}", username),
+                "exists": None,
+                "status_code": None,
+                "note": cfg.get("note", "No hay forma confiable de verificar sin autenticación"),
+            })
+            return
+
+        target_url = cfg.get("probe", cfg["url"]).replace("{u}", username)
+        display_url = cfg["url"].replace("{u}", username)
+
         async with sem:
             try:
                 import httpx
-                async with httpx.AsyncClient(timeout=8, follow_redirects=True, verify=False) as client:
-                    resp = await client.get(full_url, headers={"User-Agent": "Mozilla/5.0"})
-                    exists = resp.status_code == 200
-                    # Algunas plataformas retornan 404 si no existe
-                    not_found_signals = ["not found", "doesn't exist", "unavailable", "page not found"]
-                    if resp.status_code == 200 and any(s in resp.text[:2000].lower() for s in not_found_signals):
-                        exists = False
-                    results.append({
+                async with httpx.AsyncClient(timeout=10, follow_redirects=True, verify=False) as client:
+                    resp = await client.get(
+                        target_url,
+                        headers={
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        },
+                    )
+                    check_type = cfg.get("check", "status_code")
+
+                    if check_type == "status_code":
+                        exists = resp.status_code == 200
+                    elif check_type == "message_means_missing":
+                        # OJO: no truncar el body — algunos marcadores de "no
+                        # existe" aparecen bien adentro de la página (ej. Steam
+                        # a los ~26KB). Truncar a 2000 chars fue justo el bug
+                        # original que causaba falsos positivos.
+                        found_error = any(msg in resp.text for msg in cfg.get("error_msgs", []))
+                        exists = resp.status_code == 200 and not found_error
+                    else:
+                        exists = resp.status_code == 200
+
+                    entry = {
                         "platform": name,
-                        "url": full_url,
+                        "url": display_url,
                         "exists": exists,
                         "status_code": resp.status_code,
-                    })
+                    }
+                    if cfg.get("note"):
+                        entry["note"] = cfg["note"]
+                    results.append(entry)
             except Exception as e:
                 results.append({
                     "platform": name,
-                    "url": full_url,
+                    "url": display_url,
                     "exists": False,
                     "error": str(e)[:100],
+                    "note": "Fallo de conexión — no confirmado ni descartado",
                 })
 
-    tasks = [check_platform(name, url) for name, url in PLATFORMS.items()]
+    tasks = [check_platform(name, cfg) for name, cfg in PLATFORMS.items()]
     await asyncio.gather(*tasks)
 
-    found = [r for r in results if r["exists"]]
-    return {"username": username, "found": found, "total_found": len(found), "total_checked": len(results)}
+    found = [r for r in results if r["exists"] is True]
+    unreliable = [r for r in results if r["exists"] is None]
+
+    return {
+        "username": raw_username,
+        "found": found,
+        "unreliable": unreliable,
+        "total_found": len(found),
+        "total_checked": len(results),
+        "warnings": warnings,
+    }
 
 
 # ============================================================================
