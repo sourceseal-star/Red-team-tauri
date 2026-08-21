@@ -28,7 +28,7 @@ interface ARTOProviderProps {
 export function ARTOProvider({
   children,
   autoConnect = true,
-  autoStart = true
+  autoStart = false
 }: ARTOProviderProps) {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);

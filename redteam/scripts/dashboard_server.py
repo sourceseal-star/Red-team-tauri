@@ -365,7 +365,7 @@ app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credenti
                    expose_headers=["*"])
 
 # ── Rate limiting (simple, en memoria) ───────────────────────────────────────
-RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "60"))  # requests por minuto por IP
+RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "300"))  # requests por minuto por IP
 _rate_store: dict[str, list[float]] = {}
 
 def _rate_check(client_ip: str) -> bool:

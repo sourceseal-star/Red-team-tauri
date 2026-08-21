@@ -304,21 +304,28 @@ async def scan_network(network: str) -> List[Dict]:
     net = ipaddress.ip_network(network, strict=False)
     all_ips = [str(ip) for ip in net.hosts()]
     
+    print(f"🔍 Escaneando {len(all_ips)} IPs en {network} (paralelo)...")
+    
+    import asyncio
+    sem = asyncio.Semaphore(20)
+    
+    async def scan_one(ip):
+        async with sem:
+            return await check_onvif_ports(ip)
+    
+    tasks = [scan_one(ip) for ip in all_ips]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
     onvif_devices = []
-    
-    print(f"🔍 Escaneando {len(all_ips)} IPs en {network}...")
-    
-    for ip in all_ips:
-        print(f"  Escaneando {ip}...")
-        devices = await check_onvif_ports(ip)
-        
+    for devices in results:
+        if isinstance(devices, Exception) or not devices:
+            continue
         for device in devices:
-            # Verificar si ya existe
-            already_found = any(d["ip"] == device["ip"] and d["port"] == device["port"] 
+            already_found = any(d["ip"] == device["ip"] and d["port"] == device["port"]
                                for d in onvif_devices)
             if not already_found:
                 onvif_devices.append(device)
-                print(f"    ✅ Dispositivo ONVIF encontrado en {ip}:{device['port']}")
+                print(f"    ✅ Dispositivo ONVIF encontrado en {device['ip']}:{device['port']}")
     
     return onvif_devices
 

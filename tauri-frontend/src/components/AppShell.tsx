@@ -159,7 +159,7 @@ function StatusBar() {
       } catch {
         setStats(s => ({ ...s, backend: false, services: 0 }));
       }
-    }, 3000);
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 

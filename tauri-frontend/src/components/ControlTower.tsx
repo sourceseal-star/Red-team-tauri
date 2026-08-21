@@ -37,7 +37,7 @@ export default function ControlTower() {
 
   useEffect(() => {
     loadAll();
-    const interval = setInterval(loadAll, 5000);
+    const interval = setInterval(loadAll, 30000);
     return () => clearInterval(interval);
   }, []);
 

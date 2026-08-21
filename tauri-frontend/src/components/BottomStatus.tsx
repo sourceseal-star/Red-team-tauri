@@ -20,7 +20,7 @@ export function BottomStatus() {
       }
     }
     poll()
-    const id = setInterval(poll, 5000)
+    const id = setInterval(poll, 15000)
     return () => clearInterval(id)
   }, [])
 

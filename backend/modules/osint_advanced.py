@@ -168,13 +168,46 @@ def _record_type_num(rtype: str) -> int:
 async def whois_lookup(domain: str) -> Dict[str, Any]:
     """
     WHOIS lookup — NIST SP 800-115 §A.1 (OSINT from public registers).
-    Usa python-whois si esta disponible, si no usa whois CLI.
+    Estrategia: RDAP (HTTPS) primero → python-whois → whois CLI.
     """
     result: Dict[str, Any] = {"domain": domain, "raw": {}}
+
+    # 1) RDAP via HTTPS (siempre disponible, sin puerto 43)
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=8, follow_redirects=True) as c:
+            r = await c.get(f"https://rdap.org/domain/{domain}")
+            if r.status_code == 200:
+                d = r.json()
+                events = {e.get("eventAction", ""): e.get("eventDate", "")
+                          for e in d.get("events", [])}
+                ns = [n.get("ldhName", "") for n in d.get("nameservers", [])]
+                # Buscar registrar en entities
+                registrar = None
+                for ent in d.get("entities", []):
+                    if ent.get("roles") and "registrar" in ent.get("roles", []):
+                        registrar = ent.get("vcardArray", [None, None])[1].get("fn", {}).get("value") if len(ent.get("vcardArray", [])) > 1 else None
+                        if not registrar:
+                            registrar = str(ent.get("handle", ""))
+                        break
+                result["raw"] = {
+                    "source": "rdap",
+                    "registrar": registrar,
+                    "creation_date": events.get("registration", ""),
+                    "expiration_date": events.get("expiration", ""),
+                    "name_servers": ns,
+                    "status": d.get("status", []),
+                }
+                return result
+    except Exception:
+        pass
+
+    # 2) python-whois (puerto 43, puede timeout en sandboxes sin red abierta)
     try:
         import whois as python_whois
-        w = python_whois.whois(domain)
+        w = await asyncio.to_thread(python_whois.whois, domain)
         result["raw"] = {
+            "source": "python-whois",
             "registrar": w.registrar,
             "creation_date": str(w.creation_date) if w.creation_date else None,
             "expiration_date": str(w.expiration_date) if w.expiration_date else None,
@@ -184,66 +217,46 @@ async def whois_lookup(domain: str) -> Dict[str, Any]:
             "org": w.org,
             "country": w.country,
         }
-    except ImportError:
-        # Intentar binario whois
+        return result
+    except Exception:
+        pass
+
+    # 3) whois CLI
+    try:
         import subprocess
-        try:
-            proc = subprocess.run(
-                ["whois", domain], capture_output=True, text=True, timeout=10
-            )
-            if proc.stdout and proc.stdout.strip():
-                result["raw"] = {"cli_output": proc.stdout[:2000]}
-            else:
-                raise FileNotFoundError("whois vacio")
-        except Exception:
-            # Fallback: RDAP (sin binario, solo HTTP)
-            try:
-                import httpx
-                import asyncio as _aio
-                async def _rdap():
-                    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as c:
-                        r = await c.get(f"https://rdap.org/domain/{domain}")
-                        if r.status_code == 200:
-                            d = r.json()
-                            events = {e.get("eventAction",""): e.get("eventDate","")
-                                      for e in d.get("events",[])}
-                            ns = [n.get("ldhName","") for n in d.get("nameservers",[])]
-                            result["raw"] = {
-                                "source": "rdap",
-                                "registrar": None,
-                                "creation_date": events.get("registration",""),
-                                "expiration_date": events.get("expiration",""),
-                                "name_servers": ns,
-                                "status": d.get("status",[]),
-                            }
-                        else:
-                            result["raw"] = {"error": f"whois no instalado y RDAP HTTP {r.status_code}. Instala: pkg install whois"}
-                await _rdap()
-            except Exception as e2:
-                # Ultimo fallback: urllib (stdlib, sin dependencias)
-                try:
-                    import urllib.request
-                    req = urllib.request.Request(
-                        f"https://rdap.org/domain/{domain}",
-                        headers={"Accept": "application/rdap+json"}
-                    )
-                    with urllib.request.urlopen(req, timeout=10) as resp:
-                        d = json.loads(resp.read().decode())
-                        events = {e.get("eventAction",""): e.get("eventDate","")
-                                  for e in d.get("events",[])}
-                        ns = [n.get("ldhName","") for n in d.get("nameservers",[])]
-                        result["raw"] = {
-                            "source": "rdap-urllib",
-                            "registrar": None,
-                            "creation_date": events.get("registration",""),
-                            "expiration_date": events.get("expiration",""),
-                            "name_servers": ns,
-                            "status": d.get("status",[]),
-                        }
-                except Exception as e3:
-                    result["raw"] = {"error": f"whois no instalado y todos los fallbacks fallaron: {e3}. Instala: pkg install whois"}
-    except Exception as e:
-        result["raw"] = {"error": str(e)}
+        proc = await asyncio.to_thread(
+            subprocess.run, ["whois", domain],
+            capture_output=True, text=True, timeout=8
+        )
+        if proc.stdout and proc.stdout.strip():
+            result["raw"] = {"source": "cli", "cli_output": proc.stdout[:2000]}
+            return result
+    except Exception:
+        pass
+
+    # 4) urllib fallback (RDAP)
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f"https://rdap.org/domain/{domain}",
+            headers={"Accept": "application/rdap+json"}
+        )
+        resp = await asyncio.to_thread(lambda: urllib.request.urlopen(req, timeout=8))
+        d = json.loads(resp.read().decode())
+        events = {e.get("eventAction", ""): e.get("eventDate", "")
+                  for e in d.get("events", [])}
+        ns = [n.get("ldhName", "") for n in d.get("nameservers", [])]
+        result["raw"] = {
+            "source": "rdap-urllib",
+            "registrar": None,
+            "creation_date": events.get("registration", ""),
+            "expiration_date": events.get("expiration", ""),
+            "name_servers": ns,
+            "status": d.get("status", []),
+        }
+        return result
+    except Exception as e3:
+        result["raw"] = {"error": f"Todos los metodos WHOIS fallaron: {e3}"}
 
     return result
 
@@ -254,16 +267,16 @@ async def dns_recon(domain: str) -> Dict[str, Any]:
     Recopila A, MX, TXT, NS, CNAME records.
     """
     result: Dict[str, Any] = {"domain": domain, "records": {}}
-    result["records"]["A"] = _dns_resolve(domain, "A")
-    result["records"]["MX"] = _dns_resolve(domain, "MX")
-    result["records"]["TXT"] = _dns_resolve(domain, "TXT")
-    result["records"]["NS"] = _dns_resolve(domain, "NS")
+    result["records"]["A"] = await asyncio.to_thread(_dns_resolve, domain, "A")
+    result["records"]["MX"] = await asyncio.to_thread(_dns_resolve, domain, "MX")
+    result["records"]["TXT"] = await asyncio.to_thread(_dns_resolve, domain, "TXT")
+    result["records"]["NS"] = await asyncio.to_thread(_dns_resolve, domain, "NS")
 
     txt_records = result["records"].get("TXT", [])
     result["spf"] = any("spf1" in t.lower() for t in txt_records)
     result["dmarc"] = any("dmarc" in t.lower() for t in txt_records)
 
-    dkim = _dns_resolve(f"_dmarc.{domain}", "TXT")
+    dkim = await asyncio.to_thread(_dns_resolve, f"_dmarc.{domain}", "TXT")
     result["dmarc_record"] = dkim[0] if dkim else None
 
     return result
@@ -379,23 +392,23 @@ async def email_osint(email: str) -> Dict[str, Any]:
     if not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
         return {"email": email, "error": "Formato de email invalido"}
 
-    domain = email.split("@")[0]
-    username = email.split("@")[0]
+    domain = email.split("@")[1]   # despues del @
+    username = email.split("@")[0]  # antes del @
 
     result: Dict[str, Any] = {
         "email": email,
         "domain": domain,
         "username": username,
         "hash_sha256": hashlib.sha256(email.encode()).hexdigest(),
-        "mx_records": _dns_resolve(domain, "MX"),
+        "mx_records": await asyncio.to_thread(_dns_resolve, domain, "MX"),
         "spf": False,
         "dmarc": False,
     }
 
-    txt = _dns_resolve(domain, "TXT")
+    txt = await asyncio.to_thread(_dns_resolve, domain, "TXT")
     result["spf"] = any("spf1" in t.lower() for t in txt)
 
-    dmarc = _dns_resolve(f"_dmarc.{domain}", "TXT")
+    dmarc = await asyncio.to_thread(_dns_resolve, f"_dmarc.{domain}", "TXT")
     result["dmarc"] = bool(dmarc)
 
     providers = {

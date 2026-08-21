@@ -432,16 +432,24 @@ async def hikvision_scan(network: Optional[str] = None):
         ip_network = ipaddress.ip_network(net, strict=False)
         all_ips = [str(ip) for ip in ip_network.hosts()]
         
-        hikvision_cameras = []
-        for ip in all_ips:
-            is_hik, banner = await is_hikvision_device(ip)
-            if is_hik:
-                model = await get_hikvision_model(ip)
-                hikvision_cameras.append({
-                    "ip": ip,
-                    "model": model,
-                    "banner": banner
-                })
+        # Escaneo paralelo con semaphore para no saturar la red
+        import asyncio
+        sem = asyncio.Semaphore(20)  # max 20 conexiones simultaneas
+        
+        async def check_ip(ip):
+            async with sem:
+                try:
+                    is_hik, banner = await is_hikvision_device(ip)
+                    if is_hik:
+                        model = await get_hikvision_model(ip)
+                        return {"ip": ip, "model": model, "banner": banner}
+                except Exception:
+                    pass
+                return None
+        
+        tasks = [check_ip(ip) for ip in all_ips]
+        results = await asyncio.gather(*tasks)
+        hikvision_cameras = [r for r in results if r is not None]
         
         return JSONResponse(content={
             "success": True,
@@ -569,7 +577,7 @@ async def get_all_dicts():
 # ENDPOINT DE SALUD
 # ============================================================
 
-@router.get("/health", summary="Verifica estado del servicio")
+@router.get("/seal/health", summary="Verifica estado del servicio")
 async def health_check():
     """Verifica que el servicio esté funcionando."""
     return JSONResponse(content={
