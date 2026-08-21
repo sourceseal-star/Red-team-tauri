@@ -269,6 +269,17 @@ except Exception as _seal_err:
     _SEAL_OK = False
     print(f"[WARN] SEAL import falló: {_seal_err}", flush=True)
 
+# ── LEVIATHAN v3.0 — Módulos de Red Team (scanners, exploiters, AI, reporters) ──
+_LEVIATHAN_OK = False
+try:
+    sys.path.insert(0, str(BASE.parent))
+    from leviathan_core.api.leviathan_router import router as leviathan_router
+    app.include_router(leviathan_router)
+    _LEVIATHAN_OK = True
+    print("[LEVIATHAN] Router montado en /api/leviathan/* (scanners, exploiters, AI, reporters)")
+except Exception as _lev_err:
+    print(f"[WARN] LEVIATHAN import falló: {_lev_err}", flush=True)
+
 # ── Endpoints de integración ARTO + SEAL ──────────────────────────────────
 @app.get("/api/integrated/health")
 async def integrated_health():
@@ -5723,6 +5734,7 @@ if __name__ == "__main__":
     print(f"  → geo_intel: {'OK' if _GEO_INTEL_OK else 'NOT AVAILABLE'}", flush=True)
     print(f"  → Sin mocks. Sin dummy data. Solo datos reales.", flush=True)
     print(f"  → ARTO AI: {'OK' if _ARTO_OK else 'NOT AVAILABLE'}", flush=True)
+    print(f"  → LEVIATHAN: {'OK' if _LEVIATHAN_OK else 'NOT AVAILABLE'}", flush=True)
     _seed_v2_if_empty()
     print("═" * 60, flush=True)
     uvicorn.run(app, host=host, port=port, log_level="info")
