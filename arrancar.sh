@@ -56,6 +56,12 @@ python3 -c "import qrcode, reportlab" 2>/dev/null || {
   pip install -q qrcode reportlab 2>&1 | tail -2
 }
 echo -e "${G}  OK Python listo${N}"
+# LEVIATHAN dependencias (opcionales)
+python3 -c "import aiohttp, requests" 2>/dev/null || {
+  pip install -q aiohttp requests 2>&1 | tail -2
+}
+echo -e "${G}  OK LEVIATHAN deps verificadas${N}"
+
 
 # ─── 5. .ENV + API KEYS ───────────────────────────────────────────────
 echo -e "${C}[5/8] Configurando .env y API keys...${N}"

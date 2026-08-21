@@ -1,0 +1,82 @@
+{
+  "system": {
+    "name": "LEVIATHAN UNIFIED",
+    "version": "3.0.0",
+    "environment": "termux",
+    "debug": false,
+    "max_workers": 4
+  },
+
+  "scan_profiles": {
+    "stealth": {
+      "max_concurrency": 5,
+      "jitter_min": 2.0,
+      "jitter_max": 5.0,
+      "timeout": 5,
+      "retries": 2,
+      "description": "Escaneo sigiloso (bajo riesgo de deteccion)"
+    },
+    "aggressive": {
+      "max_concurrency": 50,
+      "jitter_min": 0.1,
+      "jitter_max": 0.5,
+      "timeout": 2,
+      "retries": 3,
+      "description": "Escaneo agresivo (alto rendimiento)"
+    },
+    "massive": {
+      "max_concurrency": 200,
+      "jitter_min": 0.05,
+      "jitter_max": 0.2,
+      "timeout": 1,
+      "retries": 1,
+      "description": "Escaneo masivo (miles de IPs)"
+    },
+    "camera_detection": {
+      "max_concurrency": 20,
+      "jitter_min": 0.5,
+      "jitter_max": 1.5,
+      "timeout": 3,
+      "retries": 2,
+      "ports": [80, 443, 554, 8000, 8080, 37777, 3702],
+      "description": "Optimizado para deteccion de camaras IP"
+    }
+  },
+
+  "opsec": {
+    "user_agents": [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+      "Camera-Client/3.0",
+      "ONVIF-Client/2.0",
+      "RTSP-Client/1.5"
+    ],
+    "tor_enabled": false,
+    "honeypot_detection": true,
+    "jitter_enabled": true
+  },
+
+  "database": {
+    "type": "sqlite",
+    "path": "redteam/data/leviathan.db"
+  },
+
+  "camera_defaults": {
+    "default_credentials": [
+      {"vendor": "hikvision", "creds": [["admin", "12345"], ["admin", "admin"], ["admin", ""], ["12345", "12345"]]},
+      {"vendor": "dahua", "creds": [["admin", "admin"], ["admin", "dahua123"], ["admin", "Dahua123"]]},
+      {"vendor": "axis", "creds": [["root", "pass"], ["admin", "admin"], ["root", "root"]]},
+      {"vendor": "generic", "creds": [["admin", "admin"], ["admin", "password"], ["root", "root"], ["guest", "guest"]]}
+    ],
+    "known_vulnerabilities": {
+      "hikvision": ["CVE-2021-36260", "CVE-2017-17215", "CVE-2020-9048"],
+      "dahua": ["CVE-2021-31956", "CVE-2018-10660", "CVE-2018-10661"]
+    }
+  },
+
+  "websocket": {
+    "enabled": true,
+    "ping_interval": 30,
+    "max_connections": 100
+  }
+}

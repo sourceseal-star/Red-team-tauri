@@ -275,9 +275,12 @@ try:
     sys.path.insert(0, str(BASE.parent))
     from leviathan_core.api.leviathan_router import router as leviathan_router
     app.include_router(leviathan_router)
+    from leviathan_core.api.integration_router import router as leviathan_integration
+    app.include_router(leviathan_integration)
     _LEVIATHAN_OK = True
-    print("[LEVIATHAN] Router montado en /api/leviathan/* (scanners, exploiters, AI, reporters)")
+    print("[LEVIATHAN] Router montado: /api/leviathan/* + /api/v1/* (unified)")
 except Exception as _lev_err:
+    print(f"[WARN] LEVIATHAN import falló: {_lev_err}", flush=True)
     print(f"[WARN] LEVIATHAN import falló: {_lev_err}", flush=True)
 
 # ── Endpoints de integración ARTO + SEAL ──────────────────────────────────
@@ -288,6 +291,7 @@ async def integrated_health():
         "status": "healthy",
         "arto": _ARTO_OK,
         "seal": _SEAL_OK,
+        "leviathan": _LEVIATHAN_OK,
         "timestamp": str(datetime.now())
     }
 
