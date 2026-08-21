@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { getApiKey, authUrl } from '../lib/api';
 
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || '';
 const LEV = '/api/leviathan';
 
 function levHeaders(): Record<string, string> {

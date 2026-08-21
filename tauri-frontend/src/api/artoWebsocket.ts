@@ -26,7 +26,7 @@ class ARTOWebSocketClient {
   private messageHandlers: WebSocketMessageHandler[] = [];
   private errorHandlers: WebSocketErrorHandler[] = [];
   private closeHandlers: WebSocketCloseHandler[] = [];
-  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private reconnectTimeout: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: WebSocketConfig = {}) {
     this.url = config.url || (() => {

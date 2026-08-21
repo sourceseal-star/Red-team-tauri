@@ -43,7 +43,7 @@ class ARTOApiClient {
     const url = `${this.baseUrl}${endpoint}`;
     const options: RequestInit = {
       method,
-      headers: _authHeaders(this.headers),
+      headers: _authHeaders(),
       body: data ? JSON.stringify(data) : undefined
     };
 
