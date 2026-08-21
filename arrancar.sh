@@ -74,6 +74,57 @@ python3 -c "import requests" 2>/dev/null || {
 }
 echo -e "${G}  OK LEVIATHAN deps verificadas${N}"
 
+# ─── 4b. OBJECT DETECTION (YOLO/ONNX) ────────────────────────────────
+echo -e "${C}[4b/8] Verificando object detection (opcional)...${N}"
+# DETECCIÓN DE ENTORNO: Termux no tiene wheels para onnxruntime ni ultralytics
+# El módulo object_detection.py degrada gracefully si no hay backend.
+# Solo se instala en PC/Replit. En Termux se necesita el modelo .onnx pre-convertido.
+IS_TERMUX=0
+if [ -n "$(echo $PREFIX | grep com.termux)" ] || [ -d "/data/data/com.termux" ]; then
+  IS_TERMUX=1
+fi
+
+if [ "$IS_TERMUX" = "1" ]; then
+  # Termux: onnxruntime NO tiene wheels para aarch64/Android.
+  # El módulo funcionará cuando copies yolov8n.onnx desde tu PC.
+  # Sin el modelo, object_detection simplemente no estará disponible (no rompe nada).
+  echo -e "${Y}  ⚠ Termux detectado: onnxruntime no disponible en Android${N}"
+  echo -e "${Y}    Object detection requiere modelo pre-convertido desde PC${N}"
+  echo -e ""
+  echo -e "${C}    ┌─ Para activar detección de objetos en Termux ───────┐${N}"
+  echo -e "${C}    │ 1. En tu PC:  pip install ultralytics onnx         │${N}"
+  echo -e "${C}    │ 2. En tu PC:  python3 leviathan_core/tools/        │${N}"
+  echo -e "${C}    │               convert_yolo_onnx.py                 │${N}"
+  echo -e "${C}    │ 3. Copia yolov8n.onnx al celular:                   │${N}"
+  echo -e "${C}    │    scp yolov8n.onnx termux:~/Red-team-tauri/        │${N}"
+  echo -e "${C}    │    redteam/models/yolov8n.onnx                      │${N}"
+  echo -e "${C}    │ 4. En Termux: pip install numpy pillow              │${N}"
+  echo -e "${C}    └────────────────────────────────────────────────────┘${N}"
+  echo ""
+  # numpy + pillow sí funcionan en Termux y son útiles para otros módulos
+  python3 -c "import numpy" 2>/dev/null || {
+    pkg install -y python-numpy 2>/dev/null || pip install -q numpy 2>&1 | tail -2
+  }
+  python3 -c "import PIL" 2>/dev/null || {
+    pip install -q pillow 2>&1 | tail -2
+  }
+  echo -e "${G}  OK numpy + pillow instalados (object detection con modelo .onnx pendiente)${N}"
+else
+  # PC/Replit: onnxruntime SÍ está disponible
+  python3 -c "import onnxruntime" 2>/dev/null || {
+    pip install -q onnxruntime 2>&1 | tail -2
+  }
+  python3 -c "import numpy" 2>/dev/null || {
+    pip install -q numpy 2>&1 | tail -2
+  }
+  python3 -c "import PIL" 2>/dev/null || {
+    pip install -q pillow 2>&1 | tail -2
+  }
+  echo -e "${G}  OK onnxruntime + numpy + pillow instalados${N}"
+  echo -e "${C}  Para convertir modelo YOLO: pip install ultralytics onnx &&${N}"
+  echo -e "${C}  python3 leviathan_core/tools/convert_yolo_onnx.py${N}"
+fi
+
 
 # ─── 5. .ENV + API KEYS ───────────────────────────────────────────────
 echo -e "${C}[5/8] Configurando .env y API keys...${N}"

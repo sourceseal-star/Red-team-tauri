@@ -3,14 +3,25 @@
 """
 OBJECT DETECTION - Detección de Objetos con YOLOv8 (ONNX)
 =========================================================
-Funciona en Termux/Android usando onnxruntime en vez de ultralytics.
-El modelo yolov8n.pt se convierte a .onnx una vez en una PC.
+Detección de objetos para cámaras IP y streams de red.
 
-Flujo:
-  1. En PC:  python3 convert_yolo_onnx.py  → genera yolov8n.onnx
-  2. Copias yolov8n.onnx a Termux: ~/Red-team-tauri/redteam/models/
-  3. En Termux: pip install onnxruntime numpy pillow
-  4. El módulo detecta automáticamente si usar ONNX o ultralytics
+BACKENDS DISPONIBLES:
+  - ONNX Runtime: PC/Replit (pip install onnxruntime)
+  - Ultralytics:   PC/Replit (pip install ultralytics)
+
+⚠ Termux/Android: onnxruntime NO tiene wheels para aarch64/Android.
+  El módulo degrada gracefully — si no hay backend, simplemente no está disponible.
+  NO rompe el dashboard ni otros módulos.
+
+  Para activar en Termux necesitas el modelo pre-convertido desde PC:
+    1. En PC:  pip install ultralytics onnx
+    2. En PC:  python3 leviathan_core/tools/convert_yolo_onnx.py
+    3. Copia yolov8n.onnx al celular:
+       scp yolov8n.onnx termux:~/Red-team-tauri/redteam/models/yolov8n.onnx
+    4. En Termux: pip install numpy pillow
+    5. El módulo detectará el .onnx automáticamente al cargar
+
+  Mientras tanto, el resto del dashboard funciona normalmente sin esto.
 
 Autor: Harold Paredes / SourceSeal Red Team
 """
