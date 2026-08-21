@@ -951,21 +951,135 @@ def _get_scan_timeout() -> float:
         return 0.5
 
 async def _discover_hosts_tcp(subnet: str) -> list:
-    """Escanea el /24 completo via TCP connect puro. Funciona en Termux
-    sin root, sin depender de raw sockets ni de que nmap tenga privilegios."""
+    """Escanea cualquier red CIDR (/24, /22, /16, etc.) via TCP connect puro.
+    Funciona en Termux sin root. Usa chunking para no saturar la memoria
+    del celular cuando la red es grande (>254 hosts)."""
+    import ipaddress as _ipa
     try:
-        base = subnet.split("/")[0].rsplit(".", 1)[0] + "."
+        net = _ipa.ip_network(subnet, strict=False)
+        all_hosts = [str(h) for h in net.hosts()]
     except Exception:
-        return []
+        # Fallback: asumir /24 con formato viejo
+        try:
+            base = subnet.split("/")[0].rsplit(".", 1)[0] + "."
+        except Exception:
+            return []
+        all_hosts = [f"{base}{i}" for i in range(1, 255)]
+
     ports = _get_scan_ports()
     timeout = _get_scan_timeout()
-    sem = asyncio.Semaphore(64)
-    async def check(i):
-        ip = f"{base}{i}"
+
+    # Chunking: procesar en lotes de 64 hosts para no crear 1000+ tasks
+    # de golpe y saturar la memoria del celular.
+    CHUNK_SIZE = 64
+    MAX_CONCURRENT = 32  # conexiones TCP simultaneas dentro de cada chunk
+    sem = asyncio.Semaphore(MAX_CONCURRENT)
+    alive_hosts = []
+
+    async def check(ip):
         async with sem:
             return ip if await _tcp_host_alive(ip, ports, timeout) else None
-    results = await asyncio.gather(*[check(i) for i in range(1, 255)])
-    return [ip for ip in results if ip]
+
+    for chunk_start in range(0, len(all_hosts), CHUNK_SIZE):
+        chunk = all_hosts[chunk_start:chunk_start + CHUNK_SIZE]
+        results = await asyncio.gather(*[check(ip) for ip in chunk])
+        alive_hosts.extend([ip for ip in results if ip])
+
+    return alive_hosts
+
+
+# ── Escaneo por chunks con streaming SSE para redes grandes ─────────────────
+@app.get("/api/scan/network/stream")
+async def scan_network_stream(subnet: str = ""):
+    """Escaneo de red SSE en vivo. Soporta cualquier CIDR (/24, /22, /16, etc.).
+    Usa chunking automatico para no saturar el celular en redes grandes.
+    Envia resultados parciales via SSE a medida que encuentra hosts."""
+    import ipaddress as _ipa
+
+    if not subnet:
+        ops_subnet = _load_ops().get("scan_subnet", "")
+        if ops_subnet and "/" in ops_subnet:
+            subnet = ops_subnet
+        else:
+            subnet = await asyncio.to_thread(subnet_from_iface)
+
+    try:
+        net = _ipa.ip_network(subnet, strict=False)
+        all_hosts = [str(h) for h in net.hosts()]
+    except Exception:
+        return JSONResponse({"error": f"CIDR inválido: {subnet}"}, status_code=400)
+
+    total = len(all_hosts)
+    ports = _get_scan_ports()
+    timeout = _get_scan_timeout()
+
+    # Chunking adaptativo: 64 hosts por chunk, 32 concurrentes por chunk
+    CHUNK_SIZE = 64
+    MAX_CONCURRENT = 32
+    sem = asyncio.Semaphore(MAX_CONCURRENT)
+
+    async def check(ip):
+        async with sem:
+            return ip if await _tcp_host_alive(ip, ports, timeout) else None
+
+    async def event_stream():
+        scanned = 0
+        found = 0
+        alive_hosts = []
+
+        # Enviar info inicial
+        yield f"data: {json.dumps({'type': 'start', 'subnet': subnet, 'total': total})}\n\n"
+
+        for chunk_start in range(0, total, CHUNK_SIZE):
+            chunk = all_hosts[chunk_start:chunk_start + CHUNK_SIZE]
+            results = await asyncio.gather(*[check(ip) for ip in chunk])
+            chunk_alive = [ip for ip in results if ip]
+
+            for ip in chunk_alive:
+                alive_hosts.append(ip)
+                found += 1
+                yield f"data: {json.dumps({'type': 'host', 'ip': ip, 'found': found})}\n\n"
+
+            scanned += len(chunk)
+            progress = min(100, int(scanned * 100 / total))
+            yield f"data: {json.dumps({'type': 'progress', 'scanned': scanned, 'total': total, 'progress': progress, 'found': found})}\n\n"
+
+            # Broadcast por WebSocket tambien
+            await broadcast({"type": "scan_progress", "scanned": scanned, "total": total, "found": found})
+
+        # Fingerprint de hosts encontrados (en paralelo, sin bloquear)
+        if alive_hosts:
+            fp_sem = asyncio.Semaphore(16)
+            async def fp_safe(ip):
+                async with fp_sem:
+                    return await _fingerprint_host(ip)
+            fp_results = await asyncio.gather(*[fp_safe(ip) for ip in alive_hosts])
+
+            hosts_data = []
+            for ip, fp in zip(alive_hosts, fp_results):
+                host = {
+                    "ip": ip,
+                    "type": fp["type"],
+                    "ports": [
+                        {"port": p, "service": SERVICE_NAMES.get(p, "unknown"),
+                         "state": "open", "banner": (fp["banners"].get(p) or "")[:80]}
+                        for p in fp["ports"]
+                    ],
+                    "risk": fp["risk"],
+                    "risk_reasons": fp["risk_reasons"],
+                    "vendor": fp.get("vendor"),
+                    "status": "up"
+                }
+                hosts_data.append(host)
+                yield f"data: {json.dumps({'type': 'host_detail', 'host': host})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'complete', 'found': found, 'total': total, 'hosts': hosts_data})}\n\n"
+        else:
+            yield f"data: {json.dumps({'type': 'complete', 'found': 0, 'total': total, 'hosts': []})}\n\n"
+
+        await broadcast({"type": "scan_complete", "found": found, "total": total})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @app.get("/api/network/info")
 async def network_info():
@@ -979,14 +1093,22 @@ async def network_info():
             "local_hostname": socket.gethostname() if hasattr(socket, "gethostname") else ""}
 
 @app.post("/api/scan/topology")
-async def scan_topology():
-    # Si el usuario configuro una subred manual en Settings, usarla
-    ops_subnet = _load_ops().get("scan_subnet", "")
-    if ops_subnet and "/" in ops_subnet:
-        subnet = ops_subnet
-    else:
-        subnet = await asyncio.to_thread(subnet_from_iface)
-    ok, out = await _nmap_or_empty(["nmap", "-sn", "-T4", "-n", "--max-retries", "1", subnet], timeout=90)
+async def scan_topology(subnet: str = ""):
+    # Subnet como parametro query, o de Settings, o auto-detectada
+    if not subnet:
+        ops_subnet = _load_ops().get("scan_subnet", "")
+        if ops_subnet and "/" in ops_subnet:
+            subnet = ops_subnet
+        else:
+            subnet = await asyncio.to_thread(subnet_from_iface)
+    # nmap con timeout adaptativo: mas hosts = mas timeout
+    import ipaddress as _ipa
+    try:
+        net_size = len(list(_ipa.ip_network(subnet, strict=False).hosts()))
+        nmap_timeout = min(300, max(90, net_size // 5))
+    except Exception:
+        nmap_timeout = 90
+    ok, out = await _nmap_or_empty(["nmap", "-sn", "-T4", "-n", "--max-retries", "1", subnet], timeout=nmap_timeout)
     hosts, current = [], None
     nmap_note = None
     if not ok:
@@ -1158,24 +1280,32 @@ async def iot_scan_network(body: dict = Body(...)):
     except Exception:
         return JSONResponse({"error": f"CIDR inválido: {cidr}"}, status_code=400)
     
-    hosts = [str(h) for h in net.hosts()][:254]  # limitar a /24
+    hosts = [str(h) for h in net.hosts()]
     # Escanear puertos de cámara + comunes
     SCAN_PORTS = [554, 80, 443, 8080, 8000, 37777, 8554, 23, 22]
     
     cameras = []
     all_devices = []
     
-    # Escaneo paralelo por IP
+    # Chunking para redes grandes: 64 hosts por lote, 32 concurrentes
+    CHUNK_SIZE = 64
+    IOT_SEM = asyncio.Semaphore(32)
+    
     async def scan_ip(ip: str):
         results = {}
         for port in SCAN_PORTS:
-            b = await tcp_check(ip, port, timeout=1.0)
+            async with IOT_SEM:
+                b = await tcp_check(ip, port, timeout=1.0)
             if b is not None:
                 results[port] = b[:80]
         return ip, results
     
-    tasks = [scan_ip(ip) for ip in hosts]
-    scan_results = await asyncio.gather(*tasks)
+    scan_results = []
+    for chunk_start in range(0, len(hosts), CHUNK_SIZE):
+        chunk = hosts[chunk_start:chunk_start + CHUNK_SIZE]
+        tasks = [scan_ip(ip) for ip in chunk]
+        chunk_results = await asyncio.gather(*tasks)
+        scan_results.extend(chunk_results)
     
     for ip, ports in scan_results:
         if not ports:
