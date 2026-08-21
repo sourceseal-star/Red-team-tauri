@@ -304,3 +304,234 @@ async def get_alerts(acknowledged: Optional[bool] = None):
         ).fetchall()
     conn.close()
     return {"alerts": [dict(r) for r in rows], "total": len(rows)}
+
+# ──────────────────────────────────────────────────────────────────────
+# ENDPOINTS ADICIONALES —compatibilidad con el frontend LEVIATHAN v3.0
+# ──────────────────────────────────────────────────────────────────────
+
+# ── Modelos extra ──
+class NetworkScanRequest(BaseModel):
+    target: str = ""
+    network: Optional[str] = None
+    modules: Optional[List[str]] = None
+
+class CameraScanRequest(BaseModel):
+    network: str
+
+class QuickScanRequest(BaseModel):
+    target: str
+
+class CameraExploitRequest(BaseModel):
+    target: str
+    method: Optional[str] = "default"
+    context: Optional[Dict] = None
+
+class ChainExploitRequest(BaseModel):
+    target: str
+    context: Optional[Dict] = None
+
+class KrakenExploitRequest(BaseModel):
+    target: str
+    context: Optional[Dict] = None
+
+class AIAnalyzeRequest(BaseModel):
+    target: str
+    data: Optional[Dict] = None
+    module: Optional[str] = "behavior"
+
+class AIDetectRequest(BaseModel):
+    target: str
+    data: Optional[Dict] = None
+
+class ReportGenRequest(BaseModel):
+    target: str
+    format: str = "json"
+    scan_id: Optional[str] = None
+
+# ── Scan wrappers ──
+
+@router.post("/scan/network")
+async def scan_network(req: NetworkScanRequest):
+    """Ejecuta escaneo de red completo con todos los scanners aplicables."""
+    target = req.target or req.network or ""
+    if not target:
+        raise HTTPException(400, "Se requiere 'target' o 'network'")
+    return await run_scan(ScanRequest(target=target, modules=req.modules))
+
+@router.post("/scan/cameras")
+async def scan_cameras(req: CameraScanRequest):
+    """Escaneo específico de cámaras IP en una red."""
+    target = req.network or ""
+    if not target:
+        raise HTTPException(400, "Se requiere 'network'")
+    return await run_scan(ScanRequest(target=target, modules=["camera_detector"]))
+
+@router.post("/scan/quick")
+async def scan_quick(req: QuickScanRequest):
+    """Escaneo rápido — solo los scanners más ligeros."""
+    if not req.target:
+        raise HTTPException(400, "Se requiere 'target'")
+    return await run_scan(ScanRequest(target=req.target))
+
+# ── Exploit wrappers ──
+
+@router.post("/exploit/camera")
+async def exploit_camera(req: CameraExploitRequest):
+    """Explotación específica de cámaras IP."""
+    return await run_exploit(ExploitRequest(
+        target=req.target,
+        module="camera_exploiter",
+        context={**(req.context or {}), "method": req.method}
+    ))
+
+@router.post("/exploit/chain")
+async def exploit_chain(req: ChainExploitRequest):
+    """Explotación en cadena — intenta múltiples exploiters secuencialmente."""
+    _load_modules()
+    results = {}
+    for exploiter in _exploiters:
+        try:
+            if exploiter.is_applicable(req.target):
+                if asyncio.iscoroutinefunction(exploiter.exploit):
+                    result = await exploiter.exploit(req.target, req.context)
+                else:
+                    result = await asyncio.to_thread(exploiter.exploit, req.target, req.context)
+                results[exploiter.name] = result
+        except Exception as e:
+            results[exploiter.name] = {"error": str(e)[:200]}
+    return {"target": req.target, "results": results, "modules_tried": len(results)}
+
+@router.post("/exploit/kraken")
+async def exploit_kraken(req: KrakenExploitRequest):
+    """Explotación con KRAKEN — el motor de fuerza bruta/credenciales."""
+    return await run_exploit(ExploitRequest(
+        target=req.target,
+        module="kraken",
+        context=req.context
+    ))
+
+# ── AI wrappers ──
+
+@router.post("/ai/analyze")
+async def ai_analyze(req: AIAnalyzeRequest):
+    """Análisis con IA — comportamiento, anomalías, scoring de amenazas."""
+    return await run_analyze(AnalyzeRequest(
+        target=req.target,
+        module=req.module or "behavior",
+        data=req.data
+    ))
+
+@router.post("/ai/detect")
+async def ai_detect(req: AIDetectRequest):
+    """Detección con IA — objetos, anomalías visuales, detección de intrusión."""
+    return await run_analyze(AnalyzeRequest(
+        target=req.target,
+        module="object_detector",
+        data=req.data
+    ))
+
+# ── Report wrapper ──
+
+@router.post("/report/generate")
+async def report_generate(req: ReportGenRequest):
+    """Genera un informe del escaneo/explotación."""
+    return await generate_report(ReportRequest(
+        target=req.target,
+        format=req.format,
+        scan_id=req.scan_id
+    ))
+
+# ── Stats / Threat-map / Services / History ──
+
+@router.get("/stats")
+async def get_stats():
+    """Estadísticas agregadas del sistema LEVIATHAN."""
+    _load_modules()
+    conn = _get_db()
+    total_cameras = conn.execute("SELECT COUNT(*) FROM leviathan_cameras").fetchone()[0]
+    vuln_cameras = conn.execute("SELECT COUNT(*) FROM leviathan_cameras WHERE is_vulnerable=1").fetchone()[0]
+    total_scans = conn.execute("SELECT COUNT(*) FROM leviathan_scans").fetchone()[0]
+    total_alerts = conn.execute("SELECT COUNT(*) FROM leviathan_alerts").fetchone()[0]
+    crit_alerts = conn.execute("SELECT COUNT(*) FROM leviathan_alerts WHERE severity='critical'").fetchone()[0]
+    high_alerts = conn.execute("SELECT COUNT(*) FROM leviathan_alerts WHERE severity='high'").fetchone()[0]
+    conn.close()
+    return {
+        "cameras": {"total": total_cameras, "vulnerable": vuln_cameras, "accessible": total_cameras - vuln_cameras},
+        "scans": {"total": total_scans},
+        "alerts": {"total": total_alerts, "critical": crit_alerts, "high": high_alerts},
+        "modules": {
+            "scanners": len(_scanners),
+            "exploiters": len(_exploiters),
+            "ai_analyzers": len(_analyzers),
+            "reporters": len(_reporters),
+        },
+        "timestamp": datetime.now().isoformat(),
+    }
+
+@router.get("/threat-map")
+async def get_threat_map():
+    """Datos para el mapa de amenazas — cameras y alerts con ubicación/IP."""
+    conn = _get_db()
+    cameras = conn.execute(
+        "SELECT ip, port, vendor, model, is_vulnerable, is_accessible FROM leviathan_cameras"
+    ).fetchall()
+    alerts = conn.execute(
+        "SELECT severity, title, camera_ip, created_at FROM leviathan_alerts ORDER BY created_at DESC LIMIT 50"
+    ).fetchall()
+    conn.close()
+
+    markers = []
+    for cam in cameras:
+        severity = "critical" if cam["is_vulnerable"] else ("medium" if cam["is_accessible"] else "low")
+        markers.append({
+            "ip": cam["ip"],
+            "port": cam["port"],
+            "label": f"{cam['vendor'] or ''} {cam['model'] or ''}".strip(),
+            "severity": severity,
+            "type": "camera",
+        })
+    for alert in alerts:
+        markers.append({
+            "ip": alert["camera_ip"] or "unknown",
+            "label": alert["title"],
+            "severity": alert["severity"],
+            "type": "alert",
+            "created_at": alert["created_at"],
+        })
+    return {"markers": markers, "total": len(markers)}
+
+@router.get("/services")
+async def get_services():
+    """Lista servicios/modules disponibles agrupados por categoría."""
+    _load_modules()
+    services = []
+    for s in _scanners:
+        services.append({"name": s.name, "type": "scanner", "status": "available"})
+    for e in _exploiters:
+        services.append({"name": e.name, "type": "exploiter", "status": "available"})
+    for a in _analyzers:
+        services.append({"name": a.name, "type": "ai_analyzer", "status": "available"})
+    for r in _reporters:
+        services.append({"name": r.name, "type": "reporter", "status": "available"})
+    return {"services": services, "total": len(services)}
+
+@router.get("/history")
+async def get_history(limit: int = 50):
+    """Historial completo de operaciones — alias de /scans con más detalle."""
+    conn = _get_db()
+    scans = conn.execute(
+        "SELECT * FROM leviathan_scans ORDER BY started_at DESC LIMIT ?", (limit,)
+    ).fetchall()
+    cameras = conn.execute(
+        "SELECT * FROM leviathan_cameras ORDER BY last_seen DESC LIMIT ?", (limit,)
+    ).fetchall()
+    alerts = conn.execute(
+        "SELECT * FROM leviathan_alerts ORDER BY created_at DESC LIMIT ?", (limit,)
+    ).fetchall()
+    conn.close()
+    return {
+        "scans": [dict(r) for r in scans],
+        "cameras": [dict(r) for r in cameras],
+        "alerts": [dict(r) for r in alerts],
+        "total": len(scans) + len(cameras) + len(alerts),
+    }
