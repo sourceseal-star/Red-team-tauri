@@ -3755,362 +3755,30 @@ DISPOSABLE_DOMAINS = {
 
 # (platforma, url, [patrones_html_que_indican_no_existe])
 # None = confiar solo en status code (GitHub, GitLab dan 404 real)
-# Patrones verificados contra HTML real (no strings de i18n del JS bundle)
+# Plataformas con detección real validada en vivo (2026-08-20).
+# Metodología Sherlock: cada plataforma tiene su propia forma de indicar
+# "no existe" — status_code confiable, mensaje específico en HTML, o API.
+# Las 5 marcadas "unreliable" devuelven la MISMA respuesta exista o no la
+# cuenta desde este tipo de origen (anti-bot) — se reportan como null,
+# no se adivina.
 SOCIAL_PLATFORMS = [
-    ("GitHub", "https://github.com/{}", None),
-    ("Twitter/X", "https://x.com/{}", ["User not found", "This account doesn't exist", "Account suspended"]),
-    ("Instagram", "https://instagram.com/{}", ["Sorry, this page isn't available", "Page Not Found"]),
-    ("YouTube", "https://youtube.com/@{}", ["This channel doesn't exist", "404 Not Found", "Unavailable"]),
-    ("TikTok", "https://tiktok.com/@{}", ['"statusCode":10221']),  # 10221 = user not found en TikTok API
-    ("Reddit", "https://reddit.com/user/{}", None),
-    ("GitLab", "https://gitlab.com/{}", None),
-    ("Medium", "https://medium.com/@{}", ["No user found", "404 Not Found"]),
-    ("Steam", "https://steamcommunity.com/id/{}", ["The specified profile could not be found"]),
-    ("LinkedIn", "https://www.linkedin.com/in/{}", ["Profile not found", "This profile is not available", "Page Not Found"]),
+    ("GitHub", "https://www.github.com/{}", "status_code", None, r"^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$", None),
+    ("GitLab", "https://gitlab.com/api/v4/users?username={}", "message_means_missing", ["[]"], None, "https://gitlab.com/{}", "vía API oficial de GitLab"),
+    ("YouTube", "https://www.youtube.com/@{}", "status_code", None, None, None),
+    ("TikTok", "https://www.tiktok.com/@{}", "message_means_missing", ['"statusCode":10221', "Govt. of India decided to block 59 apps"], None, None),
+    ("Telegram", "https://t.me/{}", "message_means_missing", ['<div class="tgme_page_context_link_icon">', 'tgme_username_link" href="tg://resolve?domain='], r"^[a-zA-Z0-9_]{3,32}[^_]$", None, "solo detecta usernames públicos indexables"),
+    ("Medium", "https://medium.com/feed/@{}", "message_means_missing", ["<body"], None, "https://medium.com/@{}", "vía feed RSS"),
+    ("Pinterest", "https://www.pinterest.com/oembed.json?url=https://www.pinterest.com/{}/", "status_code", None, None, "https://www.pinterest.com/{}/"),
+    ("Snapchat", "https://www.snapchat.com/add/{}", "status_code", None, r"^[a-z][a-z0-9-_.]{2,14}$", None),
+    ("Twitch", "https://www.twitch.tv/{}", "message_means_missing", ["content='Twitch is the world&#39;s leading video platform and community for gamers.'"], None, None),
+    ("Steam", "https://steamcommunity.com/id/{}/", "message_means_missing", ["The specified profile could not be found"], None, None),
+    # --- Sin verificación confiable sin autenticación (anti-bot confirmado) ---
+    ("Instagram", "https://instagram.com/{}", "unreliable", None, None, None, "Instagram devuelve 200/403 igual exista o no la cuenta"),
+    ("LinkedIn", "https://www.linkedin.com/in/{}", "unreliable", None, None, None, "LinkedIn bloquea scraping no autenticado"),
+    ("Facebook", "https://facebook.com/{}", "unreliable", None, None, None, "Facebook redirige a login para cualquier perfil"),
+    ("Reddit", "https://www.reddit.com/user/{}", "unreliable", None, None, None, "Reddit bloquea con 403/challenge anti-bot"),
+    ("Twitter/X", "https://x.com/{}", "unreliable", None, None, None, "x.com requiere JS; espejos nitter están caídos"),
 ]
-
-def _parse_rdn_tuple(rdn):
-    if not rdn:
-        return {}
-    res = {}
-    for r in rdn:
-        for k, v in r:
-            res[k] = v
-    return res
-
-async def _helper_get_ssl_cert(domain: str, port: int = 443) -> dict:
-    loop = asyncio.get_running_loop()
-    ctx = ssl.create_default_context()
-
-    def _fetch_verified():
-        with socket.create_connection((domain, port), timeout=5) as sock:
-            with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
-                return ssock.getpeercert()
-
-    try:
-        cert = await loop.run_in_executor(None, _fetch_verified)
-        issuer = _parse_rdn_tuple(cert.get("issuer", ()))
-        subject = _parse_rdn_tuple(cert.get("subject", ()))
-        is_self_signed = (issuer == subject) if (issuer and subject) else False
-        return {
-            "domain": domain,
-            "port": port,
-            "issuer": issuer,
-            "subject": subject,
-            "notBefore": cert.get("notBefore"),
-            "notAfter": cert.get("notAfter"),
-            "serialNumber": cert.get("serialNumber"),
-            "version": cert.get("version"),
-            "self_signed": is_self_signed,
-            "verified": True,
-            "error": None
-        }
-    except Exception as err:
-        try:
-            def _fetch_pem():
-                return ssl.get_server_certificate((domain, port), timeout=5)
-
-            pem = await loop.run_in_executor(None, _fetch_pem)
-            proc = await asyncio.create_subprocess_exec(
-                "openssl", "x509", "-noout", "-issuer", "-subject", "-dates", "-serial",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(input=pem.encode()), timeout=5)
-            out_str = stdout.decode()
-
-            parsed = {}
-            for line in out_str.splitlines():
-                if "=" in line:
-                    k, v = line.split("=", 1)
-                    parsed[k.strip().lower()] = v.strip()
-
-            issuer_str = parsed.get("issuer", "")
-            subject_str = parsed.get("subject", "")
-            is_self = (issuer_str == subject_str) if (issuer_str and subject_str) else True
-
-            return {
-                "domain": domain,
-                "port": port,
-                "issuer": issuer_str,
-                "subject": subject_str,
-                "notBefore": parsed.get("notbefore"),
-                "notAfter": parsed.get("notafter"),
-                "serialNumber": parsed.get("serial"),
-                "version": None,
-                "self_signed": is_self,
-                "verified": False,
-                "error": str(err)
-            }
-        except Exception:
-            return {
-                "domain": domain,
-                "port": port,
-                "issuer": None,
-                "subject": None,
-                "notBefore": None,
-                "notAfter": None,
-                "serialNumber": None,
-                "version": None,
-                "self_signed": None,
-                "verified": False,
-                "error": str(err)
-            }
-
-def _detect_technologies(headers: dict) -> list:
-    techs = []
-    headers_lower = {str(k).lower(): str(v) for k, v in headers.items()}
-
-    server = headers_lower.get("server", "")
-    if server:
-        techs.append(f"Server: {server}")
-
-    x_powered_by = headers_lower.get("x-powered-by", "")
-    if x_powered_by:
-        techs.append(f"X-Powered-By: {x_powered_by}")
-
-    x_aspnet = headers_lower.get("x-aspnet-version") or headers_lower.get("x-aspnetmvc-version")
-    if x_aspnet:
-        techs.append(f"ASP.NET ({x_aspnet})")
-
-    x_gen = headers_lower.get("x-generator", "")
-    if x_gen:
-        techs.append(f"Generator: {x_gen}")
-
-    if "cf-ray" in headers_lower or "cloudflare" in server.lower() or "cf-cache-status" in headers_lower:
-        techs.append("Cloudflare")
-
-    if "x-varnish" in headers_lower or "varnish" in headers_lower.get("via", "").lower():
-        techs.append("Varnish Cache")
-
-    if "x-github-request-id" in headers_lower:
-        techs.append("GitHub Pages")
-
-    cookies = headers_lower.get("set-cookie", "")
-    if "phpsessid" in cookies.lower():
-        techs.append("PHP")
-    if "jsessionid" in cookies.lower():
-        techs.append("Java/Servlet")
-    if "asp.net_sessionid" in cookies.lower() or "aspsessionid" in cookies.lower():
-        techs.append("ASP.NET")
-    if "laravel_session" in cookies.lower():
-        techs.append("Laravel")
-    if "wordpress_" in cookies.lower() or "wp-settings-" in cookies.lower():
-        techs.append("WordPress")
-    if "csrftoken" in cookies.lower():
-        techs.append("Django")
-
-    return list(dict.fromkeys(techs))
-
-
-@app.get("/api/osint/dns/{domain}")
-async def osint_dns(domain: str):
-    cached = _osint_get_cache(domain, "dns")
-    if cached:
-        return cached[0]
-
-    record_types = ["A", "AAAA", "MX", "TXT", "NS", "CNAME", "SOA"]
-    records = {}
-
-    async def fetch_record(rtype: str):
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "dig", "+short", rtype, domain,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
-            lines = [l.strip() for l in stdout.decode().splitlines() if l.strip() and not l.strip().startswith(";")]
-            return rtype, lines
-        except FileNotFoundError:
-            raise FileNotFoundError("dig_not_installed")
-        except Exception:
-            return rtype, []
-
-    try:
-        results = await asyncio.gather(*[fetch_record(rt) for rt in record_types])
-        for rtype, lines in results:
-            records[rtype] = lines
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=503,
-            detail="dig no instalado. Instala: pkg install bind-tools (Termux) o apt install bind9-dnsutils (Linux)"
-        )
-
-    result = {
-        "domain": domain,
-        "records": records,
-        "timestamp": datetime.now().isoformat()
-    }
-    _osint_cache_result(domain, "dns", result)
-    return result
-
-
-@app.get("/api/osint/headers/{domain}")
-async def osint_headers(domain: str):
-    cached = _osint_get_cache(domain, "headers")
-    if cached:
-        return cached[0]
-
-    headers = {}
-    status_code = None
-    url_used = None
-    error = None
-
-    for scheme in ["https", "http"]:
-        target_url = f"{scheme}://{domain}"
-        try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=10.0, verify=False) as client:
-                resp = await client.get(target_url)
-                headers = dict(resp.headers)
-                status_code = resp.status_code
-                url_used = str(resp.url)
-                break
-        except Exception as e:
-            error = str(e)
-
-    tls_info = None
-    try:
-        tls_info = await _helper_get_ssl_cert(domain, 443)
-    except Exception as e:
-        tls_info = {"error": str(e)}
-
-    technologies = _detect_technologies(headers)
-
-    result = {
-        "domain": domain,
-        "url": url_used,
-        "status_code": status_code,
-        "headers": headers,
-        "technologies": technologies,
-        "tls": tls_info,
-        "error": error if not headers else None,
-        "timestamp": datetime.now().isoformat()
-    }
-
-    _osint_cache_result(domain, "headers", result)
-    return result
-
-
-@app.get("/api/osint/reverse/{ip}")
-async def osint_reverse(ip: str):
-    if not _valid_ip(ip):
-        raise HTTPException(status_code=400, detail="Dirección IP inválida")
-
-    cached = _osint_get_cache(ip, "reverse")
-    if cached:
-        return cached[0]
-
-    loop = asyncio.get_running_loop()
-
-    hostname = None
-    aliases = []
-    try:
-        res = await loop.run_in_executor(None, socket.gethostbyaddr, ip)
-        hostname = res[0]
-        aliases = res[1]
-    except Exception:
-        hostname = None
-
-    geo_data = {}
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"https://ipwho.is/{ip}")
-            if resp.status_code == 200:
-                geo_data = resp.json()
-    except Exception as e:
-        geo_data = {"error": str(e)}
-
-    result = {
-        "ip": ip,
-        "hostname": hostname,
-        "aliases": aliases,
-        "geo": geo_data,
-        "timestamp": datetime.now().isoformat()
-    }
-
-    _osint_cache_result(ip, "reverse", result)
-    return result
-
-
-@app.get("/api/osint/breach/{email}")
-async def osint_breach(email: str):
-    cached = _osint_get_cache(email, "breach")
-    if cached:
-        return cached[0]
-
-    email_pattern = r"^[^@\s]+@([^@\s]+\.[^@\s]+)$"
-    match = re.match(email_pattern, email)
-    valid_format = bool(match)
-    domain = match.group(1).lower() if match else ""
-
-    is_disposable = domain in DISPOSABLE_DOMAINS if domain else False
-
-    mx_records = []
-    if domain:
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "dig", "+short", "MX", domain,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
-            mx_records = [l.strip() for l in stdout.decode().splitlines() if l.strip() and not l.strip().startswith(";")]
-        except Exception:
-            mx_records = []
-
-    breaches = []
-    status_note = "Local validation + MX verification completed."
-
-    headers = {"User-Agent": "RedTeam-Dashboard-OSINT/1.0"}
-    async with httpx.AsyncClient(timeout=8.0, headers=headers) as client:
-        try:
-            resp = await client.get(f"https://haveibeenpwned.com/api/v3/breachedaccount/{email}")
-            if resp.status_code == 200:
-                breaches = resp.json()
-                status_note = "Breaches retrieved from HaveIBeenPwned."
-            elif resp.status_code in (401, 403):
-                status_note = "HaveIBeenPwned requires API key. Tried free fallback API."
-        except Exception:
-            pass
-
-        if not breaches:
-            try:
-                resp = await client.get(f"https://leakcheck.io/api/public?check={email}")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("success"):
-                        breaches = data.get("sources", [])
-                        status_note = "Breach data retrieved from LeakCheck free API."
-            except Exception:
-                pass
-
-        if not breaches and "HaveIBeenPwned" not in status_note and "LeakCheck" not in status_note:
-            try:
-                resp = await client.get(f"https://api.dehash.lt/api/search?email={email}")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if isinstance(data, list):
-                        breaches = data
-                        status_note = "Breach data retrieved from DeHash API."
-                    elif isinstance(data, dict) and data.get("results"):
-                        breaches = data.get("results")
-                        status_note = "Breach data retrieved from DeHash API."
-            except Exception:
-                pass
-
-    result = {
-        "email": email,
-        "valid_format": valid_format,
-        "domain": domain,
-        "disposable": is_disposable,
-        "mx_records": mx_records,
-        "breaches": breaches,
-        "status_note": status_note,
-        "timestamp": datetime.now().isoformat()
-    }
-
-    _osint_cache_result(email, "breach", result)
-    return result
 
 
 @app.get("/api/osint/social/{username}")
@@ -4119,66 +3787,110 @@ async def osint_social(username: str):
     if cached:
         return cached[0]
 
-    semaphore = asyncio.Semaphore(5)
+    from urllib.parse import quote
+    raw_username = username.replace("@", "").strip()
+
+    warnings = []
+    if " " in raw_username:
+        warnings.append(
+            "El input contiene espacios — parece un nombre completo, no un "
+            "username. Las plataformas con validación de formato marcarán "
+            "'formato inválido'. Prueba variantes sin espacios."
+        )
+
+    semaphore = asyncio.Semaphore(10)
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
+    results = []
 
-    async def check_platform(client, platform_name: str, url_tmpl: str, not_found_patterns=None):
-        url = url_tmpl.format(username)
+    async def check_platform(client, entry):
+        # entry = (name, probe_url, check_type, error_msgs, regex, display_url, note)
+        name = entry[0]
+        probe_url_tmpl = entry[1]
+        check_type = entry[2]
+        error_msgs = entry[3] if len(entry) > 3 else None
+        regex = entry[4] if len(entry) > 4 else None
+        display_url_tmpl = entry[5] if len(entry) > 5 else None
+        note = entry[6] if len(entry) > 6 else None
+
+        u = quote(raw_username, safe="")
+        display_url = (display_url_tmpl or probe_url_tmpl).replace("{}", u)
+        target_url = probe_url_tmpl.replace("{}", u)
+
+        # 1. Validar formato antes de gastar el request
+        if regex and not re.match(regex, raw_username):
+            results.append({
+                "platform": name, "url": display_url,
+                "exists": False, "status_code": None,
+                "note": "Formato de username inválido para esta plataforma"
+            })
+            return
+
+        # 2. Plataformas sin verificación confiable
+        if check_type == "unreliable":
+            results.append({
+                "platform": name, "url": display_url,
+                "exists": None, "status_code": None,
+                "note": note or "No hay forma confiable de verificar sin autenticación"
+            })
+            return
+
         async with semaphore:
             try:
-                resp = await client.get(url)
+                resp = await client.get(target_url)
                 status_code = resp.status_code
-                # Plataformas con 404 real: confiar en status code
+
                 if status_code == 429 or status_code == 403:
-                    # Rate limited / blocked: no se puede determinar
                     exists = None
-                elif not not_found_patterns:
+                elif check_type == "status_code":
                     exists = (200 <= status_code < 300)
-                else:
-                    # Plataformas que siempre devuelven 200: verificar contenido HTML
+                elif check_type == "message_means_missing":
                     if 200 <= status_code < 300:
-                        body_lower = resp.text.lower()
-                        for pattern in not_found_patterns:
-                            if pattern.lower() in body_lower:
-                                exists = False
-                                break
-                        else:
-                            exists = True
+                        # NO truncar el body — el marcador puede estar a los ~26KB (Steam)
+                        found_error = any(msg in resp.text for msg in (error_msgs or []))
+                        exists = not found_error
                     else:
                         exists = False
-                return {
-                    "platform": platform_name,
-                    "url": url,
-                    "exists": exists,
-                    "status_code": status_code
+                else:
+                    exists = (200 <= status_code < 300)
+
+                entry_result = {
+                    "platform": name, "url": display_url,
+                    "exists": exists, "status_code": status_code
                 }
+                if note:
+                    entry_result["note"] = note
+                results.append(entry_result)
             except Exception as e:
-                return {
-                    "platform": platform_name,
-                    "url": url,
-                    "exists": False,
-                    "status_code": None,
-                    "error": str(e)
-                }
+                results.append({
+                    "platform": name, "url": display_url,
+                    "exists": False, "status_code": None,
+                    "error": str(e)[:100],
+                    "note": "Fallo de conexión — no confirmado ni descartado"
+                })
 
     async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=headers) as client:
-        results = await asyncio.gather(
-            *[check_platform(client, p, u, patterns) for p, u, patterns in SOCIAL_PLATFORMS]
+        await asyncio.gather(
+            *[check_platform(client, entry) for entry in SOCIAL_PLATFORMS]
         )
 
-    total_found = sum(1 for r in results if r.get("exists"))
+    total_found = sum(1 for r in results if r.get("exists") is True)
+    total_unreliable = sum(1 for r in results if r.get("exists") is None)
     result = {
-        "username": username,
+        "username": raw_username,
         "results": results,
+        "found": [r for r in results if r.get("exists") is True],
+        "unreliable": [r for r in results if r.get("exists") is None],
         "total_found": total_found,
+        "total_unreliable": total_unreliable,
+        "total_checked": len(results),
+        "warnings": warnings,
         "timestamp": datetime.now().isoformat()
     }
 
-    _osint_cache_result(username, "social", result)
+    _osint_cache_result(raw_username, "social", result)
     return result
-
 
 @app.get("/api/osint/cert/{domain}")
 async def osint_cert(domain: str):
