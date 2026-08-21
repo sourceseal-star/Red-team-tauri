@@ -245,6 +245,71 @@ except Exception as e:
     print(f"[sealctl] WARNING: No se pudo cargar interceptor_router: {e}")
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# ARTO + SEAL SUPER PACK
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_ARTO_OK = False
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "arto"))
+    from arto.api.arto_router import router as arto_router
+    app.include_router(arto_router)
+    _ARTO_OK = True
+    print("[sealctl] ARTO router cargado en /api/arto/*")
+
+    @app.on_event("startup")
+    async def _arto_start_b():
+        global _ARTO_OK
+        try:
+            from arto import arto as _arto
+            await _arto.start()
+            print("[ARTO] ✅ Sistema inicializado")
+        except Exception as _e:
+            print(f"[ARTO] ⚠ No se pudo inicializar: {_e}")
+            _ARTO_OK = False
+except Exception as _e:
+    print(f"[sealctl] WARNING: ARTO no disponible: {_e}")
+
+_SEAL_OK = False
+try:
+    from seal.api.seal_api_router import router as seal_router
+    app.include_router(seal_router)
+    _SEAL_OK = True
+    print("[sealctl] SEAL SUPER PACK router cargado en /api/devices, /api/scan")
+except Exception as _e:
+    print(f"[sealctl] WARNING: SEAL no disponible: {_e}")
+
+# Endpoints de integración
+@app.get("/api/integrated/health")
+async def integrated_health_b():
+    return {"status": "healthy", "arto": _ARTO_OK, "seal": _SEAL_OK}
+
+@app.get("/api/integrated/scan")
+async def integrated_scan_b(network: str = "192.168.1.0/24"):
+    try:
+        from seal.scanners.network_sweep_ultimate import discover_active_ips, scan_target
+        active_ips = await discover_active_ips(network)
+        results = []
+        for ip in active_ips[:20]:
+            try:
+                td = await scan_target(ip)
+                if td.get('services'):
+                    results.append(td)
+            except Exception:
+                pass
+        return {"success": True, "network": network, "scanned": len(active_ips), "targets": results}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/integrated/attack/{ip}")
+async def integrated_attack_b(ip: str):
+    try:
+        from seal.attackers.hikvision_killer import scan_and_attack
+        result = await scan_and_attack(ip)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # HEALTH (sin auth)
 # ═══════════════════════════════════════════════════════════════════════════════
 

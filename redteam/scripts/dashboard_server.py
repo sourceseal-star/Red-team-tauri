@@ -236,6 +236,79 @@ except Exception as _arto_err:
     _ARTO_OK = False
     print(f"[WARN] ARTO import falló: {_arto_err}", flush=True)
 
+# ── SEAL SUPER PACK — Escaneo, ataque, fingerprinting, orquestación ─────────
+_SEAL_OK = False
+try:
+    from seal.api.seal_api_router import router as seal_router
+    app.include_router(seal_router)
+    _SEAL_OK = True
+    print("[SEAL] Router montado en /api/devices, /api/scan, /api/status (SEAL SUPER PACK)")
+
+    @app.on_event("startup")
+    async def _seal_auto_start():
+        global _SEAL_OK
+        try:
+            from seal.orchestrator.seal_orchestrator import get_orchestrator
+            _orch = get_orchestrator()
+            print("[SEAL] ✅ Orquestador SEAL inicializado")
+        except Exception as _e:
+            print(f"[SEAL] ⚠ No se pudo inicializar orquestador: {_e}")
+
+    @app.on_event("shutdown")
+    async def _seal_auto_stop():
+        try:
+            from seal.orchestrator.seal_orchestrator import get_orchestrator
+            _orch = get_orchestrator()
+            if hasattr(_orch, 'stop'):
+                _orch.stop()
+                print("[SEAL] Orquestador detenido")
+        except Exception:
+            pass
+
+except Exception as _seal_err:
+    _SEAL_OK = False
+    print(f"[WARN] SEAL import falló: {_seal_err}", flush=True)
+
+# ── Endpoints de integración ARTO + SEAL ──────────────────────────────────
+@app.get("/api/integrated/health")
+async def integrated_health():
+    """Estado de todos los sistemas integrados (ARTO + SEAL + módulos)"""
+    return {
+        "status": "healthy",
+        "arto": _ARTO_OK,
+        "seal": _SEAL_OK,
+        "timestamp": str(datetime.now())
+    }
+
+@app.get("/api/integrated/scan")
+async def integrated_scan(network: str = "192.168.1.0/24"):
+    """Escaneo integrado: SEAL detecta dispositivos, ARTO analiza amenazas"""
+    try:
+        from seal.scanners.network_sweep_ultimate import discover_active_ips, scan_target
+        active_ips = await discover_active_ips(network)
+        results = []
+        for ip in active_ips[:20]:
+            try:
+                target_data = await scan_target(ip)
+                if target_data.get('services'):
+                    results.append(target_data)
+            except Exception:
+                pass
+        return {"success": True, "network": network, "scanned": len(active_ips), "targets": results}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/integrated/attack/{ip}")
+async def integrated_attack(ip: str):
+    """Ataque integrado: SEAL explota, ARTO decide la acción"""
+    try:
+        from seal.attackers.hikvision_killer import scan_and_attack
+        result = await scan_and_attack(ip)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ── API Key (obligatoria) ────────────────────────────────────────────────────
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
