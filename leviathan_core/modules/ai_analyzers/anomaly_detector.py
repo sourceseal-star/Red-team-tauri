@@ -9,7 +9,11 @@ Autor: Harold Paredes / SourceSeal Red Team
 """
 
 import asyncio
-import numpy as np
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
