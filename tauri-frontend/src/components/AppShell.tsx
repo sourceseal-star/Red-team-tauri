@@ -47,6 +47,7 @@ const MODULES = [
   { id: 'osint_adv', label: 'OSINT Avanzado', icon: Globe, color: 'text-indigo-400', badge: 'v4.0' },
   { id: 'interceptor', label: 'Interceptor Avanzado', icon: Lock, color: 'text-red-400', badge: 'v4.0' },
   { id: 'arto', label: 'ARTO AI', icon: Cpu, color: 'text-orange-400', badge: 'AI' },
+  { id: 'seal', label: 'SEAL Pack', icon: Fingerprint, color: 'text-cyan-400', badge: 'NEW' },
 ];
 
 // ==========================================

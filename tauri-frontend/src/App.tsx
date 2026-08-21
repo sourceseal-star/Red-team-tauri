@@ -26,6 +26,7 @@ import InterceptorAdvancedPanel from './components/InterceptorAdvancedPanel';
 import { LanguageProvider } from './i18n/LanguageContext';
 import { ARTOProvider } from './components/ARTOProvider';
 import ARTOPanel from './components/ARTOPanel';
+import SealPanel from './components/SealPanel';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -61,6 +62,7 @@ function App() {
       {module === 'osint_adv' && <OSINTAdvancedPanel />}
       {module === 'interceptor' && <InterceptorAdvancedPanel />}
       {module === 'arto' && <ARTOPanel />}
+      {module === 'seal' && <SealPanel />}
     </AppShell>
     </ARTOProvider>
     </LanguageProvider>
