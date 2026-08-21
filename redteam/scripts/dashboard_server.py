@@ -279,7 +279,31 @@ try:
     app.include_router(leviathan_router)
     app.include_router(leviathan_integration)
     _LEVIATHAN_OK = True
+
+    # Mostrar el banner ASCII de LEVIATHAN (existia en leviathan_core/banner.py
+    # pero nunca se llamaba desde ningun lado — nunca se veia al arrancar)
+    try:
+        leviathan_core.show_banner()
+    except Exception:
+        pass
+
     print("[LEVIATHAN] Router montado: /api/leviathan/* + /api/v1/* (unified)", flush=True)
+
+    # Auto-inicializar LEVIATHAN al arrancar el servidor (mismo patron que ARTO)
+    # Pre-carga scanners/exploiters/analyzers/reporters en memoria para que el
+    # primer request no pague el costo de import + registro de modulos.
+    @app.on_event("startup")
+    async def _leviathan_auto_start():
+        global _LEVIATHAN_OK
+        try:
+            from leviathan_core.api.leviathan_router import _load_modules as _lev_load
+            _lev_load()
+            print("[LEVIATHAN] ✅ Módulos precargados y listos para operar", flush=True)
+        except Exception as _e:
+            print(f"[LEVIATHAN] ⚠ No se pudieron precargar módulos: {_e}", flush=True)
+            # No desactivamos _LEVIATHAN_OK: el router sigue funcionando,
+            # simplemente cargará los módulos de forma perezosa en el primer request.
+
 except ImportError as _lev_err:
     import traceback
     print(f"[WARN] LEVIATHAN import falló (ImportError): {_lev_err}", flush=True)
@@ -649,6 +673,8 @@ def _run_terminal(command: str) -> dict:
 # ── Services ──────────────────────────────────────────────────────────────────
 SERVICE_DEFS = {
     "dashboard_server": {"description": "REST API Server (this process)", "cmd": None, "log_file": str(LOGS_DIR / "dashboard.log")},
+    "arto": {"description": "ARTO AI — operaciones autónomas de red team", "cmd": None, "log_file": str(LOGS_DIR / "dashboard.log"), "in_process_flag": "_ARTO_OK"},
+    "leviathan": {"description": "LEVIATHAN v3.0 — scanners, exploiters, AI, reporters", "cmd": None, "log_file": str(LOGS_DIR / "dashboard.log"), "in_process_flag": "_LEVIATHAN_OK"},
     "xdr-correlator": {"description": "XDR Correlator — MITRE ATT&CK correlation engine",
         "cmd": [sys.executable, "-c", f"import sys; sys.path.insert(0,'{ROOT}'); from xdr.correlator import XDREngine; import time; eng=XDREngine(); print('[xdr] ready'); time.sleep(999999)"],
         "log_file": str(LOGS_DIR / "xdr.log")},
@@ -699,6 +725,14 @@ def _svc_status(name: str) -> dict:
         return {"name": name, "status": "running", "pid": os.getpid(),
                 "uptime": _fmt_uptime(_SERVER_START), "lastLogs": _tail_log(name, 5),
                 "description": SERVICE_DEFS[name]["description"]}
+    defn0 = SERVICE_DEFS.get(name, {})
+    if defn0.get("in_process_flag"):
+        # Servicios que viven dentro de este mismo proceso (ARTO, LEVIATHAN):
+        # no son subprocess, reportamos su flag de inicialización real.
+        is_ok = globals().get(defn0["in_process_flag"], False)
+        return {"name": name, "status": "running" if is_ok else "error", "pid": os.getpid() if is_ok else None,
+                "uptime": _fmt_uptime(_SERVER_START) if is_ok else None,
+                "lastLogs": _tail_log(name, 5), "description": defn0["description"]}
     proc = _svc_procs.get(name)
     if proc is None or proc.poll() is not None:
         return {"name": name, "status": "stopped", "pid": None, "uptime": None,
@@ -710,6 +744,9 @@ def _svc_status(name: str) -> dict:
 def _start_service(name: str) -> dict:
     defn = SERVICE_DEFS.get(name)
     if not defn: return {"ok": False, "message": f"Unknown: {name}"}
+    if defn.get("in_process_flag"):
+        is_ok = globals().get(defn["in_process_flag"], False)
+        return {"ok": is_ok, "message": f"{name} corre dentro del proceso principal (in-process)" + ("" if is_ok else " — no se inicializó correctamente, revisa logs")}
     if not defn["cmd"]: return {"ok": True, "message": f"{name} always running"}
     with _svc_lock:
         proc = _svc_procs.get(name)
@@ -721,6 +758,8 @@ def _start_service(name: str) -> dict:
 
 def _stop_service(name: str) -> dict:
     if name == "dashboard_server": return {"ok": False, "message": "Cannot stop self"}
+    if SERVICE_DEFS.get(name, {}).get("in_process_flag"):
+        return {"ok": False, "message": f"{name} corre in-process, no se puede detener sin reiniciar el dashboard"}
     with _svc_lock:
         proc = _svc_procs.get(name)
         if proc is None or proc.poll() is not None: return {"ok": True, "message": f"{name} not running"}
