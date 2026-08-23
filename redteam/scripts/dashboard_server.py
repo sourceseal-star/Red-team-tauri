@@ -127,7 +127,7 @@ except ImportError:
 # ── Enhanced Recon Module (ONVIF, SSDP, SNMP, NetBIOS, mDNS) ────────────────
 # Resolver path absoluto: buscar backend/modules/enhanced_recon.py en múltiples ubicaciones
 _ENHANCED_RECON_OK = False
-for _bp in [BASE.parent / "backend", BASE / "backend", SCRIPT_DIR.parent.parent / "backend", pathlib.Path.cwd() / "backend"]:
+for _bp in [BASE.parent / "backend", BASE / "backend", SCRIPT_DIR.parent.parent / "backend", Path.cwd() / "backend"]:
     if (_bp / "modules" / "enhanced_recon.py").exists():
         sys.path.insert(0, str(_bp))
         try:
