@@ -2294,7 +2294,7 @@ async def root():
             "GET /api/honeypot", "POST /api/honeypot/start|stop|toggle|rotate",
             "GET /api/honeypot/status",
             "GET /api/soar/dags", "POST /api/soar/dags", "POST /api/soar/dry-run",
-            "GET /api/tip/iocs", "POST /api/tip/iocs", "DELETE /api/tip/iocs/{id}",
+            "GET /api/tip/iocs", "POST /api/tip/iocs", "DELETE /api/tip/iocs/{id}", "POST /api/tip/iocs/verify", "GET /api/tip/iocs/verify",
             "POST /api/tip/update", "POST /api/tip/import-stix",
             "GET /api/rasp/devices", "POST /api/rasp/devices", "DELETE /api/rasp/devices/{id}",
             "POST /api/terminal", "GET /api/settings", "POST /api/settings",
@@ -5559,6 +5559,178 @@ async def v2_generate_report(request: Request):
     return {"report": report, "path": str(path)}
 
 # == END V2 MERGE ==
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  IOC VERIFIER — Verificación activa de Indicadores de Compromiso
+#  DNS lookup, port scan, HTTP probe, SSL check, WHOIS
+# ═════════════════════════════════════════════════════════════════════════════
+
+import socket as _ioc_socket
+import ssl as _ioc_ssl
+import concurrent.futures as _ioc_pool
+from datetime import datetime as _ioc_dt
+
+def _verify_single_ioc(ioc: dict) -> dict:
+    """Verifica un IOC individual: DNS, puertos, HTTP, SSL."""
+    ioc_type = ioc.get("type", "ip")
+    ioc_value = ioc.get("value", ioc.get("ioc", ""))
+    result = {
+        "ioc": ioc_value,
+        "type": ioc_type,
+        "verified_at": _ioc_dt.now().isoformat(),
+        "checks": {},
+        "alive": False,
+    }
+
+    # 1. DNS resolution (para dominios/IPs)
+    try:
+        if ioc_type in ("domain", "url"):
+            resolved = _ioc_socket.getaddrinfo(ioc_value, None, proto=_ioc_socket.IPPROTO_TCP)
+            ips = list(set(addr[4][0] for addr in resolved))
+            result["checks"]["dns"] = {"status": "ok", "ips": ips}
+            target_ip = ips[0] if ips else None
+            result["alive"] = bool(ips)
+        elif ioc_type == "ip":
+            try:
+                _ioc_socket.inet_aton(ioc_value)
+                result["checks"]["dns"] = {"status": "ok", "ip": ioc_value}
+                target_ip = ioc_value
+                result["alive"] = True
+            except _ioc_socket.error:
+                result["checks"]["dns"] = {"status": "error", "error": "IP inválida"}
+                target_ip = None
+        elif ioc_type == "hash":
+            result["checks"]["hash"] = {"status": "info", "value": ioc_value, "len": len(ioc_value)}
+            result["alive"] = None  # No se puede verificar un hash con red
+            return result
+        else:
+            target_ip = ioc_value
+    except Exception as e:
+        result["checks"]["dns"] = {"status": "error", "error": str(e)}
+        return result
+
+    if not target_ip:
+        return result
+
+    # 2. Port scan (puertos comunes)
+    ports_to_check = ioc.get("ports", [80, 443, 22, 554, 8080, 3389, 23])
+    if isinstance(ports_to_check, str):
+        ports_to_check = [int(p.strip()) for p in ports_to_check.split(",") if p.strip().isdigit()]
+    if not ports_to_check:
+        ports_to_check = [80, 443, 22, 554, 8080, 3389, 23]
+
+    open_ports = []
+    for port in ports_to_check[:10]:  # max 10 puertos
+        try:
+            s = _ioc_socket.socket(_ioc_socket.AF_INET, _ioc_socket.SOCK_STREAM)
+            s.settimeout(2.0)
+            if s.connect_ex((target_ip, port)) == 0:
+                open_ports.append(port)
+                result["alive"] = True
+            s.close()
+        except Exception:
+            pass
+    result["checks"]["ports"] = {"open": open_ports, "scanned": ports_to_check[:10]}
+
+    # 3. HTTP probe
+    for port in open_ports:
+        if port in (80, 8080, 8000, 443, 8443):
+            protocol = "https" if port in (443, 8443) else "http"
+            url = f"{protocol}://{ioc_value}" if ioc_type in ("domain", "url") else f"{protocol}://{target_ip}"
+            try:
+                import subprocess as _ioc_sub
+                cmd = ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}|%{time_total}",
+                       "--max-time", "5", "-k", url]
+                out = _ioc_sub.run(cmd, capture_output=True, text=True, timeout=7)
+                if out.stdout:
+                    parts = out.stdout.split("|")
+                    result["checks"]["http"] = {
+                        "status": "ok",
+                        "code": parts[0] if parts else "000",
+                        "response_time": parts[1] if len(parts) > 1 else "0",
+                        "url": url,
+                    }
+            except Exception as e:
+                result["checks"]["http"] = {"status": "error", "error": str(e)}
+            break
+
+    # 4. SSL cert check (para HTTPS)
+    if 443 in open_ports:
+        try:
+            ctx = _ioc_ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = _ioc_ssl.CERT_NONE
+            with _ioc_socket.create_connection((target_ip, 443), timeout=5) as sock:
+                with ctx.wrap_socket(sock, server_hostname=ioc_value if ioc_type in ("domain","url") else target_ip) as ssock:
+                    cert = ssock.getpeercert()
+                    result["checks"]["ssl"] = {
+                        "status": "ok",
+                        "issuer": dict(x[0] for x in cert.get("issuer", [])),
+                        "expires": cert.get("notAfter", ""),
+                    }
+        except Exception as e:
+            result["checks"]["ssl"] = {"status": "error", "error": str(e)}
+
+    return result
+
+
+@app.post("/api/tip/iocs/verify")
+async def tip_iocs_verify(request: Request):
+    """Verifica IOCs activamente: DNS, puertos abiertos, HTTP, SSL.
+    Acepta una lista de IOCs o verifica todos los almacenados si no se envía body."""
+    try:
+        body = await request.json()
+        if isinstance(body, list):
+            iocs = body
+        elif isinstance(body, dict) and "iocs" in body:
+            iocs = body["iocs"]
+        else:
+            iocs = [body]
+    except Exception:
+        iocs = _load_json(IOC_FILE, [])
+
+    if not iocs:
+        iocs = _load_json(IOC_FILE, [])
+
+    if not iocs:
+        return {"ok": True, "results": [], "total": 0, "alive": 0}
+
+    # Verificar en paralelo (max 8 concurrentes)
+    with _ioc_pool.ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(_verify_single_ioc, iocs[:50]))
+
+    alive_count = sum(1 for r in results if r.get("alive"))
+    return {
+        "ok": True,
+        "results": results,
+        "total": len(results),
+        "alive": alive_count,
+        "dead": len(results) - alive_count,
+        "verified_at": _ioc_dt.now().isoformat(),
+    }
+
+
+@app.get("/api/tip/iocs/verify")
+async def tip_iocs_verify_get():
+    """Verifica todos los IOCs almacenados."""
+    iocs = _load_json(IOC_FILE, [])
+    if not iocs:
+        return {"ok": True, "results": [], "total": 0, "alive": 0}
+
+    with _ioc_pool.ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(_verify_single_ioc, iocs[:50]))
+
+    alive_count = sum(1 for r in results if r.get("alive"))
+    return {
+        "ok": True,
+        "results": results,
+        "total": len(results),
+        "alive": alive_count,
+        "dead": len(results) - alive_count,
+        "verified_at": _ioc_dt.now().isoformat(),
+    }
+
+# == END IOC VERIFIER ==================================================
 
 
 
