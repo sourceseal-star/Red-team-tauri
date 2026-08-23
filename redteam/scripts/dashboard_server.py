@@ -125,14 +125,21 @@ except ImportError:
 
 
 # ── Enhanced Recon Module (ONVIF, SSDP, SNMP, NetBIOS, mDNS) ────────────────
-try:
-    sys.path.insert(0, str(BASE.parent / "backend"))
-    from modules.enhanced_recon import router as enhanced_recon_router
-    _ENHANCED_RECON_OK = True
-    print("[ENHANCED-RECON] Módulo cargado: ONVIF + SSDP + SNMP + NetBIOS + mDNS")
-except Exception as _er_err:
-    _ENHANCED_RECON_OK = False
-    print(f"[WARN] enhanced_recon import falló: {_er_err}", flush=True)
+# Resolver path absoluto: buscar backend/modules/enhanced_recon.py en múltiples ubicaciones
+_ENHANCED_RECON_OK = False
+for _bp in [BASE.parent / "backend", BASE / "backend", SCRIPT_DIR.parent.parent / "backend", pathlib.Path.cwd() / "backend"]:
+    if (_bp / "modules" / "enhanced_recon.py").exists():
+        sys.path.insert(0, str(_bp))
+        try:
+            from modules.enhanced_recon import router as enhanced_recon_router
+            _ENHANCED_RECON_OK = True
+            print(f"[ENHANCED-RECON] Cargado desde {_bp} — ONVIF + SSDP + SNMP + NetBIOS + mDNS")
+            break
+        except Exception as _er_err:
+            sys.path.pop(0)
+            print(f"[WARN] enhanced_recon import falló desde {_bp}: {_er_err}", flush=True)
+if not _ENHANCED_RECON_OK:
+    print("[WARN] enhanced_recon no encontrado — /api/enhanced/* no disponible", flush=True)
 
 # ── OSINT Advanced v4.0 (Google, Shodan, VirusTotal, Censys, Social) ─────────
 try:

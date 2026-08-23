@@ -52,7 +52,7 @@ export default function TopologyPanel() {
   const fetchHosts = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/topology/hosts?limit=2000");
+      const res = await fetch("/api/v2/topology/hosts?limit=2000");
       const data = await res.json();
       setHosts(data.hosts || []);
     } catch (e) {
@@ -63,7 +63,7 @@ export default function TopologyPanel() {
 
   const fetchGraph = async () => {
     try {
-      const res = await fetch("/api/topology/graph");
+      const res = await fetch("/api/v2/topology/graph");
       const data = await res.json();
       setGraph(data);
     } catch (e) {
