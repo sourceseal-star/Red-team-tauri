@@ -130,7 +130,7 @@ EOF
   export PORT=$PORT HOST=$HOST PYTHONUNBUFFERED=1
   export $(grep -v '^#' "$ROOT/.env" | xargs 2>/dev/null || true)
 
-  nohup python3 dashboard_server.py > /tmp/sourceSeal_backend.log 2>&1 &
+  nohup python3 dashboard_server.py > "$ROOT/sourceSeal_backend.log" 2>&1 &
   BACKEND_PID=$!
   cd "$ROOT"
   ok "Backend PID: $BACKEND_PID"
@@ -139,8 +139,8 @@ EOF
   READY=0
   for i in $(seq 1 20); do
     if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-      fail "El proceso backend murió. Revisa /tmp/sourceSeal_backend.log"
-      tail -20 /tmp/sourceSeal_backend.log
+      fail "El proceso backend murió. Revisa $ROOT/sourceSeal_backend.log"
+      tail -20 "$ROOT/sourceSeal_backend.log"
       exit 1
     fi
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/health" 2>/dev/null || echo "000")
@@ -155,7 +155,7 @@ EOF
   if [ "$READY" -ne 1 ]; then
     fail "El backend no respondió tras 20s"
     echo "Logs:"
-    tail -20 /tmp/sourceSeal_backend.log
+    tail -20 "$ROOT/sourceSeal_backend.log"
     exit 1
   fi
 
