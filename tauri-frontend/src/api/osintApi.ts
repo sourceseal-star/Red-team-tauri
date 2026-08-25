@@ -4,7 +4,7 @@
  */
 import { getBaseUrl, getApiKey } from '../lib/api';
 
-const OSINT_BASE = `${getBaseUrl()}/api/osint/v2`;
+const OSINT_BASE = `${getBaseUrl()}/api/osint`;
 
 function authH(json = false): Record<string, string> {
   const h: Record<string, string> = {}
@@ -47,7 +47,7 @@ export interface QuickScanResult {
 
 export const osintApi = {
   fullScan: async (target: string, scanType: string = 'auto'): Promise<OSINTScanResult> => {
-    const r = await fetch(`${OSINT_BASE}/full-scan`, {
+    const r = await fetch(`${OSINT_BASE}/full/${encodeURIComponent(target)}`, {
       method: 'POST',
       headers: authH(true),
       body: JSON.stringify({ target, scan_type: scanType }),
@@ -57,7 +57,7 @@ export const osintApi = {
   },
 
   quickScan: async (target: string, scanType: string = 'auto'): Promise<QuickScanResult> => {
-    const r = await fetch(`${OSINT_BASE}/quick-scan/${encodeURIComponent(target)}?scan_type=${scanType}`, {
+    const r = await fetch(`${OSINT_BASE}/full/${encodeURIComponent(target)}`, {
       headers: authH(),
     })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -70,17 +70,17 @@ export const osintApi = {
   },
 
   dns: async (domain: string) => {
-    const r = await fetch(`${OSINT_BASE}/dns/${encodeURIComponent(domain)}`, { headers: authH() })
+    const r = await fetch(`${OSINT_BASE}/whois/${encodeURIComponent(domain)}`, { headers: authH() })
     return r.json()
   },
 
   subdomains: async (domain: string) => {
-    const r = await fetch(`${OSINT_BASE}/subdomains/${encodeURIComponent(domain)}`, { headers: authH() })
+    const r = await fetch(`${OSINT_BASE}/subdomains/${encodeURIComponent(domain)}/${encodeURIComponent(domain)}`, { headers: authH() })
     return r.json()
   },
 
   threatIntel: async (entity: string, type: string = 'auto') => {
-    const r = await fetch(`${OSINT_BASE}/threat/${encodeURIComponent(entity)}?entity_type=${type}`, { headers: authH() })
+    const r = await fetch(`${OSINT_BASE}/full/${encodeURIComponent(entity)}`, { headers: authH() })
     return r.json()
   },
 }
@@ -109,13 +109,13 @@ export interface MultiSearchResult {
 
 export const searchApi = {
   search: async (q: string, engine: SearchEngine = 'all', num: number = 10): Promise<MultiSearchResult> => {
-    const r = await fetch(`${OSINT_BASE}/search?q=${encodeURIComponent(q)}&engine=${engine}&num=${num}`, { headers: authH() })
+    const r = await fetch(`${OSINT_BASE}/full/${encodeURIComponent(q)}`, { headers: authH() })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()
   },
 
   engines: async () => {
-    const r = await fetch(`${OSINT_BASE}/search/engines`, { headers: authH() })
+    const r = await fetch(`${OSINT_BASE}/full/engines`, { headers: authH() })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()
   },
