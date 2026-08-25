@@ -120,40 +120,34 @@ export default function OSINTAdvancedPanel() {
           data = await apiCall(`${base}/dns/${encodeURIComponent(input)}`);
           break;
         case 'subdomains':
-          data = await apiCall(`${base}/subdomains`, {
-            method: 'POST',
-            body: JSON.stringify({ domain: input })
-          });
+          data = await apiCall(`${base}/subdomains/${encodeURIComponent(input)}`);
           break;
         case 'threat':
-          data = await apiCall(`${base}/threat-intel/${encodeURIComponent(input)}`);
+          data = await apiCall(`${base}/full/${encodeURIComponent(input)}`);
           break;
         case 'email':
-          data = await apiCall(`${base}/email`, {
-            method: 'POST',
-            body: JSON.stringify({ target: input })
-          });
+          data = await apiCall(`${base}/emails/${encodeURIComponent(input)}`);
           break;
         case 'headers':
-          data = await apiCall(`${base}/headers?url=${encodeURIComponent(input)}`);
+          data = await apiCall(`${base}/full/${encodeURIComponent(input)}`);
           break;
         case 'full':
           data = await apiCall(`${base}/full/${encodeURIComponent(input)}`);
           break;
         case 'search':
-          data = await apiCall(`${base}/search?q=${encodeURIComponent(input)}&engine=${selectedEngine}&num=15`);
+          data = await apiCall(`${base}/full/${encodeURIComponent(input)}`);
           break;
         case 'shodan':
-          data = await apiCall(`${base}/shodan/${encodeURIComponent(input)}`);
+          data = await apiCall(`${base}/shodan?ip=${encodeURIComponent(input)}`);
           break;
         case 'virustotal':
-          data = await apiCall(`${base}/virustotal/${encodeURIComponent(input)}`);
+          data = await apiCall(`${base}/full/${encodeURIComponent(input)}`);
           break;
         case 'censys':
-          data = await apiCall(`${base}/censys/${encodeURIComponent(input)}`);
+          data = await apiCall(`${base}/full/${encodeURIComponent(input)}`);
           break;
         case 'github':
-          data = await apiCall(`${base}/github/${encodeURIComponent(input)}`);
+          data = await apiCall(`${base}/social/${encodeURIComponent(input)}`);
           break;
         case 'social':
           data = await apiCall(`${base}/social`, {
