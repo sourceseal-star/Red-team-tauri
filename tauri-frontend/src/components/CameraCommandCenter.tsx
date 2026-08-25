@@ -295,7 +295,7 @@ export default function CameraCommandCenter() {
                 ) : (
                   <div className="flex items-center justify-center h-full text-slate-600 text-sm flex-col gap-2">
                     <Camera size={32} className="opacity-20" />
-                    Sin snapshot disponible
+                    Sin feed disponible — verifica credenciales
                   </div>
                 )}
                 {selectedCam.working_credentials && (
