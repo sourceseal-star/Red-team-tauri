@@ -150,10 +150,7 @@ export default function OSINTAdvancedPanel() {
           data = await apiCall(`${base}/social/${encodeURIComponent(input)}`);
           break;
         case 'social':
-          data = await apiCall(`${base}/social`, {
-            method: 'POST',
-            body: JSON.stringify({ target: input })
-          });
+          data = await apiCall(`${base}/social/${encodeURIComponent(input)}`);
           break;
         case 'results':
           data = await apiCall(`${base}/history/${encodeURIComponent(input || 'all')}`);
