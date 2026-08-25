@@ -1434,26 +1434,77 @@ async def iot_video_urls(ip: str = Query(...), port: int = Query(80)):
     return {"ip": ip, "video_sources": sources, "total": len(sources)}
 
 @app.get("/api/iot/snapshot")
-async def iot_snapshot(ip: str = Query(...), port: int = Query(80), path: str = Query("/snapshot.cgi")):
-    try:
-        scheme = "https" if port in (443, 8443) else "http"
-        url = f"{scheme}://{ip}:{port}{urllib.parse.unquote(path)}"
-        ctx = None
-        if scheme == "https":
-            ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-        req = urllib.request.Request(url, headers={"User-Agent": "SourceSeal-Snapshot/3.0"})
-        opener = urllib.request.build_opener(
-            urllib.request.HTTPSHandler(context=ctx) if scheme == "https" else urllib.request.HTTPHandler())
-        with opener.open(req, timeout=5) as resp:
-            data = resp.read()
-            ct = resp.headers.get("Content-Type", "image/jpeg")
-            return Response(content=data, media_type=ct)
-    except Exception as e:
-        return JSONResponse({"error": str(e)[:200]}, status_code=502)
+async def iot_snapshot(ip: str = Query(...), port: int = Query(80), path: str = Query("/snapshot.cgi"),
+                       user: str = Query(""), pwd: str = Query("")):
+    """Fetch snapshot from camera. Tries auth if provided, falls back to common paths."""
+    import httpx
+    scheme = "https" if port in (443, 8443) else "http"
+    base_url = f"{scheme}://{ip}:{port}"
+    auth = None
+    if user or pwd:
+        auth = (user or "", pwd or "")
+
+    # Paths de snapshot comunes por vendor (en orden de probabilidad)
+    snapshot_paths = [
+        path,  # El path proporcionado
+        "/snapshot.cgi",
+        "/cgi-bin/snapshot.cgi",
+        "/image/jpeg.cgi",
+        "/cgi-bin/viewer/video.jpg",
+        "/tmpfs/auto.jpg",
+        "/ISAPI/Streaming/channels/101/picture",
+        "/onvif/snapshot",
+        "/mjpg/snapshot.cgi",
+        "/cgi-bin/view/snapshot.cgi",
+        "/snapshot.jpg",
+    ]
+    # Elimar duplicados manteniendo orden
+    seen = set()
+    snapshot_paths = [p for p in snapshot_paths if not (p in seen or seen.add(p))]
+
+    verify = False if scheme == "https" else True
+    async with httpx.AsyncClient(timeout=8, verify=verify) as c:
+        for snap_path in snapshot_paths:
+            try:
+                url = base_url + snap_path
+                r = await c.get(url, auth=auth, follow_redirects=True,
+                                headers={"User-Agent": "SourceSeal-Snapshot/3.1"})
+                ct = r.headers.get("Content-Type", "")
+                # Aceptar cualquier content-type que sea imagen o octet-stream
+                if r.status_code == 200 and ("image" in ct or "octet-stream" in ct or len(r.content) > 1000):
+                    return Response(content=r.content, media_type=ct or "image/jpeg")
+            except Exception:
+                continue
+
+    return JSONResponse({"error": "Snapshot no disponible (prueba con credenciales)", "tried": len(snapshot_paths)}, status_code=502)
 
 @app.get("/api/iot/stream")
-async def iot_stream(ip: str = Query(...), port: int = Query(80), path: str = Query("/mjpg/video.mjpg")):
-    return JSONResponse({"error": "MJPEG streaming requires a browser-facing proxy. Use the snapshot endpoint.", "ip": ip}, status_code=501)
+async def iot_stream(ip: str = Query(...), port: int = Query(80), path: str = Query("/mjpg/video.mjpg"),
+                     user: str = Query(""), pwd: str = Query("")):
+    """Proxy MJPEG stream from camera to browser — allows live video in <img> tag."""
+    import httpx
+    scheme = "https" if port in (443, 8443) else "http"
+    url = f"{scheme}://{ip}:{port}{urllib.parse.unquote(path)}"
+    auth = None
+    if user or pwd:
+        auth = (user or "", pwd or "")
+
+    async def generate():
+        try:
+            timeout = httpx.StreamTimeout(read=15, connect=5, write=5, pool=5)
+            verify = False if scheme == "https" else True
+            async with httpx.AsyncClient(timeout=timeout, verify=verify) as c:
+                async with c.stream("GET", url, auth=auth, follow_redirects=True,
+                                    headers={"User-Agent": "SourceSeal-Stream/3.1"}) as r:
+                    if r.status_code != 200:
+                        yield f'--boundary\r\nContent-Type: application/json\r\n\r\n{{"error": "HTTP {r.status_code}"}}\r\n'
+                        return
+                    async for chunk in r.aiter_bytes():
+                        yield chunk
+        except Exception as e:
+            yield f'--boundary\r\nContent-Type: application/json\r\n\r\n{{"error": "{str(e)[:100]}"}}\r\n'
+
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=--boundary")
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  ENDPOINTS — OSINT
