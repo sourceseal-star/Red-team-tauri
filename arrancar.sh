@@ -182,18 +182,29 @@ fi
 echo -e "${C}[6/8] Compilando frontend...${N}"
 cd "$ROOT/tauri-frontend"
 if [ ! -d "node_modules" ]; then
-  npm install --legacy-peer-deps 2>&1 | tail -3
+  echo -e "${C}  Instalando dependencias Node...${N}"
+  npm install --legacy-peer-deps 2>&1 | tail -5 || true
 fi
-npm run build 2>&1 | tail -5
+# Build no-fatal: si falla, se usa el dist/ existente (si hay)
+FRONTEND_BUILD_OK=0
+npm run build 2>&1 | tail -10 && FRONTEND_BUILD_OK=1 || {
+  echo -e "${Y}  ⚠ Build frontend falló — usando dist/ existente si disponible${N}"
+}
 # CRITICO: el backend sirve estaticamente desde redteam/scripts/dist/
-# Si no se copia el build, sirve el dist viejo del repo
-echo -e "${C}  Copiando build a redteam/scripts/dist/...${N}"
-if [ -d "$ROOT/redteam/scripts/dist" ]; then
-  find "$ROOT/redteam/scripts/dist" -mindepth 1 -delete 2>/dev/null
+if [ "$FRONTEND_BUILD_OK" = "1" ] && [ -d "$ROOT/tauri-frontend/dist" ]; then
+  echo -e "${C}  Copiando build a redteam/scripts/dist/...${N}"
+  if [ -d "$ROOT/redteam/scripts/dist" ]; then
+    find "$ROOT/redteam/scripts/dist" -mindepth 1 -delete 2>/dev/null || true
+  fi
+  cp -r "$ROOT/tauri-frontend/dist/." "$ROOT/redteam/scripts/dist/" 2>/dev/null || true
+  echo -e "${G}  OK Frontend compilado y copiado${N}"
+elif [ -d "$ROOT/redteam/scripts/dist" ]; then
+  echo -e "${Y}  ⚠ Usando dist/ anterior (build falló pero ya había uno compilado)${N}"
+else
+  echo -e "${Y}  ⚠ Sin frontend compilado — el backend servirá sin UI${N}"
+  echo -e "${Y}    Para debugear: cd tauri-frontend && npm run build (ver errores)${N}"
 fi
-cp -r "$ROOT/tauri-frontend/dist/." "$ROOT/redteam/scripts/dist/"
 cd "$ROOT"
-echo -e "${G}  OK Frontend compilado y copiado${N}"
 
 # ─── 7. ARRANCAR BACKEND ──────────────────────────────────────────────
 echo -e "${C}[7/8] Arrancando backend...${N}"
