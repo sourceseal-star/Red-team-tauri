@@ -1,8 +1,7 @@
-# SourceSeal Console Pro — Centro de Control
+# SourceSeal Console — Centro de Control
 
 Dashboard de operaciones de seguridad ofensiva y defensiva. El flujo activo en Replit
-es el dashboard unificado de `Red-team-tauri`; el APK y el Motor de Cierre quedan
-fuera de este flujo por ahora.
+es el dashboard unificado de `Red-team-tauri` con LEVIATHAN v3.1 integrado.
 
 ## Cómo ejecutar
 
@@ -13,24 +12,77 @@ bash replit_start.sh
 El workflow **SourceSeal Dashboard** arranca automáticamente el backend y sirve el
 frontend compilado en el puerto **8001**.
 
-En Termux, `start-termux.sh` inicia además el Gateway Mesh en el puerto **8080**.
-Se puede omitir con `START_GATEWAY=0 bash start-termux.sh`.
+En Termux, `bash arrancar.sh` inicia todo + detecta entorno Android.
 
 Health check:
 
 ```bash
 curl http://localhost:8001/api/health
+curl http://localhost:8001/api/v1/status       # LEVIATHAN unificado
+curl http://localhost:8001/api/integrated/health  # ARTO + SEAL + LEVIATHAN
 ```
 
 ## Estructura principal
 
 ```
 redteam/
-└── scripts/dashboard_server.py   # Backend unificado FastAPI :8001
+└── scripts/dashboard_server.py    # Backend unificado FastAPI :8001
+leviathan_core/                     # Módulos de Red Team (31+ archivos)
+├── api/
+│   ├── leviathan_router.py         # /api/leviathan/* (CRUD básico)
+│   └── integration_router.py      # /api/v1/* (unificado — NUEVO)
+├── config/profiles.json            # Perfiles de escaneo + OPSEC
+├── modules/
+│   ├── scanners/ (6)              # network, rtsp, onvif, http, camera, service
+│   ├── exploiters/ (5)            # hikvision_rce, dahua, brute, kraken, chain
+│   ├── ai_analyzers/ (4)          # object_detection, anomaly, behavior, threat
+│   └── reporters/ (3)             # json, html, pdf
+└── tools/
+    ├── convert_yolo_onnx.py        # Convertir YOLOv8 a ONNX (PC)
+    └── verify_modules.py           # Verificar módulos
 tauri-frontend/
-├── src/                          # React + TypeScript
-└── dist/                         # Frontend generado para el backend
-backend/modules/                  # Reconocimiento real complementario
+├── src/                            # React + TypeScript
+└── dist/                           # Frontend compilado para el backend
+```
+
+## Endpoints LEVIATHAN (/api/v1/*)
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/api/v1/status` | Estado del sistema LEVIATHAN |
+| GET | `/api/v1/health` | Health check |
+| GET | `/api/v1/profiles` | Perfiles de escaneo disponibles |
+| POST | `/api/v1/scan/network` | Escaneo de red (con perfil) |
+| POST | `/api/v1/scan/cameras` | Detección de cámaras IP |
+| POST | `/api/v1/scan/rtsp` | Detección RTSP |
+| POST | `/api/v1/scan/onvif` | Detección ONVIF |
+| POST | `/api/v1/exploit/camera` | Explotación (auto-detect vendor) |
+| POST | `/api/v1/ai/threat-scoring` | Puntuación de amenazas |
+| POST | `/api/v1/ai/anomalies` | Detección de anomalías |
+| POST | `/api/v1/report/json` | Informe JSON |
+| POST | `/api/v1/report/html` | Informe HTML |
+
+## Detección de Objetos con IA (ONNX)
+
+### En Replit/PC:
+```bash
+pip install onnxruntime numpy pillow
+# Convertir modelo YOLOv8:
+pip install ultralytics onnx
+python3 leviathan_core/tools/convert_yolo_onnx.py
+```
+
+### En Termux:
+onnxruntime no tiene wheels para aarch64/Android. El módulo degrada gracefully
+(sin romper el dashboard). Para activarlo:
+1. Convertir modelo en PC → `yolov8n.onnx`
+2. Copiar a `redteam/models/yolov8n.onnx`
+3. `pip install numpy pillow` en Termux
+
+## Verificación de Módulos
+
+```bash
+python3 leviathan_core/tools/verify_modules.py
 ```
 
 ## Variables de entorno
@@ -38,17 +90,39 @@ backend/modules/                  # Reconocimiento real complementario
 | Variable | Default | Descripción |
 |---|---|---|
 | `PORT` | `8001` | Puerto HTTP del dashboard |
+| `HOST` | `0.0.0.0` | Host de escucha |
 | `REDTEAM_API_KEY` | local-dev-token | Clave para endpoints protegidos |
-| `CORSET_SCOPE_B64` | — | Alcance autorizado de escaneo; recomendado |
-| `SHODAN_API_KEY` | — | Intel Shodan, si se desea habilitar |
+| `CORSET_SCOPE_B64` | — | Alcance autorizado de escaneo |
+| `SHODAN_API_KEY` | — | Intel Shodan |
+| `ABUSEIPDB_KEY` | — | Reputación de IPs |
 | `START_GATEWAY` | `1` en Termux | Inicia el Gateway Mesh en 8080 |
 
-El backend informa explícitamente cuando faltan servicios o claves opcionales; no
-rellena resultados con datos simulados. Para operar escaneos reales, define un
-alcance autorizado mediante `CORSET_SCOPE_B64` y configura únicamente las claves
-de servicios externos que vayas a utilizar.
+El backend no rellena resultados con datos simulados. Para operar escaneos reales,
+define un alcance autorizado mediante `CORSET_SCOPE_B64`.
 
-El flujo de APK no forma parte de la puesta en marcha actual.
+## Solución de problemas
+
+### git pull falla con "unstaged changes"
+```bash
+git stash && git pull origin main && git stash pop
+# Si conflicto: git checkout . && git pull origin main
+```
+
+### Verificar que todo carga
+```bash
+python3 leviathan_core/tools/verify_modules.py
+```
+
+### Puerto 8001 ocupado
+```bash
+pkill -9 -f dashboard_server.py
+bash arrancar.sh   # o bash replit_start.sh
+```
+
+### LEVIATHAN no carga
+El router es opcional — si falla, el dashboard sigue funcionando.
+Revisar el output de arranque: `[LEVIATHAN] Router montado: /api/leviathan/* + /api/v1/*`
+Si dice `[WARN] LEVIATHAN import falló`, revisar dependencias con verify_modules.py.
 
 ## User preferences
 
