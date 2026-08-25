@@ -117,7 +117,7 @@ export default function OSINTAdvancedPanel() {
           data = await apiCall(`${base}/whois/${encodeURIComponent(input)}`);
           break;
         case 'dns':
-          data = await apiCall(`${base}/dns/${encodeURIComponent(input)}`);
+          data = await apiCall(`${base}/whois/${encodeURIComponent(input)}`);
           break;
         case 'subdomains':
           data = await apiCall(`${base}/subdomains/${encodeURIComponent(input)}`);
@@ -156,7 +156,7 @@ export default function OSINTAdvancedPanel() {
           });
           break;
         case 'results':
-          data = await apiCall(`${base}/results`);
+          data = await apiCall(`${base}/history/${encodeURIComponent(input || 'all')}`);
           break;
       }
       // Varios endpoints (shodan, virustotal, censys, github) devuelven
