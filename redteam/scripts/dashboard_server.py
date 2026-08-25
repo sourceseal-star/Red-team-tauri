@@ -1506,6 +1506,129 @@ async def iot_stream(ip: str = Query(...), port: int = Query(80), path: str = Qu
 
     return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=--boundary")
 
+# ── IoT Vendor Detection + CVE DB + Default Creds ─────────────────────────────
+VENDOR_CVES = {
+    "Hikvision": [
+        {"cve": "CVE-2021-36260", "desc": "RCE via SDK webLanguage", "severity": "critical", "port": 80},
+        {"cve": "CVE-2021-33044", "desc": "Auth bypass", "severity": "critical", "port": 80},
+        {"cve": "CVE-2017-7921", "desc": "Auth bypass via backdoor user", "severity": "critical", "port": 80},
+    ],
+    "Dahua": [
+        {"cve": "CVE-2021-33045", "desc": "RCE via RPC", "severity": "critical", "port": 80},
+        {"cve": "CVE-2020-25078", "desc": "Auth bypass", "severity": "high", "port": 80},
+        {"cve": "CVE-2022-30560", "desc": "Auth bypass via crafted request", "severity": "critical", "port": 37777},
+    ],
+    "Xiongmai": [
+        {"cve": "CVE-2017-17215", "desc": "Unauthenticated RCE", "severity": "critical", "port": 9530},
+        {"cve": "CVE-2017-8225", "desc": "Auth bypass", "severity": "critical", "port": 80},
+    ],
+    "D-Link": [
+        {"cve": "CVE-2019-16920", "desc": "RCE without auth", "severity": "critical", "port": 80},
+        {"cve": "CVE-2020-25078", "desc": "Creds leak via CGI", "severity": "high", "port": 80},
+    ],
+    "Netgear": [
+        {"cve": "CVE-2016-6277", "desc": "RCE via CGI", "severity": "critical", "port": 80},
+    ],
+    "GoAhead": [
+        {"cve": "CVE-2017-8225", "desc": "Auth bypass", "severity": "critical", "port": 80},
+    ],
+    "Ubiquiti": [
+        {"cve": "CVE-2021-35064", "desc": "Unauthenticated access", "severity": "high", "port": 80},
+    ],
+}
+
+RTSP_PATHS_BY_VENDOR = {
+    "Hikvision": ["/Streaming/Channels/101", "/Streaming/Channels/102", "/h264/ch1/main/av_stream"],
+    "Dahua": ["/cam/realmonitor?channel=1&subtype=0", "/cam/realmonitor?channel=1&subtype=1"],
+    "Xiongmai": ["/h264", "/H.264", "/live/ch0", "/live/ch1"],
+    "Generic": ["/live", "/stream1", "/videoMain", "/cam", "/mjpg/video.mjpg"],
+    "ONVIF": ["/onvif/source", "/Media/Streaming/Channel/1"],
+}
+
+DEFAULT_CREDS = [
+    ("admin", "admin"), ("admin", "12345"), ("admin", "123456"), ("admin", ""),
+    ("admin", "password"), ("admin", "admin123"), ("admin", "54321"),
+    ("root", "root"), ("root", "admin"), ("root", "12345"), ("root", "pass"),
+    ("user", "user"), ("user", "12345"), ("guest", "guest"), ("guest", ""),
+    ("administrator", "admin"), ("ubnt", "ubnt"), ("supervisor", "supervisor"),
+    ("service", "service"), ("operator", "operator"), ("maintain", "maintain"),
+    ("admin", "888888"), ("admin", "666666"), ("admin", "111111"),
+]
+
+def _identify_camera_vendor(ip: str, port: int) -> str:
+    """Identifica el fabricante de la cámara por HTTP banner y paths."""
+    import httpx
+    try:
+        scheme = "https" if port in (443, 8443) else "http"
+        url = f"{scheme}://{ip}:{port}/"
+        r = httpx.get(url, timeout=5, follow_redirects=True, verify=False,
+                      headers={"User-Agent": "SourceSeal-Recon/3.1"})
+        body_lower = r.text[:5000].lower()
+        server = r.headers.get("Server", "").lower()
+
+        if "hikvision" in server or "dvr" in server and "hik" in body_lower:
+            return "Hikvision"
+        if "dahua" in server or "dvr" in server and "dahua" in body_lower:
+            return "Dahua"
+        if "d-link" in server or "dlink" in server:
+            return "D-Link"
+        if "netgear" in server:
+            return "Netgear"
+        if "ubiquiti" in server or "ubnt" in server:
+            return "Ubiquiti"
+        if "goahead" in server:
+            return "GoAhead"
+        if "ISAPI" in r.text or "doc/page/login.asp" in r.text:
+            return "Hikvision"
+        if "current_config" in r.text or "login_login" in r.text:
+            return "Dahua"
+        if "xiongmai" in body_lower or "net_suitor" in body_lower or "/hdl" in body_lower:
+            return "Xiongmai"
+        if "onvif" in body_lower:
+            return "ONVIF"
+        return "unknown"
+    except Exception:
+        return "unknown"
+
+@app.get("/api/iot/vulns")
+async def iot_vulns(ip: str = Query(...), port: int = Query(80)):
+    """Identifica el vendor, devuelve CVEs conocidos, prueba credenciales por defecto."""
+    vendor = _identify_camera_vendor(ip, port)
+    cves = VENDOR_CVES.get(vendor, [])
+    rtsp_paths = RTSP_PATHS_BY_VENDOR.get(vendor, RTSP_PATHS_BY_VENDOR["Generic"])
+
+    creds_found = None
+    if vendor != "unknown":
+        import httpx
+        scheme = "https" if port in (443, 8443) else "http"
+        base_url = f"{scheme}://{ip}:{port}"
+        async with httpx.AsyncClient(timeout=5, verify=False) as c:
+            for user, pwd in DEFAULT_CREDS:
+                try:
+                    r = await c.get(base_url + "/", auth=(user, pwd), follow_redirects=True)
+                    if r.status_code == 200 and len(r.content) > 500:
+                        if "401" not in r.text[:200] and "unauthorized" not in r.text[:200].lower():
+                            creds_found = {"user": user, "pwd": pwd}
+                            break
+                except Exception:
+                    continue
+
+    snap_url = f"/api/iot/snapshot?ip={ip}&port={port}"
+    if creds_found:
+        snap_url += f"&user={creds_found['user']}&pwd={creds_found['pwd']}"
+    stream_url = f"/api/iot/stream?ip={ip}&port={port}&path={rtsp_paths[0]}" if rtsp_paths else ""
+
+    return {
+        "ip": ip, "port": port,
+        "vendor": vendor,
+        "cves": cves,
+        "rtsp_paths": rtsp_paths,
+        "default_creds_tested": len(DEFAULT_CREDS) if vendor != "unknown" else 0,
+        "creds_found": creds_found,
+        "snapshot_url": snap_url,
+        "stream_url": stream_url,
+    }
+
 # ═════════════════════════════════════════════════════════════════════════════
 #  ENDPOINTS — OSINT
 # ═════════════════════════════════════════════════════════════════════════════
