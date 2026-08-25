@@ -85,6 +85,20 @@ onnxruntime no tiene wheels para aarch64/Android. El módulo degrada gracefully
 python3 leviathan_core/tools/verify_modules.py
 ```
 
+
+## Endpoints IoT y Cámaras (/api/iot/*)
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/api/iot/vulns?ip=X&port=Y` | Vendor + CVEs + creds + URLs |
+| GET | `/api/iot/auto-access?ip=X&port=Y` | Orquestación completa en 1 llamado |
+| POST | `/api/iot/auto-access-batch` | Escanea red CIDR, procesa todas las cámaras |
+| GET | `/api/iot/snapshot?ip=X&port=Y&user=U&pwd=P` | Snapshot con 11 paths + auth |
+| GET | `/api/iot/stream?ip=X&port=Y&path=P&user=U&pwd=P` | Proxy MJPEG en vivo |
+
+## Vendors de cámaras detectados
+Hikvision, Dahua, Xiongmai, D-Link, Netgear, GoAhead, Ubiquiti, ONVIF
+
 ## Variables de entorno
 
 | Variable | Default | Descripción |
