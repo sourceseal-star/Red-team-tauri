@@ -98,10 +98,32 @@ echo "        -> Health: http://localhost:$PORT/api/health"
 echo "        -> ARTO Status: http://localhost:$PORT/api/arto/status"
 echo ""
 
+# -- 6. GHOST HUNTER PHANTOM (Master + Nodo en :8002) --
+echo "[start] Iniciando GHOST HUNTER PHANTOM..."
+cd "$ROOT/ghost_hunter_phantom"
+BACKEND_API="http://localhost:$PORT" MASTER_PORT=8002 NUM_NODES=1 bash start.sh all &
+GHOST_PID=$!
+echo "[start] GHOST PHANTOM PID: $GHOST_PID"
+cd "$ROOT"
+
+echo ""
+echo "[start] Sistema unificado corriendo:"
+echo "        -> Backend + Frontend: http://0.0.0.0:$PORT"
+echo "        -> GHOST PHANTOM Master: http://0.0.0.0:8002/api/status"
+echo "        -> Scanner: REAL (cero mocks)"
+echo "        -> ARTO AI: AUTO-START (motor autonomo de operaciones)"
+echo "        -> Health: http://localhost:$PORT/api/health"
+echo "        -> ARTO Status: http://localhost:$PORT/api/arto/status"
+echo "        -> GHOST Status: http://localhost:8002/api/status"
+echo ""
+
 cleanup() {
   echo "[start] Apagando..."
   kill "$BACKEND_PID" 2>/dev/null || true
+  kill "$GHOST_PID" 2>/dev/null || true
   pkill -f "dashboard_server.py" 2>/dev/null || true
+  pkill -f "ghost_hunter_phantom/master.py" 2>/dev/null || true
+  pkill -f "ghost_hunter_phantom/node.py" 2>/dev/null || true
   exit 0
 }
 trap cleanup SIGTERM SIGINT

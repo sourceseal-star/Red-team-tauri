@@ -245,6 +245,11 @@ case $opt in
         cd "$ROOT/honeypot"
         node start-honeypot.js 2>/dev/null || echo -e "${R}Requiere: npm install express${N}"
         ;;
+   10)
+        echo -e "${G}Ejecutando GHOST HUNTER PHANTOM...${N}"
+        cd "$ROOT/ghost_hunter_phantom"
+        BACKEND_API="http://localhost:8001" MASTER_PORT=8002 NUM_NODES=1 bash start.sh all
+        ;;
     0)
         echo -e "${G}Listo. Todo configurado.${N}"
         exit 0
