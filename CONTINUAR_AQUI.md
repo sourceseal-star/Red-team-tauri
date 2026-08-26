@@ -1,10 +1,10 @@
 # SourceSeal Console — Estado del Proyecto
 
-**Ultima actualizacion:** 2026-08-25
-**Version:** 6.0-LEVIATHAN-IoT
+**Ultima actualizacion:** 2026-08-26
+**Version:** 6.1-LEVIATHAN-IoT-PHANTOM
 **Repositorio:** https://github.com/sourceseal-star/Red-team-tauri
 **Branch:** main
-**Ultimo commit:** 7e45001 (feat: grilla de camaras batch con thumbnails + CVEs + stream)
+**Ultimo commit:** 4433bf7 (fix phantom node endpoints + launcher unificado) (feat: grilla de camaras batch con thumbnails + CVEs + stream)
 
 ---
 
@@ -108,8 +108,11 @@ bash replit_start.sh
    - El frontend compila (revisar output de npm run build)
    - El sidebar muestra LEVIATHAN, ARTO, SEAL, IoT, OSINT
    - El boton "Escanear Todo" en Camaras funciona
-2. **Configurar API Keys** — SHODAN_API_KEY y ABUSEIPDB_KEY en .env
-3. **Verificar camara** — Probar `/api/iot/auto-access?ip=IP&port=80` con la camara real
+   - GHOST PHANTOM arranca en :8002 (ver logs)
+2. **Probar PHANTOM** — `curl http://localhost:8002/api/status` despues de arrancar
+3. **Configurar API Keys** — SHODAN_API_KEY y ABUSEIPDB_KEY en .env
+4. **Verificar camara** — Probar `/api/iot/auto-access?ip=IP&port=80` con la camara real
+5. **Probar caza PHANTOM** — `POST :8002/api/hunt/start` con playbook hikvision
 
 ## 🔑 PENDIENTES MANUALES (no urgentes)
 
@@ -132,7 +135,8 @@ bash replit_start.sh
 
 ## 📝 CHANGELOG
 
-- **v6.0** LEVIATHAN IoT + Camera Batch (2026-08-25) — vendor detection, CVE DB, auto-access batch, grilla de camaras
+- **v6.1** PHANTOM + Launcher Unificado (2026-08-26) — node.py fix, start.sh sin set-e, iniciar_unificado.sh, arrancar.sh con phantom
+- **v6.0** LEVIATHAN IoT + Camera Batch (2026-08-25) — vendor detection, CVE DB, auto-access batch, grilla de camaras — vendor detection, CVE DB, auto-access batch, grilla de camaras
 - **v5.0** ARTO + VPN (2026-08-19) — fixes de auth + WS + docs
 - **v4.1** Topologia + Traffic Analyzer (2026-08-18)
 - **v4.0** OSINT Advanced + Interceptor Advanced (2026-08-14)

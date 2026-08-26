@@ -1,6 +1,6 @@
 # ============================================================================
-# Red-Team-Tauri v6.0 — Dashboard + IoT + OSINT + LEVIATHAN
-# ACTUALIZADO: 2026-08-25
+# Red-Team-Tauri v6.1 — Dashboard + IoT + OSINT + LEVIATHAN
+# ACTUALIZADO: 2026-08-26
 # ============================================================================
 
 > **Backend unico:** `redteam/scripts/dashboard_server.py` (:8001)

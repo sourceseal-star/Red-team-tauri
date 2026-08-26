@@ -3,7 +3,7 @@
 # SourceSeal / Red-Team-Tauri -- Arranque unificado para Replit v6.1
 # Backend + Frontend (dist/) en un solo proceso, puerto :8001
 # =====================================================================
-set -e
+# set -e  # removido: no matar todo si algo falla
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 PORT=8001
 
