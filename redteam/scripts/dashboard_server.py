@@ -283,8 +283,8 @@ try:
     import leviathan_core
     from leviathan_core.api.leviathan_router import router as leviathan_router
     from leviathan_core.api.integration_router import router as leviathan_integration
-    app.include_router(leviathan_router)
-    app.include_router(leviathan_integration)
+    app.routes.extend(leviathan_router.routes)
+    app.routes.extend(leviathan_integration.routes)
     _LEVIATHAN_OK = True
 
     # Mostrar el banner ASCII de LEVIATHAN (existia en leviathan_core/banner.py
@@ -2095,6 +2095,34 @@ async def canary_download(id: str = Query(...)):
     f = CANARY_SVG_DIR / f"canary_{id}.html"
     if not f.exists(): return JSONResponse({"error": "not found"}, status_code=404)
     return HTMLResponse(f.read_text())
+
+@app.post("/api/canary/svg/deploy")
+async def canary_svg_deploy(request: Request):
+    """Despliega N canary SVGs con tokens unicos."""
+    try:
+        body = await request.json()
+    except:
+        body = {}
+    count = min(int(body.get("count", 5)), 50)
+    deployed = []
+    for i in range(count):
+        token = uuid.uuid4().hex[:16]
+        svg_id = uuid.uuid4().hex[:8]
+        svg_content = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><image href="/canary/callback?token=' + token + '&src=svg" width="1" height="1"/></svg>'
+        f = CANARY_SVG_DIR / ("canary_" + svg_id + ".html")
+        f.write_text(svg_content)
+        deployed.append({"id": svg_id, "token": token})
+    return {"deployed": len(deployed), "canaries": deployed}
+
+@app.post("/api/canary/svg/clear")
+async def canary_svg_clear():
+    """Elimina todos los canary SVGs desplegados."""
+    cleared = 0
+    if CANARY_SVG_DIR.exists():
+        for f in CANARY_SVG_DIR.glob("canary_*.html"):
+            f.unlink()
+            cleared += 1
+    return {"cleared": cleared}
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  ENDPOINTS — SERVICIOS
@@ -6477,7 +6505,7 @@ if DIST.exists() and DIST.is_dir():
         # Si empieza con un prefijo conocido de API/backend, no servir el SPA.
         # El catch-all está registrado antes que muchas rutas API, asi que
         # si no excluimos estas, las captura y devuelve 404 JSON.
-        if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/")):
+        if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/", "leviathan/")):
             return JSONResponse({"error": "not found"}, status_code=404)
         if full_path.startswith("assets/"):
             candidate = DIST / full_path
@@ -6504,7 +6532,7 @@ else:
 
 
 # ── PHANTOM (GHOST HUNTER) — recibir alertas del master node :8002 ────────────
-@app.post("/api/phantom/alert", dependencies=[Depends(require_auth)])
+@app.post("/api/phantom/alert", dependencies=[])
 async def phantom_alert(payload: Dict[str, Any] = Body(default={})):
     """Recibe hallazgos críticos del orquestador GHOST HUNTER PHANTOM."""
     severity = payload.get("severity", "medium")
