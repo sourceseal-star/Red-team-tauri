@@ -3022,6 +3022,68 @@ async def websocket_endpoint(ws: WebSocket):
         if ws in connected_ws_clients:
             connected_ws_clients.remove(ws)
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GHOST HUNTER v3.0 PHANTOM — Recepción de hallazgos
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/phantom/alert")
+async def phantom_alert(payload: dict):
+    """Recibe hallazgos críticos de GHOST HUNTER PHANTOM Master"""
+    alert_type = payload.get("alert_type", "phantom_hunt")
+    severity = payload.get("severity", "medium")
+    title = payload.get("title", "Hallazgo PHANTOM")
+    description = payload.get("description", "")
+    evidence = payload.get("evidence", {})
+    source = payload.get("source", "ghost_hunter_phantom")
+
+    # Log de la alerta
+    print(f"[PHANTOM] {severity.upper()}: {title} — {description[:200]}")
+
+    # Broadcast por WebSocket a clientes conectados
+    alert_msg = {
+        "type": "phantom_alert",
+        "alert_type": alert_type,
+        "severity": severity,
+        "title": title,
+        "description": description,
+        "target": payload.get("target"),
+        "evidence": evidence,
+        "source": source,
+        "timestamp": now_iso(),
+    }
+    await broadcast_ws(alert_msg)
+
+    # Guardar evidencia en disco
+    try:
+        evidence_dir = os.path.join(EVIDENCE_DIR, "phantom")
+        os.makedirs(evidence_dir, exist_ok=True)
+        import uuid as _uuid
+        fname = f"phantom_{_uuid.uuid4().hex[:8]}.json"
+        with open(os.path.join(evidence_dir, fname), "w") as f:
+            f.write(json.dumps(alert_msg, indent=2))
+    except Exception:
+        pass
+
+    return {"status": "received", "severity": severity, "timestamp": now_iso()}
+
+
+@app.get("/api/phantom/alerts")
+async def phantom_alerts_list(limit: int = 50):
+    """Lista hallazgos de PHANTOM guardados"""
+    evidence_dir = os.path.join(EVIDENCE_DIR, "phantom")
+    if not os.path.exists(evidence_dir):
+        return {"alerts": [], "total": 0}
+    alerts = []
+    for f in sorted(os.listdir(evidence_dir), reverse=True)[:limit]:
+        try:
+            with open(os.path.join(evidence_dir, f)) as fh:
+                alerts.append(json.loads(fh.read()))
+        except Exception:
+            continue
+    return {"alerts": alerts, "total": len(alerts)}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # STARTUP
 # ═══════════════════════════════════════════════════════════════════════════════
