@@ -11,3 +11,4 @@ httpx>=0.25
 PyJWT>=2.8
 cryptography>=41.0
 structlog>=23.2
+websockets>=12.0
