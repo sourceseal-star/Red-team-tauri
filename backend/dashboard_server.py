@@ -245,6 +245,71 @@ except Exception as e:
     print(f"[sealctl] WARNING: No se pudo cargar interceptor_router: {e}")
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# ARTO + SEAL SUPER PACK
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_ARTO_OK = False
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "arto"))
+    from arto.api.arto_router import router as arto_router
+    app.include_router(arto_router)
+    _ARTO_OK = True
+    print("[sealctl] ARTO router cargado en /api/arto/*")
+
+    @app.on_event("startup")
+    async def _arto_start_b():
+        global _ARTO_OK
+        try:
+            from arto import arto as _arto
+            await _arto.start()
+            print("[ARTO] ✅ Sistema inicializado")
+        except Exception as _e:
+            print(f"[ARTO] ⚠ No se pudo inicializar: {_e}")
+            _ARTO_OK = False
+except Exception as _e:
+    print(f"[sealctl] WARNING: ARTO no disponible: {_e}")
+
+_SEAL_OK = False
+try:
+    from seal.api.seal_api_router import router as seal_router
+    app.include_router(seal_router)
+    _SEAL_OK = True
+    print("[sealctl] SEAL SUPER PACK router cargado en /api/devices, /api/scan")
+except Exception as _e:
+    print(f"[sealctl] WARNING: SEAL no disponible: {_e}")
+
+# Endpoints de integración
+@app.get("/api/integrated/health")
+async def integrated_health_b():
+    return {"status": "healthy", "arto": _ARTO_OK, "seal": _SEAL_OK}
+
+@app.get("/api/integrated/scan")
+async def integrated_scan_b(network: str = "192.168.1.0/24"):
+    try:
+        from seal.scanners.network_sweep_ultimate import discover_active_ips, scan_target
+        active_ips = await discover_active_ips(network)
+        results = []
+        for ip in active_ips[:20]:
+            try:
+                td = await scan_target(ip)
+                if td.get('services'):
+                    results.append(td)
+            except Exception:
+                pass
+        return {"success": True, "network": network, "scanned": len(active_ips), "targets": results}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/integrated/attack/{ip}")
+async def integrated_attack_b(ip: str):
+    try:
+        from seal.attackers.hikvision_killer import scan_and_attack
+        result = await scan_and_attack(ip)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # HEALTH (sin auth)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -2453,40 +2518,46 @@ async def scan_start(payload: Dict[str, Any] = Body(default={})):
     SCAN_STATE["progress"] = "0%"
     SCAN_STATE["last_error"] = None
 
-    nmap_bin = shutil.which("nmap")
-    if nmap_bin:
-        try:
-            result = subprocess.run(
-                [nmap_bin, "-sn", target],
-                capture_output=True, text=True, timeout=60,
-            )
-            hosts = [l for l in result.stdout.split("\n") if "Nmap scan report" in l]
-            SCAN_STATE["last_result"] = {"target": target, "hosts_found": len(hosts), "raw": result.stdout[:2000]}
-        except subprocess.TimeoutExpired:
-            SCAN_STATE["last_error"] = "nmap timeout"
-        except Exception as e:
-            SCAN_STATE["last_error"] = str(e)
-    else:
-        # Fallback sin nmap: ping manual
-        try:
-            base = target.split("/")[0]
-            prefix = ".".join(base.split(".")[:3])
-            hosts_found = 0
-            for i in range(1, 255):
-                ip = f"{prefix}.{i}"
-                try:
-                    result = subprocess.run(
-                        ["ping", "-c", "1", "-W", "1", ip],
-                        capture_output=True, text=True, timeout=2,
-                    )
-                    if result.returncode == 0:
-                        hosts_found += 1
-                    SCAN_STATE["progress"] = f"{int(i/254*100)}%"
-                except Exception:
-                    pass
-            SCAN_STATE["last_result"] = {"target": target, "hosts_found": hosts_found}
-        except Exception as e:
-            SCAN_STATE["last_error"] = str(e)
+    # TCP probe sin root — mismo patron que scan_cameras y topology
+    # nmap -sn requiere raw sockets (root) en Termux; ping ICMP tambien
+    # puede fallar. TCP connect funciona sin privilegios.
+    import asyncio as _aio
+    try:
+        base = target.split("/")[0]
+        prefix = ".".join(base.split(".")[:3])
+        probe_ports = [80, 443, 22, 554, 8080, 8000]
+        sem = _aio.Semaphore(50)
+
+        async def _probe_host_tcp(ip: str):
+            async with sem:
+                for port in probe_ports:
+                    try:
+                        _, writer = await _aio.wait_for(
+                            _aio.open_connection(ip, port), timeout=0.4
+                        )
+                        writer.close()
+                        try:
+                            await writer.wait_closed()
+                        except Exception:
+                            pass
+                        return ip
+                    except Exception:
+                        continue
+                return None
+
+        tasks = [_probe_host_tcp(f"{prefix}.{i}") for i in range(1, 255)]
+        results = await _aio.gather(*tasks)
+        hosts_up = [ip for ip in results if ip]
+
+        # Actualizar progreso
+        SCAN_STATE["progress"] = "100%"
+        SCAN_STATE["last_result"] = {
+            "target": target,
+            "hosts_found": len(hosts_up),
+            "hosts": [{"ip": ip} for ip in hosts_up],
+        }
+    except Exception as e:
+        SCAN_STATE["last_error"] = str(e)
 
     SCAN_STATE["running"] = False
     SCAN_STATE["progress"] = "100%"
@@ -2950,6 +3021,68 @@ async def websocket_endpoint(ws: WebSocket):
     except Exception:
         if ws in connected_ws_clients:
             connected_ws_clients.remove(ws)
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GHOST HUNTER v3.0 PHANTOM — Recepción de hallazgos
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/phantom/alert")
+async def phantom_alert(payload: dict):
+    """Recibe hallazgos críticos de GHOST HUNTER PHANTOM Master"""
+    alert_type = payload.get("alert_type", "phantom_hunt")
+    severity = payload.get("severity", "medium")
+    title = payload.get("title", "Hallazgo PHANTOM")
+    description = payload.get("description", "")
+    evidence = payload.get("evidence", {})
+    source = payload.get("source", "ghost_hunter_phantom")
+
+    # Log de la alerta
+    print(f"[PHANTOM] {severity.upper()}: {title} — {description[:200]}")
+
+    # Broadcast por WebSocket a clientes conectados
+    alert_msg = {
+        "type": "phantom_alert",
+        "alert_type": alert_type,
+        "severity": severity,
+        "title": title,
+        "description": description,
+        "target": payload.get("target"),
+        "evidence": evidence,
+        "source": source,
+        "timestamp": now_iso(),
+    }
+    await broadcast_ws(alert_msg)
+
+    # Guardar evidencia en disco
+    try:
+        evidence_dir = os.path.join(EVIDENCE_DIR, "phantom")
+        os.makedirs(evidence_dir, exist_ok=True)
+        import uuid as _uuid
+        fname = f"phantom_{_uuid.uuid4().hex[:8]}.json"
+        with open(os.path.join(evidence_dir, fname), "w") as f:
+            f.write(json.dumps(alert_msg, indent=2))
+    except Exception:
+        pass
+
+    return {"status": "received", "severity": severity, "timestamp": now_iso()}
+
+
+@app.get("/api/phantom/alerts")
+async def phantom_alerts_list(limit: int = 50):
+    """Lista hallazgos de PHANTOM guardados"""
+    evidence_dir = os.path.join(EVIDENCE_DIR, "phantom")
+    if not os.path.exists(evidence_dir):
+        return {"alerts": [], "total": 0}
+    alerts = []
+    for f in sorted(os.listdir(evidence_dir), reverse=True)[:limit]:
+        try:
+            with open(os.path.join(evidence_dir, f)) as fh:
+                alerts.append(json.loads(fh.read()))
+        except Exception:
+            continue
+    return {"alerts": alerts, "total": len(alerts)}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STARTUP

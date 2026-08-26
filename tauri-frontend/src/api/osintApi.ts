@@ -1,10 +1,11 @@
 /**
- * API Client para OSINT v2 - con auth headers.
+ * API Client para OSINT - con auth headers.
  * Usa getApiKey() de lib/api.ts que lee el token de localStorage.
+ * Endpoints mapeados a los que EXISTEN en dashboard_server.py.
  */
 import { getBaseUrl, getApiKey } from '../lib/api';
 
-const OSINT_BASE = `${getBaseUrl()}/api/osint/v2`;
+const OSINT_BASE = `${getBaseUrl()}/api/osint`;
 
 function authH(json = false): Record<string, string> {
   const h: Record<string, string> = {}
@@ -14,109 +15,65 @@ function authH(json = false): Record<string, string> {
   return h
 }
 
-export interface OSINTScanResult {
-  target: string
-  type: string
-  is_malicious: boolean
-  threat_level: 'LOW' | 'HIGH' | 'CRITICAL'
-  malicious_indicators: number
-  results: {
-    whois?: any
-    dns?: any
-    subdomains?: string[]
-    threat_intel?: any
-    email?: any
-    headers?: any
-  }
-  errors: string[]
-  timestamp: string
-}
-
-export interface QuickScanResult {
-  target: string
-  type: string
-  is_malicious: boolean
-  threat_level: 'LOW' | 'HIGH'
-  key_findings: {
-    open_ports: number
-    vulnerabilities: number
-    subdomains: number
-    breaches: number
-  }
-}
-
 export const osintApi = {
-  fullScan: async (target: string, scanType: string = 'auto'): Promise<OSINTScanResult> => {
-    const r = await fetch(`${OSINT_BASE}/full-scan`, {
-      method: 'POST',
-      headers: authH(true),
-      body: JSON.stringify({ target, scan_type: scanType }),
-    })
+  // GET /api/osint/full/{target} — funciona con IPs y dominios
+  fullScan: async (target: string): Promise<any> => {
+    const r = await fetch(`${OSINT_BASE}/full/${encodeURIComponent(target)}`, { headers: authH() })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()
   },
 
-  quickScan: async (target: string, scanType: string = 'auto'): Promise<QuickScanResult> => {
-    const r = await fetch(`${OSINT_BASE}/quick-scan/${encodeURIComponent(target)}?scan_type=${scanType}`, {
-      headers: authH(),
-    })
+  quickScan: async (target: string): Promise<any> => {
+    const r = await fetch(`${OSINT_BASE}/full/${encodeURIComponent(target)}`, { headers: authH() })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()
   },
 
+  // GET /api/osint/whois/{domain}
   whois: async (target: string) => {
     const r = await fetch(`${OSINT_BASE}/whois/${encodeURIComponent(target)}`, { headers: authH() })
     return r.json()
   },
 
+  // GET /api/osint/whois/{domain} (whois cubre DNS)
   dns: async (domain: string) => {
-    const r = await fetch(`${OSINT_BASE}/dns/${encodeURIComponent(domain)}`, { headers: authH() })
+    const r = await fetch(`${OSINT_BASE}/whois/${encodeURIComponent(domain)}`, { headers: authH() })
     return r.json()
   },
 
+  // GET /api/osint/subdomains/{domain}
   subdomains: async (domain: string) => {
     const r = await fetch(`${OSINT_BASE}/subdomains/${encodeURIComponent(domain)}`, { headers: authH() })
     return r.json()
   },
 
-  threatIntel: async (entity: string, type: string = 'auto') => {
-    const r = await fetch(`${OSINT_BASE}/threat/${encodeURIComponent(entity)}?entity_type=${type}`, { headers: authH() })
-    return r.json()
-  },
-}
-
-// ═════════════════════════════════════════════════════════════
-// Multi-Engine Search — 7 motores + "all"
-// ═════════════════════════════════════════════════════════════
-
-export type SearchEngine = 'duckduckgo' | 'bing' | 'yahoo' | 'brave' | 'yandex' | 'google' | 'tor' | 'all';
-
-export interface SearchResult {
-  title: string;
-  link: string;
-  snippet: string;
-  engine: string;
-}
-
-export interface MultiSearchResult {
-  query: string;
-  engine: string;
-  engines_used?: string[];
-  results: SearchResult[];
-  total: number;
-  errors?: string[];
-}
-
-export const searchApi = {
-  search: async (q: string, engine: SearchEngine = 'all', num: number = 10): Promise<MultiSearchResult> => {
-    const r = await fetch(`${OSINT_BASE}/search?q=${encodeURIComponent(q)}&engine=${engine}&num=${num}`, { headers: authH() })
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  // GET /api/osint/emails/{domain}
+  emails: async (domain: string) => {
+    const r = await fetch(`${OSINT_BASE}/emails/${encodeURIComponent(domain)}`, { headers: authH() })
     return r.json()
   },
 
-  engines: async () => {
-    const r = await fetch(`${OSINT_BASE}/search/engines`, { headers: authH() })
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  // GET /api/osint/full/{entity} — threat intel para IPs y dominios
+  threatIntel: async (entity: string) => {
+    const r = await fetch(`${OSINT_BASE}/full/${encodeURIComponent(entity)}`, { headers: authH() })
+    return r.json()
+  },
+
+  // GET /api/osint/social/{username}
+  social: async (username: string) => {
+    const r = await fetch(`${OSINT_BASE}/social/${encodeURIComponent(username)}`, { headers: authH() })
+    return r.json()
+  },
+
+  // GET /api/osint/cert/{domain}
+  cert: async (domain: string) => {
+    const r = await fetch(`${OSINT_BASE}/cert/${encodeURIComponent(domain)}`, { headers: authH() })
+    return r.json()
+  },
+
+  // GET /api/osint/history/{target}
+  history: async (target: string) => {
+    const r = await fetch(`${OSINT_BASE}/history/${encodeURIComponent(target)}`, { headers: authH() })
     return r.json()
   },
 }

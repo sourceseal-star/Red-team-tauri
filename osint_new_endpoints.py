@@ -9,15 +9,22 @@ DISPOSABLE_DOMAINS = {
 }
 
 SOCIAL_PLATFORMS = [
-    ("GitHub", "https://github.com/{}"),
-    ("Twitter/X", "https://x.com/{}"),
-    ("Instagram", "https://instagram.com/{}"),
-    ("YouTube", "https://youtube.com/@{}"),
-    ("TikTok", "https://tiktok.com/@{}"),
-    ("Reddit", "https://reddit.com/user/{}"),
-    ("GitLab", "https://gitlab.com/{}"),
-    ("Medium", "https://medium.com/@{}"),
-    ("Steam", "https://steamcommunity.com/id/{}"),
+    # (name, probe_url, check_type, error_msgs, regex, display_url, note)
+    ("GitHub", "https://www.github.com/{}", "status_code", None, r"^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$", None, None),
+    ("GitLab", "https://gitlab.com/api/v4/users?username={}", "message_means_missing", ["[]"], None, "https://gitlab.com/{}", "vía API oficial de GitLab"),
+    ("YouTube", "https://www.youtube.com/@{}", "status_code", None, None, None),
+    ("TikTok", "https://www.tiktok.com/@{}", "message_means_missing", ['"statusCode":10221', "Govt. of India decided to block 59 apps"], None, None),
+    ("Telegram", "https://t.me/{}", "message_means_missing", ['<div class="tgme_page_context_link_icon">', 'tgme_username_link" href="tg://resolve?domain='], r"^[a-zA-Z0-9_]{3,32}[^_]$", None, "solo usernames públicos indexables"),
+    ("Medium", "https://medium.com/feed/@{}", "message_means_missing", ["<body"], None, "https://medium.com/@{}", "vía feed RSS"),
+    ("Pinterest", "https://www.pinterest.com/oembed.json?url=https://www.pinterest.com/{}/", "status_code", None, None, "https://www.pinterest.com/{}/"),
+    ("Snapchat", "https://www.snapchat.com/add/{}", "status_code", None, r"^[a-z][a-z0-9-_.]{2,14}$", None),
+    ("Twitch", "https://www.twitch.tv/{}", "message_means_missing", ["content='Twitch is the world&#39;s leading video platform and community for gamers.'"], None, None),
+    ("Steam", "https://steamcommunity.com/id/{}/", "message_means_missing", ["The specified profile could not be found"], None, None),
+    ("Instagram", "https://instagram.com/{}", "unreliable", None, None, None, "Instagram: 200/403 igual exista o no la cuenta"),
+    ("LinkedIn", "https://www.linkedin.com/in/{}", "unreliable", None, None, None, "LinkedIn bloquea scraping no autenticado"),
+    ("Facebook", "https://facebook.com/{}", "unreliable", None, None, None, "Facebook redirige a login para cualquier perfil"),
+    ("Reddit", "https://www.reddit.com/user/{}", "unreliable", None, None, None, "Reddit bloquea con 403/challenge anti-bot"),
+    ("Twitter/X", "https://x.com/{}", "unreliable", None, None, None, "x.com requiere JS; nitter caído"),
 ]
 
 def _parse_rdn_tuple(rdn):
@@ -370,47 +377,61 @@ async def osint_social(username: str):
     if cached:
         return cached[0]
 
-    semaphore = asyncio.Semaphore(5)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+    from urllib.parse import quote
+    raw_username = username.replace("@", "").strip()
+    semaphore = asyncio.Semaphore(10)
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    results = []
 
-    async def check_platform(client, platform_name: str, url_tmpl: str):
-        url = url_tmpl.format(username)
+    async def check_platform(client, entry):
+        name, probe_tmpl, check_type = entry[0], entry[1], entry[2]
+        error_msgs = entry[3] if len(entry) > 3 else None
+        regex = entry[4] if len(entry) > 4 else None
+        display_tmpl = entry[5] if len(entry) > 5 else None
+        note = entry[6] if len(entry) > 6 else None
+        u = quote(raw_username, safe="")
+        display_url = (display_tmpl or probe_tmpl).replace("{}", u)
+        target_url = probe_tmpl.replace("{}", u)
+        if regex and not re.match(regex, raw_username):
+            results.append({"platform": name, "url": display_url, "exists": False, "status_code": None, "note": "Formato inválido"})
+            return
+        if check_type == "unreliable":
+            results.append({"platform": name, "url": display_url, "exists": None, "status_code": None, "note": note or "No verificable sin auth"})
+            return
         async with semaphore:
             try:
-                resp = await client.get(url)
-                status_code = resp.status_code
-                exists = (200 <= status_code < 300)
-                return {
-                    "platform": platform_name,
-                    "url": url,
-                    "exists": exists,
-                    "status_code": status_code
-                }
+                resp = await client.get(target_url)
+                sc = resp.status_code
+                if sc in (429, 403):
+                    exists = None
+                elif check_type == "status_code":
+                    exists = (200 <= sc < 300)
+                elif check_type == "message_means_missing":
+                    exists = (200 <= sc < 300) and not any(msg in resp.text for msg in (error_msgs or []))
+                else:
+                    exists = (200 <= sc < 300)
+                r = {"platform": name, "url": display_url, "exists": exists, "status_code": sc}
+                if note: r["note"] = note
+                results.append(r)
             except Exception as e:
-                return {
-                    "platform": platform_name,
-                    "url": url,
-                    "exists": False,
-                    "status_code": None,
-                    "error": str(e)
-                }
+                results.append({"platform": name, "url": display_url, "exists": False, "status_code": None, "error": str(e)[:100]})
 
     async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=headers) as client:
-        results = await asyncio.gather(
-            *[check_platform(client, p, u) for p, u in SOCIAL_PLATFORMS]
-        )
+        await asyncio.gather(*[check_platform(client, e) for e in SOCIAL_PLATFORMS])
 
-    total_found = sum(1 for r in results if r.get("exists"))
+    total_found = sum(1 for r in results if r.get("exists") is True)
     result = {
-        "username": username,
+        "username": raw_username,
         "results": results,
+        "found": [r for r in results if r.get("exists") is True],
+        "unreliable": [r for r in results if r.get("exists") is None],
         "total_found": total_found,
+        "total_unreliable": sum(1 for r in results if r.get("exists") is None),
+        "total_checked": len(results),
+        "warnings": ["Input con espacios — prueba variantes sin espacios"] if " " in raw_username else [],
         "timestamp": datetime.now().isoformat()
     }
-
-    _osint_cache_result(username, "social", result)
+    _osint_cache_result(raw_username, "social", result)
     return result
 
 

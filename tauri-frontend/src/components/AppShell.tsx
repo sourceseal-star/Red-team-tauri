@@ -1,7 +1,7 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import {
   LayoutDashboard, Shield, Camera, Radio, Globe, Wifi, Activity,
-  Terminal, Settings, Bell, Search, Menu, X, ChevronRight, Download, Camera,
+  Terminal, Settings, Bell, Search, Menu, X, ChevronRight, Download,
   Zap, Lock, Eye, Fingerprint, Bug, FileText, Network,
   Sun, Moon, LogOut, Cpu
 } from 'lucide-react'
@@ -47,6 +47,8 @@ const MODULES = [
   { id: 'osint_adv', label: 'OSINT Avanzado', icon: Globe, color: 'text-indigo-400', badge: 'v4.0' },
   { id: 'interceptor', label: 'Interceptor Avanzado', icon: Lock, color: 'text-red-400', badge: 'v4.0' },
   { id: 'arto', label: 'ARTO AI', icon: Cpu, color: 'text-orange-400', badge: 'AI' },
+  { id: 'seal', label: 'SEAL Pack', icon: Fingerprint, color: 'text-cyan-400', badge: 'NEW' },
+  { id: 'leviathan', label: 'LEVIATHAN', icon: Shield, color: 'text-purple-400', badge: 'v3.0' },
 ];
 
 // ==========================================
@@ -158,7 +160,7 @@ function StatusBar() {
       } catch {
         setStats(s => ({ ...s, backend: false, services: 0 }));
       }
-    }, 3000);
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -264,8 +266,9 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
             </button>
 
             <button 
-              onClick={() => addToast({ type: 'info', title: 'Sin notificaciones nuevas' })}
+              onClick={() => onNavigate('alerts')}
               className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 relative transition-colors"
+              title="Ver alertas"
             >
               <Bell size={16} />
               <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-red-400 rounded-full" />
@@ -325,26 +328,33 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
           {mobileOpen && (
             <div className="fixed inset-0 z-50 lg:hidden">
               <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-              <aside className="absolute left-0 top-0 bottom-0 w-64 bg-slate-900 border-r border-slate-800 py-2 space-y-0.5">
-                <div className="px-4 py-3 border-b border-slate-800 mb-2">
+              <aside className="absolute left-0 top-0 bottom-0 w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
+                <div className="px-4 py-3 border-b border-slate-800 shrink-0">
                   <span className="text-sm font-bold text-white">SourceSeal Console</span>
                 </div>
-                {MODULES.map(m => {
-                  const Icon = m.icon;
-                  const isActive = activeModule === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => { onNavigate(m.id); setMobileOpen(false); }}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left ${
-                        isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50'
-                      }`}
-                    >
-                      <Icon size={18} className={isActive ? m.color : ''} />
-                      <span className="text-sm">{m.label}</span>
-                    </button>
-                  );
-                })}
+                <div className="flex-1 overflow-y-auto py-2 space-y-0.5">
+                  {MODULES.map(m => {
+                    const Icon = m.icon;
+                    const isActive = activeModule === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => { onNavigate(m.id); setMobileOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left ${
+                          isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50'
+                        }`}
+                      >
+                        <Icon size={18} className={isActive ? m.color : ''} />
+                        <span className="text-sm">{m.label}</span>
+                        {m.badge && (
+                          <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">
+                            {m.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </aside>
             </div>
           )}

@@ -35,7 +35,7 @@ export default function IoTCameras() {
   const fetchCameras = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/iot/cameras", { headers: authHeaders() });
+      const res = await fetch("/api/enhanced/cameras", { headers: authHeaders() });
       const data = await res.json();
       setCameras(data.cameras || []);
     } catch (e) {
@@ -46,7 +46,7 @@ export default function IoTCameras() {
 
   const loadSnapshot = async (cam: CameraData) => {
     try {
-      const res = await fetch(`/api/iot/snapshot/${cam.id}`, { headers: authHeaders() });
+      const res = await fetch(`/api/iot/snapshot?ip=${cam.ip}&port=${cam.port || 80}`, { headers: authHeaders() });
       if (res.ok) {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -60,7 +60,7 @@ export default function IoTCameras() {
   const bruteForce = async (cam: CameraData) => {
     setBrutingId(cam.id);
     try {
-      const res = await fetch(`/api/iot/brute/${cam.id}`, {
+      const res = await fetch(`/api/enhanced/discover/all`, {
         method: "POST",
         headers: authHeaders()
       });

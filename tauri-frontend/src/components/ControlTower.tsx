@@ -1,129 +1,76 @@
-import { useState, useEffect } from 'react';
-import { Server, Globe, Cloud, Cpu, RefreshCw, Activity, Database, AlertTriangle } from 'lucide-react';
-
-// URL del orquestador de federación — configurable via env o localhost:8080
-const ORCHESTRATOR_URL = (import.meta as any).env?.VITE_ORCHESTRATOR_URL || 'http://127.0.0.1:8080';
+import { useState, useEffect, useCallback } from 'react';
+import { Server, Cloud, Cpu, HardDrive, RefreshCw, Activity, Database,
+         AlertTriangle, Radio, Shield, Zap, Clock, MemoryStick, Gauge } from 'lucide-react';
 
 export default function ControlTower() {
-  const [nodes, setNodes] = useState<any[]>([]);
   const [health, setHealth] = useState<any>(null);
-  const [syncLog, setSyncLog] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
+  const [resources, setResources] = useState<any>(null);
+  const [latest, setLatest] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [offline, setOffline] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
 
-  const loadAll = async () => {
+  const authH = useCallback(() => {
+    const k = localStorage.getItem('api_token');
+    return k ? { 'Authorization': `Bearer ${k}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+  }, []);
+
+  const loadAll = useCallback(async () => {
     try {
-      const [nodesRes, healthRes, logRes] = await Promise.all([
-        fetch(`${ORCHESTRATOR_URL}/nodes`),
-        fetch(`${ORCHESTRATOR_URL}/health`),
-        fetch(`${ORCHESTRATOR_URL}/sync/log?limit=10`),
+      const [healthRes, svcRes, resRes, latestRes] = await Promise.all([
+        fetch('/api/health', { headers: authH() }).catch(() => null),
+        fetch('/api/services', { headers: authH() }).catch(() => null),
+        fetch('/api/resources', { headers: authH() }).catch(() => null),
+        fetch('/api/latest', { headers: authH() }).catch(() => null),
       ]);
-      if (nodesRes.ok) {
-        const nd = await nodesRes.json();
-        setNodes(nd.nodes || []);
+
+      if (healthRes?.ok) setHealth(await healthRes.json());
+      if (svcRes?.ok) {
+        const sd = await svcRes.json();
+        setServices(Array.isArray(sd) ? sd : (sd.services || []));
       }
-      if (healthRes.ok) setHealth(await healthRes.json());
-      if (logRes.ok) {
-        const lg = await logRes.json();
-        setSyncLog(lg.logs || []);
-      }
-      setOffline(false);
-    } catch (e) {
-      setOffline(true);
+      if (resRes?.ok) setResources(await resRes.json());
+      if (latestRes?.ok) setLatest(await latestRes.json());
+      setError(null);
+    } catch (e: any) {
+      setError(e.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [authH]);
 
   useEffect(() => {
     loadAll();
     const interval = setInterval(loadAll, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadAll]);
 
-  const execTool = async (tool: string, args: string[] = []) => {
+  const svcAction = async (action: string, name?: string) => {
     try {
-      const res = await fetch(`${ORCHESTRATOR_URL}/core/exec`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool, args, timeout: 60 }),
-      });
-      return await res.json();
-    } catch (e) {
-      console.error('Exec failed:', e);
-    }
-  };
-
-  const syncNode = async (nodeId: string) => {
-    try {
-      await fetch(`${ORCHESTRATOR_URL}/sync/${nodeId}`, { method: 'POST' });
+      const url = name ? `/api/services/${action}?name=${name}` : `/api/services/${action}-all`;
+      const r = await fetch(url, { method: 'POST', headers: authH() });
+      const data = await r.json();
+      setActionMsg(data.ok ? `✅ ${action} ${name || 'all'} OK` : `❌ ${data.error || 'fallo'}`);
+      setTimeout(() => setActionMsg(null), 3000);
       loadAll();
-    } catch (e) {
-      console.error('Sync failed:', e);
+    } catch (e: any) {
+      setActionMsg(`❌ ${e.message}`);
     }
   };
 
-  const statusColor = (status: string) => {
-    switch (status) {
-      case 'online': return 'text-green-400';
-      case 'offline': return 'text-red-400';
-      case 'stale': return 'text-amber-400';
-      default: return 'text-slate-500';
-    }
-  };
-
-  const nodeIcon = (nodeId: string) => {
-    if (nodeId === 'frontend') return <Globe size={14} className="text-cyan-400" />;
-    if (nodeId === 'threat_intel') return <Activity size={14} className="text-rose-400" />;
-    return <Server size={14} className="text-slate-400" />;
-  };
-
-  // Estado: Orquestador offline
-  if (offline && !loading) {
+  if (loading && !health) {
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Cloud size={18} className="text-cyan-400" />
-              Control Tower
-            </h2>
-            <p className="text-xs text-slate-500">Federación de nodos</p>
-          </div>
-          <button onClick={loadAll} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400">
-            <RefreshCw size={14} />
-          </button>
-        </div>
-
-        <div className="bg-slate-900/60 border border-amber-800/40 rounded-xl p-6 text-center">
-          <AlertTriangle size={32} className="text-amber-500/60 mx-auto mb-3" />
-          <h3 className="text-sm font-bold text-amber-400 mb-1">Orquestador no detectado</h3>
-          <p className="text-xs text-slate-500 mb-4">
-            El orquestador de federación no está corriendo en <span className="font-mono text-slate-300">{ORCHESTRATOR_URL}</span>
-          </p>
-
-          <div className="bg-slate-950/50 border border-slate-800 rounded-lg p-3 text-left max-w-md mx-auto">
-            <p className="text-[10px] text-slate-400 mb-2 font-bold uppercase">Para iniciarlo en Termux:</p>
-            <pre className="text-[10px] text-slate-300 font-mono whitespace-pre-wrap">
-{`# Gateway Mesh separado para federar nodos
-cd ~/Red-team-tauri
-PORT=8080 python3 gateway/mesh_server.py &
-
-# O usando el script:
-bash gateway/start_gateway.sh &
-
-# Verificar que responde
-curl http://localhost:8080/health`}
-            </pre>
-          </div>
-
-          <p className="text-[10px] text-slate-600 mt-4">
-            Mientras tanto, todos los módulos del dashboard funcionan localmente sin federación.
-          </p>
-        </div>
+      <div className="flex items-center justify-center h-64 text-slate-600">
+        <RefreshCw size={24} className="animate-spin" />
       </div>
     );
   }
+
+  const svcRunning = services.filter(s => s.status === 'running' || s.status === 'ok').length;
+  const cpu = resources?.cpu_usage ?? health?.cpu ?? 0;
+  const ram = resources?.memory_percent ?? health?.memory_percent ?? 0;
+  const uptime = health?.uptime?.human || health?.uptime || '—';
 
   return (
     <div className="space-y-4">
@@ -134,111 +81,155 @@ curl http://localhost:8080/health`}
             <Cloud size={18} className="text-cyan-400" />
             Control Tower
           </h2>
-          <p className="text-xs text-slate-500">
-            {health ? `${health.replit_nodes_online}/${health.replit_nodes_total} Replits online` : 'Conectando...'}
-            {health?.tunnel && (
-              <span className="ml-2 text-cyan-400">· {health.tunnel}</span>
-            )}
-          </p>
+          <p className="text-xs text-slate-500">Monitor del backend · {uptime}</p>
         </div>
         <button onClick={loadAll} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400">
-          <RefreshCw size={14} />
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
 
-      {/* Master node status */}
-      {health && (
-        <div className="bg-slate-900/60 border border-cyan-800/50 rounded-xl p-4 flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-sm font-bold text-white">Termux Maestro</span>
-          </div>
-          <div className="flex gap-4 text-[10px] text-slate-400">
-            <span>Role: <span className="text-cyan-400 font-mono">{health.role}</span></span>
-            <span>DB: <span className="text-slate-300 font-mono">{health.db_path}</span></span>
-          </div>
+      {error && (
+        <div className="bg-red-900/30 border border-red-800 rounded-lg p-3 text-xs text-red-400 flex items-center gap-2">
+          <AlertTriangle size={14} /> {error}
         </div>
       )}
 
-      {/* Replit nodes */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {nodes.map((node) => (
-          <div key={node.node_id} className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {nodeIcon(node.node_id)}
-                <span className="text-sm font-bold text-white">{node.service || node.node_id}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${node.status === 'online' ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
-                <span className={`text-[10px] font-mono ${statusColor(node.status)}`}>{node.status}</span>
-              </div>
-            </div>
-
-            <div className="text-[10px] text-slate-500 space-y-1">
-              <div>URL: <span className="text-slate-300 font-mono truncate block max-w-[200px]">{node.url}</span></div>
-              {node.response_time_ms && (
-                <div>Latencia: <span className="text-slate-300">{node.response_time_ms}ms</span></div>
-              )}
-              <div>Last check: <span className="text-slate-300">{node.last_check?.slice(11, 19) || 'never'}</span></div>
-            </div>
-
-            <button
-              onClick={() => syncNode(node.node_id)}
-              className="w-full px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-slate-300 flex items-center justify-center gap-1"
-            >
-              <Database size={10} /> Sync DB
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* Core Services */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
-        <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
-          <Cpu size={12} className="text-cyan-400" /> Core Services (Termux)
-        </h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {[
-            { tool: 'nmap', label: 'Nmap Scan', args: ['-sV', '-p', '1-1000', 'localhost'] },
-            { tool: 'tcpdump', label: 'TCP Dump', args: ['-c', '10'] },
-            { tool: 'ffmpeg', label: 'FFmpeg', args: ['-version'] },
-            { tool: 'airodump-ng', label: 'WiFi Scan', args: [] },
-          ].map(svc => (
-            <button
-              key={svc.tool}
-              onClick={() => execTool(svc.tool, svc.args)}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-[10px] text-slate-300 text-left"
-            >
-              <div className="font-bold">{svc.label}</div>
-              <div className="text-[8px] text-slate-500 font-mono">{svc.tool}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Sync log */}
-      {syncLog.length > 0 && (
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
-          <h4 className="text-xs font-bold text-white mb-3">Sync Log</h4>
-          <div className="space-y-1 max-h-32 overflow-y-auto">
-            {syncLog.map((log, i) => (
-              <div key={i} className="flex items-center gap-2 text-[10px] font-mono">
-                <span className="text-slate-600">{log.timestamp?.slice(11, 19)}</span>
-                <span className="text-slate-400">{log.node_id}</span>
-                <span className="text-cyan-400">{log.action}</span>
-                <span className={log.status === 'success' ? 'text-green-400' : 'text-red-400'}>{log.status}</span>
-              </div>
-            ))}
+          <div className="flex items-center gap-2 mb-2">
+            <div className={`w-2 h-2 rounded-full ${health?.status === 'ok' ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
+            <Shield size={14} className="text-slate-500" />
+          </div>
+          <p className="text-[10px] text-slate-500 uppercase">Backend</p>
+          <p className="text-xl font-bold text-white">{health?.status === 'ok' ? 'Online' : 'Offline'}</p>
+          <p className="text-[9px] text-slate-600 mt-1">{health?.version || '—'}</p>
+        </div>
+
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Server size={14} className="text-blue-400" />
+          </div>
+          <p className="text-[10px] text-slate-500 uppercase">Servicios</p>
+          <p className="text-xl font-bold text-white">{svcRunning}<span className="text-sm text-slate-600">/{services.length}</span></p>
+          <p className="text-[9px] text-slate-600 mt-1">activos</p>
+        </div>
+
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Gauge size={14} className="text-cyan-400" />
+          </div>
+          <p className="text-[10px] text-slate-500 uppercase">CPU</p>
+          <p className="text-xl font-bold text-white">{Math.round(cpu)}<span className="text-sm text-slate-600">%</span></p>
+          <div className="h-1 bg-slate-800 rounded-full mt-2 overflow-hidden">
+            <div className="h-full bg-cyan-400 rounded-full transition-all" style={{ width: `${cpu}%` }} />
           </div>
         </div>
-      )}
 
-      {loading && (
-        <div className="flex items-center justify-center h-32 text-slate-600">
-          <RefreshCw size={20} className="animate-spin" />
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <MemoryStick size={14} className="text-purple-400" />
+          </div>
+          <p className="text-[10px] text-slate-500 uppercase">RAM</p>
+          <p className="text-xl font-bold text-white">{Math.round(ram)}<span className="text-sm text-slate-600">%</span></p>
+          <div className="h-1 bg-slate-800 rounded-full mt-2 overflow-hidden">
+            <div className="h-full bg-purple-400 rounded-full transition-all" style={{ width: `${ram}%` }} />
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* Service control panel */}
+      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-bold text-white flex items-center gap-2">
+            <Cpu size={12} className="text-cyan-400" /> Servicios del Sistema
+          </h4>
+          <div className="flex gap-2">
+            <button onClick={() => svcAction('start-all')} className="px-2 py-1 text-[10px] bg-green-900/40 border border-green-800 rounded text-green-400 hover:bg-green-900/60">Start All</button>
+            <button onClick={() => svcAction('stop-all')} className="px-2 py-1 text-[10px] bg-red-900/40 border border-red-800 rounded text-red-400 hover:bg-red-900/60">Stop All</button>
+          </div>
+        </div>
+
+        {actionMsg && (
+          <div className="mb-2 text-[10px] text-slate-300 bg-slate-950/50 rounded px-2 py-1 border border-slate-800">{actionMsg}</div>
+        )}
+
+        {services.length === 0 ? (
+          <p className="text-xs text-slate-600 text-center py-4">No hay servicios registrados</p>
+        ) : (
+          <div className="space-y-1.5">
+            {services.map(svc => {
+              const running = svc.status === 'running' || svc.status === 'ok';
+              return (
+                <div key={svc.name} className="flex items-center justify-between bg-slate-950/40 rounded-lg px-3 py-2 border border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${running ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
+                    <span className="text-xs font-medium text-slate-200">{svc.name}</span>
+                    {svc.port && <span className="text-[9px] text-slate-600 font-mono">:{svc.port}</span>}
+                    {svc.pid && <span className="text-[9px] text-slate-600 font-mono">PID:{svc.pid}</span>}
+                  </div>
+                  <div className="flex gap-1">
+                    {!running && <button onClick={() => svcAction('start', svc.name)} className="px-2 py-0.5 text-[9px] bg-green-900/30 rounded text-green-400 hover:bg-green-900/50 border border-green-900/50">Start</button>}
+                    {running && <button onClick={() => svcAction('stop', svc.name)} className="px-2 py-0.5 text-[9px] bg-red-900/30 rounded text-red-400 hover:bg-red-900/50 border border-red-900/50">Stop</button>}
+                    <button onClick={() => svcAction('restart', svc.name)} className="px-2 py-0.5 text-[9px] bg-slate-800 rounded text-slate-400 hover:bg-slate-700 border border-slate-700">Restart</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Latest scan + system info */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+          <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
+            <Activity size={12} className="text-amber-400" /> Último Escaneo
+          </h4>
+          {latest ? (
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-500">Findings totales</span>
+                <span className="text-white font-bold">{latest.total_findings || 0}</span>
+              </div>
+              {latest.by_severity && (
+                <div className="flex gap-2">
+                  {['critical', 'high', 'medium', 'low', 'info'].map(sev => {
+                    const count = latest.by_severity[sev] || 0;
+                    const colors: Record<string, string> = { critical: 'text-red-400', high: 'text-orange-400', medium: 'text-yellow-400', low: 'text-green-400', info: 'text-blue-400' };
+                    return count > 0 ? <span key={sev} className={`text-[10px] ${colors[sev]}`}>{sev}: {count}</span> : null;
+                  })}
+                </div>
+              )}
+              {latest.timestamp && <p className="text-[9px] text-slate-600">{latest.timestamp}</p>}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-600">Sin escaneos recientes</p>
+          )}
+        </div>
+
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+          <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
+            <Database size={12} className="text-cyan-400" /> Sistema
+          </h4>
+          <div className="space-y-1.5 text-xs">
+            <div className="flex justify-between"><span className="text-slate-500">Versión</span><span className="text-slate-300 font-mono">{health?.version || '—'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Uptime</span><span className="text-slate-300">{uptime}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Nmap</span><span className={health?.has_nmap ? 'text-green-400' : 'text-red-400'}>{health?.has_nmap ? 'Disponible' : 'No instalado'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Honeypot</span><span className={health?.honeypot_running ? 'text-green-400' : 'text-slate-600'}>{health?.honeypot_running ? 'Activo' : 'Inactivo'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">WS Clients</span><span className="text-slate-300">{health?.ws_clients ?? 0}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Dist Built</span><span className={health?.dist_built ? 'text-green-400' : 'text-red-400'}>{health?.dist_built ? 'Sí' : 'No'}</span></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Gateway mesh (optional, at bottom) */}
+      <div className="bg-slate-900/40 border border-slate-800/50 rounded-xl p-3">
+        <h4 className="text-[10px] text-slate-600 flex items-center gap-1">
+          <Radio size={10} /> Gateway Mesh (opcional · :8080)
+        </h4>
+        <p className="text-[9px] text-slate-700 mt-1">Para federación multi-nodo. No requerido para funcionamiento normal.</p>
+      </div>
     </div>
   );
 }

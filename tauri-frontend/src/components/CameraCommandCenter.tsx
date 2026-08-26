@@ -23,6 +23,9 @@ export default function CameraCommandCenter() {
   const [logs, setLogs] = useState<string[]>([])
   const [videoUrls, setVideoUrls] = useState<any[]>([])
   const [loadingUrls, setLoadingUrls] = useState(false)
+  const [batchResults, setBatchResults] = useState<any[]>([])
+  const [batchScanning, setBatchScanning] = useState(false)
+  const [batchSummary, setBatchSummary] = useState<any>(null)
 
   const addLog = (msg: string) => setLogs(prev => [msg, ...prev].slice(0, 50))
 
@@ -69,7 +72,33 @@ export default function CameraCommandCenter() {
     setSsdpDetails([])
     addLog(`Iniciando descubrimiento en ${network}.0/24${customPorts ? ' + puertos: ' + customPorts : ''}...`)
     try {
-      const res = await fetch('/api/enhanced/discover/all', {
+      // Escaneo batch: procesa TODAS las cámaras de la red
+  const scanAll = async () => {
+    setBatchScanning(true)
+    setBatchResults([])
+    setBatchSummary(null)
+    addLog('Iniciando escaneo batch de red completa...')
+    try {
+      const cidr = network.includes('.') && !network.includes('/') 
+        ? network + '.0/24' 
+        : network.includes('/') ? network : '192.168.1.0/24'
+      const res = await fetch('/api/iot/auto-access-batch', {
+        method: 'POST',
+        headers: ccHeaders(),
+        body: JSON.stringify({ cidr })
+      })
+      const data = await res.json()
+      setBatchResults(data.cameras || [])
+      setBatchSummary(data.summary || null)
+      addLog(`Batch completo: ${data.cameras_found} cámaras encontradas, ${data.summary?.full_access || 0} con acceso completo`)
+    } catch (e) {
+      addLog('Error en batch scan: ' + String(e))
+    } finally {
+      setBatchScanning(false)
+    }
+  }
+
+  const res = await fetch('/api/enhanced/discover/all', {
         method: 'POST',
         headers: ccHeaders(true),
         body: JSON.stringify({ network, custom_ports: customPorts || undefined })
@@ -295,7 +324,7 @@ export default function CameraCommandCenter() {
                 ) : (
                   <div className="flex items-center justify-center h-full text-slate-600 text-sm flex-col gap-2">
                     <Camera size={32} className="opacity-20" />
-                    Sin snapshot disponible
+                    Sin feed disponible — verifica credenciales
                   </div>
                 )}
                 {selectedCam.working_credentials && (
@@ -417,6 +446,116 @@ export default function CameraCommandCenter() {
               ))}
             </div>
           )}
+        {/* Grilla de Resultados Batch */}
+        {(batchResults.length > 0 || batchScanning) && (
+          <div className="mt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Scan size={16} className="text-purple-400" />
+              <h3 className="text-sm font-bold text-slate-200">Grilla de Cámaras ({batchResults.length})</h3>
+              {batchSummary && (
+                <div className="flex gap-2 ml-auto">
+                  <span className="px-2 py-0.5 bg-green-900/50 text-green-400 text-[10px] rounded-full">
+                    Full: {batchSummary.full_access}
+                  </span>
+                  <span className="px-2 py-0.5 bg-yellow-900/50 text-yellow-400 text-[10px] rounded-full">
+                    Partial: {batchSummary.partial_access}
+                  </span>
+                  <span className="px-2 py-0.5 bg-red-900/50 text-red-400 text-[10px] rounded-full">
+                    No Access: {batchSummary.no_access}
+                  </span>
+                  {batchSummary.vendors_detected?.length > 0 && (
+                    <span className="px-2 py-0.5 bg-slate-800 text-slate-400 text-[10px] rounded-full">
+                      {batchSummary.vendors_detected.join(', ')}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {batchScanning && batchResults.length === 0 && (
+              <div className="flex items-center justify-center py-12 text-slate-500">
+                <RefreshCw size={20} className="animate-spin mr-2" />
+                <span className="text-sm">Escaneando red completa...</span>
+              </div>
+            )}
+            
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              {batchResults.map((cam, i) => (
+                <div
+                  key={i}
+                  className={`rounded-lg border overflow-hidden cursor-pointer transition-all hover:scale-105 ${
+                    cam.access_level === 'full' ? 'border-green-600/50 bg-green-950/20' :
+                    cam.access_level === 'partial' ? 'border-yellow-600/50 bg-yellow-950/20' :
+                    'border-red-600/30 bg-red-950/10'
+                  }`}
+                  onClick={() => setSelectedCam(cam)}
+                >
+                  {/* Thumbnail */}
+                  <div className="aspect-video bg-black relative overflow-hidden">
+                    {cam.snapshot?.available ? (
+                      <img
+                        src={cam.snapshot.url}
+                        alt={cam.ip}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = cam.stream_url || ''
+                        }}
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <Camera size={20} className="opacity-30 text-slate-600" />
+                      </div>
+                    )}
+                    {/* Badge de acceso */}
+                    <div className="absolute top-1 right-1">
+                      <span className={`px-1.5 py-0.5 text-[8px] rounded-full font-bold ${
+                        cam.access_level === 'full' ? 'bg-green-600 text-white' :
+                        cam.access_level === 'partial' ? 'bg-yellow-600 text-black' :
+                        'bg-red-600 text-white'
+                      }`}>
+                        {cam.access_level === 'full' ? 'LIVE' : cam.access_level === 'partial' ? 'DATA' : 'OFF'}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Info */}
+                  <div className="p-2">
+                    <div className="text-[10px] font-mono text-cyan-400 truncate">{cam.ip}:{cam.port}</div>
+                    <div className="text-[10px] text-slate-400 truncate">{cam.vendor}</div>
+                    {cam.credentials && (
+                      <div className="text-[9px] text-green-400 font-mono mt-0.5">
+                        {cam.credentials.user}:{cam.credentials.pwd}
+                      </div>
+                    )}
+                    {cam.cves?.length > 0 && (
+                      <div className="flex gap-0.5 flex-wrap mt-1">
+                        {cam.cves.slice(0, 2).map((cve: any) => (
+                          <span key={cve.cve} className="px-1 py-0.5 bg-red-900/60 text-red-400 text-[7px] rounded font-mono">
+                            {cve.cve.replace('CVE-', '')}
+                          </span>
+                        ))}
+                        {cam.cves.length > 2 && (
+                          <span className="text-[7px] text-slate-500">+{cam.cves.length - 2}</span>
+                        )}
+                      </div>
+                    )}
+                    {cam.snapshot?.available && (
+                      <a
+                        href={cam.stream_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 inline-flex items-center gap-1 text-[9px] text-cyan-400 hover:text-cyan-300"
+                      >
+                        <Play size={8} /> Stream
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
         </div>
       </div>
     </div>

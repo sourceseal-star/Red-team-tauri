@@ -1,0 +1,60 @@
+# Configuración de KRAKEN v3.0
+kraken:
+  # Escaneo
+  targets: ["192.168.1.0/24", "10.0.0.0/24"]
+  scan_interval: 7200
+  max_workers: 20
+  default_ports: "21-23,25,53,80,110,135,139,143,443,445,554,993,995,1723,3306,3389,5432,5900,6379,8080,8443,27017"
+  masscan_rate: 1000
+
+  # Base de datos
+  db_type: "sqlite"  # sqlite | postgresql
+  db_path: "/var/lib/kraken/kraken.db"
+  db_key: "mi_clave_super_segura_123"
+
+  # Cache
+  cache_type: "redis"  # memory | redis
+  redis_url: "redis://localhost:6379/0"
+
+  # Notificaciones
+  telegram:
+    bot_token: ""
+    chat_id: ""
+  slack:
+    webhook_url: ""
+  email:
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    username: ""
+    password: ""
+    from: ""
+    to: ["admin@example.com"]
+
+  # Integraciones
+  shodan_api_key: ""
+  censys:
+    api_id: ""
+    api_secret: ""
+  virustotal_api_key: ""
+  siem:
+    webhook_url: ""
+    api_key: ""
+
+  # API
+  api:
+    host: "0.0.0.0"
+    port: 8000
+    debug: false
+    auth_enabled: true
+    username: "admin"
+    password: "kraken123"
+
+  # Web
+  web:
+    host: "0.0.0.0"
+    port: 8501
+    debug: false
+
+  # Seguridad
+  allowed_networks: ["192.168.0.0/16", "10.0.0.0/8"]
+  rate_limit: 100

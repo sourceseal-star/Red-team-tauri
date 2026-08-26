@@ -6,8 +6,8 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { artoApi, artoWebSocket } from '../api';
-import {
-  ARTOContext,
+import type {
+  ARTOContext as ARTOContextType,
   Operation,
   Prediction,
   Threat,
@@ -16,7 +16,7 @@ import {
 } from '../types/arto';
 
 // 🎯 Contexto ARTO
-const ARTOContext = createContext<ARTOContext | undefined>(undefined);
+const ARTOContext = createContext<ARTOContextType | undefined>(undefined);
 
 // 🎯 Proveedor ARTO
 interface ARTOProviderProps {
@@ -28,7 +28,7 @@ interface ARTOProviderProps {
 export function ARTOProvider({
   children,
   autoConnect = true,
-  autoStart = true
+  autoStart = false
 }: ARTOProviderProps) {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
@@ -258,7 +258,7 @@ export function ARTOProvider({
   }, [loadInitialData]);
 
   // 🎯 Contexto a proveer
-  const contextValue: ARTOContext = {
+  const contextValue: ARTOContextType = {
     arto: null, // Se puede usar artoApi directamente
     systemStats,
     operations,

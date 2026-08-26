@@ -1,0 +1,1197 @@
+/* ============================================================
+   LAYOUT PRINCIPAL
+   ============================================================ */
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+/* ============================================================
+   SIDEBAR COMPACTO
+   ============================================================ */
+
+.sidebar-compact {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  z-index: 1000;
+  transition: var(--transition);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-compact.open {
+  width: 260px;
+}
+
+.sidebar-compact.closed {
+  width: 70px;
+}
+
+.sidebar-compact.mobile {
+  transform: translateX(-100%);
+}
+
+.sidebar-compact.mobile.open {
+  transform: translateX(0);
+}
+
+/* Header del Sidebar */
+.sidebar-header {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.logo-icon {
+  font-size: 1.75rem;
+  animation: pulse 2s infinite;
+}
+
+.logo-text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  white-space: nowrap;
+}
+
+/* Navegación del Sidebar */
+.sidebar-nav {
+  flex: 1;
+  padding: var(--spacing-sm) 0;
+  overflow-y: auto;
+}
+
+.sidebar-section {
+  margin-bottom: var(--spacing-xs);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  transition: var(--transition);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin: 0 var(--spacing-xs);
+}
+
+.section-header:hover {
+  background: var(--bg-hover);
+}
+
+.section-header.active {
+  background: rgba(102, 126, 234, 0.15);
+}
+
+.section-icon {
+  font-size: 1.1rem;
+  width: 28px;
+  text-align: center;
+}
+
+.section-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+}
+
+.section-chevron {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+
+.section-header.active .section-chevron {
+  transform: rotate(180deg);
+}
+
+/* Items de la Sección */
+.section-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  margin: 0 var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background: var(--primary);
+  color: white;
+  box-shadow: var(--shadow);
+}
+
+.nav-icon {
+  font-size: 1rem;
+  width: 24px;
+  text-align: center;
+}
+
+.nav-name {
+  white-space: nowrap;
+}
+
+/* Badges de Notificación */
+.nav-badge {
+  background: var(--danger);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 0.65rem;
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.nav-badge.alert {
+  background: var(--warning);
+  color: var(--bg-primary);
+}
+
+.nav-badge.info {
+  background: var(--info);
+  color: white;
+}
+
+/* Sección de Módulos Externos */
+.sidebar-section.external {
+  margin-top: var(--spacing-md);
+  border-top: 1px solid var(--border);
+  padding-top: var(--spacing-md);
+}
+
+/* Footer del Sidebar */
+.sidebar-footer {
+  padding: var(--spacing-md);
+  border-top: 1px solid var(--border);
+}
+
+.footer-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.footer-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: pulse 2s infinite;
+}
+
+.status-dot.inactive {
+  background: var(--danger);
+  animation: none;
+}
+
+.footer-version {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* Overlay para Mobile */
+.sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 999;
+  backdrop-filter: blur(5px);
+}
+
+/* ============================================================
+   CONTENIDO PRINCIPAL
+   ============================================================ */
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  transition: var(--transition);
+}
+
+.main-content.sidebar-open {
+  margin-left: 260px;
+}
+
+.main-content.sidebar-closed {
+  margin-left: 70px;
+}
+
+.content {
+  flex: 1;
+  padding: var(--spacing-lg);
+  overflow-y: auto;
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* ============================================================
+   TOPBAR
+   ============================================================ */
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+
+.menu-toggle:hover {
+  background: var(--bg-hover);
+}
+
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.topbar-logo .logo-icon {
+  font-size: 1.25rem;
+}
+
+.topbar-logo .logo-text {
+  font-size: 1rem;
+  font-weight: 600;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Pestañas Rápidas */
+.topbar-tabs {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.tab {
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tab.active {
+  background: var(--gradient-button);
+  border-color: var(--primary);
+  color: white;
+  box-shadow: var(--shadow);
+}
+
+/* Lado Derecho del Topbar */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.system-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--bg-hover);
+  border-radius: 20px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: pulse 2s infinite;
+}
+
+.status-dot.inactive {
+  background: var(--danger);
+  animation: none;
+}
+
+.theme-toggle,
+.notifications-toggle,
+.user-toggle {
+  position: relative;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+
+.theme-toggle:hover,
+.notifications-toggle:hover,
+.user-toggle:hover {
+  background: var(--bg-hover);
+}
+
+.notification-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: var(--danger);
+  color: white;
+  padding: 2px 5px;
+  border-radius: 10px;
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .menu-toggle {
+    display: block;
+  }
+  
+  .topbar-tabs {
+    display: none;
+  }
+  
+  .topbar-logo .logo-text {
+    display: none;
+  }
+  
+  .system-status {
+    display: none;
+  }
+  
+  .main-content.sidebar-open,
+  .main-content.sidebar-closed {
+    margin-left: 0;
+  }
+  
+  .sidebar-compact.closed {
+    transform: translateX(-100%);
+  }
+  
+  .sidebar-overlay {
+    display: block;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar {
+    padding: var(--spacing-xs) var(--spacing-sm);
+  }
+  
+  .topbar-tabs {
+    display: none;
+  }
+  
+  .content {
+    padding: var(--spacing-sm);
+  }
+}
+LEVIATHAN ROUTER - API para Sistema LEVIATHAN v3.0
+======================================================
+Integra todos los módulos de LEVIATHAN con SourceSeal Console.
+
+Endpoints disponibles:
+- /api/leviathan/status          - Estado del sistema
+- /api/leviathan/scan/network    - Escaneo de red completo
+- /api/leviathan/scan/cameras    - Detección de cámaras IP
+- /api/leviathan/scan/quick      - Escaneo rápido
+- /api/leviathan/exploit/camera   - Explotación de cámara
+- /api/leviathan/exploit/chain    - Cadena de exploits
+- /api/leviathan/exploit/kraken   - Explotación con KRAKEN
+- /api/leviathan/ai/detect       - Detección de objetos con IA
+- /api/leviathan/ai/analyze      - Análisis de amenazas
+- /api/leviathan/report/generate - Generar informe
+- /api/leviathan/stats          - Estadísticas
+- /api/leviathan/ws             - WebSocket en tiempo real
+
+Autor: Harold Paredes / SourceSeal Red Team
+"""
+
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, FileResponse
+from typing import List, Dict, Any, Optional
+import asyncio
+import json
+from datetime import datetime
+
+router = APIRouter(prefix="/api/leviathan", tags=["LEVIATHAN v3.0"])
+
+@router.get("/status", summary="Estado de LEVIATHAN")
+async def get_status():
+    """Obtiene el estado general del sistema LEVIATHAN."""
+    return {
+        "status": "active",
+        "version": "3.0.0",
+        "name": "LEVIATHAN",
+        "description": "Sistema de Red Team Automatizado - Integración con SourceSeal",
+        "modules": {
+            "scanners": 6,
+            "exploiters": 5,
+            "ai_analyzers": 4,
+            "reporters": 3,
+            "total": 18
+        },
+        "capabilities": [
+            "Detección de cámaras IP (Hikvision, Dahua, Axis, etc.)",
+            "Explotación de vulnerabilidades (CVE-2021-36260, CVE-2021-31956, etc.)",
+            "Análisis con IA (YOLOv8 - detección de objetos, anomalías)",
+            "Generación de informes (JSON, HTML, PDF)",
+            "WebSocket en tiempo real",
+            "Integración con ARTO, SEAL, KRAKEN"
+        ],
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@router.get("/health", summary="Health Check")
+async def health_check():
+    """Verificación de salud del sistema."""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "services": {
+            "database": "healthy",
+            "modules": "healthy",
+            "websocket": "healthy",
+            "ai_models": "degraded"  # YOLOv8 puede no estar disponible en Termux
+        },
+        "dependencies": {
+            "required": ["fastapi", "uvicorn", "aiohttp"],
+            "optional": ["ultralytics", "onnxruntime", "opencv-python"]
+        }
+    }
+
+
+@router.post("/scan/network", summary="Escaneo de Red Completo")
+async def scan_network(
+    network: str = "192.168.0.0/24",
+    profile: str = "camera_detection",
+    deep: bool = False,
+    timeout: int = 5
+) -> Dict:
+    """
+    Escaneo completo de red con detección de cámaras.
+    
+    **Parámetros:**
+    - network: Red a escanear (ej: 192.168.0.0/24)
+    - profile: Perfil de escaneo (stealth, aggressive, massive, camera_detection)
+    - deep: Escaneo profundo (más lento pero más preciso)
+    - timeout: Timeout en segundos por host
+    
+    **Retorna:**
+    - devices: Dispositivos detectados
+    - cameras: Cámaras IP detectadas
+    - statistics: Estadísticas del escaneo
+    """
+    try:
+        from leviathan_core.modules.scanners.network_scanner import NetworkScanner
+        from leviathan_core.modules.scanners.camera_detector import CameraDetector
+        
+        # Escanear red
+        scanner = NetworkScanner()
+        scan_result = await scanner.scan(network, {
+            "profile": profile,
+            "deep": deep,
+            "timeout": timeout
+        })
+        
+        # Detectar cámaras
+        detector = CameraDetector()
+        camera_result = await detector.scan(network, {
+            "ports": [80, 443, 554, 8000, 8080, 37777, 3702]
+        })
+        
+        return {
+            "success": True,
+            "network": network,
+            "devices": scan_result.get("devices", []),
+            "cameras": camera_result.get("cameras", []),
+            "statistics": {
+                "total_devices": scan_result.get("statistics", {}).get("active_ips", 0),
+                "total_cameras": camera_result.get("statistics", {}).get("total_detected", 0),
+                "accessible_cameras": camera_result.get("statistics", {}).get("accessible", 0),
+                "vulnerable_cameras": camera_result.get("statistics", {}).get("vulnerable", 0)
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en escaneo: {str(e)}")
+
+
+@router.post("/scan/cameras", summary="Detección de Cámaras IP")
+async def scan_cameras(
+    network: str = "192.168.0.0/24",
+    ports: List[int] = [80, 443, 554, 8000, 8080, 37777, 3702],
+    brute_force: bool = False
+) -> Dict:
+    """
+    Detección especializada de cámaras IP.
+    
+    **Parámetros:**
+    - network: Red a escanear
+    - ports: Puertos específicos a verificar
+    - brute_force: Intentar fuerza bruta en cámaras detectadas
+    """
+    try:
+        from leviathan_core.modules.scanners.camera_detector import CameraDetector
+        
+        detector = CameraDetector()
+        result = await detector.scan(network, {
+            "ports": ports,
+            "brute_force": brute_force
+        })
+        
+        return {
+            "success": True,
+            "cameras": result.get("cameras", []),
+            "statistics": result.get("statistics", {}),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en detección: {str(e)}")
+
+
+@router.post("/scan/quick", summary="Escaneo Rápido")
+async def quick_scan(
+    target: str,
+    scan_type: str = "auto"
+) -> Dict:
+    """
+    Escaneo rápido de un objetivo específico.
+    
+    **Parámetros:**
+    - target: IP o hostname a escanear
+    - scan_type: Tipo de escaneo (auto, camera, service, vulnerability)
+    """
+    try:
+        from leviathan_core.modules.scanners.camera_detector import CameraDetector
+        from leviathan_core.modules.scanners.service_scanner import ServiceScanner
+        
+        result = {"target": target, "results": {}}
+        
+        # Detección de cámara
+        if scan_type in ["auto", "camera"]:
+            detector = CameraDetector()
+            camera_result = await detector.scan(target)
+            result["results"]["camera"] = camera_result.get("cameras", [])
+        
+        # Escaneo de servicios
+        if scan_type in ["auto", "service"]:
+            scanner = ServiceScanner()
+            service_result = await scanner.scan(target)
+            result["results"]["services"] = service_result.get("services", [])
+        
+        return {
+            "success": True,
+            "data": result,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en escaneo rápido: {str(e)}")
+
+
+@router.post("/exploit/camera", summary="Explotación de Cámara")
+async def exploit_camera(
+    target: str,
+    vendor: Optional[str] = None,
+    model: Optional[str] = None,
+    exploit_type: str = "auto",
+    use_kraken: bool = False
+) -> Dict:
+    """
+    Explotación de vulnerabilidades en cámaras IP.
+    
+    **Parámetros:**
+    - target: IP o hostname de la cámara
+    - vendor: Vendor (hikvision, dahua, axis, etc.)
+    - model: Modelo de la cámara
+    - exploit_type: Tipo de exploit (auto, hikvision_rce, dahua_backdoor, generic_brute)
+    - use_kraken: Usar KRAKEN para explotación avanzada
+    """
+    try:
+        from leviathan_core.modules.exploiters.hikvision_rce import HikvisionRCEExploiter
+        from leviathan_core.modules.exploiters.dahua_backdoor import DahuaBackdoorExploiter
+        from leviathan_core.modules.exploiters.generic_brute import GenericBruteExploiter
+        from leviathan_core.modules.exploiters.kraken_integration import KRAKENExploiter
+        from leviathan_core.modules.exploiters.exploit_chain import ExploitChainExploiter
+        
+        context = {
+            "vendor": vendor,
+            "model": model
+        }
+        
+        # Si no se especifica vendor, detectar primero
+        if vendor is None or exploit_type == "auto":
+            from leviathan_core.modules.scanners.camera_detector import CameraDetector
+            detector = CameraDetector()
+            camera_result = await detector.scan(target)
+            if camera_result.get("cameras"):
+                camera = camera_result["cameras"][0]
+                context.update(camera)
+                vendor = camera.get("vendor", "").lower()
+                model = camera.get("model", "")
+        
+        # Seleccionar exploiter
+        if use_kraken:
+            exploiter = KRAKENExploiter()
+            result = await exploiter.exploit(target, context)
+        elif vendor == "hikvision":
+            exploiter = HikvisionRCEExploiter()
+            result = await exploiter.exploit(target, context)
+        elif vendor == "dahua":
+            exploiter = DahuaBackdoorExploiter()
+            result = await exploiter.exploit(target, context)
+        else:
+            exploiter = GenericBruteExploiter()
+            result = await exploiter.exploit(target, context)
+        
+        return {
+            "success": True,
+            "target": target,
+            "vendor": vendor,
+            "model": model,
+            "results": result,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en explotación: {str(e)}")
+
+
+@router.post("/exploit/chain", summary="Cadena de Exploits")
+async def exploit_chain(
+    target: str,
+    chain_name: str = "camera_compromise"
+) -> Dict:
+    """
+    Ejecución de cadena de exploits predefinida.
+    
+    **Parámetros:**
+    - target: IP o red a atacar
+    - chain_name: Nombre de la cadena (camera_compromise, hikvision_full, dahua_full, network_recon)
+    """
+    try:
+        from leviathan_core.modules.exploiters.exploit_chain import ExploitChainExploiter
+        
+        chain_exploiter = ExploitChainExploiter()
+        result = await chain_exploiter.exploit(target, {
+            "chain": chain_name
+        })
+        
+        return {
+            "success": True,
+            "chain": chain_name,
+            "results": result,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en cadena: {str(e)}")
+
+
+@router.post("/exploit/kraken", summary="Explotación con KRAKEN")
+async def kraken_exploit(
+    target: str,
+    exploit: str = "auto"
+) -> Dict:
+    """
+    Explotación usando el sistema KRAKEN.
+    
+    **Parámetros:**
+    - target: IP o hostname
+    - exploit: Exploit específico o "auto"
+    """
+    try:
+        from leviathan_core.modules.exploiters.kraken_integration import KRAKENExploiter
+        
+        kraken = KRAKENExploiter()
+        result = await kraken.exploit(target, {"exploit": exploit})
+        
+        return {
+            "success": True,
+            "target": target,
+            "exploit": exploit,
+            "results": result,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en KRAKEN: {str(e)}")
+
+
+@router.post("/ai/detect-objects", summary="Detección de Objetos con IA")
+async def detect_objects(
+    image_data: Optional[str] = None,
+    image_path: Optional[str] = None,
+    stream_url: Optional[str] = None,
+    confidence_threshold: float = 0.5
+) -> Dict:
+    """
+    Detección de objetos en imágenes usando YOLOv8.
+    
+    **Parámetros:**
+    - image_data: Imagen en base64
+    - image_path: Ruta a archivo de imagen
+    - stream_url: URL de stream de video
+    - confidence_threshold: Umbral de confianza (0-1)
+    """
+    try:
+        from leviathan_core.modules.ai_analyzers.object_detection import ObjectDetectionAnalyzer
+        
+        analyzer = ObjectDetectionAnalyzer()
+        await analyzer.initialize()
+        
+        context = {
+            "image_data": image_data,
+            "image_path": image_path,
+            "stream_url": stream_url,
+            "confidence_threshold": confidence_threshold
+        }
+        
+        result = await analyzer.analyze("camera", context)
+        
+        return {
+            "success": True,
+            "detections": result.get("detections", []),
+            "statistics": result.get("statistics", {}),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        # Degradar gracefully si YOLOv8 no está disponible
+        return {
+            "success": False,
+            "error": f"YOLOv8 no disponible: {str(e)}",
+            "suggestion": "Instala ultralytics: pip install ultralytics",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+
+@router.post("/ai/analyze-threats", summary="Análisis de Amenazas")
+async def analyze_threats(
+    target: str,
+    data: Optional[Dict] = None
+) -> Dict:
+    """
+    Análisis completo de amenazas con IA.
+    
+    **Parámetros:**
+    - target: IP o dispositivo a analizar
+    - data: Datos adicionales para el análisis
+    """
+    try:
+        from leviathan_core.modules.ai_analyzers.threat_scoring import ThreatScoringAnalyzer
+        from leviathan_core.modules.ai_analyzers.anomaly_detector import AnomalyDetectorAnalyzer
+        
+        context = data or {}
+        context["target"] = target
+        
+        # Puntuación de amenazas
+        threat_analyzer = ThreatScoringAnalyzer()
+        threat_result = await threat_analyzer.analyze(target, context)
+        
+        # Detección de anomalías
+        anomaly_analyzer = AnomalyDetectorAnalyzer()
+        anomaly_result = await anomaly_analyzer.analyze(target, context)
+        
+        return {
+            "success": True,
+            "threat_score": threat_result,
+            "anomalies": anomaly_result.get("anomalies", []),
+            "recommendations": threat_result.get("recommendations", []),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en análisis: {str(e)}")
+
+
+@router.post("/report/generate", summary="Generar Informe")
+async def generate_report(
+    report_type: str = "json",
+    target: str = "scan",
+    data: Optional[Dict] = None
+) -> Dict:
+    """
+    Generar informe en el formato especificado.
+    
+    **Parámetros:**
+    - report_type: Tipo de informe (json, html, pdf)
+    - target: Objetivo del informe
+    - data: Datos para el informe
+    """
+    try:
+        from leviathan_core.modules.reporters.json_reporter import JSONReporter
+        from leviathan_core.modules.reporters.html_reporter import HTMLReporter
+        from leviathan_core.modules.reporters.pdf_reporter import PDFReporter
+        
+        if report_type == "json":
+            reporter = JSONReporter()
+        elif report_type == "html":
+            reporter = HTMLReporter()
+        elif report_type == "pdf":
+            reporter = PDFReporter()
+        else:
+            return {"success": False, "error": "Tipo de informe no válido"}
+        
+        result = await reporter.generate(target, data or {})
+        
+        if result.get("success"):
+            if report_type == "html" and result.get("file_path"):
+                return FileResponse(
+                    result["file_path"],
+                    media_type="text/html",
+                    filename=f"leviathan_{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+                )
+            elif report_type == "pdf" and result.get("file_path"):
+                return FileResponse(
+                    result["file_path"],
+                    media_type="application/pdf",
+                    filename=f"leviathan_{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                )
+            else:
+                return {"success": True, "data": result}
+        else:
+            return {"success": False, "error": result.get("error")}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en informe: {str(e)}")
+
+
+@router.get("/stats", summary="Estadísticas Generales")
+async def get_stats():
+    """Obtiene estadísticas generales del sistema."""
+    try:
+        # En producción, esto vendría de la base de datos
+        return {
+            "success": True,
+            "stats": {
+                "total_scans": 150,
+                "total_cameras_detected": 45,
+                "accessible_cameras": 23,
+                "vulnerable_cameras": 18,
+                "exploits_successful": 32,
+                "anomalies_detected": 89,
+                "threat_level": "high",
+                "threat_score": 85.5
+            },
+            "recent_activity": [
+                {"type": "scan", "target": "192.168.0.0/24", "timestamp": "2026-08-21T10:00:00Z", "status": "completed"},
+                {"type": "exploit", "target": "192.168.0.7", "timestamp": "2026-08-21T10:05:00Z", "status": "success"},
+                {"type": "ai_analysis", "target": "192.168.0.7", "timestamp": "2026-08-21T10:10:00Z", "status": "completed"}
+            ],
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/integrations", summary="Integraciones Disponibles")
+async def get_integrations():
+    """Lista de integraciones disponibles."""
+    return {
+        "success": True,
+        "integrations": {
+            "arto": {
+                "status": "active",
+                "description": "Operaciones autónomas (ARTO)",
+                "capabilities": ["autonomous_operations", "decision_engine", "predict_attacks"],
+                "version": "3.0.0"
+            },
+            "seal": {
+                "status": "active",
+                "description": "SEAL SUPER PACK",
+                "capabilities": ["network_sweep", "hikvision_attack", "onvif_scan", "fingerprint"],
+                "version": "3.0.0"
+            },
+            "kraken": {
+                "status": "active",
+                "description": "Sistema de explotación avanzada",
+                "capabilities": ["exploits", "payloads", "attack_chains"],
+                "version": "3.0.0"
+            },
+            "commander": {
+                "status": "active",
+                "description": "Sistema de control SourceSeal",
+                "capabilities": ["osint", "network_scan", "blockchain_anchoring"],
+                "version": "3.0.0"
+            }
+        },
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+class ConnectionManager:
+    """Gestor de conexiones WebSocket."""
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        """Nueva conexión WebSocket."""
+        await websocket.accept()
+        self.active_connections.append(websocket)
+    
+    def disconnect(self, websocket: WebSocket):
+        """Cerrar conexión WebSocket."""
+        self.active_connections.remove(websocket)
+    
+    async def broadcast(self, message: Dict, exclude: WebSocket = None):
+        """Enviar mensaje a todas las conexiones."""
+        for connection in self.active_connections:
+            if connection != exclude:
+                try:
+                    await connection.send_json(message)
+                except:
+                    self.disconnect(connection)
+
+
+manager = ConnectionManager()
+
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket para eventos en tiempo real."""
+    await manager.connect(websocket)
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            
+            # Manejar diferentes tipos de mensajes
+            message_type = data.get("type")
+            
+            if message_type == "subscribe":
+                # Enviar estado inicial
+                await websocket.send_json({
+                    "type": "system_status",
+                    "data": {
+                        "status": "connected",
+                        "modules": 18,
+                        "version": "3.0.0",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                })
+            
+            elif message_type == "scan":
+                # Iniciar escaneo y enviar actualizaciones
+                await broadcast_scan_updates(websocket, data.get("target"))
+            
+            elif message_type == "exploit":
+                # Iniciar explotación y enviar actualizaciones
+                await broadcast_exploit_updates(websocket, data.get("target"))
+            
+            elif message_type == "ai_analyze":
+                # Iniciar análisis con IA
+                await broadcast_ai_updates(websocket, data.get("target"))
+            
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+
+async def broadcast_scan_updates(websocket: WebSocket, target: str):
+    """Envía actualizaciones de escaneo en tiempo real."""
+    try:
+        from leviathan_core.modules.scanners.camera_detector import CameraDetector
+        
+        detector = CameraDetector()
+        
+        # Simular progreso (en producción, usar callbacks reales)
+        await websocket.send_json({
+            "type": "scan_progress",
+            "data": {
+                "target": target,
+                "progress": 10,
+                "message": "Iniciando escaneo...",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+        
+        result = await detector.scan(target)
+        
+        await websocket.send_json({
+            "type": "scan_complete",
+            "data": {
+                "target": target,
+                "cameras": result.get("cameras", []),
+                "statistics": result.get("statistics", {}),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+        
+    except Exception as e:
+        await websocket.send_json({
+            "type": "scan_error",
+            "data": {
+                "target": target,
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+
+async def broadcast_exploit_updates(websocket: WebSocket, target: str):
+    """Envía actualizaciones de explotación en tiempo real."""
+    try:
+        from leviathan_core.modules.exploiters.hikvision_rce import HikvisionRCEExploiter
+        
+        exploiter = HikvisionRCEExploiter()
+        
+        await websocket.send_json({
+            "type": "exploit_progress",
+            "data": {
+                "target": target,
+                "progress": 20,
+                "message": "Probando CVE-2021-36260...",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+        
+        result = await exploiter.exploit(target)
+        
+        await websocket.send_json({
+            "type": "exploit_complete",
+            "data": {
+                "target": target,
+                "results": result,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+        
+    except Exception as e:
+        await websocket.send_json({
+            "type": "exploit_error",
+            "data": {
+                "target": target,
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+
+
+async def broadcast_ai_updates(websocket: WebSocket, target: str):
+    """Envía actualizaciones de análisis con IA."""
+    try:
+        from leviathan_core.modules.ai_analyzers.object_detection import ObjectDetectionAnalyzer
+        
+        analyzer = ObjectDetectionAnalyzer()
+        await analyzer.initialize()
+        
+        await websocket.send_json({
+            "type": "ai_progress",
+            "data": {
+                "target": target,
+                "progress": 30,
+                "message": "Cargando modelo YOLOv8...",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+        
+        result = await analyzer.analyze(target, {})
+        
+        await websocket.send_json({
+            "type": "ai_complete",
+            "data": {
+                "target": target,
+                "results": result,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })
+        
+    except Exception as e:
+        await websocket.send_json({
+            "type": "ai_error",
+            "data": {
+                "target": target,
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        })

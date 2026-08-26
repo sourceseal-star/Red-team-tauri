@@ -31,7 +31,7 @@ class ARTOApiClient {
   constructor(config: APIConfig = {}) {
     // FIX: Usar getBaseUrl() para resolver la URL del backend dinámicamente
     this.baseUrl = config.baseUrl || `${getBaseUrl()}${API_BASE_URL}`;
-    this.timeout = config.timeout || 15000;
+    this.timeout = config.timeout || 45000; // FIX: 15s era muy poco para Termux/movil -- causaba 'signal is aborted without reason'
   }
 
   // 🔧 Metodo generico para solicitudes
@@ -43,13 +43,13 @@ class ARTOApiClient {
     const url = `${this.baseUrl}${endpoint}`;
     const options: RequestInit = {
       method,
-      headers: _authHeaders(this.headers),
+      headers: _authHeaders(),
       body: data ? JSON.stringify(data) : undefined
     };
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+      const timeoutId = setTimeout(() => controller.abort(new DOMException(`Timeout tras ${this.timeout}ms`, 'TimeoutError')), this.timeout);
 
       const response = await fetch(url, {
         ...options,

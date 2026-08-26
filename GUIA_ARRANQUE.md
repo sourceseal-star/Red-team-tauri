@@ -30,12 +30,40 @@ bash arrancar.sh
 ```
 
 Eso hace todo automáticamente:
-- git pull (sincroniza)
+- git stash + pull + stash pop (sincroniza sin perder cambios locales)
 - Instala deps (python, node, nmap, whois, dig)
-- Verifica/crea .env
-- Compila frontend
+- Verifica deps LEVIATHAN (aiohttp, requests)
+- Verifica/crea .env con API keys
+- Compila frontend (tauri-frontend)
+- Copia build a redteam/scripts/dist/
+- Mata procesos anteriores en el puerto 8001
 - Levanta backend en puerto 8001
 - Muestra tu IP local para acceso desde otros dispositivos
+
+## ━━━━ PASO 2b: (Opcional) Detección de Objetos con IA ━━━━
+
+### En PC (convertir modelo YOLOv8 a ONNX):
+```bash
+pip install ultralytics onnx
+python3 leviathan_core/tools/convert_yolo_onnx.py
+# Genera yolov8n.onnx (~12MB)
+scp yolov8n.onnx termux:~/Red-team-tauri/redteam/models/
+```
+
+### En Termux (instalar runtime):
+```bash
+pip install onnxruntime numpy pillow
+```
+
+El módulo detecta automáticamente el modelo .onnx y lo usa.
+
+## ━━━━ PASO 2c: Verificar módulos ━━━━
+
+Antes de arrancar, verifica que todo carga:
+```bash
+python3 leviathan_core/tools/verify_modules.py
+```
+Reporta: `TOTAL: 28/30 módulos OK` y marca cuáles faltan.
 
 ## ━━━━ PASO 3: Abrir el dashboard ━━━━
 
@@ -49,74 +77,108 @@ Desde otro dispositivo en la misma WiFi:
 http://TU_IP_LOCAL:8001
 ```
 
-## ━━━━ ENDPOINTS PARA INVESTIGAR CCTV ━━━━
+## ━━━━ ENDPOINTS PRINCIPALES ━━━━
 
-### Investigar una IP (due diligence completo)
+### Sistema
 ```bash
+curl http://localhost:8001/api/health
+curl http://localhost:8001/api/v1/status          # LEVIATHAN unificado
+curl http://localhost:8001/api/v1/health           # LEVIATHAN health
+curl http://localhost:8001/api/integrated/health   # ARTO + SEAL + LEVIATHAN
+```
+
+### LEVIATHAN — Escaneo y Explotación (/api/v1/*)
+```bash
+# Escaneo de red completo
+curl -X POST "http://localhost:8001/api/v1/scan/network" \
+  -H "Content-Type: application/json" \
+  -d '{"network": "192.168.0.0/24", "profile": "camera_detection"}'
+
+# Detección de cámaras IP
+curl -X POST "http://localhost:8001/api/v1/scan/cameras?network=192.168.0.0/24"
+
+# Detección RTSP
+curl -X POST "http://localhost:8001/api/v1/scan/rtsp?target=192.168.0.7&port=554"
+
+# Explotación de cámara (auto-detect vendor)
+curl -X POST "http://localhost:8001/api/v1/exploit/camera" \
+  -H "Content-Type: application/json" \
+  -d '{"target": "192.168.0.7", "vendor": "hikvision"}'
+
+# Puntuación de amenazas con IA
+curl -X POST "http://localhost:8001/api/v1/ai/threat-scoring?target=192.168.0.7" \
+  -H "Content-Type: application/json" \
+  -d '{"vulnerabilities": [{"severity": "critical"}]}'
+
+# Perfiles de escaneo disponibles
+curl http://localhost:8001/api/v1/profiles
+
+# Informe HTML
+curl -X POST "http://localhost:8001/api/v1/report/html?target=192.168.0.0/24" \
+  -H "Content-Type: application/json" \
+  -d '{"scan_type": "comprehensive"}' --output report.html
+```
+
+### Investigación OSINT (existentes)
+```bash
+# Investigar una IP
 curl http://localhost:8001/api/investigate/ip/190.1.2.3
-```
-Combina: geo + threat intel + abuseipdb + shodan + rdns + blocklist
-Devuelve: score de riesgo, veredicto (LIMPIO/MEDIO/ALTO), recomendaciones
 
-### Investigar una cámara específica
-```bash
-curl http://localhost:8001/api/investigate/camera/190.1.2.3
-```
-Combina: investigación de IP + marca detectada + puertos + streams + SSL
-
-### Check masivo de IPs
-```bash
-curl -X POST http://localhost:8001/api/intel/bulk-check \
-  -H "Content-Type: application/json" \
-  -d '["190.1.2.3","200.5.6.7","190.8.9.10"]'
-```
-
-### Geo-localización
-```bash
-curl http://localhost:8001/api/geo?ip=190.1.2.3
-```
-
-### Threat Intel (scoring + blocklist)
-```bash
-curl http://localhost:8001/api/intel?ip=190.1.2.3
-```
-
-### WHOIS de dominio
-```bash
+# WHOIS de dominio
 curl http://localhost:8001/api/osint/whois/dominio.com
-```
 
-### Subdominios (crt.sh + brute force)
-```bash
+# Subdominios
 curl http://localhost:8001/api/osint/subdomains/dominio.com?brute=true
-```
 
-### Emails asociados a dominio
-```bash
-curl http://localhost:8001/api/osint/emails/dominio.com
-```
-
-### Escanear red CCTV completa
-```bash
-# Topología de red
+# Escanear red CCTV
 curl -X POST http://localhost:8001/api/scan/topology
-
-# Detectar cámaras por RTSP/ONVIF
 curl -X POST http://localhost:8001/api/scan/cameras
-
-# Descubrimiento completo (ONVIF + SSDP + mDNS + SNMP)
 curl -X POST http://localhost:8001/api/enhanced/discover/all
+```
 
-# Cámaras guardadas en DB
-curl http://localhost:8001/api/enhanced/cameras
+### ARTO — AI Autónomo
+```bash
+curl http://localhost:8001/api/arto/status
+curl -X POST http://localhost:8001/api/arto/start
+```
 
-# Hosts descubiertos
-curl http://localhost:8001/api/enhanced/hosts
+## ━━━━ SI ALGO FALLA ━━━━
 
-# Escanear red CIDR específica
-curl -X POST http://localhost:8001/api/iot/scan-network \
-  -H "Content-Type: application/json" \
-  -d '{"cidr":"192.168.1.0/24"}'
+### git pull falla con "unstaged changes"
+```bash
+cd ~/Red-team-tauri
+git stash
+git pull origin main
+git stash pop
+# Si conflicto en stash pop:
+git checkout . && git pull origin main
+```
+
+### Verificar módulos
+```bash
+python3 leviathan_core/tools/verify_modules.py
+```
+
+### Verificar que el backend está vivo
+```bash
+curl http://localhost:8001/api/health
+curl http://localhost:8001/api/v1/status
+```
+
+### Ver logs del backend
+```bash
+tail -50 backend.log
+```
+
+### Reinstalar dependencias
+```bash
+bash termux_setup.sh
+```
+
+### Puerto 8001 ocupado
+```bash
+pkill -9 -f dashboard_server.py
+bash arrancar.sh
 ```
 
 ## ━━━━ EN REPLIT ━━━━
@@ -130,26 +192,10 @@ El backend se levanta en :8001 automáticamente.
 ## ━━━━ FLUJO DE TRABAJO CCTV ━━━━
 
 1. MONTAR: Conectar cámaras a la red
-2. ESCANEAR: POST /api/scan/topology + POST /api/enhanced/discover/all
-3. REGISTRAR: GET /api/enhanced/cameras (ver cámaras detectadas)
-4. INVESTIGAR: GET /api/investigate/camera/{ip} por cada cámara
-5. BLINDAR: Verificar puertos abiertos, cambiar passwords, cerrar RTSP público
-6. EVIDENCIA: Documentar con WHOIS + threat intel de cada IP
-
-## ━━━━ SI ALGO FALLA ━━━━
-
-Verificar que el backend está vivo:
-```bash
-curl http://localhost:8001/api/health
-```
-
-Ver logs del backend:
-```bash
-# Si usaste start_all.sh:
-tail -50 backend.log
-```
-
-Reinstalar dependencias:
-```bash
-bash termux_setup.sh
-```
+2. ESCANEAR: `POST /api/v1/scan/network` con perfil `camera_detection`
+3. DETECTAR: `POST /api/v1/scan/cameras` para cámaras IP específicas
+4. INVESTIGAR: `GET /api/investigate/camera/{ip}` por cada cámara
+5. ANALIZAR: `POST /api/v1/ai/threat-scoring` para scoring de amenazas
+6. EXPLOTAR: `POST /api/v1/exploit/camera` (solo si autorizado)
+7. REPORTAR: `POST /api/v1/report/html` para informe completo
+8. EVIDENCIA: Documentar con WHOIS + threat intel de cada IP

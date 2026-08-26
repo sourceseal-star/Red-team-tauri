@@ -488,7 +488,7 @@ async def full_discovery(network: str = None, custom_ports: str = None):
             p = p.strip()
             if p.isdigit() and int(p) not in ports_to_scan:
                 ports_to_scan.append(int(p))
-    semaphore = asyncio.Semaphore(100)
+    semaphore = asyncio.Semaphore(50)
 
     async def check_host(ip: str):
         async with semaphore:
@@ -570,24 +570,31 @@ async def full_discovery(network: str = None, custom_ports: str = None):
                 except Exception as db_err:
                     print(f"[DISCOVER] DB error para {ip}: {db_err}")
 
-    # Lanzar scan en paralelo con timeout global agresivo
-    # Por defecto escanea rango completo /24 pero con timeout corto
-    max_hosts = 254
-    tasks = []
-    for i in range(1, max_hosts + 1):
-        ip = f"{network}.{i}"
-        tasks.append(check_host(ip))
-
-    # Crear tareas con nombres para poder cancelarlas
-    task_group = [asyncio.create_task(t) for t in tasks]
+    # Chunking adaptativo: soporta cualquier CIDR sin saturar el celular.
+    # Construye la lista de IPs desde el CIDR (no asume /24).
+    import ipaddress as _ipa
     try:
-        await asyncio.wait_for(asyncio.gather(*task_group, return_exceptions=True), timeout=20.0)
-    except asyncio.TimeoutError:
-        print("[DISCOVER] Timeout global alcanzado, cancelando tareas pendientes")
-        for t in task_group:
-            if not t.done():
-                t.cancel()
-        # No esperar a que las cancelaciones se procesen — devolver inmediatamente
+        # network viene como prefijo (ej: "192.168.1") — convertir a CIDR
+        net_str = network if "/" in network else f"{network}.0/24"
+        net_obj = _ipa.ip_network(net_str, strict=False)
+        all_ips = [str(h) for h in net_obj.hosts()]
+    except Exception:
+        all_ips = [f"{network}.{i}" for i in range(1, 255)]
+
+    CHUNK_SIZE = 64  # 64 hosts por chunk para no saturar memoria
+    task_group = []
+    for chunk_start in range(0, len(all_ips), CHUNK_SIZE):
+        chunk = all_ips[chunk_start:chunk_start + CHUNK_SIZE]
+        for ip in chunk:
+            task_group.append(asyncio.create_task(check_host(ip)))
+        # Esperar este chunk antes de lanzar el siguiente
+        try:
+            await asyncio.wait_for(asyncio.gather(*task_group[-len(chunk):], return_exceptions=True), timeout=15.0)
+        except asyncio.TimeoutError:
+            print(f"[DISCOVER] Timeout en chunk {chunk_start}-{chunk_start + len(chunk)}, cancelando")
+            for t in task_group[-len(chunk):]:
+                if not t.done():
+                    t.cancel()
 
     return {
         "onvif_found": len(onvif_cams),

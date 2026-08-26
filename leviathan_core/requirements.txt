@@ -1,0 +1,19 @@
+# LEVIATHAN Core — dependencias
+# Instalación completa:
+#   pip install -r leviathan_core/requirements.txt
+# Instalación ligera (Termux, sin AI/cámara):
+#   pip install aiohttp requests beautifulsoup4
+
+# Scanners (siempre)
+aiohttp>=3.8
+requests>=2.28
+beautifulsoup4>=4.11
+
+# AI Analyzers (opcional — pesado en Termux)
+# opencv-python-headless>=4.8
+# numpy>=1.24
+# ultralytics>=8.0
+# Pillow>=9.0
+
+# Reporters
+# weasyprint>=59  # solo para PDF reporter

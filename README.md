@@ -1,10 +1,38 @@
-# 🛡️ Red-Team-Tauri — SourceSeal Console v5.0
+# 🛡️ Red-Team-Tauri — SourceSeal Console v6.0
 
-Sistema de operaciones de red team con **ARTO** (AI autónomo) + **VPN interceptor** + **OSINT advanced** + **Honeypot**.
+Sistema de operaciones de red team con **ARTO** (AI autónomo) + **SEAL SUPER PACK** (inteligencia de red y cámaras) + **KRAKEN v3.0** (motor de explotación) + **VPN interceptor** + **OSINT advanced** + **Honeypot**.
 
 Backend Python/FastAPI · Frontend React/Vite/TypeScript · Sin mocks · Sin dummy data.
 
 ---
+## 🦑 LEVIATHAN v3.0 — Sistema de Módulos
+
+Sistema modular de red team con 22 módulos: scanners, exploiters, AI analyzers y reporters.
+
+- **Backend:** `leviathan_core/` — módulos Python + FastAPI router (`/api/leviathan/*`)
+- **Frontend:** `leviathan-frontend/` — React 18 + Redux + Vite + Chart.js + Leaflet
+- **Aislamiento:** No modifica ni importa kraken/, seal/, o redteam/
+- **Persistencia:** Tablas `leviathan_*` en redteam.db (no interfiere con existentes)
+
+### Activar router en dashboard_server.py
+```python
+from leviathan_core.api.leviathan_router import router as leviathan_router
+app.include_router(leviathan_router)
+```
+
+### Documentación
+- `leviathan_core/README.md` — Arquitectura, endpoints, instalación
+- `leviathan_core/docs/MANUAL_OPERATIVO.md` — Flujo operativo, dependencias, Termux
+
+### Frontend
+```bash
+cd leviathan-frontend && npm install && npm run dev
+# Docker: docker build -t leviathan-frontend . && docker run -p 80:80 leviathan-frontend
+```
+
+---
+
+
 
 ## 🚀 ARRANQUE RÁPIDO — UN SOLO COMANDO
 
@@ -72,6 +100,8 @@ Este script hace todo: instala deps, compila frontend, levanta backend, y ejecut
 | `whois` | `pkg install whois` / `apt install whois` | OSINT WHOIS |
 | `dig` | `pkg install bind-utils` / `apt install dnsutils` | DNS recon |
 | `tcpdump` | `pkg install tcpdump` / `apt install tcpdump` | Captura de paquetes |
+| `iproute2` | `pkg install iproute2` / `apt install iproute2` | ARP discovery (SEAL tactical engine) |
+| `ffmpeg` | `pkg install ffmpeg` / `apt install ffmpeg` | Transcodificación RTSP→HLS (cámaras) |
 | `termux-api` | `pkg install termux-api` | Wake-lock + WiFi scan (Termux) |
 
 ### API Keys OSINT (gratis, opcionales)
@@ -96,7 +126,7 @@ Red-team-tauri/
 │
 ├── tauri-frontend/                   # Frontend ÚNICO — React/Vite/TS
 │   ├── src/
-│   │   ├── components/               #    30+ componentes
+│   │   ├── components/               #    30+ componentes (incluye SealPanel)
 │   │   ├── api/                      #    Clients: artoApi, interceptorApi, osintApi
 │   │   ├── lib/                      #    auth, fetch interceptor, sourceseal utils
 │   │   └── App.tsx                   #    Router principal
@@ -109,6 +139,21 @@ Red-team-tauri/
 │   ├── modules/                      #    attack_simulator, vpn_interceptor, defense
 │   ├── memory/                       #    SQLite + knowledge_base
 │   └── utils/                        #    threat_intel, risk, anomaly
+│
+├── seal/                             # 🔱 SEAL SUPER PACK v2.1 (independiente)
+│   ├── scanners/                    #    network_sweep, onvif, fingerprint_engine
+│   ├── attackers/                    #    hikvision_killer (CVE-2021-36260)
+│   ├── utils/                       #    vendor_dicts (600+ credenciales)
+│   ├── orchestrator/                 #    monitoreo 24/7
+│   ├── ai/                           #    arto_integration bridge
+│   ├── core/                         #    tactical_engine (reportes cifrados)
+│   ├── api/                          #    seal_api_router (20+ endpoints)
+│   └── docs/README.md                #    Guía completa de SEAL
+│
+├── kraken/                           # 🐙 KRAKEN v3.0 (independiente)
+│   ├── src/kraken/                   #    core, plugins, services, api, cli
+│   ├── termux_install.sh             #    Instalación ligera para Termux
+│   └── docs/README.md                #    Documentación de KRAKEN
 │
 ├── redteam/
 │   ├── tlsproxy/
@@ -127,9 +172,16 @@ Red-team-tauri/
 ├── android/                          # VpnService Java (captura sin root)
 ├── replit_start.sh                   # Arranque Replit
 ├── arrancar.sh                       # Arranque Termux
-├── quickstart.sh                     # Arranque + test automático (NUEVO)
+├── quickstart.sh                     # Arranque + test automático
 └── replit.nix                        # Dependencias Nix (Replit)
 ```
+
+### Principio de aislamiento
+
+- **`dashboard_server.py` es y sigue siendo el único backend que arranca por defecto** (Replit + Termux).
+- **KRAKEN** y **SEAL** son módulos **independientes**: no se importan automáticamente en el dashboard. Cero imports cruzados. Actualizarlos nunca rompe el dashboard.
+- Para activar los endpoints de SEAL dentro del dashboard (opcional), ver [`seal/docs/README.md`](seal/docs/README.md).
+- Para instalar KRAKEN en Termux: `cd kraken && bash termux_install.sh`.
 
 ### Flujo de datos
 
@@ -143,9 +195,64 @@ dashboard_server.py (FastAPI :8001)
     ├── /api/osint/*       → redteam/osint/osint_advanced.py
     ├── /api/scan/*        → backend/modules/enhanced_recon.py
     ├── /api/network/*     → escaneo local (nmap, arp, ss)
+    ├── /api/seal/*        → seal/api/seal_api_router.py (opcional, manual)
     ├── /ws                → WebSocket hub (tiempo real)
     └── /*                 → dist/index.html (SPA fallback)
 ```
+
+---
+
+## 🔱 SEAL SUPER PACK v2.1 — Inteligencia de Red y Cámaras
+
+Sistema de descubrimiento, fingerprinting y explotación de cámaras IP y dispositivos de red.
+
+**Uso directo (CLI, sin dashboard):**
+
+```bash
+# Escaneo de red (ARP + Ping + vendor fingerprint)
+python3 seal/scanners/network_sweep_ultimate.py --network 192.168.0.0/24
+
+# Detección ONVIF
+python3 seal/scanners/onvif_scanner.py --network 192.168.0.0/24
+
+# Ataque a cámara Hikvision (CVE-2021-36260 + brute force)
+python3 seal/attackers/hikvision_killer.py 192.168.0.7 --brute
+
+# Motor táctico — auditoría rápida con reporte cifrado
+python3 -m seal.core.tactical_engine --network 192.168.0.0/24
+
+# Orquestador continuo (monitoreo 24/7)
+python3 seal/orchestrator/seal_orchestrator.py --start
+```
+
+**Activar en el dashboard (opcional):**
+
+```python
+# En dashboard_server.py, después de crear app = FastAPI(...):
+from seal.api.seal_api_router import include_seal_routes
+include_seal_routes(app)              # /api/devices, /api/scan, /api/alerts, etc.
+
+from seal.core.tactical_engine import include_tactical_routes
+include_tactical_routes(app)          # /api/seal/tactical/scan, /results, /health
+```
+
+📖 Documentación completa: [`seal/docs/README.md`](seal/docs/README.md)
+
+---
+
+## 🐙 KRAKEN v3.0 — Motor de Explotación Autónomo
+
+Framework modular de explotación con plugins SSH, SMB, EternalBlue, inteligencia de amenazas y reportes.
+
+**Instalación (Termux, modo ligero):**
+
+```bash
+cd kraken
+bash termux_install.sh
+python3 -m kraken.cli.commands --help
+```
+
+📖 Documentación completa: [`kraken/docs/README.md`](kraken/docs/README.md)
 
 ---
 
@@ -231,6 +338,17 @@ curl -H "Authorization: Bearer TU_TOKEN" http://localhost:8001/api/health
 | GET | `/api/resources` | Recursos del sistema |
 | GET | `/api/ops/config` | Config de operaciones |
 
+### SEAL (opcional, requiere activación manual)
+| Método | Path | Descripción |
+|---|---|---|
+| GET | `/api/devices` | Lista todos los dispositivos descubiertos |
+| POST | `/api/scan` | Ejecuta un escaneo de red |
+| GET | `/api/alerts` | Lista alertas del orquestador |
+| GET | `/api/status` | Estado del orquestador SEAL |
+| POST | `/api/hikvision/attack/{ip}` | Atacar cámara Hikvision |
+| POST | `/api/seal/tactical/scan?network=CIDR` | Auditoría táctica con reporte cifrado |
+| GET | `/api/seal/tactical/results` | Resultados de auditorías tácticas |
+
 ### WebSocket
 | Path | Descripción |
 |---|---|
@@ -273,6 +391,9 @@ curl -s -H "$AUTH" "$BASE/api/osint/whois/example.com" | jq .
 # Geo IP
 curl -s -H "$AUTH" "$BASE/api/geo?ip=8.8.8.8" | jq .
 
+# SEAL Tactical (si está activado)
+curl -s -H "$AUTH" "$BASE/api/seal/tactical/health" | jq .
+
 # Services
 curl -s -H "$AUTH" "$BASE/api/services" | jq .
 ```
@@ -306,6 +427,19 @@ No usar `pip install pydantic` — las deps vienen de `replit.nix`:
 find ~/.local/lib/python3.12/site-packages -maxdepth 1 -iname "pydantic*" -exec rm -rf {} +
 ```
 
+### ARTO en modo degradado (OSINT no funciona)
+Si ARTO aparece corriendo pero las operaciones de scan devuelven vacío:
+- **Causa (resuelta 2026-08-20):** Conflicto de paquetes Python `modules` entre
+  `arto/modules/` y `backend/modules/` — Python solo podía resolver uno.
+- **Fix:** Ya aplicado en el repo. Hacer `git pull` y reiniciar.
+- **Verificar:** `GET /api/arto/status` -> `"running": true`
+- **Probar:** `POST /api/arto/operation/scan` con body `{"target": "example.com"}`
+
+### SEAL/KRAKEN no aparecen en el dashboard
+- **Es esperado:** son módulos independientes. No se montan automáticamente.
+- Para activar SEAL: ver [`seal/docs/README.md`](seal/docs/README.md)
+- Para activar KRAKEN: ver [`kraken/docs/README.md`](kraken/docs/README.md)
+
 ---
 
 ## 📦 DESPLIEGUE
@@ -316,6 +450,13 @@ find ~/.local/lib/python3.12/site-packages -maxdepth 1 -iname "pydantic*" -exec 
 | Termux | `bash arrancar.sh` | Instala todo automáticamente |
 | Manual | ver arriba | Linux/Mac/Windows |
 
+### Módulos opcionales (Termux)
+
+| Módulo | Instalación | Uso |
+|---|---|---|
+| SEAL | `pip install aiohttp cryptography` | `python3 seal/scanners/network_sweep_ultimate.py --network CIDR` |
+| KRAKEN | `cd kraken && bash termux_install.sh` | `python3 -m kraken.cli.commands --help` |
+
 ---
 
 ## 🔒 SEGURIDAD
@@ -325,6 +466,7 @@ find ~/.local/lib/python3.12/site-packages -maxdepth 1 -iname "pydantic*" -exec 
 - Sin mocks: todos los escaneos son reales
 - Path traversal: protección en endpoints de config
 - Rate limiting: via interceptor
+- SEAL tactical: reportes cifrados con Fernet (AES-256), llave persistente
 
 > ⚠️ Los escaneos deben ejecutarse únicamente dentro de un alcance autorizado.
 
@@ -332,6 +474,7 @@ find ~/.local/lib/python3.12/site-packages -maxdepth 1 -iname "pydantic*" -exec 
 
 ## 📝 CHANGELOG
 
+- **v6.0** SEAL SUPER PACK v2.1 + KRAKEN v3.0 integrados (2026-08-21)
 - **v5.0** ARTO + VPN (2026-08-19)
 - **v4.1** Topología + Traffic Analyzer (2026-08-18)
 - **v4.0** OSINT Advanced + Interceptor Advanced (2026-08-14)

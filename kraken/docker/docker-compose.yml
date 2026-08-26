@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  kraken:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: kraken
+    restart: unless-stopped
+    environment:
+      - KRAKEN_TARGETS=192.168.1.0/24,10.0.0.0/24
+      - KRAKEN_INTERVAL=7200
+      - KRAKEN_WORKERS=20
+      - KRAKEN_DB_TYPE=sqlite
+      - KRAKEN_DB_PATH=/app/data/kraken.db
+      - KRAKEN_DB_KEY=mi_clave_super_segura_123
+      - KRAKEN_LOG_LEVEL=INFO
+      - KRAKEN_API_HOST=0.0.0.0
+      - KRAKEN_API_PORT=8000
+      - KRAKEN_API_USERNAME=admin
+      - KRAKEN_API_PASSWORD=kraken123
+      - KRAKEN_WEB_HOST=0.0.0.0
+      - KRAKEN_WEB_PORT=8501
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - SHODAN_API_KEY=${SHODAN_API_KEY}
+    volumes:
+      - ../data:/app/data
+      - ../logs:/var/log/kraken
+    ports:
+      - "8000:8000"  # API
+      - "8501:8501"  # Dashboard
+    networks:
+      - kraken_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: kraken-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - ../data/redis:/data
+    networks:
+      - kraken_net
+
+  postgresql:
+    image: postgres:15-alpine
+    container_name: kraken-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=kraken
+      - POSTGRES_PASSWORD=kraken123
+      - POSTGRES_DB=kraken
+    volumes:
+      - ../data/postgres:/var/lib/postgresql/data
+    networks:
+      - kraken_net
+
+  nginx:
+    image: nginx:alpine
+    container_name: kraken-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - kraken
+    networks:
+      - kraken_net
+
+networks:
+  kraken_net:
+    driver: bridge

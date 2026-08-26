@@ -1,77 +1,123 @@
 # ============================================================================
-# Red-Team-Tauri v4.0 — Módulos OSINT e Interceptor Avanzados
+# Red-Team-Tauri v6.0 — Dashboard + IoT + OSINT + LEVIATHAN
+# ACTUALIZADO: 2026-08-25
 # ============================================================================
 
-## Instalación
+> **Backend unico:** `redteam/scripts/dashboard_server.py` (:8001)
+> **Arranque:** `bash arrancar.sh` (Termux) / `bash replit_start.sh` (Replit)
+
+## Instalacion
 
 ```bash
-# 1. Descomprimir el ZIP en la raíz del proyecto
-unzip redteam-modules-v4.0.zip -d /path/to/Red-team-tauri/
+# 1. Clonar (si no existe)
+git clone https://github.com/sourceseal-star/Red-team-tauri.git
+cd Red-team-tauri
 
-# 2. Instalar dependencias
-pip install httpx pydantic fastapi uvicorn python-whois dnspython beautifulsoup4
+# 2. Sincronizar con main
+git fetch origin && git reset --hard origin/main
 
-# 3. Configurar API keys (opcional — los módulos funcionan sin ellas con fallbacks)
-export SHODAN_API_KEY="tu-key"
-export VIRUSTOTAL_API_KEY="tu-key"
-export ABUSEIPDB_API_KEY="tu-key"
-export CENSYS_API_ID="tu-id"
-export CENSYS_API_SECRET="tu-secret"
-export GOOGLE_API_KEY="tu-key"
-export GOOGLE_CSE_ID="tu-cse-id"
-export GITHUB_TOKEN="tu-token"
-
-# 4. Reiniciar el backend
-python3 backend/dashboard_server.py
+# 3. Arrancar (instala todo automaticamente)
+bash arrancar.sh
 ```
 
-## Endpoints nuevos
+## Configurar API Keys (opcional — todo funciona sin ellas con fallbacks)
 
-### OSINT Advanced (`/api/osint/*`)
-| Método | Ruta | Descripción |
+Editar `.env` en la raiz del repo:
+
+```bash
+nano .env
+```
+
+```bash
+ABUSEIPDB_KEY=tu-key       # https://www.abuseipdb.com/account/api (1000 checks/dia gratis)
+SHODAN_API_KEY=tu-key      # https://www.shodan.io/dashboard (cuenta gratis)
+HUNTER_API_KEY=tu-key      # https://hunter.io/api-keys (opcional, emails OSINT)
+```
+
+> La variable es `ABUSEIPDB_KEY` (sin `_API`).
+
+## Endpoints OSINT (`/api/osint/*`)
+
+| Metodo | Ruta | Descripcion |
 |--------|------|-------------|
 | GET | `/api/osint/whois/{domain}` | WHOIS lookup |
-| GET | `/api/osint/dns/{domain}` | DNS recon (A, MX, TXT, NS, SPF, DMARC) |
-| POST | `/api/osint/subdomains` | Enumeración de subdominios |
-| GET | `/api/osint/threat-intel/{ip}` | Threat intelligence (AbuseIPDB, geo) |
-| POST | `/api/osint/email` | Email OSINT (MX, SPF, DMARC, hash) |
-| GET | `/api/osint/headers?url=` | HTTP header fingerprinting |
-| GET | `/api/osint/full/{domain}` | OSINT completo (WHOIS + DNS + subdominios) |
-| GET | `/api/osint/results` | Resultados guardados en BD |
-| GET | `/api/osint/google?q=` | Google Custom Search |
-| GET | `/api/osint/shodan/{ip}` | Shodan host lookup |
-| GET | `/api/osint/virustotal/{indicator}` | VirusTotal lookup |
-| POST | `/api/osint/social` | Social media username search |
+| GET | `/api/osint/subdomains/{domain}` | Enumeracion de subdominios |
+| GET | `/api/osint/emails/{domain}` | Email OSINT |
+| GET | `/api/osint/full/{target}` | OSINT completo (WHOIS + DNS + geo + threat) |
+| GET | `/api/osint/social/{username}` | Social media username search |
+| GET | `/api/osint/cert/{domain}` | Certificado SSL |
+| GET | `/api/osint/history/{target}` | Historial |
+| GET | `/api/osint/shodan?ip=X` | Shodan host lookup |
+| GET | `/api/osint/export/{target}` | Exportar resultados |
 
-### Interceptor Advanced (`/api/interceptor/*`)
-| Método | Ruta | Descripción |
+## Endpoints IoT y Camaras (`/api/iot/*`)
+
+| Metodo | Ruta | Descripcion |
+|--------|------|-------------|
+| GET | `/api/iot/vulns?ip=X&port=Y` | Vendor + CVEs + creds + URLs |
+| GET | `/api/iot/auto-access?ip=X&port=Y` | Orquestacion completa en 1 llamado |
+| POST | `/api/iot/auto-access-batch` | Escanea red CIDR, procesa todas las camaras |
+| GET | `/api/iot/snapshot?ip=X&port=Y&user=U&pwd=P` | Snapshot con 11 paths + auth |
+| GET | `/api/iot/stream?ip=X&port=Y&path=P` | Proxy MJPEG en vivo |
+| GET | `/api/iot/video-urls?ip=X&port=Y` | Detectar URLs de video |
+| POST | `/api/iot/scan-network` | Escaneo de red CIDR |
+
+## Endpoints LEVIATHAN (`/api/v1/*`)
+
+| Metodo | Ruta | Descripcion |
+|--------|------|-------------|
+| GET | `/api/v1/status` | Estado del sistema LEVIATHAN |
+| GET | `/api/v1/health` | Health check |
+| GET | `/api/v1/profiles` | Perfiles de escaneo |
+| POST | `/api/v1/scan/network` | Escaneo de red |
+| POST | `/api/v1/scan/cameras` | Deteccion de camaras IP |
+| POST | `/api/v1/scan/rtsp` | Deteccion RTSP |
+| POST | `/api/v1/exploit/camera` | Explotacion de camara |
+| POST | `/api/v1/ai/threat-scoring` | Puntuacion de amenazas |
+| POST | `/api/v1/report/json` | Informe JSON |
+
+## Endpoints Interceptor (`/api/interceptor/*`)
+
+| Metodo | Ruta | Descripcion |
 |--------|------|-------------|
 | POST | `/api/interceptor/analyze/request` | Analizar request HTTP |
 | POST | `/api/interceptor/analyze/response` | Analizar response HTTP |
 | GET | `/api/interceptor/flows` | Flujos interceptados |
-| GET | `/api/interceptor/alerts` | Alertas de inyección |
-| GET | `/api/interceptor/stats` | Estadísticas SIEM |
-| DELETE | `/api/interceptor/flows` | Limpiar BD |
+| GET | `/api/interceptor/alerts` | Alertas de inyeccion |
+| GET | `/api/interceptor/stats` | Estadisticas SIEM |
 
-## Detecciones del Interceptor
-- SQL Injection (CWE-89)
-- XSS (CWE-79)
-- Command Injection (CWE-78)
-- Path Traversal (CWE-22)
-- SSRF (CWE-918)
-- XXE (CWE-611)
-- LFI/RFI (CWE-98)
-- LDAP Injection (CWE-90)
-- NoSQL Injection (CWE-943)
+## Uso de camaras
 
-## Referencias
-- NIST SP 800-115 (Technical Guide to Information Security Testing)
-- NIST SP 800-150 (Guide to Cyber Threat Information Sharing)
-- NIST SP 800-94 (Guide to Intrusion Detection and Prevention Systems)
-- NIST SP 800-92 (Guide to Computer Security Log Management)
-- MITRE ATT&CK T1190 (Exploit Public-Facing Application)
-- MITRE ATT&CK T1592 (Gather Victim Host Info)
+```bash
+# Escanear toda la red y ver todas las camaras
+curl -X POST http://localhost:8001/api/iot/auto-access-batch \
+  -H "Content-Type: application/json" \
+  -d '{"cidr": "192.168.1.0/24"}' | python3 -m json.tool
 
-## Arquitectura Zero-PII
-Todos los emails se hashean con SHA-256 antes de almacenarse.
-No se guarda contenido de payloads, solo metadatos y alertas.
+# Ver una camara especifica
+curl "http://localhost:8001/api/iot/auto-access?ip=192.168.1.7&port=80" | python3 -m json.tool
+
+# Ver snapshot en el navegador
+# http://localhost:8001/api/iot/snapshot?ip=192.168.1.7&port=80&user=admin&pwd=12345
+
+# Ver stream MJPEG en el navegador
+# http://localhost:8001/api/iot/stream?ip=192.168.1.7&port=80&path=/Streaming/Channels/101&user=admin&pwd=12345
+```
+
+## Vendors de camaras detectados
+
+Hikvision, Dahua, Xiongmai, D-Link, Netgear, GoAhead, Ubiquiti, ONVIF (generico)
+
+## CVEs conocidos por vendor
+
+- **Hikvision**: CVE-2021-36260 (RCE), CVE-2021-33044 (auth bypass), CVE-2017-7921 (backdoor)
+- **Dahua**: CVE-2021-33045 (RCE), CVE-2020-25078 (auth bypass), CVE-2022-30560
+- **Xiongmai**: CVE-2017-17215 (RCE sin auth), CVE-2017-8225 (auth bypass)
+- **D-Link**: CVE-2019-16920 (RCE), CVE-2020-25078
+- **Netgear**: CVE-2016-6277 (RCE)
+- **GoAhead**: CVE-2017-8225 (auth bypass)
+- **Ubiquiti**: CVE-2021-35064
+
+---
+
+*Ver tambien: `MANUAL_OPERATIVO.md`, `GUIA_ARRANQUE.md`, `CONTINUAR_AQUI.md`*

@@ -1,15 +1,30 @@
 import React, { useState } from "react";
 import { Download, FileJson, FileSpreadsheet, FileCode, FileText, Loader2 } from "lucide-react";
+import { getApiKey, getBaseUrl } from "../lib/api";
 
 export default function ExportPanel() {
   const [loading, setLoading] = useState<"json" | "csv" | "pcap" | "pdf" | null>(null);
-  const API = (window as any).__API__ || "http://localhost:8001";
+  // Antes: hardcodeado a "http://localhost:8001" via window.__API__ (nunca
+  // definida) -- rompia si el dashboard se abre por la IP de WiFi en vez de
+  // localhost, y ademas NUNCA mandaba el header Authorization, asi que el
+  // middleware de auth devolvia 401 en todos los exports. Usar la misma
+  // base URL relativa + Bearer token que el resto de paneles (AlertsPanel,
+  // IoTCameras, TopologyPanel).
+  const API = getBaseUrl();
+
+  const authHeaders = (): Record<string, string> => {
+    const key = getApiKey();
+    return key ? { Authorization: `Bearer ${key}` } : {};
+  };
 
   const download = async (format: "json" | "csv" | "pcap") => {
     setLoading(format);
     try {
-      const res = await fetch(`${API}/api/export/${format}`);
-      if (!res.ok) throw new Error("Export failed");
+      const res = await fetch(`${API}/export/${format}`, { headers: authHeaders() });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Export failed (HTTP ${res.status})`);
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -27,11 +42,15 @@ export default function ExportPanel() {
   const generateReport = async () => {
     setLoading("pdf");
     try {
-      const res = await fetch(`${API}/api/reports/generate`, {
+      const res = await fetch(`${API}/reports/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ type: "executive" }),
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       if (data.report) {
         const blob = new Blob([JSON.stringify(data.report, null, 2)], { type: "application/json" });

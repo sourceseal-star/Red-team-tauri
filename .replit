@@ -1,8 +1,9 @@
 run = "bash replit_start.sh"
-modules = ["python-3.12", "nodejs-18", "bash"]
+modules = ["python-3.12", "nodejs-20", "bash"]
 
 [nix]
 channel = "stable-25_05"
+packages = ["cargo", "libiconv", "libxcrypt", "openssl", "pkg-config", "rustc"]
 
 [deployment]
 deploymentTarget = "autoscale"
@@ -29,12 +30,7 @@ runButton = "Project"
 
 [[workflows.workflow]]
 name = "Project"
-mode = "parallel"
 author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "bash replit_start.sh"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"

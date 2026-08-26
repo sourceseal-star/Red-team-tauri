@@ -118,9 +118,19 @@ class AttackSimulator:
         try:
             import sys
             import os
-            backend_path = os.path.join(os.path.dirname(__file__), "..", "..", "backend")
-            if backend_path not in sys.path:
-                sys.path.insert(0, backend_path)
+            backend_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "backend")
+            backend_path = os.path.normpath(backend_path)
+            # Asegurar que backend esta PRIMERO en sys.path
+            if backend_path in sys.path:
+                sys.path.remove(backend_path)
+            sys.path.insert(0, backend_path)
+            
+            # Limpiar cache de 'modules' si apunta a arto/modules
+            if 'modules' in sys.modules:
+                _f = getattr(sys.modules['modules'], '__file__', '')
+                if _f and 'arto' in _f:
+                    del sys.modules['modules']
+            
             from modules.enhanced_recon import router as _recon_router
             self.osint_module = _recon_module_wrapper()
             print("[ARTO] AttackSimulator: enhanced_recon conectado")
@@ -254,13 +264,36 @@ class AttackSimulator:
 class _recon_module_wrapper:
     """Wrapper que delega al OSINT real (backend/modules/osint_bridge.py).
 
-    Originalmente vacío (pass), causaba AttributeError en full_scan/quick_scan
-    durante operaciones autónomas de ARTO. Conecta al osint_bridge v2 que
-    ya expone datos reales (WHOIS+DNS+Subdominios+ThreatIntel).
+    FIX: Resuelve el conflicto de paquetes 'modules' entre arto/modules/
+    y backend/modules/. Cuando ambos directorios estan en sys.path, Python
+    solo puede resolver UNO. Este wrapper asegura que backend/modules
+    se use para osint_bridge sin romper los imports de arto.
     """
 
+    def _import_osint_bridge(self):
+        """Importa osint_bridge desde backend/modules, evitando el conflicto."""
+        import sys, os
+        _backend = os.path.normpath(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "..", "backend")
+        )
+        # Asegurar que backend esta PRIMERO en sys.path para que
+        # 'modules' resuelva a backend/modules, no arto/modules
+        if _backend in sys.path:
+            sys.path.remove(_backend)
+        sys.path.insert(0, _backend)
+
+        # Limpiar cache de 'modules' si apunta a arto/modules
+        if 'modules' in sys.modules:
+            _f = getattr(sys.modules['modules'], '__file__', '')
+            if _f and 'arto' in _f:
+                del sys.modules['modules']
+
+        from modules.osint_bridge import full_scan, quick_scan, FullScanRequest
+        return full_scan, quick_scan, FullScanRequest
+
     async def full_scan(self, target: str) -> dict:
-        from modules.osint_bridge import full_scan as _full_scan, FullScanRequest
+        _full_scan, _, FullScanRequest = self._import_osint_bridge()
         result = await _full_scan(FullScanRequest(target=target, scan_type="auto"))
         findings = [
             {"type": key, "severity": "info", "data": value}
@@ -276,7 +309,7 @@ class _recon_module_wrapper:
         }
 
     async def quick_scan(self, target: str) -> dict:
-        from modules.osint_bridge import quick_scan as _quick_scan
+        _, _quick_scan, _ = self._import_osint_bridge()
         result = await _quick_scan(target, "auto")
         return {**result, "findings": []}
 

@@ -131,42 +131,83 @@ class OSINTRequest(BaseModel):
 # ============================================================================
 
 def _dns_resolve(domain: str, record_type: str = "A") -> List[str]:
-    """Resuelve registros DNS usando socket stdlib (sin dependencias externas)."""
+    """Resuelve registros DNS. Intenta dig, fallback a Google DNS-over-HTTPS."""
     try:
         if record_type == "A":
             return list(set(socket.gethostbyname_ex(domain)[2]))
-        elif record_type == "MX":
-            import subprocess
+        
+        # Intentar dig primero
+        import subprocess
+        try:
             result = subprocess.run(
-                ["dig", "+short", "MX", domain], capture_output=True, text=True, timeout=5
+                ["dig", "+short", record_type, domain],
+                capture_output=True, text=True, timeout=5
             )
-            return [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
-        elif record_type == "TXT":
-            import subprocess
-            result = subprocess.run(
-                ["dig", "+short", "TXT", domain], capture_output=True, text=True, timeout=5
-            )
-            return [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
-        elif record_type == "NS":
-            import subprocess
-            result = subprocess.run(
-                ["dig", "+short", "NS", domain], capture_output=True, text=True, timeout=5
-            )
-            return [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+            if result.returncode == 0 and result.stdout.strip():
+                return [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        
+        # Fallback: Google DNS-over-HTTPS (sin binarios externos)
+        import urllib.request
+        import json as _json
+        url = f"https://dns.google/resolve?name={domain}&type={record_type}"
+        req = urllib.request.Request(url, headers={"Accept": "application/dns-json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read().decode())
+        answers = data.get("Answer", [])
+        return [a.get("data", "") for a in answers if a.get("type") == _record_type_num(record_type)]
     except Exception:
         return []
+
+def _record_type_num(rtype: str) -> int:
+    """Convierte tipo DNS string a número (para Google DoH)."""
+    return {"A": 1, "MX": 15, "TXT": 16, "NS": 2, "CNAME": 5}.get(rtype, 1)
 
 
 async def whois_lookup(domain: str) -> Dict[str, Any]:
     """
     WHOIS lookup — NIST SP 800-115 §A.1 (OSINT from public registers).
-    Usa python-whois si esta disponible, si no usa whois CLI.
+    Estrategia: RDAP (HTTPS) primero → python-whois → whois CLI.
     """
     result: Dict[str, Any] = {"domain": domain, "raw": {}}
+
+    # 1) RDAP via HTTPS (siempre disponible, sin puerto 43)
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=8, follow_redirects=True) as c:
+            r = await c.get(f"https://rdap.org/domain/{domain}")
+            if r.status_code == 200:
+                d = r.json()
+                events = {e.get("eventAction", ""): e.get("eventDate", "")
+                          for e in d.get("events", [])}
+                ns = [n.get("ldhName", "") for n in d.get("nameservers", [])]
+                # Buscar registrar en entities
+                registrar = None
+                for ent in d.get("entities", []):
+                    if ent.get("roles") and "registrar" in ent.get("roles", []):
+                        registrar = ent.get("vcardArray", [None, None])[1].get("fn", {}).get("value") if len(ent.get("vcardArray", [])) > 1 else None
+                        if not registrar:
+                            registrar = str(ent.get("handle", ""))
+                        break
+                result["raw"] = {
+                    "source": "rdap",
+                    "registrar": registrar,
+                    "creation_date": events.get("registration", ""),
+                    "expiration_date": events.get("expiration", ""),
+                    "name_servers": ns,
+                    "status": d.get("status", []),
+                }
+                return result
+    except Exception:
+        pass
+
+    # 2) python-whois (puerto 43, puede timeout en sandboxes sin red abierta)
     try:
         import whois as python_whois
-        w = python_whois.whois(domain)
+        w = await asyncio.to_thread(python_whois.whois, domain)
         result["raw"] = {
+            "source": "python-whois",
             "registrar": w.registrar,
             "creation_date": str(w.creation_date) if w.creation_date else None,
             "expiration_date": str(w.expiration_date) if w.expiration_date else None,
@@ -176,45 +217,46 @@ async def whois_lookup(domain: str) -> Dict[str, Any]:
             "org": w.org,
             "country": w.country,
         }
-    except ImportError:
-        # Intentar binario whois
+        return result
+    except Exception:
+        pass
+
+    # 3) whois CLI
+    try:
         import subprocess
-        try:
-            proc = subprocess.run(
-                ["whois", domain], capture_output=True, text=True, timeout=10
-            )
-            if proc.stdout and proc.stdout.strip():
-                result["raw"] = {"cli_output": proc.stdout[:2000]}
-            else:
-                raise FileNotFoundError("whois vacio")
-        except Exception:
-            # Fallback: RDAP (sin binario, solo HTTP)
-            try:
-                import httpx
-                import asyncio as _aio
-                async def _rdap():
-                    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as c:
-                        r = await c.get(f"https://rdap.org/domain/{domain}")
-                        if r.status_code == 200:
-                            d = r.json()
-                            events = {e.get("eventAction",""): e.get("eventDate","")
-                                      for e in d.get("events",[])}
-                            ns = [n.get("ldhName","") for n in d.get("nameservers",[])]
-                            result["raw"] = {
-                                "source": "rdap",
-                                "registrar": None,
-                                "creation_date": events.get("registration",""),
-                                "expiration_date": events.get("expiration",""),
-                                "name_servers": ns,
-                                "status": d.get("status",[]),
-                            }
-                        else:
-                            result["raw"] = {"error": f"whois no instalado y RDAP HTTP {r.status_code}. Instala: pkg install whois"}
-                await _rdap()
-            except Exception as e2:
-                result["raw"] = {"error": f"whois no instalado y RDAP fallo: {e2}. Instala: pkg install whois"}
-    except Exception as e:
-        result["raw"] = {"error": str(e)}
+        proc = await asyncio.to_thread(
+            subprocess.run, ["whois", domain],
+            capture_output=True, text=True, timeout=8
+        )
+        if proc.stdout and proc.stdout.strip():
+            result["raw"] = {"source": "cli", "cli_output": proc.stdout[:2000]}
+            return result
+    except Exception:
+        pass
+
+    # 4) urllib fallback (RDAP)
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f"https://rdap.org/domain/{domain}",
+            headers={"Accept": "application/rdap+json"}
+        )
+        resp = await asyncio.to_thread(lambda: urllib.request.urlopen(req, timeout=8))
+        d = json.loads(resp.read().decode())
+        events = {e.get("eventAction", ""): e.get("eventDate", "")
+                  for e in d.get("events", [])}
+        ns = [n.get("ldhName", "") for n in d.get("nameservers", [])]
+        result["raw"] = {
+            "source": "rdap-urllib",
+            "registrar": None,
+            "creation_date": events.get("registration", ""),
+            "expiration_date": events.get("expiration", ""),
+            "name_servers": ns,
+            "status": d.get("status", []),
+        }
+        return result
+    except Exception as e3:
+        result["raw"] = {"error": f"Todos los metodos WHOIS fallaron: {e3}"}
 
     return result
 
@@ -225,16 +267,16 @@ async def dns_recon(domain: str) -> Dict[str, Any]:
     Recopila A, MX, TXT, NS, CNAME records.
     """
     result: Dict[str, Any] = {"domain": domain, "records": {}}
-    result["records"]["A"] = _dns_resolve(domain, "A")
-    result["records"]["MX"] = _dns_resolve(domain, "MX")
-    result["records"]["TXT"] = _dns_resolve(domain, "TXT")
-    result["records"]["NS"] = _dns_resolve(domain, "NS")
+    result["records"]["A"] = await asyncio.to_thread(_dns_resolve, domain, "A")
+    result["records"]["MX"] = await asyncio.to_thread(_dns_resolve, domain, "MX")
+    result["records"]["TXT"] = await asyncio.to_thread(_dns_resolve, domain, "TXT")
+    result["records"]["NS"] = await asyncio.to_thread(_dns_resolve, domain, "NS")
 
     txt_records = result["records"].get("TXT", [])
     result["spf"] = any("spf1" in t.lower() for t in txt_records)
     result["dmarc"] = any("dmarc" in t.lower() for t in txt_records)
 
-    dkim = _dns_resolve(f"_dmarc.{domain}", "TXT")
+    dkim = await asyncio.to_thread(_dns_resolve, f"_dmarc.{domain}", "TXT")
     result["dmarc_record"] = dkim[0] if dkim else None
 
     return result
@@ -259,6 +301,21 @@ async def subdomain_enumeration(domain: str, max_results: int = 50) -> Dict[str,
     await asyncio.gather(*tasks)
     return {"domain": domain, "subdomains": found, "total": len(found)}
 
+
+
+def _apply_geo(geo_data: dict, result: dict):
+    """Aplica datos de geolocalización al resultado de threat intel."""
+    result["factors"].append({
+        "factor": "Country",
+        "value": geo_data.get("country", "?"),
+    })
+    conn_type = geo_data.get("connection", {}).get("type")
+    if conn_type in ("hosting", "tor"):
+        result["factors"].append({
+            "factor": "Hosting/Tor",
+            "value": conn_type,
+        })
+        result["score"] += 10
 
 async def threat_intel_lookup(ip: str) -> Dict[str, Any]:
     """
@@ -291,22 +348,22 @@ async def threat_intel_lookup(ip: str) -> Dict[str, Any]:
         except Exception:
             pass
 
+    # Geo IP lookup — intentar httpx, fallback a urllib
     try:
         import httpx
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f"https://ipwho.is/{ip}")
             if resp.status_code == 200:
-                geo = resp.json()
-                result["factors"].append({
-                    "factor": "Country",
-                    "value": geo.get("country", "?"),
-                })
-                if geo.get("connection", {}).get("type") in ("hosting", "tor"):
-                    result["factors"].append({
-                        "factor": "Hosting/Tor",
-                        "value": geo["connection"]["type"],
-                    })
-                    result["score"] += 10
+                _apply_geo(geo_data=resp.json(), result=result)
+    except ImportError:
+        # Fallback: urllib (stdlib)
+        try:
+            import urllib.request
+            req = urllib.request.Request(f"https://ipwho.is/{ip}")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                _apply_geo(geo_data=json.loads(resp.read().decode()), result=result)
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -335,23 +392,23 @@ async def email_osint(email: str) -> Dict[str, Any]:
     if not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
         return {"email": email, "error": "Formato de email invalido"}
 
-    domain = email.split("@")[0]
-    username = email.split("@")[0]
+    domain = email.split("@")[1]   # despues del @
+    username = email.split("@")[0]  # antes del @
 
     result: Dict[str, Any] = {
         "email": email,
         "domain": domain,
         "username": username,
         "hash_sha256": hashlib.sha256(email.encode()).hexdigest(),
-        "mx_records": _dns_resolve(domain, "MX"),
+        "mx_records": await asyncio.to_thread(_dns_resolve, domain, "MX"),
         "spf": False,
         "dmarc": False,
     }
 
-    txt = _dns_resolve(domain, "TXT")
+    txt = await asyncio.to_thread(_dns_resolve, domain, "TXT")
     result["spf"] = any("spf1" in t.lower() for t in txt)
 
-    dmarc = _dns_resolve(f"_dmarc.{domain}", "TXT")
+    dmarc = await asyncio.to_thread(_dns_resolve, f"_dmarc.{domain}", "TXT")
     result["dmarc"] = bool(dmarc)
 
     providers = {
@@ -378,6 +435,26 @@ async def email_osint(email: str) -> Dict[str, Any]:
     return result
 
 
+
+def _apply_headers(headers: dict, status_code: int, result: dict):
+    """Aplica headers HTTP al resultado de fingerprinting."""
+    result["headers"] = {
+        "server": headers.get("server", headers.get("Server", "Desconocido")),
+        "x_powered_by": headers.get("x-powered-by", headers.get("X-Powered-By", "Desconocido")),
+        "content_type": headers.get("content-type", headers.get("Content-Type", "Desconocido")),
+        "status_code": status_code,
+    }
+    security = {}
+    for h in ["strict-transport-security", "x-frame-options",
+               "x-content-type-options", "content-security-policy",
+               "x-xss-protection", "referrer-policy",
+               "permissions-policy"]:
+        val = headers.get(h) or headers.get(h.title())
+        security[h] = "present" if val else "missing"
+    result["security_headers"] = security
+    result["security_score"] = sum(1 for v in security.values() if v == "present")
+    result["security_total"] = len(security)
+
 async def header_fingerprint(url: str) -> Dict[str, Any]:
     """
     HTTP Header Fingerprinting — NIST SP 800-115 §3.2.
@@ -388,7 +465,17 @@ async def header_fingerprint(url: str) -> Dict[str, Any]:
         import httpx
         async with httpx.AsyncClient(timeout=10, follow_redirects=True, verify=False) as client:
             resp = await client.get(url)
-            headers = dict(resp.headers)
+            _apply_headers(resp.headers, resp.status_code, result)
+    except ImportError:
+        # Fallback: urllib
+        import urllib.request
+        import ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
+            _apply_headers(dict(resp.headers.items()), resp.status, result)
 
             result["headers"] = {
                 "server": headers.get("server", "Desconocido"),
@@ -537,21 +624,35 @@ async def api_google_search(
                 params={"q": q},
                 headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
             )
-            results = []
-            if resp.status_code == 200:
-                # Parsear resultados basico con regex
-                links = re.findall(r'class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)', resp.text)
-                for url, title in links[:num]:
-                    # Limpiar URL de redirect de DDG
-                    if "uddg=" in url:
-                        from urllib.parse import parse_qs, urlparse as up
-                        parsed = up(url)
-                        qs = parse_qs(parsed.query)
-                        url = unquote(qs.get("uddg", [url])[0])
-                    results.append({"title": title.strip(), "link": url, "snippet": "", "displayLink": ""})
-            return {"query": q, "engine": "duckduckgo", "results": results, "total": len(results)}
+            return _parse_ddg_results(resp.text, q, num)
+    except ImportError:
+        # Fallback: urllib (stdlib)
+        try:
+            import urllib.request
+            import urllib.parse as _up
+            url = f"https://html.duckduckgo.com/html/?q={_up.quote(q)}"
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return _parse_ddg_results(resp.read().decode(), q, num)
+        except Exception as e:
+            return {"query": q, "engine": "none", "results": [], "error": str(e)}
     except Exception as e:
         return {"query": q, "engine": "none", "results": [], "error": str(e)}
+
+def _parse_ddg_results(html: str, q: str, num: int) -> dict:
+    """Parsea resultados de DuckDuckGo HTML."""
+    results = []
+    links = re.findall(r'class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)', html)
+    for url, title in links[:num]:
+        if "uddg=" in url:
+            from urllib.parse import parse_qs, urlparse as up, unquote
+            parsed = up(url)
+            qs = parse_qs(parsed.query)
+            url = unquote(qs.get("uddg", [url])[0])
+        results.append({"title": title.strip(), "link": url, "snippet": "", "displayLink": ""})
+    return {"query": q, "engine": "duckduckgo", "results": results, "total": len(results)}
 
 
 # ============================================================================
@@ -902,66 +1003,236 @@ async def api_github_recon(username: str):
 # SOCIAL MEDIA USERNAME SEARCH
 # ============================================================================
 
+# ============================================================================
+# PLATFORM DETECTION CONFIG — datos de verificación reales por sitio
+# Metodología del proyecto Sherlock (sherlock-project/sherlock,
+# sherlock_project/resources/data.json), adaptada a httpx async y
+# VALIDADA EN VIVO contra cuentas reales y username inventados antes
+# de subir esto a producción (2026-08-20).
+#
+# Por qué el checker anterior era pura alucinación: marcaba
+# "exists": true con solo status_code == 200. La mayoría de estas
+# plataformas devuelven 200 para CUALQUIER ruta — son SPAs que
+# renderizan "usuario no encontrado" con JavaScript, invisible para
+# un scraper — así que cualquier username, real o inventado, salía
+# "true". Cada plataforma tiene su propia forma real de indicar
+# "no existe": un string específico en el HTML/JSON, un endpoint de
+# API separado, o (raramente) un status_code que sí es confiable.
+#
+# Plataformas retiradas de la lista por bloqueo anti-bot verificado en
+# vivo (Instagram, LinkedIn, Facebook, Reddit, Twitter/X vía nitter):
+# devuelven la MISMA respuesta exista o no la cuenta desde este tipo
+# de origen (IP de datacenter) — cualquier resultado sería inventado.
+# Se marcan como "unreliable" en vez de adivinar.
+# ============================================================================
+
 PLATFORMS = {
-    "github": "https://github.com/{u}",
-    "twitter": "https://twitter.com/{u}",
-    "x": "https://x.com/{u}",
-    "instagram": "https://instagram.com/{u}",
-    "linkedin": "https://linkedin.com/in/{u}",
-    "facebook": "https://facebook.com/{u}",
-    "youtube": "https://youtube.com/@{u}",
-    "reddit": "https://reddit.com/user/{u}",
-    "tiktok": "https://tiktok.com/@{u}",
-    "telegram": "https://t.me/{u}",
-    "gitlab": "https://gitlab.com/{u}",
-    "medium": "https://medium.com/@{u}",
-    "pinterest": "https://pinterest.com/{u}",
-    "snapchat": "https://snapchat.com/add/{u}",
-    "twitch": "https://twitch.tv/{u}",
-    "steam": "https://steamcommunity.com/id/{u}",
+    "github": {
+        "url": "https://www.github.com/{u}",
+        "check": "status_code",
+        "regex": r"^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$",
+    },
+    "gitlab": {
+        "url": "https://gitlab.com/{u}",
+        "probe": "https://gitlab.com/api/v4/users?username={u}",
+        "check": "message_means_missing",
+        "error_msgs": ["[]"],
+        "note": "vía API oficial de GitLab",
+    },
+    "youtube": {
+        "url": "https://www.youtube.com/@{u}",
+        "check": "status_code",
+    },
+    "tiktok": {
+        "url": "https://www.tiktok.com/@{u}",
+        "check": "message_means_missing",
+        "error_msgs": ['"statusCode":10221', "Govt. of India decided to block 59 apps"],
+    },
+    "telegram": {
+        "url": "https://t.me/{u}",
+        "check": "message_means_missing",
+        "error_msgs": [
+            '<div class="tgme_page_context_link_icon">',
+            'tgme_username_link" href="tg://resolve?domain=',
+        ],
+        "regex": r"^[a-zA-Z0-9_]{3,32}[^_]$",
+        "note": "solo detecta usernames públicos indexables, no canales privados",
+    },
+    "medium": {
+        "url": "https://medium.com/@{u}",
+        "probe": "https://medium.com/feed/@{u}",
+        "check": "message_means_missing",
+        "error_msgs": ["<body"],
+        "note": "vía feed RSS",
+    },
+    "pinterest": {
+        "url": "https://www.pinterest.com/{u}/",
+        "probe": "https://www.pinterest.com/oembed.json?url=https://www.pinterest.com/{u}/",
+        "check": "status_code",
+    },
+    "snapchat": {
+        "url": "https://www.snapchat.com/add/{u}",
+        "check": "status_code",
+        "regex": r"^[a-z][a-z0-9-_.]{2,14}$",
+    },
+    "twitch": {
+        "url": "https://www.twitch.tv/{u}",
+        "check": "message_means_missing",
+        "error_msgs": [
+            "content='Twitch is the world&#39;s leading video platform and community for gamers.'"
+        ],
+    },
+    "steam": {
+        "url": "https://steamcommunity.com/id/{u}/",
+        "check": "message_means_missing",
+        "error_msgs": ["The specified profile could not be found"],
+    },
+    # --- Sin verificación confiable sin autenticación (bloqueo anti-bot
+    #     confirmado en vivo — misma respuesta exista o no la cuenta) ---
+    "instagram": {
+        "url": "https://instagram.com/{u}",
+        "check": "unreliable",
+        "note": "Instagram devuelve 200 (shell SPA) o 403 (anti-bot) igual exista o no la cuenta",
+    },
+    "linkedin": {
+        "url": "https://linkedin.com/in/{u}",
+        "check": "unreliable",
+        "note": "LinkedIn bloquea scraping no autenticado — misma respuesta exista o no la cuenta",
+    },
+    "facebook": {
+        "url": "https://facebook.com/{u}",
+        "check": "unreliable",
+        "note": "Facebook redirige a login para cualquier perfil, exista o no",
+    },
+    "reddit": {
+        "url": "https://www.reddit.com/user/{u}",
+        "check": "unreliable",
+        "note": "Reddit bloquea con 403/challenge anti-bot igual exista o no la cuenta",
+    },
+    "twitter": {
+        "url": "https://x.com/{u}",
+        "check": "unreliable",
+        "note": "x.com requiere JavaScript; los espejos públicos (nitter) están caídos",
+    },
 }
+
 
 @osint_router.post("/social")
 async def api_social_search(req: OSINTRequest):
     """
     Social media username search — MITRE ATT&CK T1589 (Gather Victim Identity Info).
-    Verifica si un username existe en 15+ plataformas via HTTP status check.
+
+    Verificación real por plataforma (no solo status_code == 200), usando la
+    metodología de Sherlock: mensajes de error específicos, endpoints de API
+    cuando existen, y validación de formato de username antes de gastar
+    requests en rutas que ninguna plataforma real aceptaría.
+
+    Plataformas sin forma confiable de verificar sin autenticación
+    (Instagram, LinkedIn, Facebook, Reddit, Twitter/X) se marcan
+    "exists": null en vez de adivinar — ver campo "note".
     """
-    username = req.target.replace("@", "").strip()
+    raw_username = req.target.replace("@", "").strip()
     results = []
     sem = asyncio.Semaphore(10)
 
-    async def check_platform(name: str, url: str):
-        full_url = url.replace("{u}", username)
+    warnings = []
+    if " " in raw_username:
+        warnings.append(
+            "El input contiene espacios — parece un nombre completo, no un "
+            "username. Ningún username real de estas plataformas admite "
+            "espacios; los resultados de las plataformas con validación de "
+            "formato saldrán como 'formato inválido'. Prueba variantes sin "
+            "espacios (ej: nombreapellido, nombre.apellido, nombre_apellido)."
+        )
+
+    async def check_platform(name: str, cfg: dict):
+        from urllib.parse import quote
+        username = quote(raw_username, safe="")
+
+        # 1. Validar formato ANTES de gastar un request — si el username no
+        #    cumple el patrón que la plataforma exige, no puede existir.
+        regex = cfg.get("regex")
+        if regex and not re.match(regex, raw_username):
+            results.append({
+                "platform": name,
+                "url": cfg["url"].replace("{u}", username),
+                "exists": False,
+                "status_code": None,
+                "note": "Formato de username inválido para esta plataforma — no se hizo la solicitud",
+            })
+            return
+
+        # 2. Plataformas sin verificación confiable sin autenticación
+        if cfg.get("check") == "unreliable":
+            results.append({
+                "platform": name,
+                "url": cfg["url"].replace("{u}", username),
+                "exists": None,
+                "status_code": None,
+                "note": cfg.get("note", "No hay forma confiable de verificar sin autenticación"),
+            })
+            return
+
+        target_url = cfg.get("probe", cfg["url"]).replace("{u}", username)
+        display_url = cfg["url"].replace("{u}", username)
+
         async with sem:
             try:
                 import httpx
-                async with httpx.AsyncClient(timeout=8, follow_redirects=True, verify=False) as client:
-                    resp = await client.get(full_url, headers={"User-Agent": "Mozilla/5.0"})
-                    exists = resp.status_code == 200
-                    # Algunas plataformas retornan 404 si no existe
-                    not_found_signals = ["not found", "doesn't exist", "unavailable", "page not found"]
-                    if resp.status_code == 200 and any(s in resp.text[:2000].lower() for s in not_found_signals):
-                        exists = False
-                    results.append({
+                async with httpx.AsyncClient(timeout=10, follow_redirects=True, verify=False) as client:
+                    resp = await client.get(
+                        target_url,
+                        headers={
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        },
+                    )
+                    check_type = cfg.get("check", "status_code")
+
+                    if check_type == "status_code":
+                        exists = resp.status_code == 200
+                    elif check_type == "message_means_missing":
+                        # OJO: no truncar el body — algunos marcadores de "no
+                        # existe" aparecen bien adentro de la página (ej. Steam
+                        # a los ~26KB). Truncar a 2000 chars fue justo el bug
+                        # original que causaba falsos positivos.
+                        found_error = any(msg in resp.text for msg in cfg.get("error_msgs", []))
+                        exists = resp.status_code == 200 and not found_error
+                    else:
+                        exists = resp.status_code == 200
+
+                    entry = {
                         "platform": name,
-                        "url": full_url,
+                        "url": display_url,
                         "exists": exists,
                         "status_code": resp.status_code,
-                    })
+                    }
+                    if cfg.get("note"):
+                        entry["note"] = cfg["note"]
+                    results.append(entry)
             except Exception as e:
                 results.append({
                     "platform": name,
-                    "url": full_url,
+                    "url": display_url,
                     "exists": False,
                     "error": str(e)[:100],
+                    "note": "Fallo de conexión — no confirmado ni descartado",
                 })
 
-    tasks = [check_platform(name, url) for name, url in PLATFORMS.items()]
+    tasks = [check_platform(name, cfg) for name, cfg in PLATFORMS.items()]
     await asyncio.gather(*tasks)
 
-    found = [r for r in results if r["exists"]]
-    return {"username": username, "found": found, "total_found": len(found), "total_checked": len(results)}
+    found = [r for r in results if r["exists"] is True]
+    unreliable = [r for r in results if r["exists"] is None]
+
+    return {
+        "username": raw_username,
+        "found": found,
+        "unreliable": unreliable,
+        "total_found": len(found),
+        "total_checked": len(results),
+        "warnings": warnings,
+    }
 
 
 # ============================================================================

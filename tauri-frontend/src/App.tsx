@@ -26,6 +26,8 @@ import InterceptorAdvancedPanel from './components/InterceptorAdvancedPanel';
 import { LanguageProvider } from './i18n/LanguageContext';
 import { ARTOProvider } from './components/ARTOProvider';
 import ARTOPanel from './components/ARTOPanel';
+import SealPanel from './components/SealPanel';
+import LeviathanPanel from './components/LeviathanPanel';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -60,11 +62,9 @@ function App() {
       {module === 'settings' && <SystemSettings />}
       {module === 'osint_adv' && <OSINTAdvancedPanel />}
       {module === 'interceptor' && <InterceptorAdvancedPanel />}
-      {module === 'arto' && (
-        <ARTOProvider>
-          <ARTOPanel />
-        </ARTOProvider>
-      )}
+      {module === 'arto' && <ARTOPanel />}
+      {module === 'seal' && <SealPanel />}
+      {module === 'leviathan' && <LeviathanPanel />}
     </AppShell>
     </ARTOProvider>
     </LanguageProvider>

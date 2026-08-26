@@ -1,0 +1,147 @@
+import React, { useState, useEffect } from 'react';
+import { useWebSocket } from './hooks/useWebSocket';
+import StatsPanel from './components/StatsPanel';
+import LiveLog from './components/LiveLog';
+import { Radar, Target, Skull, Activity, Globe, Cpu } from 'lucide-react';
+
+function App() {
+  const { connected, events } = useWebSocket('ws://localhost:8001');
+  const [scans, setScans] = useState([]);
+  const [targets, setTargets] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
+
+  const startScan = async () => {
+    if (!targets.trim()) return;
+    const list = targets.split(/[,\n]/).map(t => t.trim()).filter(Boolean);
+    setIsScanning(true);
+    try {
+      const res = await fetch('/api/v1/scan/distribute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targets: list, profile: 'aggressive', priority: 10 })
+      });
+      const data = await res.json();
+      setScans(prev => [data, ...prev]);
+    } catch (e) {
+      console.error(e);
+    }
+    setIsScanning(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-kraken-900 text-gray-100 font-sans selection:bg-kraken-accent/30">
+      {/* Header */}
+      <header className="border-b border-kraken-700 bg-kraken-800/50 backdrop-blur sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Radar className="w-8 h-8 text-kraken-accent animate-pulse-slow" />
+              <div className="absolute inset-0 bg-kraken-accent/20 blur-xl rounded-full" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-glow">
+                KRAKEN <span className="text-kraken-accent">COMMAND CENTER</span>
+              </h1>
+              <p className="text-xs text-gray-500 font-mono">PLATAFORMA DE CIBERINTELIGENCIA AUTÓNOMA v2.0</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-kraken-800 border border-kraken-700">
+              <div className={`w-2 h-2 rounded-full ${connected ? 'bg-kraken-success animate-pulse' : 'bg-kraken-danger'}`} />
+              <span className="text-xs font-mono text-gray-400">{connected ? 'WS ONLINE' : 'WS OFFLINE'}</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-mono text-gray-500">
+              <Cpu className="w-4 h-4" />
+              <span>MASTER:8000</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        {/* Stats */}
+        <StatsPanel />
+
+        {/* Control Panel */}
+        <div className="glass-panel rounded-lg p-6 glow-border">
+          <div className="flex items-center gap-2 mb-4">
+            <Target className="w-5 h-5 text-kraken-accent" />
+            <h2 className="text-lg font-semibold font-mono text-kraken-accent">NUEVO ATAQUE</h2>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <div className="lg:col-span-3">
+              <textarea
+                value={targets}
+                onChange={(e) => setTargets(e.target.value)}
+                placeholder="192.168.1.1&#10;192.168.1.2&#10;10.0.0.0/24"
+                className="w-full h-32 bg-kraken-900/50 border border-kraken-700 rounded-lg p-4 font-mono text-sm focus:outline-none focus:border-kraken-accent focus:ring-1 focus:ring-kraken-accent resize-none placeholder-gray-600"
+              />
+            </div>
+            <div className="space-y-3">
+              <button
+                onClick={startScan}
+                disabled={isScanning}
+                className="w-full py-3 bg-kraken-accent/10 border border-kraken-accent/30 text-kraken-accent rounded-lg font-mono font-bold hover:bg-kraken-accent/20 hover:shadow-[0_0_20px_rgba(0,212,255,0.2)] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <Skull className="w-4 h-4" />
+                {isScanning ? 'DESPLEGANDO...' : 'LANZAR KRAKEN'}
+              </button>
+              <div className="p-3 rounded-lg bg-kraken-900/50 border border-kraken-700 text-xs font-mono text-gray-500 space-y-1">
+                <div className="flex justify-between"><span>Perfil:</span><span className="text-kraken-warning">AGGRESSIVE</span></div>
+                <div className="flex justify-between"><span>Workers:</span><span className="text-kraken-success">AUTO-SCALE</span></div>
+                <div className="flex justify-between"><span>OPSEC:</span><span className="text-kraken-accent">ENABLED</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Live Feed */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <LiveLog events={events} />
+          </div>
+          <div className="space-y-4">
+            <div className="glass-panel rounded-lg p-4 glow-border h-[240px]">
+              <div className="flex items-center gap-2 mb-3">
+                <Globe className="w-4 h-4 text-kraken-accent" />
+                <h3 className="text-sm font-semibold font-mono text-kraken-accent">TOP TARGETS</h3>
+              </div>
+              <div className="space-y-2">
+                {events.filter(e => e.type === 'task_completed').slice(0, 5).map((evt, i) => (
+                  <div key={i} className="flex items-center justify-between p-2 rounded bg-kraken-900/50 border border-kraken-700/50 text-xs font-mono">
+                    <span className="text-gray-400 truncate max-w-[150px]">{evt.result?.target}</span>
+                    <span className={`px-2 py-0.5 rounded ${(evt.result?.risk_score || 0) > 7 ? 'bg-kraken-danger/20 text-kraken-danger' : 'bg-kraken-success/20 text-kraken-success'}`}>
+                      {(evt.result?.risk_score || 0).toFixed(1)}
+                    </span>
+                  </div>
+                ))}
+                {events.filter(e => e.type === 'task_completed').length === 0 && (
+                  <div className="text-center text-gray-600 text-xs font-mono py-8">Sin datos aún</div>
+                )}
+              </div>
+            </div>
+            <div className="glass-panel rounded-lg p-4 glow-border h-[240px]">
+              <div className="flex items-center gap-2 mb-3">
+                <Activity className="w-4 h-4 text-kraken-danger" />
+                <h3 className="text-sm font-semibold font-mono text-kraken-danger">VULNERABILIDADES</h3>
+              </div>
+              <div className="space-y-2">
+                {events.filter(e => e.type === 'task_completed' && (e.result?.vulns_found || 0) > 0).slice(0, 5).map((evt, i) => (
+                  <div key={i} className="p-2 rounded bg-kraken-danger/10 border border-kraken-danger/20 text-xs font-mono">
+                    <div className="text-kraken-danger font-bold">{evt.result?.target}</div>
+                    <div className="text-gray-500">{evt.result?.vulns_found} CVEs detectados</div>
+                  </div>
+                ))}
+                {events.filter(e => e.type === 'task_completed' && (e.result?.vulns_found || 0) > 0).length === 0 && (
+                  <div className="text-center text-gray-600 text-xs font-mono py-8">Sin vulns detectadas</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default App;

