@@ -54,9 +54,10 @@ async def action_shodan_search(query: str, limit: int = 100) -> List[Dict]:
     """Búsqueda en Shodan o AlienVault OTX via backend existente"""
     try:
         async with httpx.AsyncClient(timeout=15) as c:
+            # /api/osint/shodan espera ?ip= no ?query=
+            # /api/osint/full/{target} hace geo + threat + rDNS
             resp = await c.get(
-                f"{BACKEND_API}/api/osint/shodan",
-                params={"query": query},
+                f"{BACKEND_API}/api/osint/full/{query}",
                 headers=HEADERS,
             )
             if resp.status_code == 200:
@@ -92,19 +93,22 @@ async def action_camera_scan(target: Dict) -> Dict:
 
     try:
         async with httpx.AsyncClient(timeout=20) as c:
-            # Usar /api/iot (endpoint real del backend) — /api/enhanced/camera no existe
-            resp = await c.get(f"{BACKEND_API}/api/iot", params={"ip": ip}, headers=HEADERS)
+            # /api/iot/auto-access hace vendor + CVEs + creds + snapshot en 1 llamado
+            resp = await c.get(f"{BACKEND_API}/api/iot/auto-access", params={"ip": ip, "port": port}, headers=HEADERS)
             if resp.status_code == 200:
                 iot = resp.json()
                 target.update({
-                    "ports": iot.get("open_ports", []),
-                    "camera_detected": iot.get("camera_detected", False),
-                    "rtsp_url": iot.get("rtsp_url"),
-                    "brand": iot.get("brand", "unknown"),
-                    "vulnerable": iot.get("camera_detected", False),
-                    "severity": "critical" if iot.get("camera_detected") else "medium",
+                    "vendor": iot.get("vendor", "unknown"),
+                    "cves": iot.get("cves", []),
+                    "credentials": iot.get("credentials"),
+                    "access_level": iot.get("access_level", "none"),
+                    "camera_detected": iot.get("access_level") != "none",
+                    "snapshot_available": iot.get("snapshot", {}).get("available", False),
+                    "stream_url": iot.get("stream", {}).get("url"),
+                    "vulnerable": len(iot.get("cves", [])) > 0,
+                    "severity": "critical" if iot.get("cves") else ("high" if iot.get("credentials") else "medium"),
                 })
-                logger.info(f"Cámara {ip}: detected={iot.get('camera_detected')}, brand={iot.get('brand', '?')}")
+                logger.info(f"Cámara {ip}: vendor={iot.get('vendor')}, access={iot.get('access_level')}, cves={len(iot.get('cves', []))}")
             else:
                 # Fallback: probe directo TCP al puerto
                 try:
@@ -129,18 +133,23 @@ async def action_geo_lookup(target: Dict) -> Dict:
         return target
     try:
         async with httpx.AsyncClient(timeout=10) as c:
-            resp = await c.get(f"{BACKEND_API}/api/geo", params={"ip": ip}, headers=HEADERS)
+            # /api/osint/full/{ip} hace rDNS + geo (ipwho.is) + threat scoring
+            resp = await c.get(f"{BACKEND_API}/api/osint/full/{ip}", headers=HEADERS)
             if resp.status_code == 200:
-                geo = resp.json()
+                data = resp.json()
+                geo = data.get("geo", data)  # puede estar anidado
                 target["geo"] = {
                     "country": geo.get("country", "?"),
                     "city": geo.get("city", "?"),
-                    "isp": geo.get("connection", {}).get("isp", "?"),
+                    "region": geo.get("region", "?"),
+                    "isp": geo.get("connection", {}).get("isp", geo.get("isp", "?")),
                     "lat": geo.get("latitude"),
                     "lon": geo.get("longitude"),
                     "is_proxy": geo.get("is_proxy", False),
+                    "risk_score": geo.get("risk_score", 0),
+                    "flags": geo.get("flags", []),
                 }
-                logger.info(f"Geo {ip}: {geo.get('country')}, {geo.get('city')}")
+                logger.info(f"Geo {ip}: {geo.get('country')}, {geo.get('city')}, risk={geo.get('risk_score', 0)}")
     except Exception as e:
         logger.error(f"Geo error {ip}: {e}")
     return target
