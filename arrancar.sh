@@ -318,5 +318,52 @@ echo -e "${Y}  ℹ️  Estos módulos NO se ejecutan automáticamente.${N}"
 echo -e "${Y}     El dashboard (:${PORT}) es el único proceso activo.${N}"
 echo ""
 
+
+# ─── GHOST HUNTER PHANTOM (:8002) ─────────────────────────
+echo ""
+echo -e "${P}  ╔══════════════════════════════════════════════════════╗${N}"
+echo -e "${P}  ║  👻 GHOST HUNTER v3.0 PHANTOM — Master + Node        ║${N}"
+echo -e "${P}  ╠══════════════════════════════════════════════════════╣${N}"
+echo -e "${P}  │  Master:  http://localhost:8002/api/status           ║${N}"
+echo -e "${P}  │  Caza:    POST :8002/api/hunt/start                 ║${N}"
+echo -e "${P}  │  WS:      ws://localhost:8002/ws/nodes               ║${N}"
+echo -e "${P}  ╚══════════════════════════════════════════════════════╝${N}"
+echo ""
+
+PHANTOM_DIR="$ROOT_DIR/ghost_hunter_phantom"
+if [ -d "$PHANTOM_DIR" ] && [ -f "$PHANTOM_DIR/master.py" ]; then
+    echo "[arranque] Arrancando PHANTOM Master en :8002..."
+    cd "$PHANTOM_DIR"
+    BACKEND_API="http://localhost:8001" MASTER_PORT=8002 python3 master.py &
+    PHANTOM_PID=$!
+    echo "[arranque] PHANTOM Master PID: $PHANTOM_PID"
+    sleep 2
+    echo "[arranque] Arrancando PHANTOM Node worker..."
+    NODE_ID="phantom_node_1" MASTER_URL="http://localhost:8002" BACKEND_API="http://localhost:8001" python3 node.py &
+    NODE_PID=$!
+    echo "[arranque] PHANTOM Node PID: $NODE_PID"
+    echo "[arranque] ✅ GHOST PHANTOM activo en :8002"
+    cd "$ROOT_DIR"
+else
+    echo "[arranque] ⚠️  ghost_hunter_phantom/ no encontrado — PHANTOM desactivado"
+    PHANTOM_PID=""
+    NODE_PID=""
+fi
+
+# Cleanup: matar todo al salir (reemplaza el wait simple)
+cleanup() {
+    echo ""
+    echo "[arranque] Apagando sistema..."
+    kill $BACKEND_PID 2>/dev/null || true
+    [ -n "$PHANTOM_PID" ] && kill $PHANTOM_PID 2>/dev/null || true
+    [ -n "$NODE_PID" ] && kill $NODE_PID 2>/dev/null || true
+    pkill -f "dashboard_server.py" 2>/dev/null || true
+    pkill -f "ghost_hunter_phantom/master.py" 2>/dev/null || true
+    pkill -f "ghost_hunter_phantom/node.py" 2>/dev/null || true
+    echo "[arranque] ✅ Apagado completo"
+    exit 0
+}
+trap cleanup SIGTERM SIGINT
+
 # Mantener el script vivo mientras el backend corre
 wait
