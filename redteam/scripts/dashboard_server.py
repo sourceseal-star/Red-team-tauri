@@ -6502,6 +6502,29 @@ else:
 #  MAIN — debe ir al FINAL para que todos los @app endpoints se registren
 # ═════════════════════════════════════════════════════════════════════════════
 
+
+# ── PHANTOM (GHOST HUNTER) — recibir alertas del master node :8002 ────────────
+@app.post("/api/phantom/alert", dependencies=[Depends(require_auth)])
+async def phantom_alert(payload: Dict[str, Any] = Body(default={})):
+    """Recibe hallazgos críticos del orquestador GHOST HUNTER PHANTOM."""
+    severity = payload.get("severity", "medium")
+    title = payload.get("title", "Hallazgo PHANTOM")
+    # Broadcast por WebSocket a todos los clientes conectados
+    await broadcast_ws({
+        "event": "phantom_alert",
+        "severity": severity,
+        "title": title,
+        "data": payload,
+        "timestamp": now_iso(),
+    })
+    # Persistir como evidencia
+    try:
+        alert_file = EVIDENCE_DIR / f"phantom_alert_{int(time.time()*1000)}.json"
+        alert_file.write_text(json.dumps(payload, indent=2, default=str))
+    except Exception:
+        pass
+    return {"status": "received", "severity": severity}
+
 if __name__ == "__main__":
     import uvicorn
     import socket as _socket
