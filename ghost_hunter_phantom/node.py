@@ -92,35 +92,31 @@ async def action_camera_scan(target: Dict) -> Dict:
 
     try:
         async with httpx.AsyncClient(timeout=20) as c:
-            # Probar scan_camera_full via API
-            resp = await c.get(
-                f"{BACKEND_API}/api/enhanced/camera/{ip}",
-                params={"port": port},
-                headers=HEADERS,
-            )
+            # Usar /api/iot (endpoint real del backend) — /api/enhanced/camera no existe
+            resp = await c.get(f"{BACKEND_API}/api/iot", params={"ip": ip}, headers=HEADERS)
             if resp.status_code == 200:
-                cam = resp.json()
+                iot = resp.json()
                 target.update({
-                    "brand": cam.get("brand", "unknown"),
-                    "accessible_urls": cam.get("accessible_urls", []),
-                    "working_credentials": cam.get("working_credentials"),
-                    "rtsp_working": cam.get("rtsp_working"),
-                    "snapshot_url": cam.get("snapshot_url"),
-                    "vulnerable": bool(cam.get("working_credentials")),
-                    "severity": "critical" if cam.get("working_credentials") else "medium",
+                    "ports": iot.get("open_ports", []),
+                    "camera_detected": iot.get("camera_detected", False),
+                    "rtsp_url": iot.get("rtsp_url"),
+                    "brand": iot.get("brand", "unknown"),
+                    "vulnerable": iot.get("camera_detected", False),
+                    "severity": "critical" if iot.get("camera_detected") else "medium",
                 })
-                logger.info(f"Cámara {ip}: brand={cam.get('brand')}, creds={'SI' if cam.get('working_credentials') else 'NO'}")
+                logger.info(f"Cámara {ip}: detected={iot.get('camera_detected')}, brand={iot.get('brand', '?')}")
             else:
-                # Fallback: usar /api/iot
-                resp2 = await c.get(f"{BACKEND_API}/api/iot", params={"ip": ip}, headers=HEADERS)
-                if resp2.status_code == 200:
-                    iot = resp2.json()
-                    target.update({
-                        "ports": iot.get("open_ports", []),
-                        "camera_detected": iot.get("camera_detected", False),
-                        "rtsp_url": iot.get("rtsp_url"),
-                        "severity": "high" if iot.get("camera_detected") else "low",
-                    })
+                # Fallback: probe directo TCP al puerto
+                try:
+                    _, writer = await asyncio.wait_for(
+                        asyncio.open_connection(ip, port), timeout=2
+                    )
+                    writer.close()
+                    await writer.wait_closed()
+                    target.update({"port_open": True, "severity": "medium"})
+                    logger.info(f" puerto {port} abierto en {ip}")
+                except Exception:
+                    target.update({"port_open": False, "severity": "low"})
     except Exception as e:
         logger.error(f"Camera scan error {ip}: {e}")
     return target
