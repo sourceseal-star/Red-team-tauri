@@ -4,17 +4,17 @@
 #
 # Uso:
 #   bash termux_recover.sh
-#   COMMANDER_REPO_URL=https://github.com/ORG/REPO.git bash termux_recover.sh
+#   bash termux_recover.sh
 #
-# El script no inventa el repositorio Commander: si no existe localmente,
-# solo lo clona cuando COMMANDER_REPO_URL se proporciona explícitamente.
+# El script sincroniza ambos repositorios. Commander usa la URL oficial por defecto;
+# puedes sustituirla por SSH con COMMANDER_REPO_URL si tu autenticación lo requiere.
 # =====================================================================
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="${REDTEAM_REPO_DIR:-$HOME/Red-team-tauri}"
 COMMANDER_DIR="${COMMANDER_DIR:-$HOME/commander}"
-COMMANDER_REPO_URL="${COMMANDER_REPO_URL:-}"
+COMMANDER_REPO_URL="${COMMANDER_REPO_URL:-https://github.com/sourceseal-star/commander.git}"
 PORT="${PORT:-8001}"
 
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'; N='\033[0m'
@@ -57,9 +57,10 @@ fi
 ok "Red-team-tauri sincronizado: $(git -C "$REPO_DIR" log -1 --oneline)"
 
 # ── 3. Resolver Commander sin adivinar URL ──────────────────────────────────
-if [ -f "$COMMANDER_DIR/commander.py" ]; then
-  ok "Commander detectado: $COMMANDER_DIR"
-elif [ -n "$COMMANDER_REPO_URL" ]; then
+  if [ ! -f "$COMMANDER_DIR/commander.py" ]; then
+    die "Commander clonado pero no contiene commander.py: $COMMANDER_DIR"
+  fi
+  ok "Commander listo: $COMMANDER_DIR"
   if [ -d "$COMMANDER_DIR/.git" ]; then
     info "Sincronizando Commander..."
     git -C "$COMMANDER_DIR" fetch origin
@@ -73,7 +74,7 @@ elif [ -n "$COMMANDER_REPO_URL" ]; then
     || warn "El repo clonado no contiene commander.py; quedará desactivado."
 else
   warn "Commander no está clonado."
-  warn "Para activarlo: COMMANDER_REPO_URL='URL_EXACTA' bash $ROOT/termux_recover.sh"
+  die "No se pudo preparar Commander. Revisa la autenticación de GitHub en Termux."
 fi
 
 # ── 4. Dependencias Python reales del backend ────────────────────────────────
@@ -82,7 +83,14 @@ python -m pip install --upgrade pip
 python -m pip install \
   fastapi uvicorn httpx pydantic psutil aiohttp \
   dnspython beautifulsoup4 python-whois requests
-ok "Dependencias Python listas"
+if [ -f "$COMMANDER_DIR/requirements.txt" ]; then
+  info "Instalando dependencias de Commander..."
+  python -m pip install -r "$COMMANDER_DIR/requirements.txt"
+else
+  python -m pip install cryptography
+fi
+python3 -c "import cryptography" 2>/dev/null || die "cryptography no quedó disponible para Commander"
+ok "Dependencias Python listas (Red-team-tauri + Commander)"
 
 # ── 5. Dependencias Node + build real del frontend ───────────────────────────
 info "Instalando y compilando el frontend..."
@@ -104,7 +112,7 @@ PORT=$PORT
 ALLOWED_ORIGINS=http://localhost:$PORT,http://127.0.0.1:$PORT
 EOF
   chmod 600 "$ENV_FILE"
-  warn "Se creó .env. Guarda esta API key: $API_KEY"
+  warn "Se creó .env con una nueva API key; quedó guardada en $ENV_FILE"
 else
   ok ".env existente preservado"
 fi
@@ -127,6 +135,6 @@ else
   warn "Commander permanecerá desactivado hasta clonar su repo correcto"
 fi
 
-info "Iniciando dashboard real en http://127.0.0.1:$PORT ..."
-cd "$REPO_DIR/redteam/scripts"
-exec python dashboard_server.py
+info "Iniciando sistema unificado en http://127.0.0.1:$PORT ..."
+cd "$REPO_DIR"
+exec env COMMANDER_DIR="$COMMANDER_DIR" COMMANDER_PORT="${COMMANDER_PORT:-8003}" bash "$REPO_DIR/iniciar_unificado.sh"
