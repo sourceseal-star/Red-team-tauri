@@ -121,12 +121,25 @@ cd "$SCRIPT_DIR"
 echo -e "${Y}[7/7] Servicios opcionales...${N}"
 
 # PHANTOM via Control Tower API
-if $WITH_PHANTOM && [ -f "ghost_hunter_phantom/master.py" ]; then
+if $WITH_PHANTOM && [ -f "ghost_hunter_phantom/master.py" ]; then && [ -f "ghost_hunter_phantom/master.py" ]; then
     echo -e "  ${P}Arrancando PHANTOM Master + Node...${N}"
     curl -s -X POST "http://localhost:8001/api/services/start?name=ghost-phantom-master" >/dev/null 2>&1
     sleep 2
     curl -s -X POST "http://localhost:8001/api/services/start?name=ghost-phantom-node" >/dev/null 2>&1
     echo -e "  ${G}PHANTOM iniciado via Control Tower${N}"
+fi
+
+# NEXUS OMNI v9 via Control Tower API
+if $WITH_MONITOR && [ -f "nexus_omni_v9.py" ]; then
+    echo -e "  ${P}Arrancando NEXUS OMNI v9 en :8002...${N}"
+    curl -s -X POST "http://localhost:8001/api/services/start?name=nexus-omni" >/dev/null 2>&1
+    sleep 2
+    NX=$(curl -s "http://localhost:8002/" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+    if [ "$NX" = "200" ]; then
+        echo -e "  ${G}NEXUS OMNI listo en http://localhost:8002${N}"
+    else
+        echo -e "  ${Y}NEXUS OMNI: esperando inicio (pip install aiohttp si falla)${N}"
+    fi
 fi
 
 # Telegram test

@@ -794,6 +794,11 @@ SERVICE_DEFS = {
         "env": {"NODE_ID": "phantom_node_1", "MASTER_URL": "http://localhost:8002", "BACKEND_API": "http://localhost:8001"}},
     "commander": {"description": "COMMANDER — Auditoría de red, OSINT, forense (repo hermano, in-process)",
         "cmd": None, "log_file": str(LOGS_DIR / "dashboard.log"), "in_process_flag": "_COMMANDER_OK"},
+    "nexus-omni": {"description": "NEXUS OMNI v9.0 — IA predictiva, adaptativa, auto-reparable (:8002)",
+        "cmd": [sys.executable, str(ROOT.parent / "nexus_omni_v9.py")],
+        "log_file": str(LOGS_DIR / "nexus_omni.log"),
+        "env": {"NEXUS_DB": str(ROOT / "nexus_omni.db")},
+        "cwd": str(ROOT.parent)},
 }
 
 _svc_lock = threading.Lock()
@@ -6855,6 +6860,26 @@ async def phantom_alert(payload: Dict[str, Any] = Body(default={})):
         pass
     return {"status": "received", "severity": severity}
 
+
+# ── NEXUS OMNI v9.0 proxy ───────────────────────────────────
+@app.get("/api/nexus/health")
+async def nexus_health():
+    try:
+        import httpx as _hx
+        async with _hx.AsyncClient() as c:
+            r = await c.get("http://localhost:8002/", timeout=2)
+        return {"available": r.status_code == 200, "port": 8002}
+    except: return {"available": False, "port": 8002}
+
+@app.get("/api/nexus/ui")
+async def nexus_ui_proxy():
+    """Sirve la UI de NEXUS OMNI desde :8002 via proxy."""
+    try:
+        import httpx as _hx
+        async with _hx.AsyncClient() as c:
+            r = await c.get("http://localhost:8002/", timeout=3)
+        return HTMLResponse(r.text)
+    except: return HTMLResponse("<h2>NEXUS OMNI no está corriendo. Inícialo desde Control Tower.</h2>", status_code=503)
 
 # === MODULO A — Reportes PDF con Hash Sellado ===
 async def _generate_audit_pdf(devices, subnet="", exploits=None):

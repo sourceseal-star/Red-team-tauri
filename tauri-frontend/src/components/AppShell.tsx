@@ -8,6 +8,7 @@ import {
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 import CommanderPanel from './CommanderPanel';
 import NetworkMapPanel from './NetworkMapPanel';
+import NexusPanel from './NexusPanel';
 
 // ==========================================
 // CONTEXTOS GLOBALES
@@ -43,6 +44,7 @@ const MODULES = [
     { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
   { id: 'commander', label: 'COMMANDER', icon: Terminal, color: 'text-green-400', badge: 'NEW' },
   { id: 'netmap', label: 'Mapa de Red', icon: MapPin, color: 'text-cyan-400', badge: 'LIVE' },
+  { id: 'nexus', label: 'NEXUS v9', icon: Cpu, color: 'text-purple-400', badge: 'AI' },
   { id: 'topology', label: 'Topología', icon: Network, color: 'text-cyan-400', badge: null },
   { id: 'iot', label: 'IoT Cámaras', icon: Camera, color: 'text-red-400', badge: 'new' },
   { id: 'alerts', label: 'Alertas', icon: Bell, color: 'text-yellow-400', badge: 'live' },
