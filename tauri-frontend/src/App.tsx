@@ -1,46 +1,80 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { Sidebar } from './components/Sidebar'
-import { TopBar } from './components/TopBar'
-import { BottomStatus } from './components/BottomStatus'
-import Dashboard from './routes/Dashboard'
-import ConfigEditor from './routes/ConfigEditor'
-import Reports from './routes/Reports'
-import Honeypot from './routes/Honeypot'
-import SOAR from './routes/SOAR'
-import ThreatIntel from './routes/ThreatIntel'
-import GeoIntel from './routes/GeoIntel'
-import RASP from './routes/RASP'
-import Terminal from './routes/Terminal'
-import Settings from './routes/Settings'
-import About from './routes/About'
+import { useState } from 'react';
+// El import de api.ts activa el interceptor global de fetch (injecta Bearer token)
+import './lib/api';
+import AppShell from './components/AppShell';
+import WarRoom from './components/WarRoom';
+import BiometricLogin from './components/BiometricLogin';
+import CameraCommandCenter from './components/CameraCommandCenter';
+import IntelPanel from './components/IntelPanel';
+import ExploitMatrix from './components/ExploitMatrix';
+import TrafficMonitor from './components/TrafficMonitor';
+import KrakenPanel from './components/KrakenPanel';
+import WiFiPanel from './components/WiFiPanel';
+import BlackMirrorPanel from './components/BlackMirrorPanel';
+import ControlTower from './components/ControlTower';
+import ServiceControlPanel from './components/ServiceControlPanel';
+import SystemSettings from './components/SystemSettings';
+import { MurcielagoPanel } from './components/MurcielagoPanel';
+import TopologyPanel from './components/TopologyPanel';
+import IoTCameras from './components/IoTCameras';
+import AlertsPanel from './components/AlertsPanel';
+import ExportPanel from './components/ExportPanel';
+// NetworkTopology reemplazado por TopologyPanel (v4 merge)
+import Terminal from './routes/Terminal';
+import OSINTAdvancedPanel from './components/OSINTAdvancedPanel';
+import InterceptorAdvancedPanel from './components/InterceptorAdvancedPanel';
+import { LanguageProvider } from './i18n/LanguageContext';
+import { ARTOProvider } from './components/ARTOProvider';
+import ARTOPanel from './components/ARTOPanel';
+import SealPanel from './components/SealPanel';
+import LeviathanPanel from './components/LeviathanPanel';
+import CommanderPanel from './components/CommanderPanel';
+import NetworkMapPanel from './components/NetworkMapPanel';
+import NexusPanel from './components/NexusPanel';
 
 function App() {
+  const [token, setToken] = useState(localStorage.getItem('api_token'));
+  const [module, setModule] = useState('warroom');
+
+  if (!token) return <BiometricLogin onLogin={setToken} />;
+
   return (
-    <BrowserRouter>
-      <div className="flex flex-col h-screen">
-        <TopBar />
-        <div className="flex flex-1 overflow-hidden">
-          <Sidebar />
-          <main className="flex-1 overflow-y-auto p-4 bg-background">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/config" element={<ConfigEditor />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/honeypot" element={<Honeypot />} />
-              <Route path="/soar" element={<SOAR />} />
-              <Route path="/tip" element={<ThreatIntel />} />
-        <Route path="/geo" element={<GeoIntel />} />
-              <Route path="/rasp" element={<RASP />} />
-              <Route path="/terminal" element={<Terminal />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/about" element={<About />} />
-            </Routes>
-          </main>
+    <LanguageProvider>
+    <ARTOProvider>
+    <AppShell activeModule={module} onNavigate={setModule}>
+      {module === 'warroom' && <WarRoom />}
+      {module === 'cameras' && <CameraCommandCenter />}
+      {module === 'threat' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <IntelPanel />
+          <ExploitMatrix />
+          <TrafficMonitor />
         </div>
-        <BottomStatus />
-      </div>
-    </BrowserRouter>
-  )
+      )}
+      {module === 'osint' && <KrakenPanel />}
+      {module === 'wifi' && <WiFiPanel />}
+      {module === 'ultra' && <MurcielagoPanel />}
+      {module === 'blackmirror' && <BlackMirrorPanel />}
+      {module === 'services' && <ServiceControlPanel />}
+      {module === 'terminal' && <Terminal />}
+      {module === 'tower' && <ControlTower />}
+      {module === 'topology' && <TopologyPanel />}
+      {module === 'iot' && <IoTCameras />}
+      {module === 'alerts' && <AlertsPanel />}
+      {module === 'export' && <ExportPanel />}
+      {module === 'settings' && <SystemSettings />}
+      {module === 'osint_adv' && <OSINTAdvancedPanel />}
+      {module === 'interceptor' && <InterceptorAdvancedPanel />}
+      {module === 'arto' && <ARTOPanel />}
+      {module === 'seal' && <SealPanel />}
+      {module === 'leviathan' && <LeviathanPanel />}
+      {module === 'commander' && <CommanderPanel />}
+      {module === 'netmap' && <NetworkMapPanel />}
+      {module === 'nexus' && <NexusPanel />}
+    </AppShell>
+    </ARTOProvider>
+    </LanguageProvider>
+  );
 }
 
 export default App

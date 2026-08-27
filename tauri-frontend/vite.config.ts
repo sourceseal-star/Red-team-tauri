@@ -34,6 +34,8 @@ export default defineConfig({
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
           charts: ['recharts'],
+          topology: ['vis-network', 'vis-data'],
+          geo: ['leaflet', 'react-leaflet'],
         },
       },
     },

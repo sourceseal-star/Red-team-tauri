@@ -6,10 +6,17 @@
 // API key management — se guarda en SecureStore (mobile) o localStorage (web)
 let _apiKey: string | null = null
 
+// IMPORTANTE: usa la MISMA clave de localStorage que BiometricLogin.tsx / App.tsx
+// ('api_token'). Antes usaba 'sealctl_api_key', una clave distinta que nunca
+// se llenaba, causando que TODAS las llamadas de este cliente (Config, Terminal,
+// Reports, SOAR, GeoIntel, Honeypot, RASP, Settings, ThreatIntel...) fueran sin
+// token -> 401 silencioso -> paneles vacios/"inutiles".
+const TOKEN_KEY = 'api_token'
+
 export function getApiKey(): string | null {
   if (_apiKey) return _apiKey
   if (typeof window !== 'undefined' && window.localStorage) {
-    _apiKey = localStorage.getItem('sealctl_api_key')
+    _apiKey = localStorage.getItem(TOKEN_KEY)
   }
   return _apiKey
 }
@@ -17,14 +24,14 @@ export function getApiKey(): string | null {
 export function setApiKey(key: string) {
   _apiKey = key
   if (typeof window !== 'undefined' && window.localStorage) {
-    localStorage.setItem('sealctl_api_key', key)
+    localStorage.setItem(TOKEN_KEY, key)
   }
 }
 
 export function clearApiKey() {
   _apiKey = null
   if (typeof window !== 'undefined' && window.localStorage) {
-    localStorage.removeItem('sealctl_api_key')
+    localStorage.removeItem(TOKEN_KEY)
   }
 }
 
@@ -32,7 +39,28 @@ export function clearApiKey() {
 export function authUrl(path: string): string {
   const key = getApiKey()
   const sep = path.includes('?') ? '&' : '?'
-  return BASE + path + (key ? `${sep}token=${encodeURIComponent(key)}` : '')
+  return getBaseUrl() + path + (key ? `${sep}token=${encodeURIComponent(key)}` : '')
+}
+
+// URL base configurable — el usuario puede cambiarla desde el panel de
+// Settings. Si no se seta, se usa "/api" (que el proxy de Vite redirige
+// a 127.0.0.1:8001). Si se seta (ej "http://192.168.1.50:8001/api"),
+// el frontend conecta directamente a esa URL sin pasar por el proxy.
+const BASE_URL_KEY = 'backend_base_url'
+
+export function getBaseUrl(): string {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const custom = localStorage.getItem(BASE_URL_KEY)
+    if (custom) return custom.replace(/\/$/, '')
+  }
+  return '/api'
+}
+
+export function setBaseUrl(url: string) {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    if (url) localStorage.setItem(BASE_URL_KEY, url)
+    else localStorage.removeItem(BASE_URL_KEY)
+  }
 }
 
 function authHeaders(): Record<string, string> {
@@ -40,16 +68,14 @@ function authHeaders(): Record<string, string> {
   return key ? { 'Authorization': `Bearer ${key}` } : {}
 }
 
-const BASE = "/api"
-
 async function get<T>(path: string): Promise<T> {
-  const r = await fetch(BASE + path, { headers: { ...authHeaders() } })
+  const r = await fetch(getBaseUrl() + path, { headers: { ...authHeaders() } })
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
   return r.json()
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
-  const r = await fetch(BASE + path, {
+  const r = await fetch(getBaseUrl() + path, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -59,14 +85,14 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function del<T>(path: string): Promise<T> {
-  const r = await fetch(BASE + path, { method: "DELETE", headers: { ...authHeaders() } })
+  const r = await fetch(getBaseUrl() + path, { method: "DELETE", headers: { ...authHeaders() } })
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
   return r.json()
 }
 
 /** GET con header X-Api-Key para rutas de escaneo de red protegidas. */
 async function getWithKey<T>(path: string, apiKey: string): Promise<T> {
-  const r = await fetch(BASE + path, {
+  const r = await fetch(getBaseUrl() + path, {
     headers: { "X-Api-Key": apiKey },
   })
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
@@ -419,4 +445,42 @@ export interface WiFiScanResult {
   scan_method?: string | null
   interface?: string
   warning?: string | null
+}
+
+
+// ── Interceptor global de fetch ────────────────────────────────────────────────
+// Monkey-patch window.fetch para que TODA peticion a /api/ incluya
+// automaticamente el header Authorization: Bearer <token>.
+// Esto arregla los fetch() directos en componentes que no usan el cliente api.
+// (NetworkTopology, CameraCommandCenter, BlackMirrorPanel, ExploitMatrix, etc.)
+//
+if (typeof window !== 'undefined') {
+  const _origFetch = window.fetch.bind(window)
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : (input as Request).url || String(input)
+    // Solo inyectar auth en peticiones a nuestra API
+    if (url.includes('/api/') || url.startsWith('/api')) {
+      const key = getApiKey()
+      if (key) {
+        init = init || {}
+        const existingHeaders = new Headers(init.headers)
+        // No sobrescribir si ya tiene Authorization
+        if (!existingHeaders.has('Authorization')) {
+          existingHeaders.set('Authorization', `Bearer ${key}`)
+          init.headers = existingHeaders
+        }
+      }
+    }
+    const response = await _origFetch(input, init)
+    // Detectar 401 — token invalido o expirado. Limpiar y recargar para
+    // que el usuario vuelva a hacer login con el token actual.
+    if (response.status === 401 && !url.includes('/api/auth/')) {
+      clearApiKey()
+      // Solo recargar si no estamos ya en el login
+      if (!window.location.pathname.includes('login')) {
+        setTimeout(() => window.location.reload(), 100)
+      }
+    }
+    return response
+  }
 }

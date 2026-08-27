@@ -15,7 +15,6 @@ description: How git auth is configured and which repo to use for this project
 - Git credential helper: `git config credential.helper store` → `~/.git-credentials` holds `https://sourceseal-star:TOKEN@github.com`
 - Remote URL is clean (no token embedded): `https://github.com/sourceseal-star/Red-team-tauri.git`
 - Shell `git push/pull` works via credential helper; Replit gitPush callback may still fail (OAuth not linked) — use shell directly if needed
-- Termux uses SSH remotes (`git@github.com:...`) after registering `~/.ssh/id_ed25519.pub` in GitHub; never put a token in a clone URL.
 
 **How to apply:** If git push fails after a container restart, re-run:
 ```bash

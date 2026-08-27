@@ -1,36 +1,29 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
-export function useWebSocket(path: string) {
-  const [ws, setWs] = useState<WebSocket | null>(null);
+export function useWebSocket(url: string) {
+  const [connected, setConnected] = useState(false);
+  const [lastMessage, setLastMessage] = useState<any>(null);
+  const ws = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${window.location.host}${path}`;
-    let socket: WebSocket | null = null;
-    let retry: ReturnType<typeof setTimeout>;
+    const socket = new WebSocket(url);
+    ws.current = socket;
 
-    const connect = () => {
-      try {
-        socket = new WebSocket(url);
-        socket.onopen = () => console.log(`[WS] ${path} connected`);
-        socket.onclose = () => {
-          console.log(`[WS] ${path} closed, retrying in 5s...`);
-          retry = setTimeout(connect, 5000);
-        };
-        socket.onerror = () => socket?.close();
-        setWs(socket);
-      } catch {
-        retry = setTimeout(connect, 5000);
-      }
+    socket.onopen = () => setConnected(true);
+    socket.onclose = () => setConnected(false);
+    socket.onmessage = (event) => {
+      try { setLastMessage(JSON.parse(event.data)); } 
+      catch { setLastMessage(event.data); }
     };
 
-    connect();
+    return () => socket.close();
+  }, [url]);
 
-    return () => {
-      clearTimeout(retry);
-      socket?.close();
-    };
-  }, [path]);
+  const send = useCallback((data: any) => {
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(typeof data === 'string' ? data : JSON.stringify(data));
+    }
+  }, []);
 
-  return ws;
+  return { connected, lastMessage, send };
 }

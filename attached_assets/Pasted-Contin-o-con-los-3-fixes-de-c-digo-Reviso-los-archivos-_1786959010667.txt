@@ -1,0 +1,69 @@
+Continúo con los 3 fixes de código. Reviso los archivos y aplico los parches:
+
+Ahora aplico los 3 fixes. Empiezo por `NetworkTopology.tsx` — agrego headers de auth a todos los `fetch()`:
+
+Fix 1 listo. Ahora fix 2 — `ConfigEditor.tsx` con manejo de errores:
+
+Fix 2 listo. Ahora fix 3 — `ControlTower.tsx` con instrucciones correctas:
+
+Ahora también arreglo el `useTopology.ts` que tenía el mismo problema de auth:
+
+Ahora verifico que no haya más `fetch(` sin auth en otros componentes:
+
+Hay muchos más componentes con el mismo problema de auth. En lugar de parchear uno por uno, voy a crear un interceptor global de fetch que inyecta automáticamente el token:
+
+Ahora hay que asegurar que `api.ts` se importe al menos una vez al inicio para que el interceptor se active. Reviso el `App.tsx`:
+
+Ahora actualizo el `start-termux.sh` para que también arranque el gateway mesh, y actualizo el manual:
+
+Ahora actualizo el `MANUAL_OPERATIVO.md`:
+
+El manual está completamente desactualizado — habla de Node.js, `sealctl/server.js`, v2.0, pero el sistema real usa Python/FastAPI v3.0+. Voy a reescribirlo:
+
+Ahora hago commit de todo:
+
+Commit listo. Ahora intento el push:
+
+No tengo credenciales para el push directo. Necesitas subir los cambios desde Termux. Esto es lo que tienes que ejecutar:
+
+```bash
+cd ~/Red-team-tauri
+git pull origin main
+```
+
+Si el `git pull` trae los cambios automáticamente (commit `134056c`), ya los tienes. Si no, hay que hacer el push desde tu máquina. Pero antes de eso, necesitas **recompilar el frontend** porque los fixes son en TypeScript:
+
+```bash
+cd ~/Red-team-tauri
+
+# 1. Si git pull no trajo cambios, hacer commit + push manual:
+git add -A
+git commit -m "fix: interceptor auth + topologia + config + control tower"
+git push origin main
+
+# 2. Recompilar el frontend (CRÍTICO — los fixes son en TypeScript):
+cd tauri-frontend
+npm run build
+
+# 3. Volver al raíz y arrancar:
+cd ..
+bash start-termux.sh
+```
+
+Resumen de lo que arreglé:
+
+**4 bugs críticos + 1 interceptor global:**
+
+1. **Topología solo mostraba "YO"** — `NetworkTopology.tsx` hacía `fetch('/api/scan/topology')` sin enviar el token → 401 → nunca llegaban hosts. Ahora envía `Authorization: Bearer`.
+
+2. **Config Editor en blanco** — `ConfigEditor.tsx` no tenía `.catch()` → si el 401 fallaba, se quedaba en blanco sin error visible. Ahora muestra "Cargando archivos…" y el error si ocurre.
+
+3. **Control Tower "basura"** — las instrucciones en pantalla apuntaban a `orchestrator.py` (que no existe) en vez de `gateway/mesh_server.py`. Corregido + el `start-termux.sh` ahora arranca el gateway mesh en el puerto 8080 automáticamente.
+
+4. **Scanner sin auth** — mismo patrón que topología. Arreglado por el interceptor.
+
+5. **Interceptor global de fetch** — monkey-patch de `window.fetch` en `api.ts` que inyecta automáticamente el `Authorization: Bearer` en TODA petición a `/api/`. Esto arregla los 20+ componentes que hacían `fetch()` directo sin auth (BlackMirrorPanel, CameraCommandCenter, ExploitMatrix, IntelPanel, etc.).
+
+6. **Manual reescrito** — el viejo hablaba de Node.js v2.0 y `sealctl/server.js` que ya no se usa. Ahora documenta Python/FastAPI v3.0, credenciales, y troubleshooting real.
+
+**El paso crítico es `npm run build`** — sin eso los cambios de TypeScript no llegan al `dist/` que sirve el backend.

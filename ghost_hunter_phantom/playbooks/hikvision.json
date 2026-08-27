@@ -1,0 +1,33 @@
+{
+  "name": "Hikvision Camera Hunt",
+  "description": "Detectar y explotar cámaras Hikvision — credenciales débiles + RTSP",
+  "target_type": "camera",
+  "vendor": "Hikvision",
+  "steps": [
+    {
+      "name": "Búsqueda en Shodan / AlienVault OTX",
+      "action": "shodan_search",
+      "params": {
+        "query": "Hikvision port:554,80",
+        "limit": 50
+      }
+    },
+    {
+      "name": "Escaneo completo de cámara",
+      "action": "camera_scan",
+      "params": {}
+    },
+    {
+      "name": "Geo Localización",
+      "action": "geo_lookup",
+      "params": {}
+    },
+    {
+      "name": "Generar Reporte",
+      "action": "report",
+      "params": {
+        "severity": "critical"
+      }
+    }
+  ]
+}

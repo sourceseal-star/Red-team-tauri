@@ -11,5 +11,9 @@
   "license": "MIT",
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "lucide-react": "^1.32.0",
+    "react": "^19.2.8"
   }
 }

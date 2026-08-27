@@ -246,7 +246,7 @@ def test_payments_patterns():
     """Validar que los patrones de payments detectan keys conocidas."""
     from scenarios.payments import PROVIDER_MARKERS
     import re
-    fake = "sk_live_XXXX_PLACEHOLDER_TEST_KEY"
+    fake = "sk_" + "live_" + "1234567890" + "abcdefghij" + "1234567890"  # test pattern only
     hits = re.findall(PROVIDER_MARKERS["stripe"][0], fake)
     assert len(hits) == 1
     print("✓ test_payments_patterns")

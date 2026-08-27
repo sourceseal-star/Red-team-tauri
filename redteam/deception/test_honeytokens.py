@@ -7,6 +7,7 @@ Tests: JWT honeytoken, API key, AWS credentials, DB connection string,
 
 import unittest
 import json
+import os
 import time
 import re
 import base64
@@ -62,7 +63,7 @@ class TestHoneyTokenGenerator(unittest.TestCase):
         jwt_token = self.gen.generate_jwt()
         parts = jwt_token.split(".")
         signing_input = f"{parts[0]}.{parts[1]}".encode("utf-8")
-        secret_key = "sourceseal_deception_hmac_secret_key"
+        secret_key = os.environ.get("DECEPTION_HMAC_KEY", "decoy_" + os.environ.get("HOSTNAME", "local") + "_key")
         expected_sig = hmac.new(secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
         expected_b64 = base64.urlsafe_b64encode(expected_sig).decode("utf-8").rstrip("=")
         self.assertEqual(parts[2], expected_b64)

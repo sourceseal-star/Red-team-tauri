@@ -328,7 +328,7 @@ class JWTIssuer:
         now = int(time.time())
         payload = dict(claims)
         payload.update({"sub": subject, "iat": now,
-                        "exp": now + self.ttl, "jti": hashlib.sha1(
+                        "exp": now + self.ttl, "jti": hashlib.sha256(
                             f"{subject}-{now}-{claims.get('nonce','')}".encode()
                         ).hexdigest()[:16]})
         h = _b64url(json.dumps(header, sort_keys=True).encode())

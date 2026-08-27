@@ -55,11 +55,9 @@ jobs:
         run: |
           cd tauri-frontend
           rm -rf node_modules package-lock.json
-          npm install
-          npm install @types/react@18.2.43 @types/react-dom@18.2.17
-          npm install react-router-dom@6.21.0 lucide-react@0.309.0 zustand@4.4.7 recharts@2.10.3
+          npm install --legacy-peer-deps
 
-      - name: Build frontend
+      - name: Build frontend (vite build sin tsc)
         run: |
           cd tauri-frontend
           npm run build
@@ -85,26 +83,30 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > /tmp/sourceseal.keystore
 
-      - name: Sign APK with apksigner
+      - name: Zipalign + Sign APK
         run: |
           BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/34.0.0"
           APK_DIR="src-tauri/gen/android/app/build/outputs/apk"
-          find "$APK_DIR" -name "*.apk" ! -name "*-unsigned.apk" | while read -r apk; do
-            unsigned="${apk%.apk}-unsigned.apk"
-            signed="${apk%.apk}-signed.apk"
-            mv "$apk" "$unsigned"
+          # 1) Zipalign ANTES de firmar (Android 11+ rechaza APKs no alineados)
+          find "$APK_DIR" -name "*-unsigned.apk" | while read -r unsigned; do
+            aligned="${unsigned%-unsigned.apk}-aligned.apk"
+            "$BUILD_TOOLS/zipalign" -f -v 4 "$unsigned" "$aligned"
+            echo "Alineado: $aligned"
+            signed="${unsigned%-unsigned.apk}.apk"
             "$BUILD_TOOLS/apksigner" sign \
               --ks /tmp/sourceseal.keystore \
               --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
               --ks-pass "pass:${{ secrets.STORE_PASSWORD }}" \
               --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
               --out "$signed" \
-              "$unsigned"
+              "$aligned"
             echo "Firmado: $signed"
+            # Verificar firma
+            "$BUILD_TOOLS/apksigner" verify --verbose "$signed"
           done
-          # Renombra los firmados quitando el sufijo -signed
-          find "$APK_DIR" -name "*-signed.apk" -exec bash -c \
-            'mv "$1" "${1/-signed/}"' _ {} \;
+          # Listar APKs firmados para verificacion
+          echo "=== APKs firmados ==="
+          find "$APK_DIR" -name "*.apk" ! -name "*-unsigned.apk" ! -name "*-aligned.apk" -exec ls -lh {} \;
 
       - name: Get version
         id: version

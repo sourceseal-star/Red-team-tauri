@@ -1,0 +1,3358 @@
+# 🦑 **LEVIATHAN FRONTEND - Sistema de Visualización en Tiempo Real**
+
+**Versión:** 3.0.0 - **EDICIÓN INDUSTRIAL**  
+**Autor:** Harold Paredes / SourceSeal Red Team  
+**Fecha:** 21 de Agosto 2026  
+**Estado:** ✅ **FRONTEND COMPLETO - LISTO PARA PRODUCCIÓN**
+
+---
+
+## 🎯 **¿QUÉ INCLUYE ESTE FRONTEND?**
+
+Este es el **frontend profesional** del sistema LEVIATHAN. Incluye:
+
+### **📦 Componentes Principales:**
+| **Componente** | **Archivo** | **Función** | **Tecnología** |
+|---------------|------------|-------------|---------------|
+| **App Principal** | `src/main.tsx` | Punto de entrada React | React 18 + TypeScript |
+| **Dashboard** | `src/components/Dashboard.tsx` | Panel principal con estadísticas | React + Chart.js |
+| **LiveGrid** | `src/components/LiveGrid.tsx` | Grid de cámaras en tiempo real | React + CSS Grid |
+| **ThreatMap** | `src/components/ThreatMap.tsx` | Mapa de amenazas geolocalizado | React + Leaflet |
+| **CameraViewer** | `src/components/CameraViewer.tsx` | Visualizador de streams | React + VideoJS |
+| **KrakenPanel** | `src/components/KrakenPanel.tsx` | Panel de explotación KRAKEN | React |
+| **AlertCenter** | `src/components/AlertCenter.tsx` | Centro de alertas en tiempo real | React + WebSocket |
+| **ScanControls** | `src/components/ScanControls.tsx` | Controles de escaneo | React |
+| **API Router** | `src/api/index.ts` | Cliente API FastAPI | Axios |
+| **WebSocket Handler** | `src/api/websocket.ts` | Gestor de WebSocket | Native WebSocket |
+| **Estilos** | `src/styles/` | Estilos CSS/SCSS | SCSS Modules |
+
+**📊 TOTAL: ~15 archivos, ~4,500 líneas de código TypeScript/React**
+
+---
+
+## 🚀 **CAPACIDADES CLAVE DEL FRONTEND**
+
+### **🎨 Interfaz Profesional**
+- ✅ **Dashboard modern** con diseño responsive
+- ✅ **Tema oscuro/clar**o configurable
+- ✅ **Animaciones fluid**as y transiciones
+- ✅ **Componentes reutilizables**
+- ✅ **Soporte para móviles** (Termux/Android)
+
+### **📡 Comunicación en Tiempo Real**
+- ✅ **WebSocket** para eventos en vivo
+- ✅ **Actualizaciones automáticas** sin recargar
+- ✅ **Notificaciones push** del navegador
+- ✅ **Reconexión automática**
+- ✅ **Manejo de múltiples conexiones**
+
+### **🎥 Visualización de Cámaras**
+- ✅ **Grid de cámaras** con previsualización
+- ✅ **Streaming en tiempo real** (RTSP/HTTP)
+- ✅ **Captura de frames** y screenshots
+- ✅ **Detección de movimiento**
+- ✅ **Análisis con IA** (objetos, anomalías)
+
+### **🗺️ Mapa de Amenazas**
+- ✅ **Geolocalización** de dispositivos
+- ✅ **Marcadores por severidad**
+- ✅ **Clustering** de cámaras cercanas
+- ✅ **Filtros por tipo** de amenaza
+- ✅ **Zoom y navegación**
+
+### **💥 Integración con KRAKEN**
+- ✅ **Panel de explotación**
+- ✅ **Selección de exploits** disponibles
+- ✅ **Ejecución en tiempo real**
+- ✅ **Visualización de resultados**
+- ✅ **Historial de operaciones**
+
+### **📊 Estadísticas y Analítica**
+- ✅ **Gráficos interactivos** (Chart.js)
+- ✅ **Métricas en tiempo real**
+- ✅ **Historial de escaneos**
+- ✅ **Exportación de datos**
+- ✅ **Filtros avanzados**
+
+---
+
+## 📥 **CÓMO DESCARGAR Y USAR**
+
+### **Estructura del Proyecto**
+```
+leviathan-frontend/
+├── public/
+│   ├── index.html              # HTML principal
+│   ├── favicon.ico             # Icono
+│   └── assets/                # Recursos estáticos
+│
+├── src/
+│   ├── main.tsx                # Punto de entrada
+│   ├── App.tsx                 # Componente App principal
+│   ├── index.css               # Estilos globales
+│   │
+│   ├── components/
+│   │   ├── Dashboard.tsx       # Dashboard principal
+│   │   ├── LiveGrid.tsx        # Grid de cámaras
+│   │   ├── ThreatMap.tsx       # Mapa de amenazas
+│   │   ├── CameraViewer.tsx    # Visualizador de cámaras
+│   │   ├── KrakenPanel.tsx     # Panel KRAKEN
+│   │   ├── AlertCenter.tsx     # Centro de alertas
+│   │   ├── ScanControls.tsx    # Controles de escaneo
+│   │   ├── CameraCard.tsx       # Tarjeta de cámara
+│   │   ├── ThreatCard.tsx      # Tarjeta de amenaza
+│   │   ├── AlertToast.tsx      # Notificaciones toast
+│   │   ├── Sidebar.tsx          # Barra lateral
+│   │   ├── Navbar.tsx           # Barra de navegación
+│   │   ├── Modal.tsx           # Modales
+│   │   └── Loader.tsx          # Indicador de carga
+│   │
+│   ├── api/
+│   │   ├── index.ts            # Cliente API
+│   │   ├── websocket.ts        # Gestor WebSocket
+│   │   └── types.ts           # Tipos TypeScript
+│   │
+│   ├── hooks/
+│   │   ├── useWebSocket.ts     # Hook de WebSocket
+│   │   ├── useCameras.ts       # Hook de cámaras
+│   │   ├── useScans.ts         # Hook de escaneos
+│   │   └── useTheme.ts        # Hook de tema
+│   │
+│   ├── store/
+│   │   ├── index.ts            # Store Redux
+│   │   ├── slices/
+│   │   │   ├── cameras.ts      # Slice de cámaras
+│   │   │   ├── scans.ts        # Slice de escaneos
+│   │   │   ├── alerts.ts       # Slice de alertas
+│   │   │   └── ui.ts          # Slice de UI
+│   │   └── hooks.ts            # Hooks Redux
+│   │
+│   ├── utils/
+│   │   ├── helpers.ts          # Funciones helper
+│   │   ├── formatters.ts        # Formateadores
+│   │   └── constants.ts        # Constantes
+│   │
+│   └── styles/
+│       ├── index.scss          # Estilos principales
+│       ├── _variables.scss     # Variables SCSS
+│       ├── _mixins.scss        # Mixins SCSS
+│       ├── _components.scss    # Estilos de componentes
+│       └── _responsive.scss     # Media queries
+│
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+└── README.md
+```
+
+---
+
+## 🎯 **ARCHIVOS INDIVIDUALES**
+
+> ⚠️ **IMPORTANTE:** Copia el contenido entre los separadores `--- FILE: nombre_archivo ---` a cada archivo correspondiente.
+
+---
+
+## 📄 **ARCHIVOS DE CONFIGURACIÓN**
+
+---
+
+### **1. package.json**
+
+--- FILE: leviathan-frontend/package.json ---
+```json
+{
+  "name": "leviathan-frontend",
+  "version": "3.0.0",
+  "description": "LEVIATHAN Frontend - Sistema de Red Team Automatizado",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^1.9.5",
+    "axios": "^1.6.2",
+    "chart.js": "^4.4.0",
+    "leaflet": "^1.9.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-leaflet": "^4.2.1",
+    "react-redux": "^8.1.2",
+    "react-router-dom": "^6.20.1",
+    "reconnecting-websocket": "^4.4.0",
+    "sass": "^1.69.5",
+    "video.js": "^8.5.0",
+    "@videojs/theater-mode": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.8",
+    "@types/node": "^20.8.9",
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@types/video.js": "^7.3.51",
+    "@vitejs/plugin-react": "^4.2.0",
+    "eslint": "^8.53.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.4",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.0",
+    "vitest": "^0.34.6"
+  }
+}
+```
+
+---
+
+### **2. tsconfig.json**
+
+--- FILE: leviathan-frontend/tsconfig.json ---
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
+```
+
+---
+
+### **3. tsconfig.node.json**
+
+--- FILE: leviathan-frontend/tsconfig.node.json ---
+```json
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["vite.config.ts"]
+}
+```
+
+---
+
+### **4. vite.config.ts**
+
+--- FILE: leviathan-frontend/vite.config.ts ---
+```typescript
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  server: {
+    port: 3000,
+    proxy: {
+      // Proxy para API de LEVIATHAN
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:8000',
+        ws: true,
+      },
+    },
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: true,
+  },
+})
+```
+
+---
+
+### **5. public/index.html**
+
+--- FILE: leviathan-frontend/public/index.html ---
+```html
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="LEVIATHAN - Sistema de Red Team Automatizado" />
+    
+    <!-- Leaflet CSS para mapa -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+          crossorigin="" />
+    
+    <!-- Video.js CSS -->
+    <link href="https://vjs.zencdn.net/8.5.0/video-js.css" rel="stylesheet" />
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <title>LEVIATHAN - Sistema de Red Team</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+            crossorigin=""></script>
+    
+    <!-- Video.js -->
+    <script src="https://vjs.zencdn.net/8.5.0/video.min.js"></script>
+  </body>
+</html>
+```
+
+---
+
+## 📄 **ARCHIVOS PRINCIPALES DE REACT**
+
+---
+
+### **1. src/main.tsx**
+
+--- FILE: leviathan-frontend/src/main.tsx ---
+```typescript
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import { Provider } from 'react-redux'
+import { BrowserRouter } from 'react-router-dom'
+import App from './App'
+import { store } from './store'
+import './index.css'
+
+// Renderizar la aplicación
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <Provider store={store}>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </Provider>
+  </React.StrictMode>
+)
+```
+
+---
+
+### **2. src/index.css**
+
+--- FILE: leviathan-frontend/src/index.css ---
+```css
+/* Estilos globales para LEVIATHAN Frontend */
+
+/* Reset y variables */
+:root {
+  --primary-color: #667eea;
+  --secondary-color: #764ba2;
+  --success-color: #28a745;
+  --warning-color: #ffc107;
+  --danger-color: #dc3545;
+  --info-color: #17a2b8;
+  --light-color: #f8f9fa;
+  --dark-color: #343a40;
+  --bg-color: #121212;
+  --text-color: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --border-color: #404040;
+  --card-bg: #1e1e1e;
+  --sidebar-bg: #0f0f0f;
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  
+  --transition: all 0.3s ease;
+}
+
+/* Tema claro */
+[data-theme="light"] {
+  --bg-color: #f8f9fa;
+  --text-color: #333;
+  --text-secondary: #666;
+  --border-color: #ddd;
+  --card-bg: #ffffff;
+  --sidebar-bg: #f8f9fa;
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Box sizing */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* HTML y body */
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Enrutamiento */
+a {
+  color: var(--primary-color);
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+a:hover {
+  color: var(--secondary-color);
+}
+
+/* Botones */
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: var(--transition);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--secondary-color);
+}
+
+.btn-danger {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+.btn-danger:hover {
+  background-color: #c82333;
+}
+
+.btn-success {
+  background-color: var(--success-color);
+  color: white;
+}
+
+.btn-warning {
+  background-color: var(--warning-color);
+  color: var(--dark-color);
+}
+
+/* Formularios */
+input, select, textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  font-size: 1rem;
+  transition: var(--transition);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+}
+
+/* Cards */
+.card {
+  background-color: var(--card-bg);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  transition: var(--transition);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.2);
+}
+
+/* Contenedores */
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Flex */
+.flex {
+  display: flex;
+}
+
+.flex-wrap {
+  flex-wrap: wrap;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+.align-center {
+  align-items: center;
+}
+
+/* Grid */
+.grid {
+  display: grid;
+}
+
+/* Espaciado */
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.mt-3 { margin-top: 1.5rem; }
+.mt-4 { margin-top: 2rem; }
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 1rem; }
+.mb-3 { margin-bottom: 1.5rem; }
+.mb-4 { margin-bottom: 2rem; }
+
+/* Textos */
+.text-center { text-align: center; }
+.text-primary { color: var(--primary-color); }
+.text-danger { color: var(--danger-color); }
+.text-success { color: var(--success-color); }
+.text-warning { color: var(--warning-color); }
+.text-secondary { color: var(--text-secondary); }
+
+/* Tamaños de texto */
+.text-sm { font-size: 0.875rem; }
+.text-lg { font-size: 1.125rem; }
+.text-xl { font-size: 1.25rem; }
+.text-2xl { font-size: 1.5rem; }
+
+/* Peso de texto */
+.font-bold { font-weight: 700; }
+.font-semibold { font-weight: 600; }
+
+/* Animaciones */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.5s ease-out;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--dark-color);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--primary-color);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--secondary-color);
+}
+
+/* Utilidades */
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .container {
+    padding: 10px;
+  }
+  
+  html {
+    font-size: 14px;
+  }
+}
+```
+
+---
+
+### **3. src/App.tsx**
+
+--- FILE: leviathan-frontend/src/App.tsx ---
+```typescript
+import React, { useEffect, useState } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { useDispatch } from 'react-redux'
+import { WebSocketProvider } from './api/websocket'
+import Dashboard from './components/Dashboard'
+import LiveGrid from './components/LiveGrid'
+import ThreatMap from './components/ThreatMap'
+import CameraViewer from './components/CameraViewer'
+import KrakenPanel from './components/KrakenPanel'
+import ScanControls from './components/ScanControls'
+import AlertCenter from './components/AlertCenter'
+import Sidebar from './components/Sidebar'
+import Navbar from './components/Navbar'
+import { AlertToast } from './components/AlertToast'
+import { setTheme } from './store/slices/ui'
+import { useWebSocket } from './hooks/useWebSocket'
+import './App.css'
+
+const App: React.FC = () => {
+  const dispatch = useDispatch()
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+  const [activeAlerts, setActiveAlerts] = useState<any[]>([])
+  
+  // Cargar tema desde localStorage
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme') || 'dark'
+    dispatch(setTheme(savedTheme))
+  }, [dispatch])
+  
+  // Manejar alertas desde WebSocket
+  const handleAlert = (alert: any) => {
+    setActiveAlerts(prev => [...prev, alert])
+    
+    // Mostrar notificación toast
+    if (alert.severity === 'critical' || alert.severity === 'high') {
+      // En producción, usar notificación del navegador
+      if (Notification.permission === 'granted') {
+        new Notification(alert.title, {
+          body: alert.description,
+          icon: '/favicon.ico'
+        })
+      }
+    }
+  }
+  
+  // Conectar WebSocket
+  const { connect, disconnect } = useWebSocket({
+    onAlert: handleAlert
+  })
+  
+  useEffect(() => {
+    connect()
+    return () => disconnect()
+  }, [connect, disconnect])
+  
+  const toggleSidebar = () => {
+    setIsSidebarOpen(!isSidebarOpen)
+  }
+  
+  return (
+    <WebSocketProvider>
+      <div className="app-container">
+        <Navbar toggleSidebar={toggleSidebar} />
+        
+        <div className="main-content">
+          <Sidebar isOpen={isSidebarOpen} />
+          
+          <main className={`content ${isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/live" element={<LiveGrid />} />
+              <Route path="/map" element={<ThreatMap />} />
+              <Route path="/camera/:ip" element={<CameraViewer />} />
+              <Route path="/kraken" element={<KrakenPanel />} />
+              <Route path="/scan" element={<ScanControls />} />
+              <Route path="/alerts" element={<AlertCenter alerts={activeAlerts} />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </main>
+        </div>
+        
+        {/* Toast de alertas */}
+        <AlertToast alerts={activeAlerts} onDismiss={() => setActiveAlerts([])} />
+      </div>
+    </WebSocketProvider>
+  )
+}
+
+export default App
+```
+
+---
+
+### **4. src/App.css**
+
+--- FILE: leviathan-frontend/src/App.css ---
+```css
+/* Estilos para el layout principal */
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--bg-color);
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  transition: var(--transition);
+}
+
+.content.sidebar-open {
+  margin-left: 250px;
+}
+
+.content.sidebar-closed {
+  margin-left: 70px;
+}
+
+/* Sidebar responsive */
+@media (max-width: 768px) {
+  .content.sidebar-open,
+  .content.sidebar-closed {
+    margin-left: 0;
+  }
+}
+
+/* Animación para el contenido */
+.content {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+```
+
+---
+
+## 📄 **COMPONENTES PRINCIPALES**
+
+---
+
+### **1. src/components/Navbar.tsx**
+
+--- FILE: leviathan-frontend/src/components/Navbar.tsx ---
+```typescript
+import React from 'react'
+import { useSelector, useDispatch } from 'react-redux'
+import { toggleTheme } from '../store/slices/ui'
+import { RootState } from '../store'
+
+interface NavbarProps {
+  toggleSidebar: () => void
+}
+
+const Navbar: React.FC<NavbarProps> = ({ toggleSidebar }) => {
+  const dispatch = useDispatch()
+  const theme = useSelector((state: RootState) => state.ui.theme)
+  const isConnected = useSelector((state: RootState) => state.ui.isConnected)
+  
+  const toggleThemeHandler = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark'
+    dispatch(toggleTheme(newTheme))
+    localStorage.setItem('theme', newTheme)
+  }
+  
+  return (
+    <nav className="navbar">
+      <div className="navbar-left">
+        <button className="menu-toggle" onClick={toggleSidebar}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        
+        <div className="logo">
+          <span className="logo-icon">🦑</span>
+          <span className="logo-text">LEVIATHAN</span>
+        </div>
+      </div>
+      
+      <div className="navbar-right">
+        <div className="status-indicator">
+          <span className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`}></span>
+          <span className="status-text">{isConnected ? 'Conectado' : 'Desconectado'}</span>
+        </div>
+        
+        <button className="theme-toggle" onClick={toggleThemeHandler} title="Cambiar tema">
+          {theme === 'dark' ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          )}
+        </button>
+      </div>
+    </nav>
+  )
+}
+
+export default Navbar
+```
+
+---
+
+### **2. src/components/Navbar.css**
+
+--- FILE: leviathan-frontend/src/components/Navbar.css ---
+```css
+/* Estilos para Navbar */
+
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  background-color: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.menu-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  color: var(--text-color);
+  border-radius: 6px;
+  transition: var(--transition);
+}
+
+.menu-toggle:hover {
+  background-color: var(--border-color);
+}
+
+.menu-toggle svg {
+  width: 24px;
+  height: 24px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-icon {
+  font-size: 1.5rem;
+}
+
+.logo-text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: var(--border-color);
+  border-radius: 20px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot.connected {
+  background-color: var(--success-color);
+  animation: pulse 2s infinite;
+}
+
+.status-dot.disconnected {
+  background-color: var(--danger-color);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-text {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.theme-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  color: var(--text-color);
+  border-radius: 6px;
+  transition: var(--transition);
+}
+
+.theme-toggle:hover {
+  background-color: var(--border-color);
+}
+
+.theme-toggle svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 10px 15px;
+  }
+  
+  .logo-text {
+    font-size: 1rem;
+  }
+}
+```
+
+---
+
+### **3. src/components/Sidebar.tsx**
+
+--- FILE: leviathan-frontend/src/components/Sidebar.tsx ---
+```typescript
+import React from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
+import { useSelector } from 'react-redux'
+import { RootState } from '../store'
+
+interface SidebarProps {
+  isOpen: boolean
+}
+
+interface NavItem {
+  path: string
+  label: string
+  icon: JSX.Element
+  badge?: number
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
+  const location = useLocation()
+  const theme = useSelector((state: RootState) => state.ui.theme)
+  const cameras = useSelector((state: RootState) => state.cameras.cameras)
+  const alerts = useSelector((state: RootState) => state.alerts.alerts)
+  const scans = useSelector((state: RootState) => state.scans.scans)
+  
+  const navItems: NavItem[] = [
+    {
+      path: '/dashboard',
+      label: 'Dashboard',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="7"></rect>
+          <rect x="14" y="3" width="7" height="7"></rect>
+          <rect x="14" y="14" width="7" height="7"></rect>
+          <rect x="3" y="14" width="7" height="7"></rect>
+        </svg>
+      )
+    },
+    {
+      path: '/live',
+      label: 'Cámaras en Vivo',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+          <circle cx="12" cy="13" r="4"></circle>
+        </svg>
+      ),
+      badge: cameras.length
+    },
+    {
+      path: '/map',
+      label: 'Mapa de Amenazas',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+          <circle cx="12" cy="10" r="3"></circle>
+        </svg>
+      ),
+      badge: scans.length
+    },
+    {
+      path: '/kraken',
+      label: 'KRAKEN',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+        </svg>
+      )
+    },
+    {
+      path: '/scan',
+      label: 'Escaneo',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="12" x2="12" y2="16"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+      )
+    },
+    {
+      path: '/alerts',
+      label: 'Alertas',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+        </svg>
+      ),
+      badge: alerts.length
+    }
+  ]
+  
+  return (
+    <aside className={`sidebar ${isOpen ? 'open' : 'closed'} ${theme}`}>
+      <div className="sidebar-header">
+        <div className="sidebar-logo">
+          <span className="logo-icon">🦑</span>
+          {isOpen && <span className="logo-text">LEVIATHAN</span>}
+        </div>
+      </div>
+      
+      <nav className="sidebar-nav">
+        <ul className="nav-list">
+          {navItems.map((item) => (
+            <li key={item.path} className="nav-item">
+              <NavLink 
+                to={item.path} 
+                className={`nav-link ${location.pathname === item.path ? 'active' : ''}`}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                {isOpen && (
+                  <>
+                    <span className="nav-label">{item.label}</span>
+                    {item.badge && item.badge > 0 && (
+                      <span className="nav-badge">{item.badge}</span>
+                    )}
+                  </>
+                )}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      </nav>
+      
+      {isOpen && (
+        <div className="sidebar-footer">
+          <div className="footer-info">
+            <span className="footer-label">v3.0.0</span>
+            <span className="footer-text">SourceSeal Red Team</span>
+          </div>
+        </div>
+      )}
+    </aside>
+  )
+}
+
+export default Sidebar
+```
+
+---
+
+### **4. src/components/Sidebar.css**
+
+--- FILE: leviathan-frontend/src/components/Sidebar.css ---
+```css
+/* Estilos para Sidebar */
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  background-color: var(--sidebar-bg);
+  border-right: 1px solid var(--border-color);
+  z-index: 100;
+  transition: var(--transition);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar.open {
+  width: 250px;
+}
+
+.sidebar.closed {
+  width: 70px;
+}
+
+.sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-logo .logo-icon {
+  font-size: 1.5rem;
+  transition: var(--transition);
+}
+
+.sidebar-logo .logo-text {
+  font-size: 1.125rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  white-space: nowrap;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 20px 0;
+  overflow-y: auto;
+}
+
+.nav-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.nav-item {
+  margin: 5px 10px;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 15px;
+  color: var(--text-secondary);
+  border-radius: 8px;
+  transition: var(--transition);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav-link:hover {
+  background-color: var(--border-color);
+  color: var(--text-color);
+}
+
+.nav-link.active {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.nav-link.active .nav-icon {
+  color: white;
+}
+
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-label {
+  font-size: 0.9rem;
+}
+
+.nav-badge {
+  background-color: var(--danger-color);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.sidebar-footer {
+  padding: 15px;
+  border-top: 1px solid var(--border-color);
+}
+
+.footer-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.footer-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.footer-text {
+  font-size: 0.875rem;
+  color: var(--text-color);
+}
+
+/* Animación para sidebar */
+.sidebar {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    width: 0;
+  }
+  to {
+    opacity: 1;
+    width: 250px;
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+    width: 250px;
+  }
+  
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  
+  .sidebar.closed {
+    transform: translateX(-100%);
+    width: 250px;
+  }
+}
+```
+
+---
+
+### **5. src/components/Dashboard.tsx**
+
+--- FILE: leviathan-frontend/src/components/Dashboard.tsx ---
+```typescript
+import React, { useEffect, useState } from 'react'
+import { useSelector, useDispatch } from 'react-redux'
+import { RootState, AppDispatch } from '../store'
+import { fetchCameras } from '../store/slices/cameras'
+import { fetchScans } from '../store/slices/scans'
+import { fetchAlerts } from '../store/slices/alerts'
+import { useWebSocket } from '../hooks/useWebSocket'
+import CameraCard from './CameraCard'
+import ThreatCard from './ThreatCard'
+import AlertCenter from './AlertCenter'
+import ScanControls from './ScanControls'
+import Chart from 'chart.js/auto'
+import { Doughnut, Bar, Line } from 'react-chartjs-2'
+
+const Dashboard: React.FC = () => {
+  const dispatch = useDispatch<AppDispatch>()
+  const { cameras, loading: camerasLoading } = useSelector((state: RootState) => state.cameras)
+  const { scans, loading: scansLoading } = useSelector((state: RootState) => state.scans)
+  const { alerts, loading: alertsLoading } = useSelector((state: RootState) => state.alerts)
+  const { theme } = useSelector((state: RootState) => state.ui)
+  
+  const [stats, setStats] = useState({
+    totalCameras: 0,
+    accessibleCameras: 0,
+    vulnerableCameras: 0,
+    totalScans: 0,
+    activeScans: 0,
+    totalAlerts: 0,
+    criticalAlerts: 0
+  })
+  
+  // Cargar datos al montar
+  useEffect(() => {
+    dispatch(fetchCameras())
+    dispatch(fetchScans())
+    dispatch(fetchAlerts())
+  }, [dispatch])
+  
+  // Actualizar estadísticas
+  useEffect(() => {
+    setStats({
+      totalCameras: cameras.length,
+      accessibleCameras: cameras.filter(c => c.is_accessible).length,
+      vulnerableCameras: cameras.filter(c => c.is_vulnerable).length,
+      totalScans: scans.length,
+      activeScans: scans.filter(s => s.status === 'running').length,
+      totalAlerts: alerts.length,
+      criticalAlerts: alerts.filter(a => a.severity === 'critical').length
+    })
+  }, [cameras, scans, alerts])
+  
+  // Configuración de gráficos
+  const getChartColors = () => ({
+    primary: theme === 'dark' ? '#667eea' : '#667eea',
+    secondary: theme === 'dark' ? '#764ba2' : '#764ba2',
+    success: theme === 'dark' ? '#28a745' : '#28a745',
+    danger: theme === 'dark' ? '#dc3545' : '#dc3545',
+    warning: theme === 'dark' ? '#ffc107' : '#ffc107',
+    info: theme === 'dark' ? '#17a2b8' : '#17a2b8'
+  })
+  
+  // Datos para gráficos
+  const cameraStatusData = {
+    labels: ['Accesibles', 'No Accesibles', 'Vulnerables'],
+    datasets: [{
+      data: [
+        stats.accessibleCameras,
+        stats.totalCameras - stats.accessibleCameras,
+        stats.vulnerableCameras
+      ],
+      backgroundColor: [
+        getChartColors().success,
+        getChartColors().warning,
+        getChartColors().danger
+      ],
+      borderWidth: 0
+    }]
+  }
+  
+  const severityData = {
+    labels: ['Crítico', 'Alto', 'Medio', 'Bajo'],
+    datasets: [{
+      label: 'Alertas por Severidad',
+      data: [
+        alerts.filter(a => a.severity === 'critical').length,
+        alerts.filter(a => a.severity === 'high').length,
+        alerts.filter(a => a.severity === 'medium').length,
+        alerts.filter(a => a.severity === 'low').length
+      ],
+      backgroundColor: [
+        getChartColors().danger,
+        getChartColors().warning,
+        getChartColors().info,
+        getChartColors().success
+      ]
+    }]
+  }
+  
+  const vendorData = {
+    labels: ['Hikvision', 'Dahua', 'Axis', 'Otros'],
+    datasets: [{
+      label: 'Cámaras por Vendor',
+      data: [
+        cameras.filter(c => c.vendor?.toLowerCase().includes('hikvision')).length,
+        cameras.filter(c => c.vendor?.toLowerCase().includes('dahua')).length,
+        cameras.filter(c => c.vendor?.toLowerCase().includes('axis')).length,
+        cameras.filter(c => !['hikvision', 'dahua', 'axis'].some(v => c.vendor?.toLowerCase().includes(v))).length
+      ],
+      backgroundColor: [
+        getChartColors().primary,
+        getChartColors().secondary,
+        getChartColors().info,
+        getChartColors().warning
+      ]
+    }]
+  }
+  
+  // Opciones de gráficos
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'bottom' as const,
+        labels: {
+          color: theme === 'dark' ? '#e0e0e0' : '#333'
+        }
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: {
+          color: theme === 'dark' ? '#e0e0e0' : '#333'
+        },
+        grid: {
+          color: theme === 'dark' ? '#404040' : '#ddd'
+        }
+      },
+      x: {
+        ticks: {
+          color: theme === 'dark' ? '#e0e0e0' : '#333'
+        },
+        grid: {
+          color: theme === 'dark' ? '#404040' : '#ddd'
+        }
+      }
+    }
+  }
+  
+  return (
+    <div className="dashboard">
+      <div className="dashboard-header">
+        <h1>🎯 Dashboard de LEVIATHAN</h1>
+        <p className="dashboard-subtitle">
+          Sistema de Red Team Automatizado - Visión General
+        </p>
+      </div>
+      
+      {/* Estadísticas principales */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-icon camera">🎥</div>
+          <div className="stat-info">
+            <span className="stat-number">{stats.totalCameras}</span>
+            <span className="stat-label">Cámaras Detectadas</span>
+          </div>
+        </div>
+        
+        <div className="stat-card">
+          <div className="stat-icon accessible">🔓</div>
+          <div className="stat-info">
+            <span className="stat-number">{stats.accessibleCameras}</span>
+            <span className="stat-label">Accesibles</span>
+          </div>
+        </div>
+        
+        <div className="stat-card">
+          <div className="stat-icon vulnerable">⚠️</div>
+          <div className="stat-info">
+            <span className="stat-number">{stats.vulnerableCameras}</span>
+            <span className="stat-label">Vulnerables</span>
+          </div>
+        </div>
+        
+        <div className="stat-card">
+          <div className="stat-icon alerts">🔔</div>
+          <div className="stat-info">
+            <span className="stat-number">{stats.totalAlerts}</span>
+            <span className="stat-label">Alertas Activas</span>
+          </div>
+        </div>
+        
+        <div className="stat-card">
+          <div className="stat-icon scans">🔍</div>
+          <div className="stat-info">
+            <span className="stat-number">{stats.activeScans}</span>
+            <span className="stat-label">Escaneos Activos</span>
+          </div>
+        </div>
+      </div>
+      
+      {/* Gráficos */}
+      <div className="charts-row">
+        <div className="chart-card">
+          <h3>📊 Estado de Cámaras</h3>
+          <div className="chart-container doughnut">
+            <Doughnut data={cameraStatusData} options={chartOptions} />
+          </div>
+        </div>
+        
+        <div className="chart-card">
+          <h3>⚠️ Alertas por Severidad</h3>
+          <div className="chart-container bar">
+            <Bar data={severityData} options={chartOptions} />
+          </div>
+        </div>
+      </div>
+      
+      <div className="charts-row">
+        <div className="chart-card">
+          <h3>🏭 Cámaras por Vendor</h3>
+          <div className="chart-container doughnut">
+            <Doughnut data={vendorData} options={chartOptions} />
+          </div>
+        </div>
+      </div>
+      
+      {/* Controles de escaneo */}
+      <div className="section">
+        <h2>🚀 Controles de Escaneo</h2>
+        <ScanControls />
+      </div>
+      
+      {/* Últimas cámaras detectadas */}
+      <div className="section">
+        <h2>🎥 Últimas Cámaras Detectadas</h2>
+        {camerasLoading ? (
+          <div className="loading">Cargando cámaras...</div>
+        ) : cameras.length > 0 ? (
+          <div className="camera-grid">
+            {cameras.slice(0, 6).map(camera => (
+              <CameraCard key={`${camera.ip}-${camera.port}`} camera={camera} />
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <p>No se han detectado cámaras aún.</p>
+            <p>Ejecuta un escaneo para comenzar.</p>
+          </div>
+        )}
+      </div>
+      
+      {/* Últimas alertas */}
+      <div className="section">
+        <h2>🔔 Últimas Alertas</h2>
+        {alertsLoading ? (
+          <div className="loading">Cargando alertas...</div>
+        ) : alerts.length > 0 ? (
+          <AlertCenter alerts={alerts.slice(0, 5)} showAllLink={true} />
+        ) : (
+          <div className="empty-state">
+            <p>No hay alertas activas.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default Dashboard
+```
+
+---
+
+### **6. src/components/Dashboard.css**
+
+--- FILE: leviathan-frontend/src/components/Dashboard.css ---
+```css
+/* Estilos para Dashboard */
+
+.dashboard {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.dashboard-header {
+  margin-bottom: 30px;
+}
+
+.dashboard-header h1 {
+  font-size: 2rem;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.dashboard-subtitle {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+}
+
+/* Grid de estadísticas */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.stat-card {
+  background-color: var(--card-bg);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  transition: var(--transition);
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+
+.stat-icon {
+  font-size: 2rem;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+}
+
+.stat-icon.camera { background: linear-gradient(135deg, #667eea, #764ba2); }
+.stat-icon.accessible { background: linear-gradient(135deg, #28a745, #20c997); }
+.stat-icon.vulnerable { background: linear-gradient(135deg, #dc3545, #c82333); }
+.stat-icon.alerts { background: linear-gradient(135deg, #ffc107, #e0a800); }
+.stat-icon.scans { background: linear-gradient(135deg, #17a2b8, #0dcaf0); }
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-number {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.stat-label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Fila de gráficos */
+.charts-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.chart-card {
+  background-color: var(--card-bg);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+}
+
+.chart-card h3 {
+  margin-bottom: 15px;
+  color: var(--text-color);
+}
+
+.chart-container {
+  height: 300px;
+  position: relative;
+}
+
+.chart-container.doughnut {
+  height: 250px;
+}
+
+/* Secciones */
+.section {
+  margin-bottom: 30px;
+}
+
+.section h2 {
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+  color: var(--text-color);
+  border-bottom: 2px solid var(--primary-color);
+  padding-bottom: 10px;
+}
+
+/* Grid de cámaras */
+.camera-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+/* Estados */
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+}
+
+/* Animaciones */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .charts-row {
+    grid-template-columns: 1fr;
+  }
+  
+  .camera-grid {
+    grid-template-columns: 1fr;
+  }
+}
+```
+
+---
+
+### **7. src/components/LiveGrid.tsx**
+
+--- FILE: leviathan-frontend/src/components/LiveGrid.tsx ---
+```typescript
+import React, { useEffect, useState } from 'react'
+import { useSelector, useDispatch } from 'react-redux'
+import { RootState, AppDispatch } from '../store'
+import { fetchCameras } from '../store/slices/cameras'
+import CameraCard from './CameraCard'
+import CameraViewer from './CameraViewer'
+import { useWebSocket } from '../hooks/useWebSocket'
+
+const LiveGrid: React.FC = () => {
+  const dispatch = useDispatch<AppDispatch>()
+  const { cameras, loading } = useSelector((state: RootState) => state.cameras)
+  const [selectedCamera, setSelectedCamera] = useState<any>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterVendor, setFilterVendor] = useState<string>('all')
+  const [filterAccessible, setFilterAccessible] = useState<string>('all')
+  
+  // Cargar cámaras
+  useEffect(() => {
+    dispatch(fetchCameras())
+  }, [dispatch])
+  
+  // WebSocket para actualizaciones en tiempo real
+  useWebSocket({
+    onCameraUpdate: () => {
+      dispatch(fetchCameras())
+    }
+  })
+  
+  // Filtrar cámaras
+  const filteredCameras = cameras.filter(camera => {
+    const matchesSearch = 
+      camera.ip.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      camera.vendor?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      camera.model?.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    const matchesVendor = filterVendor === 'all' || 
+      camera.vendor?.toLowerCase().includes(filterVendor.toLowerCase())
+    
+    const matchesAccessible = filterAccessible === 'all' || 
+      (filterAccessible === 'accessible' && camera.is_accessible) ||
+      (filterAccessible === 'not_accessible' && !camera.is_accessible)
+    
+    return matchesSearch && matchesVendor && matchesAccessible
+  })
+  
+  // Obtener vendors únicos
+  const vendors = Array.from(new Set(
+    cameras.map(c => c.vendor).filter(v => v) as string[]
+  ))
+  
+  return (
+    <div className="live-grid">
+      <div className="live-grid-header">
+        <h1>🎥 Cámaras en Vivo</h1>
+        <p className="live-grid-subtitle">
+          Visualización en tiempo real de cámaras IP detectadas
+        </p>
+      </div>
+      
+      {/* Controles de filtro */}
+      <div className="filters">
+        <div className="filter-group">
+          <input
+            type="text"
+            placeholder="Buscar por IP, vendor o modelo..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="filter-input"
+          />
+        </div>
+        
+        <div className="filter-group">
+          <select
+            value={filterVendor}
+            onChange={(e) => setFilterVendor(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">Todos los Vendors</option>
+            {vendors.map(vendor => (
+              <option key={vendor} value={vendor}>{vendor}</option>
+            ))}
+          </select>
+        </div>
+        
+        <div className="filter-group">
+          <select
+            value={filterAccessible}
+            onChange={(e) => setFilterAccessible(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">Todos</option>
+            <option value="accessible">Accesibles</option>
+            <option value="not_accessible">No Accesibles</option>
+          </select>
+        </div>
+      </div>
+      
+      {/* Estadísticas */}
+      <div className="live-stats">
+        <div className="stat">
+          <span className="stat-number">{filteredCameras.length}</span>
+          <span className="stat-label">Cámaras Filtradas</span>
+        </div>
+        <div className="stat">
+          <span className="stat-number">{cameras.filter(c => c.is_accessible).length}</span>
+          <span className="stat-label">Accesibles</span>
+        </div>
+        <div className="stat">
+          <span className="stat-number">{cameras.filter(c => c.is_vulnerable).length}</span>
+          <span className="stat-label">Vulnerables</span>
+        </div>
+      </div>
+      
+      {/* Grid de cámaras */}
+      {loading ? (
+        <div className="loading">Cargando cámaras...</div>
+      ) : filteredCameras.length > 0 ? (
+        <div className="camera-grid">
+          {filteredCameras.map(camera => (
+            <CameraCard 
+              key={`${camera.ip}-${camera.port}`} 
+              camera={camera} 
+              onClick={() => setSelectedCamera(camera)}
+              showActions={true}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state">
+          <p>No se encontraron cámaras con los filtros actuales.</p>
+        </div>
+      )}
+      
+      {/* Visualizador de cámara seleccionada */}
+      {selectedCamera && (
+        <div className="camera-modal">
+          <div className="camera-modal-content">
+            <button 
+              className="modal-close" 
+              onClick={() => setSelectedCamera(null)}
+            >
+              ✕
+            </button>
+            <CameraViewer camera={selectedCamera} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default LiveGrid
+```
+
+---
+
+---
+
+### **8. src/components/LiveGrid.css**
+
+--- FILE: leviathan-frontend/src/components/LiveGrid.css ---
+```css
+/* Estilos para LiveGrid */
+
+.live-grid {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.live-grid-header {
+  margin-bottom: 30px;
+}
+
+.live-grid-header h1 {
+  font-size: 2rem;
+  margin-bottom: 10px;
+}
+
+.live-grid-subtitle {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+}
+
+/* Filtros */
+.filters {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  flex: 1;
+  min-width: 200px;
+}
+
+.filter-input,
+.filter-select {
+  width: 100%;
+  padding: 12px 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  font-size: 0.9rem;
+  transition: var(--transition);
+}
+
+.filter-input:focus,
+.filter-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+}
+
+.filter-input::placeholder {
+  color: var(--text-secondary);
+}
+
+/* Estadísticas */
+.live-stats {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.live-stats .stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background-color: var(--card-bg);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.live-stats .stat-number {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.live-stats .stat-label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+/* Grid de cámaras */
+.camera-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+/* Modal de cámara */
+.camera-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.camera-modal-content {
+  background-color: var(--card-bg);
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 90%;
+  max-height: 90%;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
+}
+
+.modal-close {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: none;
+  border: none;
+  color: var(--text-color);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: 5px;
+  transition: var(--transition);
+}
+
+.modal-close:hover {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .filters {
+    flex-direction: column;
+  }
+  
+  .filter-group {
+    width: 100%;
+  }
+  
+  .camera-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .live-stats {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .camera-modal-content {
+    max-width: 95%;
+    max-height: 95%;
+  }
+}
+```
+
+---
+
+### **9. src/components/CameraCard.tsx**
+
+--- FILE: leviathan-frontend/src/components/CameraCard.tsx ---
+```typescript
+import React from 'react'
+import { useNavigate } from 'react-router-dom'
+
+interface CameraCardProps {
+  camera: any
+  onClick?: () => void
+  showActions?: boolean
+}
+
+const CameraCard: React.FC<CameraCardProps> = ({ camera, onClick, showActions = false }) => {
+  const navigate = useNavigate()
+  
+  const getVendorColor = (vendor?: string) => {
+    if (!vendor) return '#666'
+    
+    const vendorLower = vendor.toLowerCase()
+    if (vendorLower.includes('hikvision')) return '#667eea'
+    if (vendorLower.includes('dahua')) return '#764ba2'
+    if (vendorLower.includes('axis')) return '#17a2b8'
+    if (vendorLower.includes('uniview')) return '#28a745'
+    return '#ffc107'
+  }
+  
+  const handleClick = () => {
+    if (onClick) {
+      onClick()
+    } else {
+      navigate(`/camera/${camera.ip}`)
+    }
+  }
+  
+  const handleKrakenClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigate(`/kraken?target=${camera.ip}`)
+  }
+  
+  const handleScanClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigate(`/scan?target=${camera.ip}`)
+  }
+  
+  return (
+    <div 
+      className={`camera-card ${camera.is_accessible ? 'accessible' : ''} ${camera.is_vulnerable ? 'vulnerable' : ''}`}
+      onClick={handleClick}
+    >
+      <div className="camera-header">
+        <div className="camera-icon" style={{ backgroundColor: getVendorColor(camera.vendor) }}>
+          {camera.vendor ? camera.vendor.charAt(0).toUpperCase() : '?'}
+        </div>
+        <div className="camera-status">
+          {camera.is_accessible ? (
+            <span className="status-badge accessible">🔓 Accesible</span>
+          ) : (
+            <span className="status-badge not-accessible">🔒 No Accesible</span>
+          )}
+          {camera.is_vulnerable && (
+            <span className="status-badge vulnerable">⚠️ Vulnerable</span>
+          )}
+        </div>
+      </div>
+      
+      <div className="camera-body">
+        <h3 className="camera-vendor">{camera.vendor || 'Desconocido'}</h3>
+        <p className="camera-model">{camera.model || 'Modelo desconocido'}</p>
+        <p className="camera-ip">{camera.ip}:{camera.port}</p>
+        
+        {camera.credentials && (
+          <p className="camera-credentials">
+            <strong>Credenciales:</strong> {camera.credentials}
+          </p>
+        )}
+      </div>
+      
+      <div className="camera-footer">
+        <div className="camera-services">
+          {camera.services?.map((service: any, index: number) => (
+            <span key={index} className="service-tag">{service.service}</span>
+          ))}
+        </div>
+      </div>
+      
+      {showActions && (
+        <div className="camera-actions">
+          <button 
+            className="action-btn view"
+            onClick={handleClick}
+          >
+            Ver
+          </button>
+          <button 
+            className="action-btn kraken"
+            onClick={handleKrakenClick}
+          >
+            KRAKEN
+          </button>
+          <button 
+            className="action-btn scan"
+            onClick={handleScanClick}
+          >
+            Escanear
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default CameraCard
+```
+
+---
+
+### **10. src/components/CameraCard.css**
+
+--- FILE: leviathan-frontend/src/components/CameraCard.css ---
+```css
+/* Estilos para CameraCard */
+
+.camera-card {
+  background-color: var(--card-bg);
+  border-radius: 12px;
+  padding: 15px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.camera-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  border-color: var(--primary-color);
+}
+
+.camera-card.accessible {
+  border-left: 4px solid var(--success-color);
+}
+
+.camera-card.vulnerable {
+  border-left: 4px solid var(--danger-color);
+}
+
+.camera-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.camera-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.camera-status {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-badge.accessible {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: var(--success-color);
+}
+
+.status-badge.not-accessible {
+  background-color: rgba(220, 53, 69, 0.2);
+  color: var(--danger-color);
+}
+
+.status-badge.vulnerable {
+  background-color: rgba(220, 53, 69, 0.2);
+  color: var(--danger-color);
+}
+
+.camera-body {
+  margin-bottom: 12px;
+}
+
+.camera-vendor {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.camera-model {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 4px;
+}
+
+.camera-ip {
+  color: var(--primary-color);
+  font-size: 0.9rem;
+  font-family: monospace;
+}
+
+.camera-credentials {
+  color: var(--warning-color);
+  font-size: 0.875rem;
+  margin-top: 8px;
+  word-break: break-all;
+}
+
+.camera-footer {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.service-tag {
+  background-color: var(--border-color);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.camera-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.action-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.action-btn.view {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.action-btn.view:hover {
+  background-color: var(--secondary-color);
+}
+
+.action-btn.kraken {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+.action-btn.kraken:hover {
+  background-color: #c82333;
+}
+
+.action-btn.scan {
+  background-color: var(--info-color);
+  color: white;
+}
+
+.action-btn.scan:hover {
+  background-color: #0dcaf0;
+}
+```
+
+---
+
+### **11. src/components/CameraViewer.tsx**
+
+--- FILE: leviathan-frontend/src/components/CameraViewer.tsx ---
+```typescript
+import React, { useEffect, useRef, useState } from 'react'
+import { useParams } from 'react-router-dom'
+import { useSelector } from 'react-redux'
+import { RootState } from '../store'
+import videojs from 'video.js'
+import 'video.js/dist/video-js.css'
+
+interface CameraViewerProps {
+  camera?: any
+}
+
+const CameraViewer: React.FC<CameraViewerProps> = ({ camera: propCamera }) => {
+  const { ip } = useParams<{ ip: string }>()
+  const { cameras } = useSelector((state: RootState) => state.cameras)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const playerRef = useRef<any>(null)
+  const [camera, setCamera] = useState<any>(propCamera || null)
+  const [streamUrl, setStreamUrl] = useState<string>('')
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [error, setError] = useState<string>('')
+  const [capturing, setCapturing] = useState(false)
+  const [snapshot, setSnapshot] = useState<string>('')
+  
+  // Obtener cámara si no se pasó como prop
+  useEffect(() => {
+    if (!propCamera && ip) {
+      const foundCamera = cameras.find(c => c.ip === ip)
+      setCamera(foundCamera || null)
+    }
+  }, [ip, cameras, propCamera])
+  
+  // Configurar stream
+  useEffect(() => {
+    if (camera) {
+      // Intentar obtener URL RTSP o HTTP
+      let url = ''
+      
+      // Si hay URL RTSP
+      if (camera.rtsp_url) {
+        // Convertir RTSP a HLS para reproducción en navegador
+        // En producción, usar un proxy RTSP-to-HLS
+        url = `/api/proxy/rtsp?url=${encodeURIComponent(camera.rtsp_url)}`
+      }
+      // Si hay URL HTTP
+      else if (camera.http_url) {
+        url = camera.http_url
+      }
+      // Construir URL HTTP genérica
+      else {
+        const protocol = camera.port === 443 ? 'https' : 'http'
+        url = `${protocol}://${camera.ip}:${camera.port}`
+      }
+      
+      setStreamUrl(url)
+    }
+  }, [camera])
+  
+  // Inicializar reproductor de video
+  useEffect(() => {
+    if (videoRef.current && streamUrl) {
+      // Limpiar player anterior
+      if (playerRef.current) {
+        playerRef.current.dispose()
+      }
+      
+      // Configurar opciones del player
+      const options = {
+        techOrder: ['html5'],
+        autoplay: true,
+        controls: true,
+        sources: [{
+          src: streamUrl,
+          type: streamUrl.includes('.m3u8') ? 'application/x-mpegURL' : 
+                streamUrl.includes('rtsp') ? 'rtsp/mp4' : 
+                'video/mp4'
+        }]
+      }
+      
+      try {
+        playerRef.current = videojs(videoRef.current, options)
+        
+        playerRef.current.on('play', () => setIsPlaying(true))
+        playerRef.current.on('pause', () => setIsPlaying(false))
+        playerRef.current.on('error', () => {
+          setError('Error al cargar el stream. La cámara puede no ser accesible o el formato no es compatible.')
+        })
+        
+        return () => {
+          if (playerRef.current) {
+            playerRef.current.dispose()
+          }
+        }
+      } catch (err) {
+        setError('Error al inicializar el reproductor')
+      }
+    }
+  }, [streamUrl])
+  
+  // Capturar frame
+  const captureFrame = async () => {
+    if (!videoRef.current) return
+    
+    setCapturing(true)
+    try {
+      const canvas = document.createElement('canvas')
+      const video = videoRef.current
+      
+      canvas.width = video.videoWidth || 640
+      canvas.height = video.videoHeight || 480
+      
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const dataUrl = canvas.toDataURL('image/png')
+        setSnapshot(dataUrl)
+      }
+    } catch (err) {
+      setError('Error al capturar el frame')
+    } finally {
+      setCapturing(false)
+    }
+  }
+  
+  // Descargar snapshot
+  const downloadSnapshot = () => {
+    if (snapshot) {
+      const link = document.createElement('a')
+      link.href = snapshot
+      link.download = `camera_${camera?.ip}_${new Date().getTime()}.png`
+      link.click()
+    }
+  }
+  
+  if (!camera) {
+    return (
+      <div className="camera-viewer">
+        <div className="error-state">
+          <h3>Cámara no encontrada</h3>
+          <p>No se encontró la cámara con IP {ip}</p>
+        </div>
+      </div>
+    )
+  }
+  
+  return (
+    <div className="camera-viewer">
+      <div className="viewer-header">
+        <h2>🎥 {camera.vendor} {camera.model}</h2>
+        <p className="viewer-ip">{camera.ip}:{camera.port}</p>
+        
+        <div className="viewer-status">
+          <span className={`status-indicator ${isPlaying ? 'playing' : 'stopped'}`}>
+            {isPlaying ? '▶️ Reproduciendo' : '⏸️ Detenido'}
+          </span>
+          {camera.is_accessible && (
+            <span className="status-indicator accessible">🔓 Accesible</span>
+          )}
+          {camera.is_vulnerable && (
+            <span className="status-indicator vulnerable">⚠️ Vulnerable</span>
+          )}
+        </div>
+      </div>
+      
+      {error ? (
+        <div className="error-message">{error}</div>
+      ) : (
+        <>
+          <div className="video-container">
+            <video 
+              ref={videoRef} 
+              className="video-js vjs-default-skin"
+              controls
+              autoPlay
+              playsInline
+              muted
+            >
+              <p className="vjs-no-js">
+                Para ver este video, por favor habilita JavaScript o considera 
+                <a href="https://videojs.com/html5-video-support/" target="_blank">
+                  actualizar tu navegador
+                </a>
+              </p>
+            </video>
+          </div>
+          
+          <div className="viewer-controls">
+            <button 
+              className="control-btn capture"
+              onClick={captureFrame}
+              disabled={capturing}
+            >
+              {capturing ? 'Capturando...' : '📸 Capturar Frame'}
+            </button>
+            
+            {snapshot && (
+              <button 
+                className="control-btn download"
+                onClick={downloadSnapshot}
+              >
+                💾 Descargar Snapshot
+              </button>
+            )}
+          </div>
+          
+          {snapshot && (
+            <div className="snapshot-preview">
+              <h4>Vista Previa:</h4>
+              <img src={snapshot} alt="Snapshot" className="snapshot-image" />
+            </div>
+          )}
+          
+          <div className="camera-details">
+            <h3>Detalles de la Cámara</h3>
+            <div className="details-grid">
+              <div className="detail-item">
+                <span className="detail-label">Vendor:</span>
+                <span className="detail-value">{camera.vendor || 'Desconocido'}</span>
+              </div>
+              <div className="detail-item">
+                <span className="detail-label">Modelo:</span>
+                <span className="detail-value">{camera.model || 'Desconocido'}</span>
+              </div>
+              <div className="detail-item">
+                <span className="detail-label">IP:</span>
+                <span className="detail-value">{camera.ip}</span>
+              </div>
+              <div className="detail-item">
+                <span className="detail-label">Puerto:</span>
+                <span className="detail-value">{camera.port}</span>
+              </div>
+              {camera.firmware_version && (
+                <div className="detail-item">
+                  <span className="detail-label">Firmware:</span>
+                  <span className="detail-value">{camera.firmware_version}</span>
+                </div>
+              )}
+              {camera.serial_number && (
+                <div className="detail-item">
+                  <span className="detail-label">Número de Serie:</span>
+                  <span className="detail-value">{camera.serial_number}</span>
+                </div>
+              )}
+              {camera.credentials && (
+                <div className="detail-item">
+                  <span className="detail-label">Credenciales:</span>
+                  <span className="detail-value">{camera.credentials}</span>
+                </div>
+              )}
+            </div>
+            
+            {camera.services && camera.services.length > 0 && (
+              <div className="services-section">
+                <h4>Servicios Detectados:</h4>
+                <div className="services-tags">
+                  {camera.services.map((service: any, index: number) => (
+                    <span key={index} className="service-tag">
+                      {service.service} (Puerto: {service.port})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {camera.vulnerabilities && camera.vulnerabilities.length > 0 && (
+              <div className="vulnerabilities-section">
+                <h4>Vulnerabilidades Conocidas:</h4>
+                <ul className="vulnerabilities-list">
+                  {camera.vulnerabilities.map((vuln: string, index: number) => (
+                    <li key={index}>{vuln}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+export default CameraViewer
+```
+
+---
+
+### **12. src/components/CameraViewer.css**
+
+--- FILE: leviathan-frontend/src/components/CameraViewer.css ---
+```css
+/* Estilos para CameraViewer */
+
+.camera-viewer {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.viewer-header {
+  margin-bottom: 20px;
+}
+
+.viewer-header h2 {
+  font-size: 1.75rem;
+  margin-bottom: 8px;
+}
+
+.viewer-ip {
+  color: var(--text-secondary);
+  font-size: 1rem;
+  margin-bottom: 15px;
+}
+
+.viewer-status {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.status-indicator {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.status-indicator.playing {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: var(--success-color);
+}
+
+.status-indicator.stopped {
+  background-color: rgba(220, 53, 69, 0.2);
+  color: var(--danger-color);
+}
+
+.status-indicator.accessible {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: var(--success-color);
+}
+
+.status-indicator.vulnerable {
+  background-color: rgba(220, 53, 69, 0.2);
+  color: var(--danger-color);
+}
+
+.video-container {
+  background-color: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  position: relative;
+}
+
+.video-js {
+  width: 100%;
+  height: 450px;
+  max-height: 60vh;
+}
+
+.error-message {
+  background-color: var(--danger-color);
+  color: white;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.viewer-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.control-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.control-btn.capture {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.control-btn.capture:hover {
+  background-color: var(--secondary-color);
+}
+
+.control-btn.download {
+  background-color: var(--success-color);
+  color: white;
+}
+
+.control-btn.download:hover {
+  background-color: #20c997;
+}
+
+.snapshot-preview {
+  margin-bottom: 20px;
+}
+
+.snapshot-preview h4 {
+  margin-bottom: 10px;
+}
+
+.snapshot-image {
+  max-width: 100%;
+  border-radius: 8px;
+  border: 2px solid var(--border-color);
+  box-shadow: var(--shadow);
+}
+
+.camera-details {
+  background-color: var(--card-bg);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+}
+
+.camera-details h3 {
+  margin-bottom: 15px;
+  color: var(--text-color);
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.detail-value {
+  color: var(--text-color);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.services-section,
+.vulnerabilities-section {
+  margin-top: 20px;
+}
+
+.services-section h4,
+.vulnerabilities-section h4 {
+  margin-bottom: 10px;
+  color: var(--text-color);
+}
+
+.services-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.services-tags .service-tag {
+  background-color: var(--border-color);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.vulnerabilities-list {
+  list-style: none;
+  padding: 0;
+}
+
+.vulnerabilities-list li {
+  padding: 8px 12px;
+  margin: 5px 0;
+  background-color: rgba(220, 53, 69, 0.1);
+  border-radius: 6px;
+  color: var(--danger-color);
+  font-size: 0.9rem;
+}
+
+.error-state {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+}
+
+.error-state h3 {
+  color: var(--danger-color);
+  margin-bottom: 10px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .video-js {
+    height: 300px;
+  }
+  
+  .details-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .viewer-controls {
+    flex-direction: column;
+  }
+  
+  .control-btn {
+    width: 100%;
+  }
+}
+```
+
+---
+
+### **13. src/components/ThreatMap.tsx**
+
+--- FILE: leviathan-frontend/src/components/ThreatMap.tsx ---
+```typescript
+import React, { useEffect, useState, useRef } from 'react'
+import { useSelector } from 'react-redux'
+import { RootState } from '../store'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+
+// Fix para iconos de Leaflet (requerido cuando se usa con React)
+const defaultIcon = L.icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+})
+
+L.Marker.prototype.options.icon = defaultIcon
+
+// Iconos personalizados por severidad
+const createCustomIcon = (severity: string) => {
+  const colors = {
+    critical: '#dc3545',
+    high: '#fd7e14',
+    medium: '#ffc107',
+    low: '#28a745'
+  }
+  
+  return L.divIcon({
+    className: 'camera-marker',
+    html: `
+      <div style="
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: ${colors[severity as keyof typeof colors] || '#667eea'};
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      ">
+        🎥
+      </div>
+    `,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -15]
+  })
+}
+
+const ThreatMap: React.FC = () => {
+  const { cameras } = useSelector((state: RootState) => state.cameras)
+  const { alerts } = useSelector((state: RootState) => state.alerts)
+  const mapRef = useRef<L.Map | null>(null)
+  const [mapReady, setMapReady] = useState(false)
+  const [center, setCenter] = useState<[number, number]>([0, 0])
+  const [zoom, setZoom] = useState<number>(2)
+  
+  // Coordenadas de ejemplo para cámaras (en producción, usar geolocalización real)
+  const getCameraCoordinates = (camera: any): [number, number] => {
+    // Si la cámara tiene coordenadas guardadas
+    if (camera.latitude && camera.longitude) {
+      return [camera.latitude, camera.longitude]
+    }
+    
+    // Coordenadas de ejemplo para IPs locales
+    const exampleCoords: Record<string, [number, number]> = {
+      '192.168.0.1': [4.6097, -74.0817],  // Bogotá
+      '192.168.0.7': [4.6097, -74.0817],  // Bogotá
+      '192.168.0.2': [4.6097, -74.0817],  // Bogotá
+      '10.0.0.1': [6.2442, -75.5812],    // Medellín
+      '10.0.0.2': [6.2442, -75.5812],    // Medellín
+    }
+    
+    return exampleCoords[camera.ip] || [center[0] + (Math.random() * 0.01 - 0.005), center[1] + (Math.random() * 0.01 - 0.005)]
+  }
+  
+  // Determinar severidad de cámara
+  const getCameraSeverity = (camera: any): string => {
+    if (camera.is_vulnerable) return 'critical'
+    if (camera.is_accessible) return 'high'
+    return 'medium'
+  }
+  
+  // Inicializar mapa
+  useEffect(() => {
+    if (!mapRef.current) {
+      // Crear mapa centrado en Colombia
+      const map = L.map('threat-map').setView([4.6097, -74.0817], 6)
+      
+      // Agregar capa de OpenStreetMap
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map)
+      
+      mapRef.current = map
+      setMapReady(true)
+      setCenter([4.6097, -74.0817])
+      setZoom(6)
+    }
+    
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove()
+        mapRef.current = null
+      }
+    }
+  }, [])
+  
+  // Actualizar marcadores cuando cambian las cámaras
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return
+    
+    // Limpiar marcadores existentes
+    mapRef.current.eachLayer(layer => {
+      if (layer instanceof L.Marker) {
+        mapRef.current?.removeLayer(layer)
+      }
+    })
+    
+    // Agregar nuevos marcadores
+    cameras.forEach(camera => {
+      const coords = getCameraCoordinates(camera)
+      const severity = getCameraSeverity(camera)
+      
+      const marker = L.marker(coords, {
+        icon: createCustomIcon(severity),
+        title: `${camera.vendor} ${camera.model} (${camera.ip})`
+      }).addTo(mapRef.current!)
+      
+      // Popup con información
+      const popupContent = `
+        <div class="map-popup">
+          <h4>${camera.vendor || 'Cámara'} ${camera.model || 'IP'}</h4>
+          <p><strong>IP:</strong> ${camera.ip}:${camera.port}</p>
+          <p><strong>Estado:</strong> ${camera.is_accessible ? '🔓 Accesible' : '🔒 No accesible'}</p>
+          <p><strong>Severidad:</strong> <span style="color: ${severity === 'critical' ? '#dc3545' : severity === 'high' ? '#fd7e14' : '#ffc107'}">${severity}</span></p>
+          ${camera.credentials ? `<p><strong>Credenciales:</strong> ${camera.credentials}</p>` : ''}
+        </div>
+      `
+      
+      marker.bindPopup(popupContent)
+    })
+    
+    // Ajustar vista al primer marcador si hay cámaras
+    if (cameras.length > 0 && center === [0, 0]) {
+      const firstCoords = getCameraCoordinates(cameras[0])
+      setCenter(firstCoords)
+      setZoom(12)
+      mapRef.current?.setView(firstCoords, 12)
+    }
+    
+  }, [cameras, mapReady, center])
+  
+  // Agregar marcadores de alertas
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return
+    
+    alerts.forEach(alert => {
+      // Coordenadas de ejemplo para alertas
+      const alertCoords: Record<string, [number, number]> = {
+        '192.168.0.1': [4.6097, -74.0817],
+        '192.168.0.7': [4.6097, -74.0817],
+        '192.168.0.2': [4.6097, -74.0817],
+      }
+      
+      const target = alert.target || ''
+      if (alertCoords[target]) {
+        const coords = alertCoords[target]
+        
+        const alertIcon = L.divIcon({
+          className: 'alert-marker',
+          html: `
+            <div style="
+              width: 25px;
+              height: 25px;
+              border-radius: 50%;
+              background: ${alert.severity === 'critical' ? '#dc3545' : alert.severity === 'high' ? '#fd7e14' : '#ffc107'};
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: white;
+              font-weight: bold;
+              box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+              animation: pulse 2s infinite;
+            ">
+              🔔
+            </div>
+          `,
+          iconSize: [25, 25],
+          iconAnchor: [12.5, 12.5],
+          popupAnchor: [0, -12.5]
+        })
+        
+        const marker = L.marker(coords, {
+          icon: alertIcon,
+          title: alert.title
+        }).addTo(mapRef.current)
+        
+        const popupContent = `
+          <div class="map-popup alert">
+            <h4>⚠️ ${alert.title}</h4>
+            <p><strong>Tipo:</strong> ${alert.alert_type}</p>
+            <p><strong>Severidad:</strong> <span style="color: ${alert.severity === 'critical' ? '#dc3545' : alert.severity === 'high' ? '#fd7e14' : '#ffc107'}">${alert.severity}</span></p>
+            <p><strong>Descripción:</strong> ${alert.description}</p>
+            <p><strong>Objetivo:</strong> ${alert.target}</p>
+            <p><strong>Fecha:</strong> ${new Date(alert.timestamp).toLocaleString()}</p>
+          </div>
+        `
+        
+        marker.bindPopup(popupContent)
+      }
+    })
+  }, [alerts, mapReady])
+  
+  return (
+    <div className="threat-map">
+      <div className="map-header">
+        <h1>🗺️ Mapa de Amenazas</h1>
+        <p className="map-subtitle">
+          Visualización geográfica de cámaras y alertas
+        </p>
+      </div>
+      
+      <div className="map-stats">
+        <div className="stat">
+          <span className="stat-number">{cameras.length}</span>
+          <span className="stat-label">Cámaras</span>
+        </div>
+        <div className="stat">
+          <span className="stat-number">{cameras.filter(c => c.is_accessible).length}</span>
+          <span className="stat-label">Accesibles</span>
+        </div>
+        <div className="stat">
+          <span className="stat-number">{cameras.filter(c => c.is_vulnerable).length}</span>
+          <span className="stat-label">Vulnerables</span>
+        </div>
+        <div className="stat">
+          <span className="stat-number">{alerts.length}</span>
+          <span className="stat-label">Alertas</span>
+        </div>
+      </div>
+      
+      <div className="map-legend">
+        <h4>Leyenda:</h4>
+        <div className="legend-items">
+          <div className="legend-item">
+            <span className="legend-color critical"></span>
+            <span>Crítico</span>
+          </div>
+          <div className="legend-item">
+            <span className="legend-color high"></span>
+            <span>Alto</span>
+          </div>
+          <div className="legend-item">
+            <span className="legend-color medium"></span>
+            <span>Medio</span>
+          </div>
+          <div className="legend-item">
+            <span className="legend-color low"></span>
+            <span>Bajo</span>
+          </div>
+          <div className="legend-item">
+            <span className="legend-color alert"></span>
+            <span>Alerta</span>
+          </div>
+        </div>
+      </div>
+      
+      <div 
+        id="threat-map" 
+        className="map-container"
+      ></div>
+    </div>
+  )
+}
+
+export default ThreatMap
+```
+
+---
+
+### **14. src/components/ThreatMap.css**
+
+--- FILE: leviathan-frontend/src/components/ThreatMap.css ---
+```css
+/* Estilos para ThreatMap */
+
+.threat-map {
+  animation: fadeIn 0.5s ease-out;
+  position: relative;
+}
+
+.map-header {
+  margin-bottom: 20px;
+}
+
+.map-header h1 {
+  font-size: 2rem;
+  margin-bottom: 10px;
+}
+
+.map-subtitle {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+}
+
+.map-stats {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.map-stats .stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background-color: var(--card-bg);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.map-stats .stat-number {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.map-stats .stat-label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.map-legend {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background-color: var(--card-bg);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  z-index: 1000;
+  max-width: 200px;
+}
+
+.map-legend h4 {
+  margin-bottom: 10px;
+  color: var(--text-color);
+  font-size: 1rem;
+}
+
+.legend-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: var(--text-color);
+}
+
+.legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.legend-color.critical { background-color: #dc3545; }
+.legend-color.high { background-color: #fd7e14; }
+.legend-color.medium { background-color: #ffc107; }
+.legend-color.low { background-color: #28a745; }
+.legend-color.alert { 
+  background-color: #6c757d;
+  animation: pulse 2s infinite;
+}
+
+.map-container {
+  height: 600px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid var(--border-color);
+  background-color: #000;
+}
+
+/* Animación para alertas */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Estilos para popups */
+.map-popup {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.map-popup h4 {
+  margin: 0 0 8px 0;
+  color: #333;
+  font-size: 1.1rem;
+}
+
+.map-popup p {
+  margin: 4px 0;
+}
+
+.map-popup strong {
+  color: #5

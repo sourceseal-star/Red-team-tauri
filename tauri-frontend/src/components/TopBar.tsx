@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useServiceStore } from '../stores/serviceStore'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
-import { Moon, Sun, Shield, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Moon, Sun, Shield, Loader2, CheckCircle2, AlertCircle, Menu } from 'lucide-react'
 
-export function TopBar() {
+export function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
   const { startAll, stopAll } = useServiceStore()
   const [dark, setDark] = useState(true)
   const [loadingAction, setLoadingAction] = useState<'start' | 'stop' | null>(null)
@@ -46,14 +46,23 @@ export function TopBar() {
   const isOperating = loadingAction !== null
 
   return (
-    <header className="border-b px-4 py-2 flex items-center justify-between bg-card relative">
-      <div className="flex items-center space-x-3">
-        <Shield className="h-5 w-5 text-blue-400" />
-        <h1 className="text-lg font-bold tracking-tight">SourceSeal Console</h1>
-        <Badge variant="destructive">⚠️ DEFENSIVE USE ONLY</Badge>
+    <header className="border-b px-2 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 bg-card relative">
+      <div className="flex items-center gap-2 sm:space-x-3 min-w-0">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="lg:hidden shrink-0"
+          onClick={onMenuClick}
+          aria-label="Abrir menu"
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+        <Shield className="h-5 w-5 text-blue-400 shrink-0" />
+        <h1 className="text-sm sm:text-lg font-bold tracking-tight truncate">SourceSeal Console</h1>
+        <Badge variant="destructive" className="hidden sm:inline-flex whitespace-nowrap">⚠️ DEFENSIVE USE ONLY</Badge>
       </div>
 
-      <div className="flex items-center space-x-2">
+      <div className="flex items-center flex-wrap gap-2">
         {toast && (
           <div className={`text-xs px-2.5 py-1 rounded border flex items-center gap-1.5 transition-all ${
             toast.type === 'success' 
@@ -70,6 +79,7 @@ export function TopBar() {
           variant="outline"
           disabled={isOperating}
           onClick={handleStartAll}
+          className="text-xs sm:text-sm px-2 sm:px-3"
         >
           {loadingAction === 'start' && <Loader2 className="h-3 w-3 mr-1 animate-spin text-green-400" />}
           Start All
@@ -79,6 +89,7 @@ export function TopBar() {
           variant="outline"
           disabled={isOperating}
           onClick={handleStopAll}
+          className="text-xs sm:text-sm px-2 sm:px-3"
         >
           {loadingAction === 'stop' && <Loader2 className="h-3 w-3 mr-1 animate-spin text-yellow-400" />}
           Stop All

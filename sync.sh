@@ -8,10 +8,6 @@ set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-if [ -d "/data/data/com.termux" ] && [ -f "$ROOT/scripts/termux/sync_repositories.sh" ]; then
-  exec bash "$ROOT/scripts/termux/sync_repositories.sh"
-fi
-
 echo "════════════════════════════════════════════════════════"
 echo "  SYNC — Red-Team-Tauri / SourceSeal"
 echo "════════════════════════════════════════════════════════"

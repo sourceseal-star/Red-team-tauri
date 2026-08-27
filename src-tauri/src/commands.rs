@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{State, Manager};
 use sysinfo::System;
 use std::path::PathBuf;
 
@@ -113,7 +113,7 @@ pub async fn stop_all_services(state: State<'_, AppState>) -> Result<(), String>
 pub async fn get_system_resources() -> Result<SystemResources, String> {
     let mut sys = System::new_all();
     sys.refresh_all();
-    let cpu = sys.global_cpu_usage();
+    let cpu = sys.global_cpu_info().cpu_usage();
     let mem_used = sys.used_memory();
     let mem_total = sys.total_memory();
     Ok(SystemResources { cpu_usage: cpu, memory_used: mem_used, memory_total: mem_total })

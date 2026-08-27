@@ -1,0 +1,9 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.6.0
+pydantic[email]>=2.6.0
+stripe>=8.0.0
+openai>=1.30.0
+slowapi>=0.1.9
+tenacity>=8.2.0
+python-multipart>=0.0.9

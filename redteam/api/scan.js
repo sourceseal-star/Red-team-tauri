@@ -5,7 +5,7 @@ const { spawn } = require("child_process");
 const path = require("path");
 
 module.exports = async (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Origin", process.env.ALLOWED_ORIGINS || "http://localhost:5173");
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Use POST" });
   }

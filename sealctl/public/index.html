@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SealCtl — Security Console</title>
+<title>SealCtl — Security Console v2</title>
 <style>
   :root {
     --bg: #0a0e1a;
@@ -26,7 +26,6 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     min-height: 100vh;
   }
-  /* ─── Header ─── */
   .header {
     display: flex; align-items: center; justify-content: space-between;
     padding: 16px 24px; border-bottom: 1px solid var(--border);
@@ -46,19 +45,16 @@
   .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 0 rgba(0,200,83,.4); animation: pulse 2s infinite; }
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(0,200,83,.4); } 70% { box-shadow: 0 0 0 8px rgba(0,200,83,0); } 100% { box-shadow: 0 0 0 0 rgba(0,200,83,0); } }
 
-  /* ─── Layout ─── */
   .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
   @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
 
-  /* ─── Card ─── */
   .card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 20px;
   }
   .card-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
 
-  /* ─── Input ─── */
   .input-row { display: flex; gap: 8px; margin-bottom: 16px; }
   input[type="text"] {
     flex: 1; padding: 12px 16px; border-radius: 8px;
@@ -78,59 +74,67 @@
   .btn-danger { background: var(--danger); color: #fff; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  /* ─── Tabs ─── */
-  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
-  .tab { padding: 10px 20px; cursor: pointer; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; transition: all .2s; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .tab { padding: 10px 16px; cursor: pointer; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; transition: all .2s; }
   .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
   .tab:hover { color: var(--text); }
 
-  /* ─── Result display ─── */
   .result { display: none; }
   .result.active { display: block; }
   .result-loading { text-align: center; padding: 40px; color: var(--muted); }
   .result-loading .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ─── Data rows ─── */
   .data-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
   .data-row:last-child { border-bottom: none; }
   .data-label { color: var(--muted); }
   .data-value { font-weight: 500; }
   .data-value.mono { font-family: 'Fira Code', 'Cascadia Code', monospace; }
 
-  /* ─── Badge ─── */
   .badge { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
   .badge-success { background: rgba(0,200,83,.15); color: var(--success); }
   .badge-warning { background: rgba(255,171,0,.15); color: var(--warning); }
   .badge-danger { background: rgba(255,61,113,.15); color: var(--danger); }
   .badge-critical { background: rgba(255,23,68,.15); color: var(--critical); }
   .badge-info { background: rgba(0,229,255,.12); color: var(--primary); }
+  .badge-muted { background: var(--surface2); color: var(--muted); }
 
-  /* ─── Score bar ─── */
   .score-bar { width: 100%; height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; margin-top: 6px; }
   .score-fill { height: 100%; border-radius: 4px; transition: width .5s ease; }
 
-  /* ─── Evidence ─── */
   .evidence-item { padding: 12px; background: var(--surface2); border-radius: 8px; margin-bottom: 8px; border-left: 3px solid var(--primary); }
   .evidence-port { font-weight: 600; color: var(--primary); font-size: 13px; }
   .evidence-banner { font-family: monospace; font-size: 12px; color: var(--muted); margin-top: 4px; word-break: break-all; }
 
-  /* ─── Map placeholder ─── */
-  .map-box { width: 100%; height: 200px; background: var(--surface2); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; margin-top: 12px; position: relative; overflow: hidden; }
+  .map-box { width: 100%; height: 200px; background: var(--surface2); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; margin-top: 12px; cursor: pointer; }
 
-  /* ─── Batch ─── */
   .batch-results { margin-top: 16px; }
   .batch-item { padding: 12px; background: var(--surface2); border-radius: 8px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
   .batch-item-type { font-size: 12px; padding: 2px 8px; border-radius: 4px; background: var(--surface); }
 
-  /* ─── JSON viewer ─── */
   .json-view { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
 
-  /* ─── Breakdown ─── */
   .breakdown-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
   .breakdown-w { margin-left: auto; font-weight: 600; }
   .breakdown-w.pos { color: var(--danger); }
   .breakdown-w.neg { color: var(--success); }
+
+  /* Network scan */
+  .net-progress { width: 100%; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; margin: 12px 0; }
+  .net-progress-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width .3s; }
+  .net-host { padding: 12px; background: var(--surface2); border-radius: 8px; margin-bottom: 8px; border-left: 3px solid var(--primary); cursor: pointer; }
+  .net-host:hover { background: var(--border); }
+  .net-host-ip { font-weight: 600; font-family: monospace; font-size: 14px; }
+  .net-host-type { font-size: 12px; padding: 2px 8px; border-radius: 4px; margin-left: 8px; }
+  .net-host-ports { font-size: 12px; color: var(--muted); margin-top: 4px; font-family: monospace; }
+  .net-host-vendor { font-size: 12px; color: var(--warning); margin-top: 2px; }
+
+  /* Forensics */
+  .drop-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 40px; text-align: center; color: var(--muted); cursor: pointer; transition: all .2s; }
+  .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); color: var(--primary); background: rgba(0,229,255,.05); }
+  .entropy-gauge { width: 100%; height: 24px; border-radius: 12px; overflow: hidden; position: relative; margin: 12px 0; }
+  .entropy-fill { height: 100%; border-radius: 12px; transition: width .5s; }
+  .ioc-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; margin: 2px; font-size: 12px; background: var(--surface2); }
 </style>
 </head>
 <body>
@@ -140,59 +144,80 @@
     <div class="logo-icon">🛡️</div>
     <div>
       <h1>SealCtl Console</h1>
-      <span>Geo · Intel · IoT Detection</span>
+      <span>Geo · Intel · IoT · Network Scan · Forensics</span>
     </div>
   </div>
   <div class="header-status">
     <div class="pulse"></div>
-    <span id="backend-status">Backend: OK</span>
+    <span id="backend-status">Backend: ...</span>
   </div>
 </div>
 
 <div class="container">
-  <!-- Input -->
-  <div class="card" style="margin-bottom: 20px;">
-    <div class="card-title">🎯 Target IP</div>
-    <div class="input-row">
-      <input type="text" id="ip-input" placeholder="Ej: 8.8.8.8 o 190.147.200.1" />
-      <button class="btn btn-primary" id="btn-scan" onclick="runFullScan()">Analizar</button>
-      <button class="btn btn-secondary" id="btn-batch" onclick="showBatch()">Lote</button>
-    </div>
-    <div style="display:none; margin-top:12px;" id="batch-ui">
-      <div class="card-title" style="margin-bottom:8px;">Escaneo por lote (una IP por línea)</div>
-      <textarea id="batch-input" rows="5" style="width:100%; padding:12px; border-radius:8px; background:var(--surface2); border:1px solid var(--border); color:var(--text); font-family:monospace; font-size:13px;" placeholder="8.8.8.8&#10;1.1.1.1&#10;190.147.200.1"></textarea>
-      <button class="btn btn-primary" style="margin-top:8px;" onclick="runBatch()">Escanear lote</button>
-    </div>
-  </div>
-
   <!-- Tabs -->
   <div class="tabs">
-    <div class="tab active" onclick="switchTab('overview')">Overview</div>
+    <div class="tab active" onclick="switchTab('net')">🌐 Red</div>
+    <div class="tab" onclick="switchTab('overview')">Overview</div>
     <div class="tab" onclick="switchTab('geo')">Geo</div>
     <div class="tab" onclick="switchTab('intel')">Intel</div>
     <div class="tab" onclick="switchTab('iot')">IoT</div>
+    <div class="tab" onclick="switchTab('forensics')">Forense</div>
     <div class="tab" onclick="switchTab('raw')">JSON</div>
   </div>
 
-  <!-- Overview -->
-  <div class="result active" id="tab-overview">
+  <!-- ════ RED: escaneo de red completo ════ -->
+  <div class="result active" id="tab-net">
+    <div class="card">
+      <div class="card-title">🌐 Escaneo de Red Local (/24)</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6;">
+        Escanea los 254 hosts de tu subred en tiempo real. Detecta routers, cámaras IP, dispositivos IoT, servicios web y más.
+        Funciona desde Termux — estás en la misma red que tus dispositivos.
+      </p>
+      <div class="input-row">
+        <input type="text" id="net-subnet" placeholder="192.168.1.0/24 (o solo 192.168.1.1)" />
+        <button class="btn btn-primary" id="btn-net-scan" onclick="runNetworkScan()">Escanear Red</button>
+        <button class="btn btn-secondary" onclick="detectMySubnet()">Auto</button>
+      </div>
+      <div id="net-progress-bar" style="display:none;">
+        <div class="net-progress"><div class="net-progress-fill" id="net-progress-fill" style="width:0%"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);">
+          <span id="net-progress-text">0 / 254 hosts</span>
+          <span id="net-found-text">0 encontrados</span>
+        </div>
+      </div>
+      <div id="net-results" style="margin-top:16px;"></div>
+    </div>
+  </div>
+
+  <!-- ════ OVERVIEW ════ -->
+  <div class="result" id="tab-overview">
     <div class="grid">
       <div class="card">
         <div class="card-title">📍 Geolocalización</div>
-        <div id="overview-geo"><span style="color:var(--muted)">Esperando análisis...</span></div>
+        <div id="overview-geo"><span style="color:var(--muted)">Ingresa una IP y presiona Analizar</span></div>
       </div>
       <div class="card">
         <div class="card-title">🛡️ Inteligencia de Amenaza</div>
-        <div id="overview-intel"><span style="color:var(--muted)">Esperando análisis...</span></div>
+        <div id="overview-intel"><span style="color:var(--muted)">Ingresa una IP y presiona Analizar</span></div>
       </div>
     </div>
     <div class="card">
       <div class="card-title">📡 Detección IoT (Cámaras / Radio / VoIP)</div>
-      <div id="overview-iot"><span style="color:var(--muted)">Esperando análisis...</span></div>
+      <div id="overview-iot"><span style="color:var(--muted)">Ingresa una IP y presiona Analizar</span></div>
     </div>
   </div>
 
-  <!-- Geo -->
+  <!-- Single IP input (for overview/geo/intel/iot tabs) -->
+  <div class="card" style="margin-bottom: 20px;" id="ip-input-card">
+    <div class="card-title">🎯 Target IP</div>
+    <div class="input-row">
+      <input type="text" id="ip-input" placeholder="Ej: 8.8.8.8 o 190.147.200.1" />
+      <button class="btn btn-primary" id="btn-scan" onclick="runFullScan()">Analizar</button>
+      <button class="btn btn-secondary" onclick="runCameraDeep()">Cámara</button>
+    </div>
+  </div>
+
+  <!-- ════ GEO ════ -->
   <div class="result" id="tab-geo">
     <div class="card">
       <div class="card-title">📍 Geolocalización IP</div>
@@ -200,7 +225,7 @@
     </div>
   </div>
 
-  <!-- Intel -->
+  <!-- ════ INTEL ════ -->
   <div class="result" id="tab-intel">
     <div class="card">
       <div class="card-title">🛡️ Reputación y Score de Riesgo</div>
@@ -208,7 +233,7 @@
     </div>
   </div>
 
-  <!-- IoT -->
+  <!-- ════ IoT ════ -->
   <div class="result" id="tab-iot">
     <div class="card">
       <div class="card-title">📡 Detección IoT</div>
@@ -216,18 +241,29 @@
     </div>
   </div>
 
-  <!-- JSON -->
+  <!-- ════ FORENSE ════ -->
+  <div class="result" id="tab-forensics">
+    <div class="card">
+      <div class="card-title">🔬 Análisis Forense</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6;">
+        Sube un archivo para análisis: hash SHA-256/MD5, entropía de Shannon, 10 patrones IOC (emails, URLs, IPv4, JWT, AWS keys, GitHub PATs, OpenAI keys, BTC wallets, Base64, Windows paths) y cadena de custodia SSP-ZKP-2048-L4.
+      </p>
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div style="font-size:24px;margin-bottom:8px;">📁</div>
+        <div>Toca aquí o arrastra un archivo</div>
+        <div style="font-size:12px;margin-top:4px;">Máximo 50MB</div>
+      </div>
+      <input type="file" id="file-input" style="display:none;" onchange="uploadForensics(this.files[0])" />
+      <div id="forensics-result" style="margin-top:16px;"></div>
+    </div>
+  </div>
+
+  <!-- ════ JSON ════ -->
   <div class="result" id="tab-raw">
     <div class="card">
       <div class="card-title">📄 Respuesta JSON</div>
       <div class="json-view" id="raw-result">{}</div>
     </div>
-  </div>
-
-  <!-- Batch results -->
-  <div class="card" id="batch-card" style="display:none;">
-    <div class="card-title">📊 Resultados del Lote</div>
-    <div class="batch-results" id="batch-results"></div>
   </div>
 </div>
 
@@ -249,10 +285,12 @@ fetch(API + '/health').then(r => r.json()).then(d => {
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.result').forEach(r => r.classList.remove('active'));
-  const tabs = ['overview', 'geo', 'intel', 'iot', 'raw'];
+  const tabs = ['net', 'overview', 'geo', 'intel', 'iot', 'forensics', 'raw'];
   const idx = tabs.indexOf(name);
   document.querySelectorAll('.tab')[idx].classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
+  // Show/hide IP input card
+  document.getElementById('ip-input-card').style.display = (name === 'overview' || name === 'geo' || name === 'intel' || name === 'iot') ? 'block' : 'none';
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -269,16 +307,22 @@ function scoreColor(score) {
   return '#ff1744';
 }
 function typeBadge(type, vendor) {
-  if (type === 'camera') return `<span class="badge badge-info">📷 Cámara${vendor ? ' · ' + vendor : ''}</span>`;
-  if (type === 'radio' || type === 'radio/voip') return `<span class="badge badge-info">📻 ${type}${vendor ? ' · ' + vendor : ''}</span>`;
-  if (type === 'unknown') return `<span class="badge" style="background:var(--surface2);color:var(--muted)">Sin huella</span>`;
-  return `<span class="badge badge-info">${type}</span>`;
+  const v = vendor ? ' · ' + vendor : '';
+  if (type === 'camera') return `<span class="badge badge-info">📷 Cámara${v}</span>`;
+  if (type === 'radio' || type === 'radio/voip') return `<span class="badge badge-info">📻 ${type}${v}</span>`;
+  if (type === 'router') return `<span class="badge badge-warning">🔧 Router${v}</span>`;
+  if (type === 'iot') return `<span class="badge badge-info">📡 IoT${v}</span>`;
+  if (type === 'web') return `<span class="badge badge-muted">🌐 Web${v}</span>`;
+  if (type === 'windows') return `<span class="badge badge-muted">🖥️ Windows${v}</span>`;
+  if (type === 'voip') return `<span class="badge badge-info">☎️ VoIP${v}</span>`;
+  if (type === 'device') return `<span class="badge badge-muted">📦 Dispositivo${v}</span>`;
+  return `<span class="badge badge-muted">${type}${v}</span>`;
 }
 
 // ─── Renderers ───────────────────────────────────────────────────────────────
 function renderGeo(g) {
   if (g.error) return `<div class="data-row"><span class="data-label">Error</span><span class="data-value" style="color:var(--danger)">${g.error}</span></div>`;
-  if (g.private) return `<div class="data-row"><span class="data-label">Tipo</span><span class="data-value">Red privada / LAN</span></div><div class="data-row"><span class="data-label">Nota</span><span class="data-value" style="font-size:12px;color:var(--muted)">${g.note}</span></div>`;
+  if (g.private) return `<div class="data-row"><span class="data-label">Tipo</span><span class="data-value">Red privada / LAN</span></div><div class="data-row"><span class="data-label">Nota</span><span class="data-value" style="font-size:12px;color:var(--muted)">${g.note || 'IP interna'}</span></div>`;
   return `
     <div class="data-row"><span class="data-label">IP</span><span class="data-value mono">${g.ip}</span></div>
     <div class="data-row"><span class="data-label">País</span><span class="data-value">${g.country || '—'}</span></div>
@@ -288,11 +332,9 @@ function renderGeo(g) {
     <div class="data-row"><span class="data-label">AS</span><span class="data-value mono" style="font-size:12px">${g.as || '—'}</span></div>
     <div class="data-row"><span class="data-label">Proxy/VPN</span><span class="data-value">${g.proxy ? '⚠️ Sí' : 'No'}</span></div>
     <div class="data-row"><span class="data-label">Hosting</span><span class="data-value">${g.hosting ? '⚠️ Sí' : 'No'}</span></div>
-    <div class="data-row"><span class="data-label">Móvil/CGN</span><span class="data-value">${g.mobile ? 'Sí' : 'No'}</span></div>
-    ${g.lat && g.lon ? `<div class="map-box" onclick="window.open('https://www.openstreetmap.org/?mlat=${g.lat}&mlon=${g.lon}&zoom=12')" style="cursor:pointer">🗺️ Ver en mapa: ${g.lat}, ${g.lon}</div>` : ''}
+    ${g.lat && g.lon ? `<div class="map-box" onclick="window.open('https://www.openstreetmap.org/?mlat=${g.lat}&mlon=${g.lon}&zoom=12')">🗺️ Ver en mapa: ${g.lat}, ${g.lon}</div>` : ''}
   `;
 }
-
 function renderIntel(i) {
   if (i.private) return `<div class="data-row"><span class="data-label">Tipo</span><span class="data-value">Red privada — confianza N/A</span></div>`;
   return `
@@ -304,10 +346,9 @@ function renderIntel(i) {
     <div style="margin-top:12px; padding-top:8px; border-top:1px solid var(--border)"><div style="font-size:12px; color:var(--muted); margin-bottom:8px">DESGLACE DEL SCORE</div>
     ${i.breakdown.map(b => `<div class="breakdown-item"><span>${b.f}</span><span class="breakdown-w ${b.w > 0 ? 'pos' : 'neg'}">${b.w > 0 ? '+' : ''}${b.w}</span></div>`).join('')}
     </div>
-    <div style="margin-top:8px; font-size:12px; color:var(--muted)">📋 ${i.note}</div>
+    <div style="margin-top:8px; font-size:12px; color:var(--muted)">📋 ${i.note || ''}</div>
   `;
 }
-
 function renderIoT(t) {
   let html = `
     <div class="data-row"><span class="data-label">IP</span><span class="data-value mono">${t.ip}</span></div>
@@ -328,29 +369,128 @@ function renderIoT(t) {
   return html;
 }
 
-// ─── Main scan ───────────────────────────────────────────────────────────────
+// ─── Network Scan (SSE streaming) ────────────────────────────────────────────
+async function runNetworkScan() {
+  const subnet = document.getElementById('net-subnet').value.trim();
+  if (!subnet) { alert('Ingresa tu subred, ej: 192.168.1.0/24'); return; }
+
+  const fullSubnet = subnet.includes('/') ? subnet : subnet.replace(/\.\d+$/, '.0/24');
+  const btn = document.getElementById('btn-net-scan');
+  btn.disabled = true; btn.textContent = 'Escaneando...';
+
+  document.getElementById('net-progress-bar').style.display = 'block';
+  document.getElementById('net-progress-fill').style.width = '0%';
+  document.getElementById('net-progress-text').textContent = '0 / 254 hosts';
+  document.getElementById('net-found-text').textContent = '0 encontrados';
+  document.getElementById('net-results').innerHTML = '';
+
+  const hostsFound = [];
+
+  try {
+    const evtSrc = new EventSource(API + '/scan/network/stream?subnet=' + encodeURIComponent(fullSubnet));
+
+    evtSrc.addEventListener('start', (e) => {
+      const d = JSON.parse(e.data);
+      console.log('Scan started:', d);
+    });
+
+    evtSrc.addEventListener('progress', (e) => {
+      const d = JSON.parse(e.data);
+      const pct = Math.round((d.scanned / d.total) * 100);
+      document.getElementById('net-progress-fill').style.width = pct + '%';
+      document.getElementById('net-progress-text').textContent = `${d.scanned} / ${d.total} hosts`;
+      document.getElementById('net-found-text').textContent = `${d.found} encontrados`;
+    });
+
+    evtSrc.addEventListener('host', (e) => {
+      const host = JSON.parse(e.data);
+      hostsFound.push(host);
+      document.getElementById('net-found-text').textContent = `${hostsFound.length} encontrados`;
+      // Add to results immediately
+      const div = document.createElement('div');
+      div.className = 'net-host';
+      div.onclick = () => { document.getElementById('ip-input').value = host.ip; switchTab('overview'); runFullScan(); };
+      div.innerHTML = `
+        <div style="display:flex;align-items:center;">
+          <span class="net-host-ip">${host.ip}</span>
+          ${typeBadge(host.type, host.vendor)}
+        </div>
+        <div class="net-host-ports">Puertos: ${host.open_ports.join(', ')}</div>
+        ${host.vendor ? `<div class="net-host-vendor">Vendor: ${host.vendor}</div>` : ''}
+      `;
+      document.getElementById('net-results').prepend(div);
+    });
+
+    evtSrc.addEventListener('done', (e) => {
+      const d = JSON.parse(e.data);
+      document.getElementById('net-progress-fill').style.width = '100%';
+      document.getElementById('net-progress-text').textContent = `${d.scanned} / 254 escaneados`;
+      document.getElementById('net-found-text').textContent = `${d.found} encontrados`;
+      evtSrc.close();
+      btn.disabled = false; btn.textContent = 'Escanear Red';
+
+      if (d.found === 0) {
+        document.getElementById('net-results').innerHTML = '<div style="text-align:center;color:var(--muted);padding:24px;">No se encontraron hosts activos. Verifica que estás en la red correcta.</div>';
+      }
+    });
+
+    evtSrc.onerror = () => {
+      evtSrc.close();
+      btn.disabled = false; btn.textContent = 'Escanear Red';
+      document.getElementById('net-progress-text').textContent = 'Error de conexión';
+    };
+
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Escanear Red';
+    document.getElementById('net-results').innerHTML = `<div style="color:var(--danger)">Error: ${e.message}</div>`;
+  }
+}
+
+// ─── Detect my subnet ────────────────────────────────────────────────────────
+function detectMySubnet() {
+  // En el navegador no podemos saber nuestra IP local directamente,
+  // pero podemos usar WebRTC para descubrir la IP local
+  const pc = new RTCPeerConnection({ iceServers: [] });
+  pc.createDataChannel('');
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      const m = e.candidate.candidate.match(/(\d+\.\d+\.\d+)\.\d+/);
+      if (m) {
+        document.getElementById('net-subnet').value = `${m[1]}.0/24`;
+        pc.close();
+      }
+    }
+  };
+  pc.createOffer().then(o => pc.setLocalDescription(o));
+  setTimeout(() => {
+    if (!document.getElementById('net-subnet').value) {
+      // Fallback: intentar fetch a un endpoint local
+      fetch(API + '/health').then(r => r.json()).then(d => {
+        // No podemos saber la IP del server desde aquí, pero al menos damos una pista
+        document.getElementById('net-subnet').placeholder = 'No se pudo auto-detectar. Ingresa 192.168.1.0/24';
+      });
+    }
+    pc.close();
+  }, 3000);
+}
+
+// ─── Full scan (single IP) ───────────────────────────────────────────────────
 async function runFullScan() {
   const ip = document.getElementById('ip-input').value.trim();
   if (!ip) return;
-
   const btn = document.getElementById('btn-scan');
   btn.disabled = true; btn.textContent = 'Analizando...';
-
-  // Loading states
   ['overview-geo', 'overview-intel', 'overview-iot', 'geo-result', 'intel-result', 'iot-result'].forEach(id => {
     document.getElementById(id).innerHTML = '<div class="result-loading"><div class="spinner"></div><div style="margin-top:8px">Escaneando ' + ip + '...</div></div>';
   });
-
   try {
     const res = await fetch(API + '/full?ip=' + encodeURIComponent(ip));
     const data = await res.json();
     lastResult = data;
     document.getElementById('raw-result').textContent = JSON.stringify(data, null, 2);
-
     const geoHtml = renderGeo(data.geo);
     const intelHtml = renderIntel(data.intel);
     const iotHtml = renderIoT(data.iot);
-
     document.getElementById('overview-geo').innerHTML = geoHtml;
     document.getElementById('overview-intel').innerHTML = intelHtml;
     document.getElementById('overview-iot').innerHTML = iotHtml;
@@ -364,47 +504,102 @@ async function runFullScan() {
   }
 }
 
-// ─── Batch ───────────────────────────────────────────────────────────────────
-function showBatch() {
-  const ui = document.getElementById('batch-ui');
-  ui.style.display = ui.style.display === 'none' ? 'block' : 'none';
-}
-
-async function runBatch() {
-  const text = document.getElementById('batch-input').value.trim();
-  if (!text) return;
-  const ips = text.split(/\n/).map(s => s.trim()).filter(Boolean);
-  const card = document.getElementById('batch-card');
-  const results = document.getElementById('batch-results');
-  card.style.display = 'block';
-  results.innerHTML = '<div class="result-loading"><div class="spinner"></div></div>';
-
+// ─── Camera deep scan ───────────────────────────────────────────────────────
+async function runCameraDeep() {
+  const ip = document.getElementById('ip-input').value.trim();
+  if (!ip) return;
+  switchTab('iot');
+  document.getElementById('iot-result').innerHTML = '<div class="result-loading"><div class="spinner"></div><div style="margin-top:8px">Escaneo profundo de cámara ' + ip + '...</div></div>';
   try {
-    const res = await fetch(API + '/scan-batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ips, concurrency: 6 })
-    });
+    const res = await fetch(API + '/scan/cameras?ip=' + encodeURIComponent(ip));
     const data = await res.json();
-    results.innerHTML = data.results.map(r => `
-      <div class="batch-item">
-        <div><span class="data-value mono" style="font-size:13px">${r.ip}</span></div>
-        <div style="display:flex; align-items:center; gap:8px">
-          <span class="batch-item-type">${r.type}</span>
-          ${r.vendor ? `<span style="font-size:12px; color:var(--muted)">${r.vendor}</span>` : ''}
-          <span style="font-size:12px; color:var(--muted)">${r.ports_open.length} puertos</span>
-        </div>
-      </div>
-    `).join('');
+    lastResult = data;
+    document.getElementById('raw-result').textContent = JSON.stringify(data, null, 2);
+    let html = `
+      <div class="data-row"><span class="data-label">IP</span><span class="data-value mono">${data.ip}</span></div>
+      <div class="data-row"><span class="data-label">Tipo</span><span class="data-value">${typeBadge(data.type, data.vendor)}</span></div>
+      <div class="data-row"><span class="data-label">RTSP</span><span class="data-value">${data.rtsp_detected ? '✅ Detectado' : 'No detectado'}</span></div>
+      <div class="data-row"><span class="data-label">Puertos</span><span class="data-value mono" style="font-size:12px">${data.ports_open.join(', ') || '—'}</span></div>
+    `;
+    if (data.geolocation && !data.geolocation.private && data.geolocation.lat) {
+      html += `<div class="data-row"><span class="data-label">Geo</span><span class="data-value">${data.geolocation.country}, ${data.geolocation.city}</span></div>`;
+      html += `<div class="map-box" onclick="window.open('https://www.openstreetmap.org/?mlat=${data.geolocation.lat}&mlon=${data.geolocation.lon}&zoom=12')">🗺️ ${data.geolocation.lat}, ${data.geolocation.lon}</div>`;
+    } else if (data.geolocation && data.geolocation.private) {
+      html += `<div class="data-row"><span class="data-label">Geo</span><span class="data-value" style="font-size:12px;color:var(--muted)">IP privada — sin geo pública</span></div>`;
+    }
+    if (data.evidence && data.evidence.length) {
+      html += `<div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border)"><div style="font-size:12px;color:var(--muted);margin-bottom:8px">EVIDENCIA</div>`;
+      data.evidence.forEach(e => {
+        html += `<div class="evidence-item"><div class="evidence-port">${e.port}/${e.proto}${e.path ? ' ' + e.path : ''} ${e.status ? '→ ' + e.status : ''}</div>${e.banner ? `<div class="evidence-banner">${e.banner.slice(0,200)}</div>` : ''}</div>`;
+      });
+      html += `</div>`;
+    }
+    document.getElementById('iot-result').innerHTML = html;
   } catch (e) {
-    results.innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
+    document.getElementById('iot-result').innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
   }
 }
 
-// Enter key triggers scan
-document.getElementById('ip-input').addEventListener('keypress', e => {
-  if (e.key === 'Enter') runFullScan();
+// ─── Forensics upload ─────────────────────────────────────────────────────────
+async function uploadForensics(file) {
+  if (!file) return;
+  const result = document.getElementById('forensics-result');
+  result.innerHTML = '<div class="result-loading"><div class="spinner"></div><div style="margin-top:8px">Analizando ' + file.name + '...</div></div>';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch(API + '/forensics/analyze', { method: 'POST', body: formData });
+    const data = await res.json();
+    lastResult = data;
+    document.getElementById('raw-result').textContent = JSON.stringify(data, null, 2);
+
+    const gaugeColor = data.entropy.gauge === 'verde' ? '#00c853' : data.entropy.gauge === 'amarillo' ? '#ffab00' : '#ff3d71';
+    let html = `
+      <div class="data-row"><span class="data-label">Archivo</span><span class="data-value">${data.filename}</span></div>
+      <div class="data-row"><span class="data-label">Tamaño</span><span class="data-value">${(data.file_size / 1024).toFixed(1)} KB</span></div>
+      <div class="data-row"><span class="data-label">SHA-256</span><span class="data-value mono" style="font-size:11px">${data.hashes.sha256}</span></div>
+      <div class="data-row"><span class="data-label">MD5</span><span class="data-value mono" style="font-size:11px">${data.hashes.md5}</span></div>
+      <div style="margin-top:12px;"><div style="font-size:13px;color:var(--muted);margin-bottom:4px;">Entropía de Shannon</div>
+      <div class="entropy-gauge"><div class="entropy-fill" style="width:${(data.entropy.average / 8 * 100)}%;background:${gaugeColor};"></div></div>
+      <div style="font-size:12px;color:${gaugeColor};">${data.entropy.average} / 8.0 (${data.entropy.gauge})</div>
+      </div>
+    `;
+    if (data.ioc_count > 0) {
+      html += `<div style="margin-top:12px;"><div style="font-size:13px;color:var(--muted);margin-bottom:8px;">IOCs encontrados: ${data.ioc_count}</div>`;
+      for (const [type, matches] of Object.entries(data.iocs)) {
+        html += `<div style="margin-bottom:8px;"><div style="font-size:12px;font-weight:600;color:var(--primary);">${type} (${matches.length})</div>`;
+        matches.slice(0, 5).forEach(m => {
+          html += `<span class="ioc-badge">${m.length > 60 ? m.slice(0,60) + '...' : m}</span>`;
+        });
+        if (matches.length > 5) html += `<span class="ioc-badge" style="color:var(--muted)">+${matches.length - 5} más</span>`;
+        html += `</div>`;
+      }
+      html += `</div>`;
+    } else {
+      html += `<div style="margin-top:12px;color:var(--muted);font-size:13px;">No se encontraron IOCs.</div>`;
+    }
+    html += `<div style="margin-top:12px;padding:8px;background:var(--surface2);border-radius:8px;font-size:11px;color:var(--muted);">
+      🔐 Cadena de custodia: ${data.chain_of_custody.protocol} · ${data.chain_of_custody.timestamp}
+    </div>`;
+    result.innerHTML = html;
+  } catch (e) {
+    result.innerHTML = `<div style="color:var(--danger)">Error: ${e.message}</div>`;
+  }
+}
+
+// Drag & drop for forensics
+const dropZone = document.getElementById('drop-zone');
+['dragover', 'dragenter'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('dragover'); }));
+['dragleave', 'drop'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('dragover'); }));
+dropZone.addEventListener('drop', e => {
+  const file = e.dataTransfer.files[0];
+  if (file) uploadForensics(file);
 });
+
+// Hide IP input card on network tab by default
+document.getElementById('ip-input-card').style.display = 'none';
 </script>
 </body>
 </html>

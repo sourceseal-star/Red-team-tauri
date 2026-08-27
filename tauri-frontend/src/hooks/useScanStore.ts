@@ -6,6 +6,7 @@ export interface Host {
   vendor?: string;
   ports: { port: number; service: string; state: string; banner?: string }[];
   risk: 'low' | 'medium' | 'high' | 'critical';
+  risk_reasons?: string[];
   first_seen: string;
   type: 'router' | 'camera' | 'iot' | 'unknown';
 }

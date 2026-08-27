@@ -1,0 +1,4 @@
+secrets.py
+*.key
+*.pem
+.env

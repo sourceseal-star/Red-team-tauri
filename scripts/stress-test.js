@@ -73,9 +73,12 @@ async function checkMemoryUsage() {
   if (res.status === 200) {
     try {
       const data = JSON.parse(res.body);
-      // Preferir rssPercentOfSystem (medida real de presión de memoria);
-      // fallback a heapUsedPercent si el backend no lo reporta.
-      const pct = data?.memory?.rssPercentOfSystem ?? data?.memory?.heapUsedPercent;
+      // Usar primero la presión global del sistema cuando el backend la
+      // reporta; en caso contrario, usar el RSS del proceso servidor.
+      // heapUsedPercent queda como compatibilidad con servidores Node antiguos.
+      const pct = data?.memory?.systemUsedPercent
+        ?? data?.memory?.rssPercentOfSystem
+        ?? data?.memory?.heapUsedPercent;
       if (typeof pct === 'number') return pct;
     } catch (_) {
       // ignore parse errors
@@ -132,7 +135,7 @@ async function main() {
   // Chequeo previo de memoria
   const preMemory = await checkMemoryUsage();
   if (preMemory !== null) {
-    console.log(`Memoria heap actual: ${preMemory}%`);
+    console.log(`Memoria del servidor actual: ${preMemory}%`);
     if (preMemory >= MEMORY_LIMIT_PERCENT) {
       console.log(`⚠️  ABORTADO: el servidor ya está sobre el límite de memoria (${preMemory}% >= ${MEMORY_LIMIT_PERCENT}%).`);
       process.exit(1);
@@ -170,9 +173,9 @@ async function main() {
   const postMemory = await checkMemoryUsage();
   if (postMemory !== null) {
     console.log('');
-    console.log(`Memoria heap tras la prueba: ${postMemory}%`);
+    console.log(`Memoria del servidor tras la prueba: ${postMemory}%`);
     if (postMemory >= MEMORY_LIMIT_PERCENT) {
-      console.log(`🔴 ALERTA: el servidor superó el ${MEMORY_LIMIT_PERCENT}% de uso de memoria heap tras la prueba.`);
+      console.log(`🔴 ALERTA: el servidor superó el ${MEMORY_LIMIT_PERCENT}% de uso de memoria tras la prueba.`);
       process.exitCode = 2;
       return;
     }

@@ -13,7 +13,10 @@ export default function ConfigEditor() {
   const [msg, setMsg]         = useState('')
 
   useEffect(() => {
-    api.listConfigFiles().then(setFiles)
+    api.listConfigFiles().then(setFiles).catch(e => {
+      console.error('Config list error:', e)
+      setMsg(`Error al cargar archivos: ${e}`)
+    })
   }, [])
 
   const loadFile = async (path: string) => {
@@ -52,6 +55,9 @@ export default function ConfigEditor() {
         <Card className="col-span-1 overflow-y-auto">
           <CardHeader><CardTitle>Archivos</CardTitle></CardHeader>
           <CardContent className="p-2 space-y-1">
+            {files.length === 0 && !msg && (
+              <p className="text-xs text-muted-foreground px-2 py-4 text-center">Cargando archivos…</p>
+            )}
             {files.map(f => (
               <button key={f.path} onClick={() => loadFile(f.path)}
                 className={`w-full text-left text-xs px-2 py-1.5 rounded transition-colors font-mono truncate ${
