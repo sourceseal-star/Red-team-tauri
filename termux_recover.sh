@@ -56,24 +56,23 @@ else
 fi
 ok "Red-team-tauri sincronizado: $(git -C "$REPO_DIR" log -1 --oneline)"
 
-# ── 3. Resolver Commander sin adivinar URL ──────────────────────────────────
-  if [ ! -f "$COMMANDER_DIR/commander.py" ]; then
-    die "Commander clonado pero no contiene commander.py: $COMMANDER_DIR"
-  fi
-  ok "Commander listo: $COMMANDER_DIR"
+# ── 3. Resolver Commander ──────────────────────────────────────────────────
+if [ -f "$COMMANDER_DIR/commander.py" ]; then
+  ok "Commander detectado: $COMMANDER_DIR"
+elif [ -n "$COMMANDER_REPO_URL" ]; then
   if [ -d "$COMMANDER_DIR/.git" ]; then
     info "Sincronizando Commander..."
     git -C "$COMMANDER_DIR" fetch origin
     git -C "$COMMANDER_DIR" pull --rebase
   else
-    info "Clonando Commander desde URL proporcionada..."
+    info "Clonando Commander desde la URL oficial..."
     git clone "$COMMANDER_REPO_URL" "$COMMANDER_DIR"
   fi
-  [ -f "$COMMANDER_DIR/commander.py" ] \
-    && ok "Commander listo: $COMMANDER_DIR" \
-    || warn "El repo clonado no contiene commander.py; quedará desactivado."
+  if [ ! -f "$COMMANDER_DIR/commander.py" ]; then
+    die "Commander clonado pero no contiene commander.py: $COMMANDER_DIR"
+  fi
+  ok "Commander listo: $COMMANDER_DIR"
 else
-  warn "Commander no está clonado."
   die "No se pudo preparar Commander. Revisa la autenticación de GitHub en Termux."
 fi
 
