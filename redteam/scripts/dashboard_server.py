@@ -1224,6 +1224,67 @@ async def scan_network_stream(subnet: str = ""):
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
+@app.get("/api/network/interfaces")
+async def list_network_interfaces():
+    """Enumera TODAS las interfaces de red activas (WiFi, datos, ethernet, loopback).
+    Sin filtros. El operador decide cual escanear."""
+    import ipaddress as _ipa
+    interfaces = []
+    try:
+        ok, out = await _nmap_or_empty(["ip", "-o", "addr", "show"], timeout=5)
+        if not ok:
+            # Fallback: /proc/net/fib_trie o ifconfig
+            ok2, out2 = await _nmap_or_empty(["ifconfig"], timeout=5)
+            if ok2:
+                # Parse ifconfig output (menos preciso pero funciona)
+                current = {}
+                for line in out2.splitlines():
+                    if line and not line[0].isspace():
+                        if current.get("name"):
+                            interfaces.append(current)
+                        name = line.split(":")[0].strip()
+                        current = {"name": name, "ip_address": "", "network_cidr": "", "is_up": True, "type_hint": "unknown"}
+                        if "inet " in line or "inet addr:" in line:
+                            import re as _re
+                            m = _re.search(r'inet (?:addr:)?(\d+\.\d+\.\d+\.\d+)', line)
+                            if m: current["ip_address"] = m.group(1)
+                    elif current.get("name") and "inet " in line:
+                        import re as _re
+                        m = _re.search(r'inet (?:addr:)?(\d+\.\d+\.\d+\.\d+).*?(\d+)', line)
+                        if m and not current["ip_address"]:
+                            current["ip_address"] = m.group(1)
+                if current.get("name"): interfaces.append(current)
+        else:
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) < 4 or "inet" not in parts: continue
+                iface_name = parts[1]
+                ip_cidr = parts[3] if "/" in parts[3] else ""
+                if not ip_cidr: continue
+                type_hint = "unknown"
+                if iface_name == "lo": type_hint = "loopback"
+                elif iface_name.startswith("wlan"): type_hint = "wifi"
+                elif iface_name.startswith("rmnet") or iface_name.startswith("ccmni"): type_hint = "mobile"
+                elif iface_name.startswith("eth"): type_hint = "ethernet"
+                elif iface_name.startswith("ap"): type_hint = "hotspot"
+                try:
+                    net = _ipa.ip_network(ip_cidr, strict=False)
+                    interfaces.append({"name": iface_name, "ip_address": ip_cidr.split("/")[0],
+                        "network_cidr": str(net), "prefix": net.prefixlen, "is_up": True, "type_hint": type_hint})
+                except ValueError: continue
+    except Exception as e:
+        interfaces.append({"name": "error", "ip_address": "", "network_cidr": "", "is_up": False, "type_hint": "error", "error": str(e)})
+    # Fallback absoluto: usar subnet_from_iface
+    if not any(i.get("type_hint") not in ("loopback", "error") for i in interfaces):
+        subnet = await asyncio.to_thread(subnet_from_iface)
+        local_info = _detect_local_network()
+        if subnet:
+            interfaces.insert(0, {"name": "auto", "ip_address": local_info.get("ip",""), "network_cidr": subnet,
+                "prefix": 24, "is_up": True, "type_hint": "auto-detected"})
+    priority = {"wifi": 0, "hotspot": 1, "mobile": 2, "ethernet": 3, "auto-detected": 4, "loopback": 5, "unknown": 6}
+    interfaces.sort(key=lambda x: priority.get(x.get("type_hint",""), 7))
+    return interfaces
+
 @app.get("/api/network/info")
 async def network_info():
     """Info de red REAL instantanea (sin escaneo). Usada por el frontend para

@@ -22,13 +22,38 @@ export default function NetworkMapPanel() {
   const [hosts, setHosts] = useState<any[]>([])
   const [wifiNets, setWifiNets] = useState<any[]>([])
   const [netInfo, setNetInfo] = useState<any>(null)
+  const [interfaces, setInterfaces] = useState<any[]>([])
+  const [selectedIface, setSelectedIface] = useState('')
   const [loading, setLoading] = useState(false)
   const [wifiLoading, setWifiLoading] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [selected, setSelected] = useState<any>(null)
 
   const loadNetInfo = useCallback(async () => {
-    try { const r = await fetch('/api/network/info', { headers: authHGet() }); if (r.ok) setNetInfo(await r.json()) } catch {}
+    try {
+      const [ni, ifaces] = await Promise.all([
+        fetch('/api/network/info', { headers: authHGet() }).catch(() => null),
+        fetch('/api/network/interfaces', { headers: authHGet() }).catch(() => null)
+      ])
+      if (ni?.ok) setNetInfo(await ni.json())
+      if (ifaces?.ok) {
+        const data = await ifaces.json()
+        setInterfaces(data)
+        const wifi = data.find((i: any) => i.type_hint === 'wifi' || i.type_hint === 'auto-detected')
+        if (wifi) { setSelectedIface(wifi.network_cidr); setNetInfo(prev => ({...prev, subnet: wifi.network_cidr, local_ip: wifi.ip_address})) }
+      }
+    } catch {}
+  }, [])
+
+  const discoverWithSubnet = useCallback(async (subnet: string) => {
+    setLoading(true); setErrors([])
+    try {
+      const r = await fetch(`/api/discover/network?subnet=${encodeURIComponent(subnet)}`, { headers: authHGet() })
+      const data = await r.json()
+      setHosts(data.results || [])
+      if (data.hosts_up <= 1) setErrors(['No se encontraron dispositivos en ' + subnet + '. Verifica estar conectado a esa red.'])
+    } catch (e: any) { setErrors([`Error: ${e.message}`]) }
+    finally { setLoading(false) }
   }, [])
 
   const discover = useCallback(async () => {
@@ -80,11 +105,29 @@ export default function NetworkMapPanel() {
         </button>
       </div>
 
-      {netInfo && (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center gap-4">
-          <Radar size={16} className="text-cyan-400" />
-          <span className="text-xs text-slate-500">Subred: </span><span className="text-xs text-cyan-400 font-mono">{netInfo.subnet}</span>
-          <span className="text-xs text-slate-500 ml-2">IP: </span><span className="text-xs text-green-400 font-mono">{netInfo.local_ip}</span>
+      {interfaces.length > 0 && (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+          <h3 className="text-sm font-bold text-cyan-400 mb-2 flex items-center gap-2"><Radar size={14} /> Selector de Red</h3>
+          <div className="flex gap-2">
+            <select value={selectedIface} onChange={(e) => setSelectedIface(e.target.value)}
+              className="flex-1 bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs text-white">
+              {interfaces.map((iface, i) => (
+                <option key={i} value={iface.network_cidr}>
+                  {iface.name} ({iface.type_hint}) — {iface.ip_address} [{iface.network_cidr}]
+                </option>
+              ))}
+            </select>
+            <button onClick={() => { if (selectedIface) { discoverWithSubnet(selectedIface) } }}
+              className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded text-xs font-bold text-white">
+              Escanear
+            </button>
+          </div>
+          {netInfo && (
+            <div className="mt-2 flex items-center gap-4 text-xs">
+              <span className="text-slate-500">IP: </span><span className="text-green-400 font-mono">{netInfo.local_ip || '---'}</span>
+              <span className="text-slate-500">Subred: </span><span className="text-cyan-400 font-mono">{selectedIface || netInfo.subnet || '---'}</span>
+            </div>
+          )}
         </div>
       )}
 
