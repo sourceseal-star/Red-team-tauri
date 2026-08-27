@@ -14,6 +14,26 @@ frontend compilado en el puerto **8001**.
 
 En Termux, `bash arrancar.sh` inicia todo + detecta entorno Android.
 
+### Despliegue conjunto en Termux: Red-team-tauri + Commander
+
+El arranque oficial para Android instala las dependencias, sincroniza ambos repositorios, compila el frontend y lanza el sistema unificado:
+
+```bash
+cd ~/Red-team-tauri
+bash termux_recover.sh
+```
+
+El script usa por defecto `https://github.com/sourceseal-star/commander.git` y deja estos servicios locales:
+- Dashboard Red-team-tauri: `http://localhost:8001`
+- Dashboard Commander: `http://localhost:8003`
+- GHOST HUNTER PHANTOM: `http://localhost:8002/api/status`
+
+Como Commander es privado, Git debe estar autenticado en Termux antes de ejecutar el script. No pongas tokens en la URL ni los guardes en el repositorio. Si prefieres SSH:
+
+```bash
+COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git bash termux_recover.sh
+```
+
 Health check:
 
 ```bash
