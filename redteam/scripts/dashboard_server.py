@@ -6747,6 +6747,186 @@ async def phantom_alert(payload: Dict[str, Any] = Body(default={})):
         pass
     return {"status": "received", "severity": severity}
 
+
+# === MODULO A — Reportes PDF con Hash Sellado ===
+async def _generate_audit_pdf(devices, subnet="", exploits=None):
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib import colors as rl_colors
+    except ImportError:
+        return {"error": "reportlab no instalado. pip install reportlab"}
+    import hashlib as _hl
+    out_dir = ROOT / "reports"
+    out_dir.mkdir(exist_ok=True)
+    fn = str(out_dir / f"NEXUS_Audit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+    doc = SimpleDocTemplate(fn, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
+    elements.append(Paragraph("<b>NEXUS Security Audit Report</b>", styles['Heading1']))
+    elements.append(Spacer(1, 12))
+    all_ips = ",".join(sorted([d.get("ip","") for d in devices]))
+    ghash = _hl.sha256(all_ips.encode()).hexdigest()
+    meta = [["Fecha:", datetime.now().strftime("%Y-%m-%d %H:%M")], ["Subred:", subnet or "N/A"],
+            ["Dispositivos:", str(len(devices))], ["Cameras:", str(len([d for d in devices if d.get("type")=="camera"]))],
+            ["Routers:", str(len([d for d in devices if d.get("type")=="router"]))],
+            ["Hash Integridad:", ghash[:32] + "..."]]
+    t_meta = Table(meta)
+    t_meta.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,rl_colors.black),('FONTNAME',(0,0),(-1,-1),'Helvetica'),('FONTSIZE',(0,0),(-1,-1),10),('BACKGROUND',(0,0),(0,-1),rl_colors.lightgrey)]))
+    elements.append(t_meta)
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph("<b>Dispositivos Detectados</b>", styles['Heading2']))
+    data = [["IP","MAC","Tipo","Riesgo","Puertos"]]
+    for d in devices:
+        ps = ", ".join([str(p.get("port","")) for p in d.get("ports",[])]) if isinstance(d.get("ports"),list) else str(d.get("ports",""))
+        data.append([d.get("ip",""), d.get("mac","") or "---", d.get("type","unknown"), d.get("risk","low").upper(), ps])
+    t_dev = Table(data)
+    t_dev.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,rl_colors.black),('ROWBACKGROUNDS',(0,1),(-1,-1),[rl_colors.beige, rl_colors.white]),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),9)]))
+    elements.append(t_dev)
+    elements.append(Spacer(1, 20))
+    if exploits:
+        elements.append(Paragraph("<b>Vulnerabilidades / Credenciales</b>", styles['Heading2']))
+        ed = [["IP","Puerto","Servicio","Creds","Hash"]]
+        for e in exploits:
+            ed.append([e.get("ip",""),str(e.get("port","")),e.get("service",""),e.get("credentials",""),(e.get("sealed_hash","") or ghash)[:16]+"..."])
+        t_exp = Table(ed)
+        t_exp.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,rl_colors.black),('ROWBACKGROUNDS',(0,1),(-1,-1),[rl_colors.lightpink, rl_colors.white]),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),9)]))
+        elements.append(t_exp)
+    elements.append(Spacer(1, 30))
+    elements.append(Paragraph(f"<i>Sello SHA-256: {ghash}</i>", styles['Normal']))
+    doc.build(elements)
+    return {"path": fn, "hash": ghash, "devices": len(devices)}
+
+@app.post("/api/report/pdf")
+async def generate_pdf_report(subnet: str = ""):
+    try:
+        r = await discover_network()
+        result = await _generate_audit_pdf(r.get("results",[]), r.get("subnet",subnet))
+        if "error" in result: return JSONResponse(result, status_code=500)
+        return FileResponse(result["path"], media_type="application/pdf", filename=os.path.basename(result["path"]))
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/report/pdf/list")
+async def list_pdf_reports():
+    out_dir = ROOT / "reports"
+    if not out_dir.exists(): return {"reports": []}
+    files = sorted(out_dir.glob("NEXUS_Audit_*.pdf"), key=lambda f: f.stat().st_mtime, reverse=True)
+    return {"reports": [{"name": f.name, "size": f.stat().st_size} for f in files[:20]]}
+
+@app.get("/api/report/pdf/download")
+async def download_pdf_report(name: str = Query(...)):
+    f = ROOT / "reports" / name
+    if not f.exists() or not f.name.startswith("NEXUS_Audit_"): raise HTTPException(404, "No encontrado")
+    return FileResponse(str(f), media_type="application/pdf", filename=f.name)
+
+# === MODULO B — Notificador Telegram ===
+_TELEGRAM_CONFIG = {"token": os.environ.get("TELEGRAM_BOT_TOKEN",""), "chat_id": os.environ.get("TELEGRAM_CHAT_ID",""), "enabled": False}
+
+def _telegram_send_sync(message):
+    if not _TELEGRAM_CONFIG["token"] or not _TELEGRAM_CONFIG["chat_id"]: return False
+    try:
+        import urllib.request as _ur
+        url = f"https://api.telegram.org/bot{_TELEGRAM_CONFIG['token']}/sendMessage"
+        payload = json.dumps({"chat_id": _TELEGRAM_CONFIG["chat_id"], "text": message, "parse_mode": "Markdown"}).encode()
+        req = _ur.Request(url, data=payload, headers={"Content-Type":"application/json"})
+        _ur.urlopen(req, timeout=5)
+        return True
+    except Exception as e:
+        print(f"[telegram] Error: {e}", flush=True)
+        return False
+
+async def _telegram_send(message):
+    return await asyncio.to_thread(_telegram_send_sync, message)
+
+async def _telegram_notify_critical(device, exploit=None):
+    lines = ["*ALERTA CRITICA NEXUS*", ""]
+    lines.append(f"IP: `{device.get('ip','')}`")
+    lines.append(f"Tipo: {device.get('type','unknown')}")
+    if device.get('mac'): lines.append(f"MAC: `{device['mac']}`")
+    lines.append(f"Riesgo: *{device.get('risk','unknown').upper()}*")
+    ports = device.get('ports',[])
+    if isinstance(ports, list) and ports:
+        lines.append("Puertos: " + ", ".join([f"{p.get('port','')}/{p.get('service','')}" for p in ports[:5]]))
+    if device.get('risk_reasons'): lines.append("Razones: " + ", ".join(device['risk_reasons']))
+    if exploit:
+        lines.append(f"Explotado: {exploit.get('service','')}")
+        lines.append(f"Creds: `{exploit.get('credentials','')}`")
+    lines.append(f"Hora: {datetime.now().strftime('%H:%M:%S')}")
+    msg = chr(10).join(lines)
+    await _telegram_send(msg)
+    await broadcast({"type":"alert","severity":"critical","payload":msg})
+
+@app.get("/api/telegram/config")
+async def telegram_get_config():
+    return {"enabled": _TELEGRAM_CONFIG["enabled"], "token_set": bool(_TELEGRAM_CONFIG["token"]), "chat_id_set": bool(_TELEGRAM_CONFIG["chat_id"])}
+
+@app.post("/api/telegram/config")
+async def telegram_set_config(request: Request):
+    try: body = await request.json()
+    except: body = {}
+    if body.get("token"): _TELEGRAM_CONFIG["token"] = body["token"]
+    if body.get("chat_id"): _TELEGRAM_CONFIG["chat_id"] = body["chat_id"]
+    _TELEGRAM_CONFIG["enabled"] = bool(body.get("enabled", _TELEGRAM_CONFIG["token"] and _TELEGRAM_CONFIG["chat_id"]))
+    return {"ok": True, "enabled": _TELEGRAM_CONFIG["enabled"]}
+
+@app.post("/api/telegram/test")
+async def telegram_test():
+    if not _TELEGRAM_CONFIG["token"]: return JSONResponse({"error":"Token no configurado"}, status_code=400)
+    ok = await _telegram_send("NEXUS Dashboard - Telegram conectado correctamente.")
+    return {"sent": ok}
+
+# === MODULO C — Monitoreo Continuo ===
+_MONITOR_STATE = {"running": False, "interval": 300, "previous_ips": set(), "last_scan": None, "alerts_sent": 0}
+
+async def _monitor_loop(interval_seconds):
+    print(f"[monitor] Iniciando cada {interval_seconds}s...", flush=True)
+    _MONITOR_STATE["running"] = True
+    while _MONITOR_STATE["running"]:
+        try:
+            print(f"[monitor] Ciclo {datetime.now().strftime('%H:%M:%S')}...", flush=True)
+            r = await discover_network()
+            devices = r.get("results", [])
+            current_ips = {d.get("ip") for d in devices if d.get("ip")}
+            new_ips = current_ips - _MONITOR_STATE["previous_ips"]
+            if new_ips and _MONITOR_STATE["previous_ips"]:
+                for ip in new_ips:
+                    dev = next((d for d in devices if d.get("ip") == ip), None)
+                    if dev and dev.get("risk") in ["high","critical"]:
+                        await _telegram_notify_critical(dev)
+                        _MONITOR_STATE["alerts_sent"] += 1
+                        print(f"[monitor] Nuevo critico: {ip}", flush=True)
+                await broadcast({"type":"monitor","payload":f"Nuevos: {len(new_ips)} | Total: {len(devices)}"})
+            gone = _MONITOR_STATE["previous_ips"] - current_ips
+            if gone and _MONITOR_STATE["previous_ips"]:
+                await broadcast({"type":"monitor","payload":f"Desconectados: {len(gone)}"})
+                print(f"[monitor] Desconectados: {gone}", flush=True)
+            _MONITOR_STATE["previous_ips"] = current_ips
+            _MONITOR_STATE["last_scan"] = datetime.now().isoformat()
+            print(f"[monitor] {len(devices)} disp | {len(new_ips)} nuevos | durmiendo {interval_seconds}s", flush=True)
+        except Exception as e:
+            print(f"[monitor] Error: {e}", flush=True)
+        await asyncio.sleep(interval_seconds)
+
+@app.get("/api/monitor/status")
+async def monitor_status():
+    return {"running": _MONITOR_STATE["running"], "interval": _MONITOR_STATE["interval"],
+            "last_scan": _MONITOR_STATE["last_scan"], "alerts_sent": _MONITOR_STATE["alerts_sent"],
+            "devices_tracked": len(_MONITOR_STATE["previous_ips"])}
+
+@app.post("/api/monitor/start")
+async def monitor_start(interval_minutes: int = Query(5)):
+    if _MONITOR_STATE["running"]: return {"ok": True, "message": "Ya corriendo"}
+    _MONITOR_STATE["interval"] = interval_minutes * 60
+    asyncio.create_task(_monitor_loop(_MONITOR_STATE["interval"]))
+    return {"ok": True, "message": f"Monitoreo cada {interval_minutes} min"}
+
+@app.post("/api/monitor/stop")
+async def monitor_stop():
+    _MONITOR_STATE["running"] = False
+    return {"ok": True, "message": "Detenido"}
+
 if __name__ == "__main__":
     import uvicorn
     import socket as _socket
