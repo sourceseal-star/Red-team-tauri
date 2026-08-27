@@ -29,6 +29,7 @@ import ARTOPanel from './components/ARTOPanel';
 import SealPanel from './components/SealPanel';
 import LeviathanPanel from './components/LeviathanPanel';
 import CommanderPanel from './components/CommanderPanel';
+import NetworkMapPanel from './components/NetworkMapPanel';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -67,6 +68,7 @@ function App() {
       {module === 'seal' && <SealPanel />}
       {module === 'leviathan' && <LeviathanPanel />}
       {module === 'commander' && <CommanderPanel />}
+      {module === 'netmap' && <NetworkMapPanel />}
     </AppShell>
     </ARTOProvider>
     </LanguageProvider>

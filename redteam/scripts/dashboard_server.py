@@ -1235,6 +1235,111 @@ async def network_info():
     return {"subnet": subnet, "local_ip": net.get("ip", ""),
             "local_hostname": socket.gethostname() if hasattr(socket, "gethostname") else ""}
 
+@app.get("/api/discover/network")
+async def discover_network():
+    """Descubrimiento de red SIN root — usa ARP table + TCP connect scan.
+    Funciona en Termux porque:
+    1. ip neigh lee la tabla ARP del kernel (no necesita CAP_NET_RAW)
+    2. TCP connect() en puertos comunes no requiere privilegios
+    3. /proc/net/arp como fallback si ip neigh no existe
+    """
+    subnet = await asyncio.to_thread(subnet_from_iface)
+    local_info = _detect_local_network()
+    local_ip = local_info.get("ip", "")
+    gateway = local_info.get("gateway", "")
+    hosts = []
+    # 1. ARP table via ip neigh
+    try:
+        ok, out = await _nmap_or_empty(["ip", "neigh"], timeout=5)
+        if ok:
+            for line in out.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 4 and parts[0] not in (local_ip, ""):
+                    ip = parts[0]
+                    mac = parts[4] if len(parts) > 4 and parts[4] != "lladdr" else None
+                    state = parts[-1] if parts[-1] in ("REACHABLE", "STALE", "DELAY", "PERMANENT") else "unknown"
+                    if mac and mac != "00:00:00:00:00:00":
+                        hosts.append({"ip": ip, "mac": mac, "state": state, "ports": [], "type": "unknown", "vendor": None, "risk": "low", "risk_reasons": [], "source": "arp"})
+    except Exception:
+        pass
+    # 2. Fallback /proc/net/arp
+    if len(hosts) == 0:
+        try:
+            arp_data = await asyncio.to_thread(lambda: open("/proc/net/arp").read())
+            for line in arp_data.splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 6:
+                    ip = parts[0]; mac = parts[3]
+                    if ip != local_ip and mac != "00:00:00:00:00:00":
+                        hosts.append({"ip": ip, "mac": mac, "state": "REACHABLE", "ports": [], "type": "unknown", "vendor": None, "risk": "low", "risk_reasons": [], "source": "proc_arp"})
+        except Exception:
+            pass
+    # 3. TCP scan en puertos de camara/router/DVR
+    CAMERA_PORTS = [80, 443, 554, 8000, 8080, 37777, 34567, 6789, 8888, 9000, 23, 22, 21, 53, 161]
+    if hosts:
+        async def tcp_scan(ip):
+            open_ports = []
+            for port in CAMERA_PORTS:
+                try:
+                    _, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=0.5)
+                    writer.close(); await writer.wait_closed()
+                    open_ports.append(port)
+                except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+                    pass
+            return open_ports
+        results = await asyncio.gather(*[tcp_scan(h["ip"]) for h in hosts], return_exceptions=True)
+        for h, ports in zip(hosts, results):
+            if isinstance(ports, list):
+                h["ports"] = [{"port": p, "service": SERVICE_NAMES.get(p, "unknown"), "state": "open", "banner": ""} for p in ports]
+                pn = set(ports)
+                if 554 in pn or 37777 in pn or 34567 in pn:
+                    h["type"] = "camera"; h["risk"] = "high" if 554 in pn and 80 in pn else "medium"
+                    h["risk_reasons"] = ["RTSP abierto"] if 554 in pn else []
+                    if 37777 in pn: h["risk_reasons"].append("DVR Hikvision"); h["risk"] = "critical"
+                    if 34567 in pn: h["risk_reasons"].append("DVR Dahua"); h["risk"] = "critical"
+                elif 23 in pn:
+                    h["type"] = "router"; h["risk"] = "high"; h["risk_reasons"] = ["Telnet abierto"]
+                elif 80 in pn or 443 in pn:
+                    h["type"] = "router" if h["ip"].endswith(".1") else "server"; h["risk"] = "medium"
+                else:
+                    h["type"] = "iot"; h["risk"] = "low"
+    # 4. Gateway
+    if gateway and gateway not in [h["ip"] for h in hosts]:
+        hosts.insert(0, {"ip": gateway, "mac": None, "state": "REACHABLE", "ports": [], "type": "router", "vendor": "gateway", "risk": "medium", "risk_reasons": ["Gateway"], "source": "route"})
+    # 5. IP local
+    hosts.append({"ip": local_ip, "mac": None, "state": "LOCAL", "ports": [], "type": "phone", "vendor": "this device", "risk": "low", "risk_reasons": [], "source": "local"})
+    await broadcast({"type": "progress", "payload": f"Descubrimiento: {len(hosts)} dispositivos (ARP + TCP scan)"})
+    return {"results": hosts, "hosts_up": len(hosts), "subnet": subnet, "local_ip": local_ip, "gateway": gateway, "method": "arp+tcp", "timestamp": datetime.now().isoformat()}
+
+@app.get("/api/discover/wifi")
+async def discover_wifi():
+    """WiFi scan — termux-api + fallbacks."""
+    networks = []; errors = []
+    try:
+        result = await asyncio.to_thread(lambda: subprocess.run(["termux-wifi-scaninfo"], capture_output=True, text=True, timeout=15))
+        if result.returncode == 0 and result.stdout.strip():
+            data = json.loads(result.stdout)
+            for net in data:
+                networks.append({"ssid": net.get("ssid", "Hidden"), "bssid": net.get("bssid", "unknown"), "channel": int(net.get("channel", 0)), "rssi": int(net.get("rssi", -100)), "encryption": net.get("capabilities", "Unknown"), "frequency": int(net.get("frequency", 0)), "timestamp": net.get("timestamp", 0)})
+            return {"networks": networks, "method": "termux-api", "count": len(networks)}
+        else:
+            errors.append(f"termux-wifi-scaninfo: rc={result.returncode}")
+    except FileNotFoundError:
+        errors.append("Termux:API no instalado — instala desde F-Droid + concede permiso Ubicación")
+    except Exception as e:
+        errors.append(f"termux-api: {e}")
+    try:
+        wifi_data = await asyncio.to_thread(lambda: open("/proc/net/wireless").read())
+        lines = wifi_data.strip().splitlines()
+        if len(lines) > 2:
+            parts = lines[2].split()
+            if len(parts) >= 6:
+                networks.append({"ssid": "(red actual)", "bssid": "connected", "channel": 0, "rssi": int(float(parts[3])), "encryption": "connected", "frequency": 0, "interface": parts[0].rstrip(":")})
+        return {"networks": networks, "method": "proc_wireless", "count": len(networks), "errors": errors}
+    except Exception:
+        pass
+    return {"networks": [], "method": "none", "count": 0, "errors": errors}
+
 @app.post("/api/scan/topology")
 async def scan_topology(subnet: str = ""):
     # Subnet como parametro query, o de Settings, o auto-detectada
