@@ -1,0 +1,122 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# SourceSeal — sincronización segura de los repositorios en Termux
+#
+# Uso:
+#   bash ~/Red-team-tauri/scripts/termux/sync_repositories.sh
+#
+# Por defecto usa SSH para no poner tokens en URLs, historiales ni procesos.
+# Se puede cambiar el nombre de las carpetas con REDTEAM_DIR y COMMANDER_DIR.
+set -Eeuo pipefail
+
+REDTEAM_URL="${REDTEAM_REPO_URL:-git@github.com:sourceseal-star/Red-team-tauri.git}"
+COMMANDER_URL="${COMMANDER_REPO_URL:-git@github.com:sourceseal-star/commander.git}"
+REDTEAM_DIR="${REDTEAM_DIR:-$HOME/Red-team-tauri}"
+COMMANDER_DIR="${COMMANDER_DIR:-$HOME/commander}"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+
+say() { printf '[sync] %s\n' "$*"; }
+fail() { printf '[sync] ERROR: %s\n' "$*" >&2; exit 1; }
+
+for command in git ssh python3; do
+  command -v "$command" >/dev/null 2>&1 || fail "Falta '$command'. Ejecuta: pkg install -y git openssh python"
+done
+
+say "Comprobando autenticación SSH de GitHub..."
+SSH_CHECK="$(ssh -o BatchMode=yes -o ConnectTimeout=10 -T git@github.com 2>&1 || true)"
+if ! printf '%s\n' "$SSH_CHECK" | grep -Eqi 'successfully authenticated|Hi sourceseal-star'; then
+  printf '\n'
+  printf 'No hay una sesión SSH válida con GitHub.\n'
+  printf 'Añade esta clave pública en GitHub → Settings → SSH and GPG keys:\n\n'
+  if [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
+    cat "$HOME/.ssh/id_ed25519.pub"
+  else
+    printf '  ssh-keygen -t ed25519 -C "termux" -f ~/.ssh/id_ed25519\n'
+    printf '  cat ~/.ssh/id_ed25519.pub\n'
+  fi
+  printf '\nDespués prueba: ssh -T git@github.com\n'
+  exit 2
+fi
+say "SSH de GitHub: OK"
+
+backup_dirty_work() {
+  local dir="$1"
+  local label="$2"
+  if [ -n "$(git -C "$dir" status --porcelain)" ]; then
+    say "$label: guardando cambios locales en stash..."
+    git -C "$dir" stash push --include-untracked \
+      -m "Termux backup before sync $STAMP" >/dev/null
+    say "$label: cambios guardados; se pueden recuperar con git stash list/pop"
+  fi
+}
+
+sync_repo() {
+  local label="$1"
+  local url="$2"
+  local dir="$3"
+
+  say "===== $label ====="
+  if [ ! -d "$dir/.git" ]; then
+    if [ -e "$dir" ]; then
+      fail "$dir existe pero no es un repositorio Git; muévelo o define ${label}_DIR antes de continuar"
+    fi
+    say "$label: clonando..."
+    git clone "$url" "$dir"
+  else
+    git -C "$dir" remote set-url origin "$url"
+
+    if [ -d "$dir/.git/rebase-merge" ] || [ -d "$dir/.git/rebase-apply" ]; then
+      say "$label: rebase incompleta detectada; abortándola antes de sincronizar"
+      git -C "$dir" rebase --abort
+    fi
+    if [ -f "$dir/.git/MERGE_HEAD" ]; then
+      say "$label: merge incompleto detectado; abortándolo antes de sincronizar"
+      git -C "$dir" merge --abort
+    fi
+
+    backup_dirty_work "$dir" "$label"
+    git -C "$dir" fetch origin --prune
+
+    if ! git -C "$dir" show-ref --verify --quiet refs/heads/main; then
+      git -C "$dir" switch -c main --track origin/main
+    else
+      git -C "$dir" switch main
+    fi
+
+    if ! git -C "$dir" diff --quiet || ! git -C "$dir" diff --cached --quiet; then
+      fail "$label: quedaron cambios después del respaldo; no se hará reset"
+    fi
+
+    if [ "$(git -C "$dir" rev-parse HEAD)" != "$(git -C "$dir" rev-parse origin/main)" ]; then
+      local backup_branch="backup/termux-$STAMP"
+      git -C "$dir" branch "$backup_branch" HEAD
+      say "$label: respaldo creado en rama $backup_branch"
+      git -C "$dir" reset --hard origin/main
+    else
+      say "$label: ya estaba actualizado"
+    fi
+  fi
+
+  say "$label: $(git -C "$dir" log -1 --oneline)"
+}
+
+sync_repo "Red-team-tauri" "$REDTEAM_URL" "$REDTEAM_DIR"
+sync_repo "commander" "$COMMANDER_URL" "$COMMANDER_DIR"
+
+if [ -f "$COMMANDER_DIR/requirements.txt" ]; then
+  say "Instalando dependencias declaradas por commander..."
+  python3 -m pip install -r "$COMMANDER_DIR/requirements.txt"
+fi
+
+if ! python3 -c 'from cryptography.fernet import Fernet' >/dev/null 2>&1; then
+  say "cryptography no puede importarse; reinstalando cryptography y cffi para el Python actual..."
+  python3 -m pip install --upgrade --force-reinstall --no-cache-dir cryptography cffi
+else
+  say "cryptography: OK"
+fi
+
+printf '\n'
+say "Sincronización terminada."
+say "Red-team-tauri: $REDTEAM_DIR"
+say "commander:       $COMMANDER_DIR"
+say "Para arrancar SourceSeal: bash \"$REDTEAM_DIR/start-termux.sh\""
+say "Para revisar el otro proyecto: cd \"$COMMANDER_DIR\" && python3 commander.py"

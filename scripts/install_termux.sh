@@ -11,21 +11,25 @@ pkg update -y 2>/dev/null || true
 
 # 2. Instalar dependencias
 echo "[2/5] Instalando dependencias..."
-pkg install -y python python-pip git curl 2>/dev/null || true
+pkg install -y python python-pip git openssh curl nodejs nmap whois 2>/dev/null || true
 
 # 3. Dependencias Python
 echo "[3/5] Instalando dependencias Python..."
-pip install -q psutil websocket-server requests 2>/dev/null || true
+python3 -m pip install -q psutil websocket-server requests 2>/dev/null || true
 
 # 4. Clonar/actualizar repositorio
 echo "[4/5] Preparando repositorio..."
 cd ~
-if [ -d "Red-team-tauri" ]; then
-    cd Red-team-tauri && git pull
-else
-    git clone https://github.com/sourceseal-star/Red-team-tauri.git
-    cd Red-team-tauri
+if [ ! -d "$HOME/Red-team-tauri/.git" ]; then
+    if [ -e "$HOME/Red-team-tauri" ]; then
+        echo "ERROR: ~/Red-team-tauri existe pero no es un repositorio Git."
+        echo "Muévelo antes de continuar: mv ~/Red-team-tauri ~/Red-team-tauri.backup"
+        exit 2
+    fi
+    echo "Clonando Red-team-tauri por SSH..."
+    git clone git@github.com:sourceseal-star/Red-team-tauri.git "$HOME/Red-team-tauri"
 fi
+bash "$HOME/Red-team-tauri/scripts/termux/sync_repositories.sh"
 
 # 5. Instalar dependencias del frontend
 echo "[5/5] Instalando dependencias frontend..."
