@@ -39,7 +39,7 @@ done
 
 # -- 3. Deps Node + build frontend --
 cd "$ROOT/tauri-frontend"
-if [ ! -d "node_modules" ]; then
+if [ ! -d "node_modules" ] || [ ! -d "node_modules/vis-network" ]; then
   echo "[start] Instalando dependencias Node..."
   npm install --prefer-offline --no-audit --no-fund 2>&1 | tail -5 || true
 fi

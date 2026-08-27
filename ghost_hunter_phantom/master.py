@@ -56,7 +56,6 @@ class ConnectionManager:
         self.connections: Dict[str, WebSocket] = {}
 
     async def connect(self, ws: WebSocket, node_id: str):
-        await ws.accept()
         self.connections[node_id] = ws
         active_nodes[node_id] = {
             "status": "idle",
@@ -108,6 +107,11 @@ class HuntRequest(BaseModel):
 async def node_ws(websocket: WebSocket):
     node_id = None
     try:
+        # El servidor debe aceptar el handshake antes de intentar leer el
+        # primer mensaje. Starlette rechaza receive_json() sobre una conexión
+        # que aún no fue aceptada, lo que convertía el registro del nodo en
+        # un HTTP 500.
+        await websocket.accept()
         data = await websocket.receive_json()
         if data.get("type") != "register":
             await websocket.close(code=4000, reason="Register first")

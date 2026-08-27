@@ -446,7 +446,7 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 # Endpoints PÚBLICOS (no requieren API key):
 #   /api/health, /health, /healthz  → health checks
 #   /canary/callback               → intruso phone-home (debe ser accesible)
-PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json"}
+PUBLIC_PATHS = {"/api/health", "/api/healthz", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json"}
 
 # ── CORS lockdown ───────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
@@ -549,8 +549,26 @@ async def security_middleware(request: Request, call_next):
     if not _rate_check(client_ip):
         return JSONResponse({"error": "Rate limit exceeded"}, status_code=429)
 
-    # Health checks y canary callback son públicos
-    if path in PUBLIC_PATHS or path == "/" or path.startswith("/assets/") or path.startswith("/vite/") or path.endswith(".ico") or path.endswith(".png") or path.endswith(".svg") or path.endswith(".webmanifest"):
+    # Health checks y canary callback son públicos. Las navegaciones GET que
+    # no pertenecen a la API también deben llegar al fallback SPA para que
+    # rutas como /geo funcionen al abrirse directamente en el navegador.
+    # La protección sigue aplicándose a /api/*, WebSocket y documentación.
+    is_spa_navigation = (
+        request.method == "GET"
+        and not path.startswith(("/api/", "/ws", "/docs", "/redoc"))
+        and path != "/openapi.json"
+    )
+    if (
+        path in PUBLIC_PATHS
+        or path == "/"
+        or is_spa_navigation
+        or path.startswith("/assets/")
+        or path.startswith("/vite/")
+        or path.endswith(".ico")
+        or path.endswith(".png")
+        or path.endswith(".svg")
+        or path.endswith(".webmanifest")
+    ):
         return await call_next(request)
 
     # Todo lo demás requiere autenticación. El frontend envía el token emitido
@@ -3040,14 +3058,32 @@ async def webauthn_auth_finish(body: dict = Body(...)):
     _save_webauthn(data)
     return {"token": DASHBOARD_TOKEN, "email": ADMIN_EMAIL}
 
+@app.get("/api/healthz")
 @app.get("/api/health")
 @app.get("/health")
 @app.get("/healthz")
 async def health():
-    return {"status": "ok", "backend": "red-team-tauri-unified", "version": "3.0-unified",
+    memory = {}
+    if HAS_PSUTIL:
+        try:
+            process = psutil.Process(os.getpid())
+            process_rss = process.memory_info().rss
+            system = psutil.virtual_memory()
+            memory = {
+                "rss": process_rss,
+                "rssPercentOfSystem": round((process_rss / system.total) * 100, 2) if system.total else 0,
+                "systemUsedPercent": system.percent,
+                "systemFreeMemMB": round(system.available / 1024 / 1024, 2),
+                "systemTotalMemMB": round(system.total / 1024 / 1024, 2),
+            }
+        except (OSError, RuntimeError, ValueError):
+            memory = {}
+
+    return {"status": "operational", "backend": "red-team-tauri-unified", "version": "3.0-unified",
             "dist_built": DIST.exists(), "ws_clients": len(ws_clients),
             "honeypot_running": bool(honeypot_proc and honeypot_proc.poll() is None),
-            "psutil": HAS_PSUTIL, "geo_intel": _GEO_INTEL_OK, "ts": int(time.time())}
+            "psutil": HAS_PSUTIL, "geo_intel": _GEO_INTEL_OK, "memory": memory,
+            "ts": int(time.time())}
 
 @app.get("/")
 async def root():

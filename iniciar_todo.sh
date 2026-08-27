@@ -121,7 +121,7 @@ cd "$SCRIPT_DIR"
 echo -e "${Y}[7/7] Servicios opcionales...${N}"
 
 # PHANTOM via Control Tower API
-if $WITH_PHANTOM && [ -f "ghost_hunter_phantom/master.py" ]; then && [ -f "ghost_hunter_phantom/master.py" ]; then
+if $WITH_PHANTOM && [ -f "ghost_hunter_phantom/master.py" ]; then
     echo -e "  ${P}Arrancando PHANTOM Master + Node...${N}"
     curl -s -X POST "http://localhost:8001/api/services/start?name=ghost-phantom-master" >/dev/null 2>&1
     sleep 2

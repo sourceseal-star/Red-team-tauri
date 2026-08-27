@@ -10,6 +10,7 @@
 set -e
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$ROOT"
 cd "$ROOT"
 
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'; B='\033[0;34m'; M='\033[0;35m'; N='\033[0m'
@@ -275,6 +276,7 @@ echo ""
 cd "$ROOT/redteam/scripts"
 export $(grep -v '^#' "$ROOT/.env" | xargs)
 python3 dashboard_server.py &
+BACKEND_PID=$!
 
 # ─── 8. INFO MÓDULOS OPCIONALES ───────────────────────────────────────
 echo -e "${C}[8/8] Módulos independientes disponibles:${N}"
