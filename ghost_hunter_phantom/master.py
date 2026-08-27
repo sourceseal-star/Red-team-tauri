@@ -31,7 +31,7 @@ logger = logging.getLogger("phantom.master")
 
 # ─── Queue ───────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
-from queue import PhantomQueue
+from phantom_queue import PhantomQueue
 
 queue = PhantomQueue(db_path=str(Path(__file__).parent / "phantom_queue.db"))
 

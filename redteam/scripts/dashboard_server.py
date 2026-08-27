@@ -322,6 +322,83 @@ except Exception as _lev_err:
     traceback.print_exc()
     _LEVIATHAN_OK = False
 
+# ── COMMANDER — Auditoría de red, OSINT, forense (repo hermano) ───────────
+# Unifica COMMANDER dentro de este mismo dashboard: no requiere un puerto
+# ni proceso separado. Se monta como router in-process, igual que LEVIATHAN.
+_COMMANDER_OK = False
+_commander_mod = None
+try:
+    import importlib.util as _il_util
+    from starlette.concurrency import run_in_threadpool
+    from fastapi import APIRouter as _CmdAPIRouter
+
+    _commander_candidates = [
+        os.environ.get("COMMANDER_DIR", ""),
+        str(ROOT.parent / "commander"),
+        str(ROOT / "commander"),
+        os.path.expanduser("~/commander"),
+    ]
+    _commander_dir = next((d for d in _commander_candidates if d and Path(d, "commander.py").exists()), None)
+
+    if _commander_dir:
+        _spec = _il_util.spec_from_file_location("commander_mod", str(Path(_commander_dir) / "commander.py"))
+        _commander_mod = _il_util.module_from_spec(_spec)
+        sys.modules["commander_mod"] = _commander_mod
+        _spec.loader.exec_module(_commander_mod)
+
+        commander_router = _CmdAPIRouter()
+
+        @commander_router.get("/api/commander/health")
+        async def commander_health():
+            return {"available": True, "dir": _commander_dir}
+
+        @commander_router.post("/api/commander/scan/network")
+        async def commander_scan_network(payload: dict = Body(default={})):
+            target = payload.get("target", "")
+            ports = payload.get("ports", "22,80,443,3306,8080,554,21,25,53,139,445,3389")
+            if not target:
+                return JSONResponse({"error": "target requerido"}, status_code=400)
+            try:
+                result = await run_in_threadpool(_commander_mod.scan_network, target, ports)
+                return {"target": target, "result": result}
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        @commander_router.post("/api/commander/osint")
+        async def commander_osint(payload: dict = Body(default={})):
+            qtype = payload.get("type", "ip")
+            query = payload.get("query", "")
+            if not query:
+                return JSONResponse({"error": "query requerido"}, status_code=400)
+            fn_name = {"ip": "osint_ip", "domain": "osint_domain", "email": "osint_email"}.get(qtype)
+            if not fn_name or not hasattr(_commander_mod, fn_name):
+                return JSONResponse({"error": f"tipo inválido: {qtype}"}, status_code=400)
+            try:
+                result = await run_in_threadpool(getattr(_commander_mod, fn_name), query)
+                return {"type": qtype, "query": query, "result": result}
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        @commander_router.get("/api/commander/comlink/status")
+        async def commander_comlink_status():
+            comlink_sh = Path(_commander_dir) / "comlink" / "comlink.sh"
+            return {
+                "available": comlink_sh.exists(),
+                "channels": ["telegram", "sms", "voip", "mesh_wifi", "mesh_bluetooth", "radio", "satellite"],
+            }
+
+        app.routes.extend(commander_router.routes)
+        _COMMANDER_OK = True
+        print(f"[COMMANDER] Router montado: /api/commander/* (dir: {_commander_dir})", flush=True)
+    else:
+        print("[WARN] COMMANDER no encontrado (busca carpeta hermana 'commander/' con commander.py) — /api/commander/* desactivado", flush=True)
+
+except Exception as _cmd_err:
+    import traceback
+    print(f"[WARN] COMMANDER import falló: {_cmd_err}", flush=True)
+    traceback.print_exc()
+    _COMMANDER_OK = False
+
 # ── Endpoints de integración ARTO + SEAL ──────────────────────────────────
 @app.get("/api/integrated/health")
 async def integrated_health():
@@ -707,6 +784,16 @@ SERVICE_DEFS = {
         "log_file": str(LOGS_DIR / "canary.log")},
     "network-ids": {"description": "Network IDS — intrusion detection",
         "cmd": [sys.executable, str(ROOT / "honeypot" / "network-ids" / "ids_rules.py")], "log_file": str(LOGS_DIR / "network-ids.log")},
+    "ghost-phantom-master": {"description": "GHOST HUNTER PHANTOM — Master orquestador (:8002)",
+        "cmd": [sys.executable, str(ROOT / "ghost_hunter_phantom" / "master.py")],
+        "log_file": str(LOGS_DIR / "phantom_master.log"),
+        "env": {"BACKEND_API": "http://localhost:8001", "MASTER_PORT": "8002"}},
+    "ghost-phantom-node": {"description": "GHOST HUNTER PHANTOM — Node worker (ejecuta playbooks)",
+        "cmd": [sys.executable, str(ROOT / "ghost_hunter_phantom" / "node.py")],
+        "log_file": str(LOGS_DIR / "phantom_node.log"),
+        "env": {"NODE_ID": "phantom_node_1", "MASTER_URL": "http://localhost:8002", "BACKEND_API": "http://localhost:8001"}},
+    "commander": {"description": "COMMANDER — Auditoría de red, OSINT, forense (repo hermano, in-process)",
+        "cmd": None, "log_file": str(LOGS_DIR / "dashboard.log"), "in_process_flag": "_COMMANDER_OK"},
 }
 
 _svc_lock = threading.Lock()
@@ -759,7 +846,9 @@ def _start_service(name: str) -> dict:
         proc = _svc_procs.get(name)
         if proc and proc.poll() is None: return {"ok": True, "message": f"{name} already running (PID {proc.pid})"}
         log_f = open(defn["log_file"], "a")
-        proc = subprocess.Popen(defn["cmd"], stdout=log_f, stderr=log_f, cwd=str(ROOT))
+        _env = {**os.environ, **defn.get("env", {})}
+        _cwd = defn.get("cwd", str(ROOT))
+        proc = subprocess.Popen(defn["cmd"], stdout=log_f, stderr=log_f, cwd=_cwd, env=_env)
         _svc_procs[name] = proc; _svc_start_times[name] = time.time()
         return {"ok": True, "message": f"{name} started (PID {proc.pid})"}
 
