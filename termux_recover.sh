@@ -78,7 +78,7 @@ fi
 
 # ── 4. Dependencias Python reales del backend ────────────────────────────────
 info "Instalando dependencias Python..."
-python -m pip install --upgrade pip
+# Termux administra pip mediante el paquete python-pip; no intentar actualizarlo con pip.
 python -m pip install \
   fastapi uvicorn httpx pydantic psutil aiohttp \
   dnspython beautifulsoup4 python-whois requests
