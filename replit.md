@@ -20,14 +20,14 @@ frontend compilado en el puerto **8001**.
 |---|---|
 | Ejecutar en Replit | `bash replit_start.sh` |
 | Preparar/sincronizar Termux | `bash termux_recover.sh` |
-| Arrancar Termux sin tocar Git | `bash arrancar_termux.sh` |
+| Arrancar Termux sin tocar Git | `COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` |
 | Verificar módulos | `python3 leviathan_core/tools/verify_modules.py` |
 
 En Replit no se debe lanzar un segundo backend manualmente. En Termux, Commander
 se integra en el proceso del dashboard; no se arranca un servicio separado en
 `8003`.
 
-En Termux, `bash arrancar_termux.sh` inicia el dashboard, Commander integrado y
+En Termux, `COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` inicia el dashboard, Commander integrado y
 PHANTOM sin tocar Git. `bash arrancar.sh` es un alias de compatibilidad que
 sincroniza ambos repositorios mediante `termux_recover.sh`; si hay cambios
 locales sin guardar, se detiene y no los borra.
@@ -166,7 +166,7 @@ define un alcance autorizado mediante `CORSET_SCOPE_B64`.
 ```bash
 git status --short
 # En Termux, arranca la copia local sin tocar cambios:
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 # Para actualizar, guarda los cambios y usa:
 bash termux_recover.sh
 ```
@@ -179,7 +179,7 @@ python3 leviathan_core/tools/verify_modules.py
 ### Puerto 8001 ocupado
 ```bash
 pkill -9 -f dashboard_server.py
-bash arrancar_termux.sh  # Termux, sin sincronizar
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh  # Termux, sin sincronizar
 # En Replit:
 bash replit_start.sh
 ```

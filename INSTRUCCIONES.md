@@ -4,7 +4,7 @@
 # ============================================================================
 
 > **Backend unico:** `redteam/scripts/dashboard_server.py` (:8001)
-> **Arranque:** `bash arrancar_termux.sh` (Termux) / `bash replit_start.sh` (Replit)
+> **Arranque:** `COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` (Termux) / `bash replit_start.sh` (Replit)
 
 ## Instalacion
 
@@ -24,7 +24,7 @@ bash termux_recover.sh
 
 ```bash
 # Ejecutar la copia local sin pull, reset, stash ni instalación
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 
 # Alias compatible: prepara/sincroniza y luego arranca
 bash arrancar.sh

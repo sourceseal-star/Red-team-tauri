@@ -415,6 +415,7 @@ try:
                     cwd=str(Path(_commander_dir) / "comlink"),
                 )
                 return {
+                    "ok": result.returncode == 0,
                     "channel": channel,
                     "returncode": result.returncode,
                     "stdout": result.stdout[-1000:] if result.stdout else "",

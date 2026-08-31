@@ -78,7 +78,7 @@ Red-team-tauri/
 ### Termux (recomendado)
 ```bash
 cd ~/Red-team-tauri
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 Para preparar o actualizar ambos repositorios de forma segura:
@@ -110,7 +110,7 @@ bash replit_start.sh
 
 ## ⏳ PENDIENTES
 
-1. **Probar en Termux** — `bash arrancar_termux.sh` y verificar:
+1. **Probar en Termux** — `COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` y verificar:
    - El frontend compila (revisar output de npm run build)
    - El sidebar muestra LEVIATHAN, ARTO, SEAL, IoT, OSINT
    - El boton "Escanear Todo" en Camaras funciona

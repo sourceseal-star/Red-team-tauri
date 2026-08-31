@@ -91,11 +91,13 @@ La primera ejecución puede instalar dependencias Python y compilar el frontend.
 ### Ejecutar la copia local — recomendado
 
 ```bash
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
-`arrancar_termux.sh` ejecuta la copia local sin `git pull`, `reset`, `stash` ni
-instalación de paquetes. Levanta el dashboard, Commander integrado y PHANTOM.
+Este comando ejecuta la copia local sin `git pull`, `reset`, `stash` ni
+instalación de paquetes. Levanta el dashboard, el Commander incluido y PHANTOM.
+Debe ejecutarse desde la raíz de `Red-team-tauri`, después de haber instalado las
+dependencias y generado `tauri-frontend/dist`.
 
 ### Preparar o actualizar todo
 
@@ -139,7 +141,8 @@ git add -A && git commit -m "Cambios locales de Termux"
 bash termux_recover.sh
 ```
 
-Si no quieres guardar todavía los cambios, ejecuta `bash arrancar_termux.sh`.
+Si no quieres guardar todavía los cambios, ejecuta
+`COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh`.
 No uses `git reset --hard` para resolver un arranque fallido.
 
 ### Abrir el dashboard

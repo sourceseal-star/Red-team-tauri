@@ -59,7 +59,7 @@ independiente con `COMMANDER_REPO_URL=...`.
 Si ya tienes cambios locales y solo quieres probar el sistema sin sincronizar:
 
 ```bash
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 Comandos principales:
@@ -67,12 +67,12 @@ Comandos principales:
 | Acción | Comando |
 |---|---|
 | Preparar/sincronizar y ejecutar todo | `bash termux_recover.sh` |
-| Ejecutar la copia local sin tocar Git | `bash arrancar_termux.sh` |
+| Ejecutar la copia local sin tocar Git | `COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` |
 | Alias compatible del recuperador | `bash arrancar.sh` |
 | Ejecutar solo el dashboard en Replit | `bash replit_start.sh` |
 | Comprobar módulos LEVIATHAN | `python3 leviathan_core/tools/verify_modules.py` |
 
-`arrancar_termux.sh` no hace `pull`, `reset`, `stash` ni instala paquetes. Usa
+`iniciar_unificado.sh` no hace `pull`, `reset`, `stash` ni instala paquetes. Usa
 este comando cuando tengas cambios locales o cuando la sincronización de Git
 falle por cambios sin guardar. Commander se integra dentro del dashboard y no
 requiere iniciar `commander.py`, `commander_server.py` ni otro servidor en `8003`.
@@ -244,7 +244,7 @@ Red-team-tauri/
 ├── android/                          # VpnService Java (captura sin root)
 ├── replit_start.sh                   # Arranque Replit
 ├── arrancar.sh                       # Arranque Termux (dashboard + PHANTOM)
-├── arrancar_termux.sh                 # Arranque local seguro sin sincronizar
+├── iniciar_unificado.sh               # Arranque local unificado sin sincronizar
 ├── termux_recover.sh                  # Termux + sincronización de Commander
 ├── quickstart.sh                     # Arranque + test automático
 └── replit.nix                        # Dependencias Nix (Replit)
@@ -522,7 +522,7 @@ Si ARTO aparece corriendo pero las operaciones de scan devuelven vacío:
 |---|---|---|
 | Replit | `bash replit_start.sh` | Auto-deploy, deps via Nix |
 | Termux preparar/actualizar | `bash termux_recover.sh` | Sincroniza de forma segura, prepara y arranca |
-| Termux ejecutar local | `bash arrancar_termux.sh` | Arranca sin tocar cambios locales |
+| Termux ejecutar local | `COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` | Arranca sin tocar cambios locales |
 | Manual | ver arriba | Linux/Mac/Windows |
 
 ### Módulos opcionales (Termux)

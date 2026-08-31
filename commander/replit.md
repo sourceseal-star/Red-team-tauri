@@ -22,7 +22,7 @@ Desde la raíz de `Red-team-tauri`:
 ```bash
 bash termux_recover.sh
 # Si ya está preparado y no quieres tocar Git:
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 El dashboard unificado sirve Commander en `http://127.0.0.1:8001/api/commander/*`.

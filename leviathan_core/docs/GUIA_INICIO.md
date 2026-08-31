@@ -43,7 +43,7 @@ cd ~/Red-team-tauri
 bash termux_recover.sh
 
 # Si ya tienes la copia preparada, arranca sin tocar Git:
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 El backend arranca en `http://localhost:8001`.

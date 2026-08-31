@@ -18,6 +18,12 @@ export default function CommanderPanel() {
   const [rtHealth, setRtHealth] = useState<any>(null)
   const [phantomStatus, setPhantomStatus] = useState<any>(null)
   const [comlink, setComlink] = useState<any>(null)
+  const [comlinkChannel, setComlinkChannel] = useState('sms')
+  const [comlinkDestination, setComlinkDestination] = useState('')
+  const [comlinkMessage, setComlinkMessage] = useState('')
+  const [comlinkSending, setComlinkSending] = useState(false)
+  const [comlinkResult, setComlinkResult] = useState<string>('')
+  const [comlinkSuccess, setComlinkSuccess] = useState<boolean | null>(null)
   const [scanTarget, setScanTarget] = useState('')
   const [scanResult, setScanResult] = useState<string>('')
   const [scanning, setScanning] = useState(false)
@@ -114,6 +120,31 @@ export default function CommanderPanel() {
     } finally { setOsintLoading(false) }
   }
 
+  // ── COM-LINK: envío bajo demanda a través del adaptador real de Termux ──
+  const runComlinkSend = async () => {
+    if (!comlinkMessage.trim()) return
+    setComlinkSending(true)
+    setComlinkResult('')
+    setComlinkSuccess(null)
+    try {
+      const r = await fetch('/api/commander/comlink/send', {
+        method: 'POST',
+        headers: authH(),
+        body: JSON.stringify({
+          channel: comlinkChannel,
+          destination: comlinkDestination.trim(),
+          message: comlinkMessage.trim(),
+        }),
+      })
+      const data = await r.json()
+      setComlinkSuccess(r.ok && data.ok !== false && data.returncode === 0)
+      setComlinkResult(JSON.stringify(data, null, 2).substring(0, 3000))
+    } catch (e: any) {
+      setComlinkSuccess(false)
+      setComlinkResult(`Error de conexión: ${e.message}`)
+    } finally { setComlinkSending(false) }
+  }
+
   // ── WiFi Scan ──
   const runWifi = async () => {
     setWifiLoading(true)
@@ -189,6 +220,71 @@ export default function CommanderPanel() {
           </div>
           <p className="text-sm font-bold text-white">{comlink?.available ? '7 canales' : 'No'}</p>
         </div>
+      </div>
+
+      {/* COM-LINK — operación explícita, sin activación automática */}
+      <div className="bg-slate-900/60 border border-cyan-900/60 rounded-xl p-4">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-bold text-cyan-300 mb-1 flex items-center gap-2">
+              <Radio size={14} /> COM-LINK — Envío de mensaje
+            </h3>
+            <p className="text-[11px] text-slate-500">
+              Ejecuta el canal real configurado en Termux solo al pulsar “Enviar”.
+            </p>
+          </div>
+          <span className={`text-[10px] uppercase font-semibold ${comlink?.available ? 'text-green-400' : 'text-red-400'}`}>
+            {comlink?.available ? 'Disponible' : 'No disponible'}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+          <select
+            value={comlinkChannel}
+            onChange={e => setComlinkChannel(e.target.value)}
+            disabled={!comlink?.available || comlinkSending}
+            className="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-white"
+          >
+            {(comlink?.channels || ['sms', 'telegram', 'voip', 'mesh_wifi', 'mesh_bluetooth', 'radio', 'satellite']).map((channel: string) => (
+              <option key={channel} value={channel}>{channel}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={comlinkDestination}
+            onChange={e => setComlinkDestination(e.target.value)}
+            placeholder="Destino (teléfono, chat ID, SIP, host...)"
+            disabled={!comlink?.available || comlinkSending}
+            className="md:col-span-2 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-white"
+          />
+        </div>
+        <div className="flex gap-2">
+          <textarea
+            value={comlinkMessage}
+            onChange={e => setComlinkMessage(e.target.value)}
+            placeholder="Mensaje que enviará COM-LINK..."
+            rows={2}
+            disabled={!comlink?.available || comlinkSending}
+            className="flex-1 resize-y bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-white"
+          />
+          <button
+            onClick={runComlinkSend}
+            disabled={!comlink?.available || comlinkSending || !comlinkMessage.trim()}
+            className="self-stretch px-4 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 rounded text-xs font-bold text-white flex items-center gap-1"
+          >
+            {comlinkSending ? <RefreshCw size={12} className="animate-spin" /> : <Radio size={12} />}
+            Enviar
+          </button>
+        </div>
+        {comlinkResult && (
+          <div className={`mt-3 rounded p-2 border ${comlinkSuccess === false ? 'border-red-900/70 bg-red-950/20' : comlinkSuccess === true ? 'border-green-900/70 bg-green-950/20' : 'border-slate-800 bg-black/50'}`}>
+            {comlinkSuccess !== null && (
+              <div className={`text-[10px] uppercase font-bold mb-1 ${comlinkSuccess ? 'text-green-400' : 'text-red-400'}`}>
+                {comlinkSuccess ? 'Envío completado' : 'Envío fallido'}
+              </div>
+            )}
+            <pre className={`text-xs font-mono max-h-40 overflow-y-auto whitespace-pre-wrap ${comlinkSuccess === false ? 'text-red-300' : 'text-cyan-300'}`}>{comlinkResult}</pre>
+          </div>
+        )}
       </div>
 
       {/* Info de red local */}

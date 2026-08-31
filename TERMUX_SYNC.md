@@ -17,7 +17,7 @@ No se usa el puerto `8003`.
 ```bash
 # Arranque local inmediato: no toca Git
 cd ~/Red-team-tauri
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 
 # Preparar, sincronizar y arrancar
 bash termux_recover.sh
@@ -25,7 +25,8 @@ bash termux_recover.sh
 
 `arrancar.sh` y `termux_setup.sh` se mantienen como alias compatibles del
 recuperador. Si hay cambios locales sin guardar, el recuperador se detiene; usa
-`arrancar_termux.sh` para probar primero la versión local.
+`COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` para probar primero la
+versión local.
 
 ## 1. Preparación inicial
 
@@ -99,10 +100,10 @@ Para probar ahora mismo la versión que ya está en el teléfono:
 
 ```bash
 cd ~/Red-team-tauri
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
-Este script no hace `git pull`, no hace `reset`, no hace `stash` y no instala
+Este comando no hace `git pull`, no hace `reset`, no hace `stash` y no instala
 paquetes. Solo carga el `.env` existente y levanta Dashboard, Commander
 in-process y PHANTOM. Déjalo abierto y presiona `Ctrl+C` cuando termines.
 

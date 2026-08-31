@@ -4,7 +4,7 @@
 > **Última actualización:** 2026-08-30
 > **Backend único:** `redteam/scripts/dashboard_server.py` (FastAPI :8001)
 > **Frontend único:** `tauri-frontend/` (React/Vite/TypeScript)
-> **Arranque recomendado:** `bash arrancar_termux.sh` (Termux) / `bash replit_start.sh` (Replit)
+> **Arranque recomendado:** `COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` (Termux) / `bash replit_start.sh` (Replit)
 
 ---
 
@@ -76,7 +76,7 @@ bash termux_recover.sh
 Para ejecutar la copia local sin modificarla ni sincronizar Git:
 
 ```bash
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 `termux_recover.sh` conserva `.env` y se detiene ante cambios locales sin
@@ -118,7 +118,7 @@ bash replit_start.sh
 ```
 Red-team-tauri/
 ├── termux_recover.sh          ← Preparar/sincronizar Termux de forma segura
-├── arrancar_termux.sh         ← Arranque local Termux sin tocar Git
+├── iniciar_unificado.sh       ← Arranque local unificado sin tocar Git
 ├── arrancar.sh                ← Alias compatible del recuperador
 ├── start-termux.sh            ← Arranque Termux con gateway mesh opcional
 ├── replit_start.sh            ← Arranque Replit
@@ -168,9 +168,9 @@ Red-team-tauri/
 
 ## <a name="arranque"></a>5. Arranque del Backend
 
-### Opción A: arrancar_termux.sh (Termux, sin sincronizar)
+### Opción A: iniciar_unificado.sh (Termux, sin sincronizar)
 ```bash
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 Levanta la copia local sin `git pull`, `reset`, `stash` ni instalación de
 paquetes. Inicia el dashboard unificado, Commander integrado y PHANTOM.
@@ -335,7 +335,7 @@ Ver `SETUP_FIRMA_APK.md` para instrucciones de firma.
 curl http://localhost:8001/api/health
 # Si no responde:
 pkill -f "dashboard_server.py"
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 ### "python3: not found"
@@ -354,7 +354,7 @@ npm run build
 ### Puerto 8001 ocupado
 ```bash
 pkill -9 -f dashboard_server.py
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 ### AbuseIPDB no devuelve datos
@@ -369,7 +369,7 @@ grep ABUSEIPDB .env
 curl localhost:8001/api/arto/status
 # Si responde error, reiniciar:
 pkill -f dashboard_server.py
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 ### Traffic Analyzer muestra error "tcpdump no instalado"
@@ -389,7 +389,7 @@ termux-wake-lock
 cd ~/Red-team-tauri
 git status --short
 # Ejecutar la versión local sin perder cambios:
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 # Para actualizar, guarda primero los cambios y luego:
 bash termux_recover.sh
 ```
@@ -398,7 +398,7 @@ bash termux_recover.sh
 ```bash
 rm -f arto/data/arto_memory.db
 # Reiniciar — se recrea automáticamente
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 ---
@@ -429,7 +429,7 @@ git log --oneline -10
 ## 📌 Notas Importantes
 
 1. **SOLO un backend a la vez** — Todos usan puerto 8001
-2. **`termux_recover.sh` prepara/actualiza; `arrancar_termux.sh` ejecuta localmente**
+2. **`termux_recover.sh` prepara/actualiza; `iniciar_unificado.sh` ejecuta localmente**
 3. **`redteam/scripts/dashboard_server.py` es el backend único** — No usar otros
 4. **SQLite se crea automáticamente** — No requiere configuración manual
 5. **WebSocket requiere cliente** — Conectar a `ws://localhost:8001/ws/alerts`

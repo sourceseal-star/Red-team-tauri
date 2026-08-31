@@ -28,7 +28,7 @@
 
 ```bash
 cd ~/Red-team-tauri
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 Este es el arranque local seguro: no hace `pull`, `reset`, `stash` ni instala
@@ -187,7 +187,7 @@ Utilízalo únicamente sobre objetivos propios o expresamente autorizados.
 cd ~/Red-team-tauri
 git status --short
 # Ejecutar la versión local sin modificarla:
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 # Para actualizar, guarda los cambios y luego:
 bash termux_recover.sh
 ```
@@ -219,7 +219,7 @@ bash termux_setup.sh
 ### Puerto 8001 ocupado
 ```bash
 pkill -9 -f dashboard_server.py
-bash arrancar_termux.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 ## ━━━━ EN REPLIT ━━━━
