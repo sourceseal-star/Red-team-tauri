@@ -59,6 +59,11 @@ Para la guía detallada de autenticación SSH, sincronización segura de ambos
 repositorios y recuperación de errores de `cryptography`, consulta
 [`TERMUX_SYNC.md`](TERMUX_SYNC.md).
 
+Para actualizar desde Termux mediante un único bootstrap editable con `nano`,
+usa `bash setup.sh` desde el repositorio. `bash setup.sh --start` actualiza,
+compila y arranca después; por defecto solo prepara el código y deja la
+ejecución separada.
+
 Health check:
 
 ```bash

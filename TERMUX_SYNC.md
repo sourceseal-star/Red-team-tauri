@@ -92,6 +92,34 @@ El script crea Commander en `~/commander`, prepara COM-LINK y conserva el
 archivo local `.env` si ya existe. La primera ejecución puede tardar porque
 instala dependencias y compila el frontend.
 
+### Actualizar mediante `setup.sh` usando `nano`
+
+Si necesitas crear o editar el bootstrap directamente desde Termux:
+
+```bash
+cd ~/Red-team-tauri
+nano setup.sh
+```
+
+Guarda con `Ctrl+O`, confirma con `Enter` y sal con `Ctrl+X`. Después ejecuta:
+
+```bash
+bash setup.sh
+```
+
+`setup.sh` instala las herramientas necesarias, sincroniza
+`Red-team-tauri` y `commander` por SSH, instala dependencias, recompila el
+frontend y comprueba que exista el monitor seguro. No inicia servidores por
+defecto. Para actualizar y arrancar al terminar:
+
+```bash
+bash setup.sh --start
+```
+
+También puedes guardar una copia del script en `~/setup.sh` y ejecutar
+`bash ~/setup.sh`; si la carpeta `~/Red-team-tauri` no existe, el bootstrap la
+clona usando `REDTEAM_REPO_URL`.
+
 ## 3. Arranque inmediato sin actualizar
 
 Si tienes trabajos locales o la sincronización muestra `cannot pull with

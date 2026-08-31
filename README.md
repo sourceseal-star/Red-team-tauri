@@ -49,11 +49,20 @@ bash replit_start.sh
 ```bash
 # Primera instalación o actualización segura:
 cd ~/Red-team-tauri
-bash termux_recover.sh
+bash setup.sh
 ```
 
-Este comando instala dependencias, sincroniza Red-team-tauri y Commander,
-compila el frontend y levanta el dashboard unificado junto con PHANTOM.
+`setup.sh` puede editarse desde Termux con `nano setup.sh`. Instala
+dependencias, sincroniza Red-team-tauri y Commander, recompila el frontend y
+verifica el monitor seguro. Por defecto no arranca servidores; para actualizar
+y arrancar al terminar:
+
+```bash
+bash setup.sh --start
+```
+
+El flujo histórico sigue disponible con `bash termux_recover.sh` cuando se
+necesite preparar y levantar todo en una sola operación.
 Si el Commander incluido no está disponible, puedes indicar el repositorio
 independiente con `COMMANDER_REPO_URL=...`.
 Si ya tienes cambios locales y solo quieres probar el sistema sin sincronizar:
