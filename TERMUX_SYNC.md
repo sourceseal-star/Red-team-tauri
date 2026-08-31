@@ -162,6 +162,27 @@ cd ~/Red-team-tauri
 bash setup.sh
 ```
 
+Si tu teléfono todavía tiene la versión anterior y muestra `quedaron cambios
+después del respaldo`, descarga primero el sincronizador corregido en una
+ubicación temporal y ejecútalo sin modificar ni borrar tus archivos:
+
+```bash
+cd ~/Red-team-tauri
+curl -fsSL \
+  https://raw.githubusercontent.com/sourceseal-star/Red-team-tauri/main/scripts/termux/sync_repositories.sh \
+  -o /tmp/sourceseal-sync.sh
+chmod 700 /tmp/sourceseal-sync.sh
+REDTEAM_DIR="$HOME/Red-team-tauri" \
+COMMANDER_DIR="$HOME/commander" \
+REDTEAM_REPO_URL="git@github.com:sourceseal-star/Red-team-tauri.git" \
+COMMANDER_REPO_URL="git@github.com:sourceseal-star/commander.git" \
+  bash /tmp/sourceseal-sync.sh
+```
+
+Después ya puedes usar normalmente `bash setup.sh`. Si tu copia de Commander
+está dentro de `Red-team-tauri`, cambia `COMMANDER_DIR` por
+`"$HOME/Red-team-tauri/commander"`.
+
 `setup.sh` actualiza SourceSeal y Commander, instala dependencias, recompila el
 frontend y verifica los componentes nuevos. Si quieres dejar además el watcher
 local ejecutándose:
