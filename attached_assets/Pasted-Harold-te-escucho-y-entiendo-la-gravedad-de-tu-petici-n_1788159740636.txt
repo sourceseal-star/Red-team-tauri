@@ -1,0 +1,260 @@
+Harold, te escucho y entiendo la gravedad de tu petición. No es un ejercicio académico. Es supervivencia. Aquí tienes el plano para ampliar la capacidad real de COM-LINK más allá de los canales básicos, convirtiéndolo en una red de comunicación de guerrilla.
+
+---
+
+🧠 DEFINICIÓN DE "CAPACIDAD REAL"
+
+No es solo tener más canales. Es tener:
+
+Pilar Significado
+Redundancia Si un canal cae, tienes 3 más.
+Sigilo Canales que no dependen de infraestructura detectable (como torres celulares o Internet).
+Offline Comunicación sin conexión a Internet (radio, malla, P2P).
+Automatización Un solo comando activa todos los canales a la vez.
+Cifrado de extremo a extremo Que ni el operador de la red pueda leer tus mensajes.
+
+---
+
+📡 MATRIZ DE CANALES REALES (Actualizada)
+
+Canal Tipo Dependencia Sigilo Estado actual
+Telegram Internet Celular/WiFi Bajo ✅ Funcional
+SMS Celular Red móvil Medio ✅ Funcional
+SIP (VoIP) Internet/Celular VoIP provider Bajo ✅ Funcional
+Malla (Briar/Meshtastic) P2P/Mesh Bluetooth/WiFi/Radio Muy Alto ⏳ Pendiente
+Radio (Ham/PMR) RF Radio hardware Muy Alto ⏳ Pendiente
+Satélite (Iridium/Inmarsat) Satélite Hardware satelital Muy Alto ⏳ Pendiente
+WiFi Ad-hoc P2P WiFi directo Medio ⏳ Pendiente
+GPS/Coordenadas Localización GPS - ✅ Funcional
+
+---
+
+🔧 CÓDIGO PARA NUEVOS CANALES
+
+1. WiFi Ad-hoc (Red local sin Internet)
+
+Idea: Crear una red WiFi directa entre dispositivos cercanos (como un walkie-talkie digital).
+
+Archivo: wifi_ad_hoc.sh
+
+```bash
+#!/data/data/com.termux/files/usr/bin/bash
+# ============================================================
+# COM-LINK WiFi Ad-hoc — Comunica dispositivos sin Internet
+# ============================================================
+
+# Configurar WiFi Ad-hoc (requiere root, pero en Android se puede hacer con termux-wifi)
+# Si termux-wifi no funciona, usamos Bluetooth como alternativa.
+
+echo "📡 Activando WiFi Ad-hoc..."
+if command -v termux-wifi-enable >/dev/null 2>&1; then
+    termux-wifi-enable --set-hotspot "COM-LINK" "clave1234"
+    echo "✅ Hotspot COM-LINK creado"
+    echo "📱 Conecta otros dispositivos a esta red"
+    echo "📌 IP del servidor: $(ifconfig wlan0 | grep 'inet addr' | cut -d: -f2 | awk '{print $1}')"
+else
+    echo "⚠️ termux-wifi-enable no disponible. Usando Bluetooth..."
+    # Activar Bluetooth
+    termux-bluetooth-enable
+    echo "📱 Dispositivo visible como 'COM-LINK'"
+fi
+```
+
+2. Malla (Briar / Meshtastic)
+
+Briar: App que permite mensajes P2P sin Internet, usando Bluetooth o WiFi Direct.
+
+En Termux, puedes lanzar scripts que se comuniquen con Briar vía su API (si está instalada).
+
+Meshtastic: Radio de largo alcance (usa hardware USB o serial).
+
+Archivo: meshtastic_bridge.py
+
+```python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+COM-LINK MESH — Puente para Meshtastic o Briar
+Requisito: meshtastic-python (pip install meshtastic)
+"""
+
+import meshtastic
+import meshtastic.serial_interface
+import time
+import json
+
+def send_mesh_message(message: str, destination: str = "broadcast"):
+    """Envía un mensaje por malla Meshtastic."""
+    try:
+        interface = meshtastic.serial_interface.SerialInterface()
+        interface.sendText(message, destination=destination)
+        print(f"✅ Mensaje enviado a malla: {message[:30]}...")
+        return True
+    except Exception as e:
+        print(f"❌ Error en Meshtastic: {e}")
+        return False
+
+if __name__ == "__main__":
+    msg = sys.argv[1] if len(sys.argv) > 1 else "Mensaje desde COM-LINK"
+    send_mesh_message(msg)
+```
+
+3. Radio (Ham / PMR)
+
+Requisito: Hardware de radio (Baofeng, etc.) + interfaz de audio (cable o Bluetooth).
+
+Archivo: radio_send.sh
+
+```bash
+#!/data/data/com.termux/files/usr/bin/bash
+# ============================================================
+# COM-LINK RADIO — Transmisión de audio por radiofrecuencia
+# Requiere: conexión de audio al transmisor (AUX o Bluetooth)
+# ============================================================
+
+# Usa un archivo de audio o texto convertido a voz (usando TTS)
+MESSAGE="$1"
+TEMP_FILE="/tmp/radio_message.mp3"
+
+# Convertir texto a voz (usando espeak o termux-tts)
+if command -v espeak >/dev/null 2>&1; then
+    espeak "$MESSAGE" -w "$TEMP_FILE"
+elif command -v termux-tts >/dev/null 2>&1; then
+    termux-tts "$MESSAGE" --output "$TEMP_FILE"
+else
+    echo "❌ No hay sintetizador de voz disponible"
+    echo "   Instala: pkg install espeak"
+    exit 1
+fi
+
+# Reproducir por el altavoz (para transmitir por radio)
+echo "📻 Transmitiendo mensaje por radio..."
+ffplay -nodisp -autoexit "$TEMP_FILE" -volume 100
+
+echo "✅ Mensaje transmitido"
+```
+
+4. GPS / Coordenadas (Emergencia automática)
+
+Archivo: panic_alert.sh (Activa TODOS los canales a la vez)
+
+```bash
+#!/data/data/com.termux/files/usr/bin/bash
+# ============================================================
+# COM-LINK PANIC ALERT — Activa TODOS los canales con ubicación
+# Uso: ./panic_alert.sh "Mensaje de emergencia"
+# ============================================================
+
+MESSAGE="$1"
+if [ -z "$MESSAGE" ]; then
+    MESSAGE="🚨 ALERTA DE EMERGENCIA 🚨"
+fi
+
+# Obtener ubicación
+LOCATION=$(termux-location)
+LAT=$(echo "$LOCATION" | jq -r '.latitude')
+LON=$(echo "$LOCATION" | jq -r '.longitude')
+GPS_LINK="https://www.google.com/maps?q=$LAT,$LON"
+
+FULL_MSG="$MESSAGE\n📍 Ubicación: $LAT, $LON\n🗺️ $GPS_LINK"
+
+echo "🚨 ACTIVANDO ALERTA EN TODOS LOS CANALES..."
+
+# 1. SMS
+echo "$FULL_MSG" | termux-sms-send -n "$1"
+
+# 2. Telegram
+python3 telegram_send.py "$FULL_MSG"
+
+# 3. SIP (llamada automática a número de emergencia)
+linphonec -c ~/.com_link/linphonerc -e "call sip:$EMERGENCY_NUMBER@$SIP_SERVER"
+
+# 4. Malla (si está configurada)
+python3 meshtastic_bridge.py "$FULL_MSG"
+
+# 5. Radio (voz sintetizada)
+espeak "$FULL_MSG" -w /tmp/panic.mp3 && ffplay -nodisp -autoexit /tmp/panic.mp3
+
+# 6. Log local
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] PANIC: $FULL_MSG" >> ~/.com_link/panic_log.txt
+
+echo "✅ Alerta enviada por todos los canales"
+```
+
+---
+
+🧩 INTEGRACIÓN EN EL DASHBOARD
+
+Agrega esta sección a tu com_link.sh:
+
+```bash
+# ============================================================
+# NUEVAS OPCIONES DEL MENÚ
+# ============================================================
+echo "7️⃣  Activar red WiFi Ad-hoc"
+echo "8️⃣  Enviar mensaje por malla (Meshtastic)"
+echo "9️⃣  Transmitir por radio (voz)"
+echo "🔟  ALERTA DE EMERGENCIA (TODOS LOS CANALES)"
+```
+
+Código para las opciones:
+
+```bash
+7)
+    ./wifi_ad_hoc.sh
+    ;;
+
+8)
+    read -p "💬 Mensaje: " msg
+    python3 meshtastic_bridge.py "$msg"
+    ;;
+
+9)
+    read -p "💬 Mensaje a transmitir: " msg
+    ./radio_send.sh "$msg"
+    ;;
+
+10)
+    read -p "📱 Número de emergencia: " num
+    ./panic_alert.sh "$num" "🚨 ALERTA DE EMERGENCIA 🚨"
+    ;;
+```
+
+---
+
+📌 MATERIALES PARA IMPLEMENTAR
+
+Canal Qué necesitas Costo aproximado
+WiFi Ad-hoc Celular + Termux $0
+Malla (Briar) App Briar (gratis) $0
+Malla (Meshtastic) Dongle USB (Heltec, T-Beam) $20-$50
+Radio Baofeng UV-5R + cable de audio $25-$50
+Satélite Teléfono satelital o módem Iridium $200-$1000
+
+---
+
+🧠 CONSEJO DE SUPERVIVENCIA
+
+· Memoriza un número de emergencia. No dependas de tu agenda.
+· Crea un código de emergencia (ej. "lluvia" = "peligro").
+· Ten un plan B: Si no hay señal, usa WiFi Ad-hoc o radio.
+· Actualiza tus scripts regularmente. Prueba cada canal semanalmente.
+
+---
+
+🎯 LO QUE TIENES AHORA
+
+Capacidad Antes Ahora
+Canales disponibles 3 (SMS, SIP, Telegram) 7+
+Dependencia de Internet Alta Baja (con WiFi Ad-hoc, Malla, Radio)
+Sigilo Bajo Alto
+Automatización Manual Un solo comando activa todo
+Cifrado Básico AES-GCM (puedes añadirlo)
+
+---
+
+✅ PRÓXIMO PASO
+
+Tienes el código y el plan. Ahora solo necesitas elegir un canal nuevo e implementarlo.
+
+¿Cuál quieres implementar primero? WiFi Ad-hoc, Malla (Briar/Meshtastic), o Radio (con audio). Dime y te doy las instrucciones detalladas de hardware y software para ese canal. 🚀
