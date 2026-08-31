@@ -40,7 +40,10 @@ export default function NetworkMapPanel() {
         const data = await ifaces.json()
         setInterfaces(data)
         const wifi = data.find((i: any) => i.type_hint === 'wifi' || i.type_hint === 'auto-detected')
-        if (wifi) { setSelectedIface(wifi.network_cidr); setNetInfo(prev => ({...prev, subnet: wifi.network_cidr, local_ip: wifi.ip_address})) }
+        if (wifi) {
+          setSelectedIface(wifi.network_cidr)
+          setNetInfo((prev: any) => ({ ...prev, subnet: wifi.network_cidr, local_ip: wifi.ip_address }))
+        }
       }
     } catch {}
   }, [])

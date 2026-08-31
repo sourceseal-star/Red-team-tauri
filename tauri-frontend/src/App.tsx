@@ -32,6 +32,9 @@ import CommanderPanel from './components/CommanderPanel';
 import NetworkMapPanel from './components/NetworkMapPanel';
 import AndroidFieldPanel from './components/AndroidFieldPanel';
 import NexusPanel from './components/NexusPanel';
+import ComlinkPanel from './components/ComlinkPanel';
+import OperationsPanel from './components/OperationsPanel';
+import IntegratedPanel from './components/IntegratedPanel';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -70,8 +73,11 @@ function App() {
       {module === 'seal' && <SealPanel />}
       {module === 'leviathan' && <LeviathanPanel />}
       {module === 'commander' && <CommanderPanel />}
+      {module === 'comlink' && <ComlinkPanel />}
       {module === 'netmap' && <NetworkMapPanel />}
       {module === 'nexus' && <NexusPanel />}
+      {module === 'integrated' && <IntegratedPanel />}
+      {module === 'operations' && <OperationsPanel />}
       {module === 'android' && <AndroidFieldPanel />}
     </AppShell>
     </ARTOProvider>

@@ -41,10 +41,13 @@ const MODULES = [
   { id: 'blackmirror', label: 'Black Mirror', icon: Eye, color: 'text-rose-400', badge: null },
   { id: 'services', label: 'Servicios', icon: Activity, color: 'text-blue-400', badge: null },
   { id: 'terminal', label: 'Terminal', icon: Terminal, color: 'text-slate-400', badge: null },
-    { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
+  { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
   { id: 'commander', label: 'COMMANDER', icon: Terminal, color: 'text-green-400', badge: 'NEW' },
+  { id: 'comlink', label: 'COM-LINK', icon: Radio, color: 'text-cyan-300', badge: 'NEW' },
   { id: 'netmap', label: 'Mapa de Red', icon: MapPin, color: 'text-cyan-400', badge: 'LIVE' },
   { id: 'nexus', label: 'NEXUS v9', icon: Cpu, color: 'text-purple-400', badge: 'AI' },
+  { id: 'integrated', label: 'Integración', icon: Network, color: 'text-violet-400', badge: 'LIVE' },
+  { id: 'operations', label: 'Operaciones', icon: Activity, color: 'text-emerald-400', badge: 'SAFE' },
   { id: 'android', label: 'Android / Campo', icon: Smartphone, color: 'text-cyan-400', badge: 'NEW' },
   { id: 'topology', label: 'Topología', icon: Network, color: 'text-cyan-400', badge: null },
   { id: 'iot', label: 'IoT Cámaras', icon: Camera, color: 'text-red-400', badge: 'new' },
@@ -57,6 +60,36 @@ const MODULES = [
   { id: 'seal', label: 'SEAL Pack', icon: Fingerprint, color: 'text-cyan-400', badge: 'NEW' },
   { id: 'leviathan', label: 'LEVIATHAN', icon: Shield, color: 'text-purple-400', badge: 'v3.0' },
 ];
+
+const MODULE_DESCRIPTIONS: Record<string, string> = {
+  warroom: 'Vista unificada de todos los sistemas',
+  cameras: 'Descubrimiento y control de cámaras IP',
+  threat: 'Inteligencia de amenazas y reputación',
+  osint: 'Motor de explotación con scripts NSE de nmap',
+  wifi: 'Descubrimiento de redes Wi‑Fi cercanas',
+  ultra: 'Comunicaciones ultrasónicas bajo demanda',
+  blackmirror: 'Análisis visual y espejo de tráfico',
+  services: 'Estado y control de servicios locales',
+  terminal: 'Terminal de operaciones del dashboard',
+  tower: 'Salud del backend y recursos del sistema',
+  commander: 'Reconocimiento autorizado, OSINT, IoT y PHANTOM',
+  comlink: 'Canales de comunicación explícitos y auditables',
+  netmap: 'Mapa de red y descubrimiento de interfaces',
+  nexus: 'NEXUS OMNI v9 · análisis asistido',
+  integrated: 'Estado unificado de ARTO, SEAL y LEVIATHAN',
+  operations: 'Métricas, Git de solo lectura y auditoría local',
+  android: 'GPS, Wi‑Fi, NetGuard y escaneo controlado de campo',
+  topology: 'Topología de red y rutas observadas',
+  iot: 'Cámaras IoT, vulnerabilidades y evidencias',
+  alerts: 'Alertas y eventos del sistema',
+  export: 'Exportación de resultados y evidencias',
+  settings: 'Configuración local del dashboard',
+  osint_adv: 'Investigación OSINT avanzada',
+  interceptor: 'Interceptor avanzado y análisis de flujos',
+  arto: 'ARTO AI · análisis y priorización',
+  seal: 'SEAL Pack · dispositivos y orquestación',
+  leviathan: 'LEVIATHAN · escáneres y módulos de seguridad',
+};
 
 // ==========================================
 // COMPONENTE: TOAST PROVIDER
@@ -156,7 +189,7 @@ function StatusBar() {
     const refresh = async () => {
       try {
         const token = localStorage.getItem('api_token');
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
         const healthResponse = await fetch('/api/health', { cache: 'no-store', headers });
         if (!healthResponse.ok) throw new Error(`health ${healthResponse.status}`);
         const data = await healthResponse.json();
@@ -392,10 +425,7 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
                 <div>
                   <h1 className="text-xl font-bold text-white">{activeLabel}</h1>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {activeModule === 'warroom' && 'Vista unificada de todos los sistemas'}
-                    {activeModule === 'cameras' && 'Descubrimiento y control de cámaras IP'}
-                    {activeModule === 'threat' && 'Inteligencia de amenazas y reputación'}
-                    {activeModule === 'osint' && 'Motor de explotacion con scripts NSE de nmap'}
+                    {MODULE_DESCRIPTIONS[activeModule] || 'Módulo de SourceSeal Console'}
                   </p>
                 </div>
                 <div className="flex gap-2">
