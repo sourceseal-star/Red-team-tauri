@@ -26,6 +26,19 @@ die() { echo -e "${R}[ERROR ]${N} $*" >&2; exit 1; }
 
 command -v pkg >/dev/null 2>&1 || die "Ejecuta este script dentro de Termux de F-Droid."
 
+check_repo_clean_before_sync() {
+  local repo_dir="$1"
+  local repo_name="$2"
+  if [ -d "$repo_dir/.git" ] && [ -n "$(git -C "$repo_dir" status --porcelain)" ]; then
+    die "$repo_name tiene cambios locales sin guardar. No haré pull ni los borraré.
+Usa primero 'bash arrancar_termux.sh' para trabajar con tu versión local,
+o guarda los cambios con commit/stash y vuelve a ejecutar termux_recover.sh."
+  fi
+}
+
+check_repo_clean_before_sync "$REPO_DIR" "Red-team-tauri"
+check_repo_clean_before_sync "$COMMANDER_DIR" "Commander"
+
 echo ""
 echo -e "${C}════════════════════════════════════════════════════════${N}"
 echo -e "${C}  Recuperación Termux — Red-team-tauri + Commander       ${N}"

@@ -45,12 +45,18 @@ bash replit_start.sh
 ### Termux (Android)
 
 ```bash
-# Primera instalación y todas las actualizaciones:
+# Primera instalación y actualizaciones:
 bash termux_recover.sh
 ```
 
 Este comando instala dependencias, sincroniza Red-team-tauri y Commander,
 compila el frontend y levanta el dashboard unificado junto con PHANTOM.
+Si ya tienes cambios locales y solo quieres probar el sistema sin sincronizar:
+
+```bash
+bash arrancar_termux.sh
+```
+
 La guía completa para autenticación SSH, actualización, comprobaciones y
 recuperación está en [`TERMUX_SYNC.md`](TERMUX_SYNC.md).
 
@@ -194,6 +200,7 @@ Red-team-tauri/
 ├── android/                          # VpnService Java (captura sin root)
 ├── replit_start.sh                   # Arranque Replit
 ├── arrancar.sh                       # Arranque Termux (dashboard + PHANTOM)
+├── arrancar_termux.sh                 # Arranque local seguro sin sincronizar
 ├── termux_recover.sh                  # Termux + sincronización de Commander
 ├── quickstart.sh                     # Arranque + test automático
 └── replit.nix                        # Dependencias Nix (Replit)

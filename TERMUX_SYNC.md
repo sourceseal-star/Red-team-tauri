@@ -75,7 +75,22 @@ El script crea Commander en `~/commander`, prepara COM-LINK y conserva el
 archivo local `.env` si ya existe. La primera ejecución puede tardar porque
 instala dependencias y compila el frontend.
 
-## 3. Actualizar y sincronizar
+## 3. Arranque inmediato sin actualizar
+
+Si tienes trabajos locales o la sincronización muestra `cannot pull with
+rebase: You have unstaged changes`, no uses `git reset` ni borres archivos.
+Para probar ahora mismo la versión que ya está en el teléfono:
+
+```bash
+cd ~/Red-team-tauri
+bash arrancar_termux.sh
+```
+
+Este script no hace `git pull`, no hace `reset`, no hace `stash` y no instala
+paquetes. Solo carga el `.env` existente y levanta Dashboard, Commander
+in-process y PHANTOM. Déjalo abierto y presiona `Ctrl+C` cuando termines.
+
+## 4. Actualizar y sincronizar
 
 Detén el sistema con `Ctrl+C` en la terminal donde está corriendo y revisa
 primero si tienes cambios locales:
@@ -109,6 +124,10 @@ COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
   bash termux_recover.sh
 ```
 
+El sincronizador ahora se detiene antes de tocar Git si encuentra cambios
+locales sin guardar. En ese caso, usa el arranque local de la sección anterior
+o guarda primero el trabajo con commit/stash.
+
 En una actualización normal, el script:
 
 1. actualiza los paquetes de Termux;
@@ -119,7 +138,7 @@ En una actualización normal, el script:
 6. preserva `.env`;
 7. levanta dashboard, Commander in-process y PHANTOM.
 
-## 4. Comprobaciones después del arranque
+## 5. Comprobaciones después del arranque
 
 El recuperador permanece en primer plano. En otra sesión de Termux, ejecuta:
 
@@ -147,7 +166,7 @@ El estado de COM-LINK debe indicar `available: true` y mostrar sus canales.
 El arranque no envía mensajes ni activa SMS, Telegram, radio, satélite,
 Bluetooth, mesh o VoIP.
 
-## 5. COM-LINK
+## 6. COM-LINK
 
 COM-LINK se consulta desde:
 
@@ -161,7 +180,7 @@ pruebes `send` con un destino real hasta confirmar la configuración: esa ruta
 sí puede iniciar una comunicación externa. El arranque y el health check son
 seguros y no hacen envíos.
 
-## 6. Detener y recuperar
+## 7. Detener y recuperar
 
 Para detener el conjunto iniciado por `termux_recover.sh`:
 
@@ -187,7 +206,7 @@ El script detiene las instancias anteriores del dashboard. Si PHANTOM quedó
 huérfano, cierra su proceso desde la misma sesión de Termux o reinicia Termux;
 no borres archivos de datos para resolver un problema de puertos.
 
-## 7. Archivos útiles y seguridad
+## 8. Archivos útiles y seguridad
 
 - Dashboard: `~/Red-team-tauri/redteam/scripts/dashboard_server.py`
 - Launcher unificado: `~/Red-team-tauri/iniciar_unificado.sh`
