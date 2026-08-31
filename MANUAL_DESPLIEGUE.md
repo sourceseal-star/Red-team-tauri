@@ -83,6 +83,21 @@ COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 guardar. `arrancar.sh` es solo un alias compatible del recuperador; no es el
 comando de arranque local.
 
+### COM-LINK y hardware Android
+
+COM-LINK no es un servicio remoto adicional. Sus comandos se ejecutan donde
+corre `dashboard_server.py`. En Replit el archivo puede estar instalado, pero
+no hay Termux:API ni hardware del teléfono. En Termux, verifica la preparación
+sin enviar mensajes:
+
+```bash
+bash commander/comlink/comlink.sh status-json | jq
+```
+
+No asumas que los siete canales están activos. Revisa `ready_count` y
+`channels[].reason`; radio AX.25 y satélite permanecen no implementados hasta
+contar con un driver probado. Consulta [`COMLINK_OPERATIVO.md`](COMLINK_OPERATIVO.md).
+
 Si se necesita usar un checkout independiente de Commander:
 
 ```bash

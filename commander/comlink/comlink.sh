@@ -21,6 +21,12 @@ KEYS_DIR="$DATA_DIR/keys"
 QUEUE_DB="$DATA_DIR/queue/queue.db"
 LOG_DIR="$DATA_DIR/logs"
 TEMP_DIR="/tmp/comlink"
+COMLINK_MACHINE_OUTPUT=false
+
+# status-json se consume desde el backend y no debe mezclarse con logs.
+if [ "${1:-}" = "status-json" ] || [ "${1:-}" = "--status-json" ]; then
+    COMLINK_MACHINE_OUTPUT=true
+fi
 
 # Cargar módulos
 source "$CORE_DIR/config.sh"
@@ -1248,6 +1254,9 @@ process_command() {
         "status")
             status_menu
             ;;
+        "status-json"|"--status-json")
+            status_json
+            ;;
         "utilities"|"utils")
             utilities_menu
             ;;
@@ -1321,6 +1330,7 @@ help_menu() {
     echo -e "\033[1m  📦 Cola y Estado:\033[0m"
     echo "    comlink queue                               - Gestión de cola de mensajes"
     echo "    comlink status                              - Estado del sistema"
+    echo "    comlink status-json                         - Estado JSON sin menú"
     echo ""
     echo -e "\033[1m  🛠️  Utilidades:\033[0m"
     echo "    comlink utilities                           - Utilidades varias"
@@ -1417,9 +1427,107 @@ check_dependencies() {
             optional_missing+=("$cmd")
         fi
     done
-    if [ ${#optional_missing[@]} -gt 0 ]; then
+    if [ ${#optional_missing[@]} -gt 0 ] && [ "$COMLINK_MACHINE_OUTPUT" != "true" ]; then
         info "APIs Termux no disponibles: ${optional_missing[*]} (canales móviles limitados)"
     fi
+}
+
+# Estado no interactivo y honesto para el dashboard. "ready" significa que
+# existen los requisitos locales conocidos; no prueba ni ejecuta un envío.
+status_json() {
+    local missing=()
+    local core_ready=true
+    for cmd in jq sqlite3 curl openssl; do
+        if ! command -v "$cmd" &>/dev/null; then
+            missing+=("$cmd")
+            core_ready=false
+        fi
+    done
+
+    local emergency_phone
+    emergency_phone=$(jq -r '.contacts.emergency.phone // empty' "$CONTACTS_FILE")
+
+    local sms_ready=false
+    local sms_reason="Instala Termux:API y configura el teléfono de emergencia"
+    if command -v termux-sms-send &>/dev/null && [ -n "$emergency_phone" ]; then
+        sms_ready=true
+        sms_reason="API de SMS y destino configurados; falta confirmar cobertura/SIM"
+    elif ! command -v termux-sms-send &>/dev/null; then
+        sms_reason="Falta termux-sms-send"
+    elif [ -z "$emergency_phone" ]; then
+        sms_reason="Falta contacts.emergency.phone"
+    fi
+
+    local telegram_ready=false
+    local telegram_reason="Falta token o chat ID de Telegram"
+    if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_DEFAULT_CHAT_ID" ]; then
+        telegram_ready=true
+        telegram_reason="Token y chat ID configurados; falta confirmar conectividad"
+    fi
+
+    local voip_ready=false
+    local voip_reason="Falta linphonec o configuración SIP"
+    if command -v linphonec &>/dev/null && \
+       [ -n "$SIP_SERVER" ] && [ -n "$SIP_USERNAME" ] && [ -n "$SIP_PASSWORD" ]; then
+        voip_ready=true
+        voip_reason="Cliente y credenciales SIP presentes; falta confirmar registro"
+    fi
+
+    local wifi_ready=false
+    local wifi_reason="WiFi/Termux:API no disponible o no conectado"
+    if command -v python3 &>/dev/null && command -v curl &>/dev/null && check_wifi; then
+        wifi_ready=true
+        wifi_reason="WiFi conectado; falta confirmar un peer COM-LINK"
+    fi
+
+    local bluetooth_ready=false
+    local bluetooth_reason="Bluetooth RFCOMM no disponible"
+    if command -v hcitool &>/dev/null && command -v rfcomm &>/dev/null && check_bluetooth; then
+        bluetooth_ready=true
+        bluetooth_reason="Bluetooth y RFCOMM presentes; falta confirmar un peer"
+    fi
+
+    # No se marcan como listos: las funciones de transmisión actuales no
+    # implementan un driver verificable para hardware de radio/satélite.
+    local radio_ready=false
+    local radio_reason="Driver/TNC AX.25 verificado pendiente"
+    local satellite_ready=false
+    local satellite_reason="Driver del modelo satelital verificado pendiente"
+
+    local missing_text
+    missing_text=$(printf '%s\n' "${missing[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+    jq -n \
+        --arg version "$COM_LINK_VERSION" \
+        --arg device_id "$DEVICE_ID" \
+        --arg device_name "$DEVICE_NAME" \
+        --argjson core_ready "$core_ready" \
+        --argjson missing "$missing_text" \
+        --argjson sms "$sms_ready" --arg sms_reason "$sms_reason" \
+        --argjson telegram "$telegram_ready" --arg telegram_reason "$telegram_reason" \
+        --argjson voip "$voip_ready" --arg voip_reason "$voip_reason" \
+        --argjson wifi "$wifi_ready" --arg wifi_reason "$wifi_reason" \
+        --argjson bluetooth "$bluetooth_ready" --arg bluetooth_reason "$bluetooth_reason" \
+        --argjson radio "$radio_ready" --arg radio_reason "$radio_reason" \
+        --argjson satellite "$satellite_ready" --arg satellite_reason "$satellite_reason" \
+        '[
+          {id:"sms", ready:$sms, reason:$sms_reason, requires:["Termux:API","SIM","destino"]},
+          {id:"telegram", ready:$telegram, reason:$telegram_reason, requires:["token","chat ID","internet"]},
+          {id:"voip", ready:$voip, reason:$voip_reason, requires:["linphonec","SIP"]},
+          {id:"mesh_wifi", ready:$wifi, reason:$wifi_reason, requires:["WiFi","peer COM-LINK"]},
+          {id:"mesh_bluetooth", ready:$bluetooth, reason:$bluetooth_reason, requires:["Bluetooth","RFCOMM","peer"]},
+          {id:"radio", ready:$radio, reason:$radio_reason, requires:["TNC","driver AX.25","radio"]},
+          {id:"satellite", ready:$satellite, reason:$satellite_reason, requires:["módem","driver del proveedor"]}
+        ] as $channels |
+        {
+          available:true,
+          version:$version,
+          device:{id:$device_id,name:$device_name},
+          core:{ready:$core_ready,missing:$missing},
+          channels:$channels,
+          ready_channels:[$channels[] | select(.ready) | .id],
+          ready_count:([$channels[] | select(.ready)] | length),
+          note:"ready indica requisitos locales; no confirma que un mensaje haya sido entregado"
+        }'
 }
 
 # Inicializar

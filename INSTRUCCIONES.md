@@ -36,7 +36,7 @@ bash replit_start.sh
 Commander queda integrado bajo `/api/commander/*`; no arranques
 `commander_server.py` ni un servidor adicional en `8003`.
 
-## Configurar API Keys (opcional — todo funciona sin ellas con fallbacks)
+## Configurar API Keys de OSINT (opcional)
 
 Editar `.env` en la raiz del repo:
 
@@ -51,6 +51,19 @@ HUNTER_API_KEY=tu-key      # https://hunter.io/api-keys (opcional, emails OSINT)
 ```
 
 > La variable es `ABUSEIPDB_KEY` (sin `_API`).
+
+Las claves de OSINT son opcionales. COM-LINK no funciona automáticamente sin
+configuración: cada canal requiere sus propias APIs, credenciales, cobertura o
+hardware. Consulta [`COMLINK_OPERATIVO.md`](COMLINK_OPERATIVO.md) y comprueba
+el estado sin enviar mensajes:
+
+```bash
+bash commander/comlink/comlink.sh status-json | jq
+```
+
+En Replit no están disponibles Termux:API ni los periféricos del teléfono.
+Para SMS, GPS, WiFi/Bluetooth del dispositivo y pruebas locales de COM-LINK,
+inicia el dashboard en Termux con el comando indicado arriba.
 
 ## Endpoints OSINT (`/api/osint/*`)
 

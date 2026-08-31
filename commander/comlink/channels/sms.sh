@@ -43,11 +43,10 @@ send_sms() {
 
     local success=true
     for part in "${parts[@]}"; do
-        # Escapar caracteres especiales
-        local escaped_part=$(echo "$part" | sed 's/"/\\"/g; s/\\/\\\\/g')
-
         # Enviar via Termux API
-        echo "$escaped_part" | termux-sms-send -n "$destination" 2>/dev/null
+        # termux-sms-send recibe el texto como argumento. Enviarlo por stdin
+        # deja el comportamiento dependiente de la versión de Termux:API.
+        termux-sms-send -n "$destination" "$part" 2>/dev/null
 
         if [ $? -ne 0 ]; then
             error "Error enviando parte del mensaje a $destination"

@@ -68,6 +68,11 @@ curl http://localhost:8001/api/v1/status       # LEVIATHAN unificado
 curl http://localhost:8001/api/integrated/health  # ARTO + SEAL + LEVIATHAN
 ```
 
+COM-LINK informa la preparación real por canal en
+`/api/commander/comlink/status`; `available` no equivale a siete canales
+operativos. La verificación y las limitaciones de hardware están en
+[`COMLINK_OPERATIVO.md`](COMLINK_OPERATIVO.md).
+
 ## Estructura principal
 
 ```

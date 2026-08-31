@@ -52,24 +52,8 @@ send_iridium() {
     local destination="$1"
     local message="$2"
 
-    # Verificar si el dispositivo Iridium está disponible
-    if ! ls "$SATELLITE_DEVICE" 2>/dev/null; then
-        error "Dispositivo Iridium no encontrado: $SATELLITE_DEVICE"
-        return 1
-    fi
-
-    # Configurar velocidad
-    stty -F "$SATELLITE_DEVICE" 19200 2>/dev/null
-
-    # Enviar mensaje (formato simplificado)
-    # Nota: En la práctica, necesitarías el protocolo específico de Iridium
-    echo "AT+SBDWB=$message" > "$SATELLITE_DEVICE"
-    sleep 2
-    echo "AT+SBDIX" > "$SATELLITE_DEVICE"
-
-    info "Mensaje enviado via Iridium (esto es una simulación)"
-    success "Mensaje enviado via Satélite (Iridium)"
-    return 0
+    error "Iridium SBD requiere un driver específico del modelo; no se transmite"
+    return 1
 }
 
 # Enviar mensaje via Globalstar
@@ -77,25 +61,8 @@ send_globalstar() {
     local destination="$1"
     local message="$2"
 
-    # Verificar si el dispositivo Globalstar está disponible
-    if ! ls "$SATELLITE_DEVICE" 2>/dev/null; then
-        error "Dispositivo Globalstar no encontrado: $SATELLITE_DEVICE"
-        return 1
-    fi
-
-    # Configurar velocidad
-    stty -F "$SATELLITE_DEVICE" 9600 2>/dev/null
-
-    # Enviar mensaje (formato simplificado)
-    echo "AT+CMGW=\"$destination\"" > "$SATELLITE_DEVICE"
-    sleep 1
-    echo "$message" > "$SATELLITE_DEVICE"
-    sleep 1
-    echo -e "\x1A" > "$SATELLITE_DEVICE"  # Ctrl+Z para enviar
-
-    info "Mensaje enviado via Globalstar (esto es una simulación)"
-    success "Mensaje enviado via Satélite (Globalstar)"
-    return 0
+    error "Globalstar requiere un driver específico del modelo; no se transmite"
+    return 1
 }
 
 # Configurar dispositivo satelital

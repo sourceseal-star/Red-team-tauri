@@ -30,12 +30,13 @@ check_channel_available() {
             check_bluetooth
             ;;
         "radio")
-            # Verificar si el hardware de radio está disponible
-            [ "$RADIO_ENABLED" = "true" ] && command -v soundmodem &>/dev/null
+            # El driver AX.25/TNC aún no está implementado. No incluir este
+            # canal en fallback aunque el binario soundmodem exista.
+            return 1
             ;;
         "satellite")
-            # Verificar si el hardware satelital está disponible
-            [ "$SATELLITE_ENABLED" = "true" ] && [ -e "$SATELLITE_DEVICE" ]
+            # Los comandos AT genéricos no constituyen un driver satelital.
+            return 1
             ;;
         *)
             return 1

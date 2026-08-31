@@ -5,6 +5,9 @@
 > **Backend Python/FastAPI + frontend React/Vite.**
 > El arranque unificado sirve API y frontend real en el puerto 8001.
 > Los escaneos deben ejecutarse únicamente dentro de un alcance autorizado.
+> COM-LINK tiene una matriz de preparación independiente; consulta
+> [`COMLINK_OPERATIVO.md`](COMLINK_OPERATIVO.md) antes de intentar una
+> comunicación externa.
 
 ---
 

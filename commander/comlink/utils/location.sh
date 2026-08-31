@@ -77,9 +77,16 @@ geocode() {
         create_cities_db
     fi
 
-    # Buscar la ciudad más cercana (esto es una simulación)
-    # En una implementación real, usarías una base de datos geoespacial
-    local city=$(sqlite3 "$CITIES_DB" "SELECT name FROM cities ORDER BY RANDOM() LIMIT 1;")
+    # Buscar la ciudad más cercana por distancia euclidiana aproximada. No
+    # devuelve una ciudad aleatoria: si la base es pequeña, el resultado sigue
+    # siendo orientativo y se etiqueta como tal en la documentación.
+    if ! [[ "$lat" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || \
+       ! [[ "$lon" =~ ^-?[0-9]+([.][0-9]+)?$ ]]; then
+        return 0
+    fi
+    local city
+    city=$(sqlite3 "$CITIES_DB" \
+        "SELECT name FROM cities ORDER BY ((lat - $lat) * (lat - $lat) + (lon - $lon) * (lon - $lon)) LIMIT 1;")
 
     echo "$city"
     return 0

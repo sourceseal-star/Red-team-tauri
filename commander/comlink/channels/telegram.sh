@@ -49,12 +49,22 @@ send_telegram() {
 
     local success=true
     for part in "${parts[@]}"; do
-        # Escapar caracteres especiales para JSON
-        local escaped_part=$(echo "$part" | jq -Rs .)
+        # Construir JSON con jq para que comillas, saltos de línea y Unicode
+        # no rompan la petición.
+        local payload
+        payload=$(jq -n \
+            --arg chat "$destination" \
+            --arg text "$part" \
+            'if ($chat | test("^-?[0-9]+$")) then
+               {chat_id: ($chat | tonumber), text: $text}
+             else
+               {chat_id: $chat, text: $text}
+             end')
 
-        local response=$(curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+        local response=$(curl -sS --connect-timeout 10 --max-time 30 \
+            -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
             -H "Content-Type: application/json" \
-            -d "{\"chat_id\": $destination, \"text\": $escaped_part, \"parse_mode\": \"HTML\"}" 2>&1)
+            --data-binary "$payload" 2>&1)
 
         if echo "$response" | jq -e '.ok == true' >/dev/null 2>&1; then
             debug "Parte enviada a Telegram"

@@ -30,13 +30,21 @@ send_mesh_wifi() {
             fi
         fi
 
-        # Enviar via HTTP POST
-        local response=$(curl -s -X POST "http://$destination:$MESH_WIFI_PORT/upload" \
+        # Enviar via HTTP POST. jq evita que un mensaje con comillas o saltos
+        # de línea construya JSON inválido.
+        local payload
+        payload=$(jq -n \
+            --arg message "$final_message" \
+            --arg from "$(get_local_ip)" \
+            --arg encrypted "${encrypted:-false}" \
+            '{message: $message, from: $from, encrypted: $encrypted}')
+        local response=$(curl -fsS --connect-timeout 3 --max-time 10 \
+            -X POST "http://$destination:$MESH_WIFI_PORT/upload" \
             -H "Content-Type: application/json" \
             -H "X-COM-LINK: $DEVICE_ID" \
-            -d "{\"message\": \"$final_message\", \"from\": \"$(get_local_ip)\", \"encrypted\": \"${encrypted:-false}\"}" 2>&1)
+            --data-binary "$payload" 2>&1)
 
-        if [ $? -eq 0 ]; then
+        if [ $? -eq 0 ] && echo "$response" | jq -e '.status == "received"' >/dev/null 2>&1; then
             success "Mensaje enviado a $destination via Mesh WiFi"
             return 0
         else

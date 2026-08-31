@@ -380,10 +380,36 @@ try:
         @commander_router.get("/api/commander/comlink/status")
         async def commander_comlink_status():
             comlink_sh = Path(_commander_dir) / "comlink" / "comlink.sh"
-            return {
-                "available": comlink_sh.exists(),
-                "channels": ["telegram", "sms", "voip", "mesh_wifi", "mesh_bluetooth", "radio", "satellite"],
-            }
+            if not comlink_sh.exists():
+                return JSONResponse({"available": False, "ready_count": 0, "channels": []}, status_code=503)
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    ["bash", str(comlink_sh), "status-json"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                if result.returncode != 0:
+                    return JSONResponse(
+                        {"available": True, "ready_count": 0, "channels": [],
+                         "error": (result.stderr or result.stdout)[-1000:]},
+                        status_code=503,
+                    )
+                import json
+                data = json.loads(result.stdout)
+                data["execution_context"] = (
+                    "El canal se ejecuta en el mismo entorno que el dashboard; "
+                    "para Termux, el dashboard debe estar iniciado en Termux."
+                )
+                return data
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"available": True, "ready_count": 0, "channels": [],
+                                     "error": "COM-LINK status timeout"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"available": True, "ready_count": 0, "channels": [],
+                                     "error": str(exc)}, status_code=503)
 
         @commander_router.post("/api/commander/comlink/send")
         async def commander_comlink_send(payload: dict = Body(default={})):

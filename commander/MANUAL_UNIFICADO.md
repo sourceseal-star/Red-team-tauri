@@ -40,7 +40,7 @@ El ecosistema **COMMANDER v6.0** unifica el escaneo de red, inteligencia OSINT, 
 | **Commander v6.0** | Escaneo de red, fingerprinting, OSINT (IP/Dominio/Email), análisis forense | Python 3, Nmap, SQLite3, Cryptography |
 | **Red-team-tauri v6.0** | Dashboard gráfico/TUI, orquestación visual, visor de streamings y telemetría | Tauri (Rust/React/TS) + FastAPI (Port 8001) |
 | **Módulo IoT & Cameras** | Detección de Vendor, mapeo CVE DB, auto-access (23 creds), proxy MJPEG | Python 3 Async, Requests, OpenCV/MJPEG, FastAPI |
-| **COM-LINK v4.0** | Red Mesh P2P, alertas multi-canal (7 vías), fallback automático | Bash, Python, Termux-API, OpenSSL, SQLite |
+| **COM-LINK v3.0** | Canales condicionados por APIs, credenciales y hardware; estado verificable | Bash, Termux-API, OpenSSL, SQLite |
 | **SourceSeal OSIRIS** | Motor de conectores e integración de datos multi-fuente | Node.js / Python, WebSockets, Cache DB (`~/connector_cache.db`) |
 | **SourceSeal TACTICAL** | Coordinación Master-Worker distribuida y ejecución de Playbooks | FastAPI, WebSocket, SQLite (`~/seal_tactical.db`) |
 | **SourceSeal Anchor** | Sellado e inmutabilidad de reportes criptográficos | Schnorr 2048-bit, SHA-256 Fernet |
@@ -357,44 +357,33 @@ curl -i "http://localhost:8001/api/iot/mjpeg_proxy?ip=192.168.1.105&port=80&user
 
 ---
 
-## Guía de COM-LINK v4.0
+## Guía de COM-LINK v3.0
 
-COM-LINK v4.0 proporciona conectividad redundante para el envío de telemetría, alertas de intrusión y datos de ubicación GPS sin depender de una única infraestructura de red.
-
-### Canales Soportados
-
-1. **SMS:** Termux API / GSM AT Commands (Cifrado AES-256).
-2. **Telegram Bot:** API HTTPS de Telegram con fallback en cola SQLite.
-3. **VoIP / SIP:** Integración con Linphone / Asterisk para alertas habladas.
-4. **Mesh WiFi P2P:** Comunicación local P2P vía sockets HTTP/TLS (cobertura ~100m).
-5. **Mesh Bluetooth:** Conexión RFCOMM / L2CAP (cobertura ~10m).
-6. **Radio (AX.25):** Transmisión en paquetes VHF/UHF mediante Soundmodem.
-7. **Satélite (Iridium):** Mensajería SBD (Short Burst Data) para áreas totalmente desérticas.
-
-### Comandos Principales de COM-LINK
+COM-LINK es un conjunto de adaptadores condicionados por el entorno. El
+dashboard no debe anunciar siete canales operativos por la sola presencia del
+script. La comprobación no interactiva es:
 
 ```bash
-# Enviar SMS cifrado
-comlink sms +573001234567 "ALERTA: Cámara comprometida en 192.168.1.105"
+bash comlink/comlink.sh status-json | jq
+```
 
-# Enviar mensaje por Telegram
-comlink telegram "Auditoría LEVIATHAN v3.0 Finalizada."
+Consulta [`../COMLINK_OPERATIVO.md`](../COMLINK_OPERATIVO.md) para la matriz de
+requisitos, pruebas seguras y limitaciones. Los comandos de envío son reales y
+se ejecutan solo bajo una acción explícita del operador:
 
-# Transmitir coordenadas GPS actuales
-comlink location
-
-# Disparar modo Emergencia (Broadcast por los 7 canales simultáneamente)
-comlink emergency +573001234567
-
-# Entrar al menú Mesh P2P (WiFi / Bluetooth)
-comlink mesh
-
-# Consultar estado de la cola de mensajes en SQLite
+```bash
+comlink send sms "Mensaje de prueba" +573001234567
+comlink send telegram "Mensaje de prueba" "-1000000000000"
+comlink location emergencia
 comlink queue
-
-# Ver estado general del sistema y periféricos
 comlink status
 ```
+
+No existe un broadcast `comlink emergency` implementado. Radio AX.25,
+satélite y WebRTC devuelven un error explícito hasta integrar drivers y
+protocolos verificados. La ubicación usa GPS real cuando Termux:API está
+disponible; la ciudad mostrada es una aproximación de la base local, no una
+geocodificación en Internet.
 
 ---
 

@@ -22,6 +22,13 @@ send_radio() {
         return 1
     fi
 
+    # La versión anterior escribía texto directamente en /dev/ttyS0 y
+    # devolvía éxito aunque no existieran TNC, AX.25 ni un protocolo de
+    # transmisión válido. No se permite transmitir hasta integrar un driver
+    # verificado para el hardware concreto.
+    error "Radio AX.25 requiere un driver/TNC verificado; transmisión no implementada"
+    return 1
+
     # Cifrar mensaje si es necesario
     local final_message="$message"
     if [ "$ENCRYPTION_ENABLED" = "true" ] && [ -z "$encrypted" ]; then

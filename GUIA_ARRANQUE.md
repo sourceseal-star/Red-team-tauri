@@ -62,6 +62,20 @@ pip install onnxruntime numpy pillow
 
 El módulo detecta automáticamente el modelo .onnx y lo usa.
 
+## ━━━━ PASO 2d: Verificar COM-LINK sin transmitir ━━━━
+
+COM-LINK se ejecuta dentro del mismo proceso local del dashboard. Replit no
+puede acceder al módem, SIM, GPS, Bluetooth o radio del teléfono. En Termux:
+
+```bash
+cd ~/Red-team-tauri
+bash commander/comlink/comlink.sh status-json | jq
+```
+
+Revisa `ready_count`, `ready_channels` y la razón de cada canal. El resultado
+no es una prueba de entrega. La matriz de requisitos y los procedimientos de
+prueba controlada están en [`COMLINK_OPERATIVO.md`](COMLINK_OPERATIVO.md).
+
 ## ━━━━ PASO 2c: Verificar módulos ━━━━
 
 Antes de arrancar, verifica que todo carga:

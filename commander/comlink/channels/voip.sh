@@ -239,20 +239,9 @@ setup_webrtc() {
 webrtc_call() {
     local destination="$1"
 
-    info "Iniciando llamada WebRTC P2P a $destination..."
-    info "Esta función es experimental y requiere que ambos dispositivos tengan COM-LINK"
-
-    # Por ahora, solo mostramos cómo se haría
-    info "Para implementar WebRTC P2P, necesitas:"
-    info "1. Un servidor de señalización (puede ser un dispositivo en la red local)"
-    info "2. Ambos dispositivos deben estar en la misma red o tener conexión directa"
-    info "3. Ejecutar el script de señalización en un dispositivo"
-    info ""
-    info "Ejemplo de uso:"
-    info "  Dispositivo A (servidor de señalización): comlink voip webrtc server"
-    info "  Dispositivo B: comlink voip webrtc call <IP_DISPOSITIVO_A>"
-
-    return 0
+    error "WebRTC P2P no está implementado: no se inicia ninguna llamada"
+    info "Requiere un servidor de señalización y un cliente WebRTC verificado."
+    return 1
 }
 
 # Menú de VoIP

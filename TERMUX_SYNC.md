@@ -183,9 +183,16 @@ curl -H "Authorization: Bearer ${REDTEAM_API_KEY}" \
   http://127.0.0.1:8001/api/commander/comlink/status
 ```
 
-El estado de COM-LINK debe indicar `available: true` y mostrar sus canales.
-El arranque no envía mensajes ni activa SMS, Telegram, radio, satélite,
-Bluetooth, mesh o VoIP.
+`available: true` solo indica que el script está instalado. El estado real debe
+consultarse con:
+
+```bash
+bash commander/comlink/comlink.sh status-json | jq
+```
+
+Revisa `ready_count`, `ready_channels` y `channels[].reason`. `ready` confirma
+requisitos locales conocidos, no la entrega de un mensaje. El arranque no envía
+mensajes ni activa SMS, Telegram, radio, satélite, Bluetooth, mesh o VoIP.
 
 ## 6. COM-LINK
 
@@ -196,10 +203,10 @@ GET /api/commander/comlink/status
 POST /api/commander/comlink/send
 ```
 
-El envío real requiere configurar el canal y el destino en Commander. No
-pruebes `send` con un destino real hasta confirmar la configuración: esa ruta
-sí puede iniciar una comunicación externa. El arranque y el health check son
-seguros y no hacen envíos.
+El envío real requiere configurar el canal, sus dependencias y el destino en
+Commander. No pruebes `send` con un destino real hasta confirmar la
+configuración: esa ruta sí puede iniciar una comunicación externa. La matriz
+de requisitos está en [`COMLINK_OPERATIVO.md`](COMLINK_OPERATIVO.md).
 
 ## 7. Detener y recuperar
 

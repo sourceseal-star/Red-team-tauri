@@ -42,6 +42,12 @@ export default function CommanderPanel() {
   const [topoLoading, setTopoLoading] = useState(false)
   const [topoSubnet, setTopoSubnet] = useState('')
 
+  const comlinkChannels = (Array.isArray(comlink?.channels) ? comlink.channels : []).map((channel: any) =>
+    typeof channel === 'string' ? { id: channel, ready: true, reason: '' } : channel
+  )
+  const selectedComlinkChannel = comlinkChannels.find((channel: any) => channel.id === comlinkChannel)
+  const comlinkCanSend = Boolean(selectedComlinkChannel?.ready)
+
   const refresh = useCallback(async () => {
     try {
       const [cmd, rt, ph, cl, ni] = await Promise.all([
@@ -120,7 +126,7 @@ export default function CommanderPanel() {
     } finally { setOsintLoading(false) }
   }
 
-  // ── COM-LINK: envío bajo demanda a través del adaptador real de Termux ──
+  // ── COM-LINK: envío bajo demanda en el mismo entorno del dashboard ──
   const runComlinkSend = async () => {
     if (!comlinkMessage.trim()) return
     setComlinkSending(true)
@@ -215,10 +221,12 @@ export default function CommanderPanel() {
         </div>
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
           <div className="flex items-center gap-2 mb-1">
-            <Radio size={14} className={comlink?.available ? 'text-green-400' : 'text-slate-500'} />
+            <Radio size={14} className={comlink?.ready_count > 0 ? 'text-green-400' : 'text-amber-400'} />
             <span className="text-[10px] text-slate-500 uppercase">COM-LINK</span>
           </div>
-          <p className="text-sm font-bold text-white">{comlink?.available ? '7 canales' : 'No'}</p>
+          <p className="text-sm font-bold text-white">
+            {comlink?.available ? `${comlink?.ready_count || 0}/${comlinkChannels.length || 7} listos` : 'No disponible'}
+          </p>
         </div>
       </div>
 
@@ -230,22 +238,25 @@ export default function CommanderPanel() {
               <Radio size={14} /> COM-LINK — Envío de mensaje
             </h3>
             <p className="text-[11px] text-slate-500">
-              Ejecuta el canal real configurado en Termux solo al pulsar “Enviar”.
+              Ejecuta el canal configurado en el mismo entorno que el dashboard solo al pulsar “Enviar”.
+              El dashboard debe estar iniciado en Termux para usar APIs y hardware del teléfono.
             </p>
           </div>
-          <span className={`text-[10px] uppercase font-semibold ${comlink?.available ? 'text-green-400' : 'text-red-400'}`}>
-            {comlink?.available ? 'Disponible' : 'No disponible'}
+          <span className={`text-[10px] uppercase font-semibold ${comlink?.ready_count > 0 ? 'text-green-400' : 'text-amber-400'}`}>
+            {comlink?.available ? `${comlink?.ready_count || 0} listo(s)` : 'No disponible'}
           </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
           <select
             value={comlinkChannel}
             onChange={e => setComlinkChannel(e.target.value)}
-            disabled={!comlink?.available || comlinkSending}
+            disabled={!comlink?.available || !comlinkCanSend || comlinkSending}
             className="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-white"
           >
-            {(comlink?.channels || ['sms', 'telegram', 'voip', 'mesh_wifi', 'mesh_bluetooth', 'radio', 'satellite']).map((channel: string) => (
-              <option key={channel} value={channel}>{channel}</option>
+            {comlinkChannels.map((channel: any) => (
+              <option key={channel.id} value={channel.id}>
+                {channel.id}{channel.ready ? ' — listo' : ' — no listo'}
+              </option>
             ))}
           </select>
           <input
@@ -253,7 +264,7 @@ export default function CommanderPanel() {
             value={comlinkDestination}
             onChange={e => setComlinkDestination(e.target.value)}
             placeholder="Destino (teléfono, chat ID, SIP, host...)"
-            disabled={!comlink?.available || comlinkSending}
+            disabled={!comlink?.available || !comlinkCanSend || comlinkSending}
             className="md:col-span-2 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-white"
           />
         </div>
@@ -268,7 +279,7 @@ export default function CommanderPanel() {
           />
           <button
             onClick={runComlinkSend}
-            disabled={!comlink?.available || comlinkSending || !comlinkMessage.trim()}
+            disabled={!comlink?.available || !comlinkCanSend || comlinkSending || !comlinkMessage.trim()}
             className="self-stretch px-4 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 rounded text-xs font-bold text-white flex items-center gap-1"
           >
             {comlinkSending ? <RefreshCw size={12} className="animate-spin" /> : <Radio size={12} />}

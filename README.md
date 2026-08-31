@@ -84,7 +84,8 @@ Commander se expone en `http://localhost:8001/api/commander/*`; no se inicia un
 segundo servidor en el puerto 8003. Si el repositorio privado no está disponible,
 el dashboard principal sigue funcionando y muestra Commander como no disponible.
 
-COM-LINK queda disponible dentro de Commander:
+COM-LINK queda disponible dentro de Commander, pero el estado distingue entre
+el script instalado y los canales realmente preparados:
 
 ```bash
 curl -H "Authorization: Bearer TU_TOKEN" \
@@ -92,9 +93,14 @@ curl -H "Authorization: Bearer TU_TOKEN" \
 ```
 
 El endpoint de envío es `POST /api/commander/comlink/send` y requiere `channel`
-y `message` en JSON. No se ejecuta ningún canal externo durante el arranque;
-SMS, Telegram, radio, satélite y mesh solo se activan mediante una llamada
-explícita y con su configuración correspondiente.
+y `message` en JSON. El endpoint ejecuta el proceso en el mismo entorno que el
+dashboard: para usar APIs y hardware Android, el dashboard debe estar iniciado
+en Termux. No se ejecuta ningún canal externo durante el arranque.
+
+La matriz de requisitos, las pruebas seguras y las limitaciones verificadas
+están en [`COMLINK_OPERATIVO.md`](COMLINK_OPERATIVO.md). No interpretes
+`available: true` como “7 canales funcionales”; consulta `ready_count` y
+`channels[].reason`.
 
 ### Android / Campo
 

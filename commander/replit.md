@@ -29,3 +29,8 @@ El dashboard unificado sirve Commander en `http://127.0.0.1:8001/api/commander/*
 No arranques `arrancar_commander.sh` ni un servidor en `8003` para este flujo.
 
 `nmap`, `whois` y el acceso de almacenamiento son necesarios para las funciones correspondientes. SMS, GPS y otros canales requieren Termux:API y configuración adicional.
+
+COM-LINK no debe describirse como siete canales siempre disponibles. Ejecuta
+`bash comlink/comlink.sh status-json | jq` para ver `ready_count` y la razón de
+cada canal. Radio AX.25, satélite y WebRTC no están implementados como
+transmisiones verificadas.
