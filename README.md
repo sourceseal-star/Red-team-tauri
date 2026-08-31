@@ -48,6 +48,13 @@ bash replit_start.sh
 bash arrancar.sh
 ```
 
+Este comando inicia el dashboard unificado y PHANTOM en el dispositivo. Para
+incluir Commander desde su repositorio hermano:
+
+```bash
+bash termux_recover.sh
+```
+
 ### Termux + Commander
 
 Para sincronizar el repositorio privado `commander` y cargarlo dentro del mismo

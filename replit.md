@@ -12,7 +12,8 @@ bash replit_start.sh
 El workflow **SourceSeal Dashboard** arranca automáticamente el backend y sirve el
 frontend compilado en el puerto **8001**.
 
-En Termux, `bash arrancar.sh` inicia todo + detecta entorno Android.
+En Termux, `bash arrancar.sh` inicia el dashboard y PHANTOM. Para sincronizar
+también Commander y cargarlo dentro del dashboard, usa `bash termux_recover.sh`.
 
 ### Despliegue conjunto en Termux: Red-team-tauri + Commander
 
