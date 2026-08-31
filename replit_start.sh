@@ -1,7 +1,8 @@
 #!/bin/bash
 # =====================================================================
-# SourceSeal / Red-Team-Tauri -- Arranque unificado para Replit v6.1
+# SourceSeal / Red-Team-Tauri -- Arranque unificado para Replit v6.2
 # Backend + Frontend (dist/) en un solo proceso, puerto :8001
+# v6.2: auth_bootstrap antes del backend — .env es la única fuente de verdad
 # =====================================================================
 # set -e  # removido: no matar todo si algo falla
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -9,8 +10,14 @@ PORT=8001
 
 echo ""
 echo "======================================================"
-echo "  SourceSeal Engine v6.1 -- Replit (unified)"
+echo "  SourceSeal Engine v6.2 -- Replit (unified)"
 echo "======================================================"
+
+# -- 0. Sincronizar hash de password desde .env si falta --
+if [ -f "$ROOT/auth_bootstrap.py" ]; then
+  echo "[start] Sincronizando credenciales desde .env..."
+  (cd "$ROOT" && python3 auth_bootstrap.py --verbose) || true
+fi
 
 # -- 1. Matar CUALQUIER proceso zombie en el puerto --
 echo "[start] Liberando puerto :$PORT si esta ocupado..."
