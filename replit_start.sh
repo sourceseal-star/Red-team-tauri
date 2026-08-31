@@ -55,6 +55,10 @@ cd "$ROOT/redteam/scripts"
 export PORT=$PORT
 export HOST=0.0.0.0
 export PYTHONUNBUFFERED=1
+if [ -f "$ROOT/commander/commander.py" ]; then
+  export COMMANDER_DIR="$ROOT/commander"
+  echo "[start] Commander detectado en $COMMANDER_DIR"
+fi
 python3 dashboard_server.py &
 BACKEND_PID=$!
 echo "[start] Backend PID: $BACKEND_PID"

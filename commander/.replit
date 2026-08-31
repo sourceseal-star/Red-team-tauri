@@ -1,0 +1,15 @@
+modules = ["bash", "python-3.12"]
+
+[nix]
+channel = "stable-25_05"
+packages = ["cargo", "libiconv", "libxcrypt", "openssl", "pkg-config", "rustc"]
+
+[deployment]
+run = "bash start.sh"
+
+[agent]
+expertMode = true
+
+[[ports]]
+localPort = 8003
+externalPort = 80

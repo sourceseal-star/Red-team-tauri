@@ -382,6 +382,46 @@ try:
                 "channels": ["telegram", "sms", "voip", "mesh_wifi", "mesh_bluetooth", "radio", "satellite"],
             }
 
+        @commander_router.post("/api/commander/comlink/send")
+        async def commander_comlink_send(payload: dict = Body(default={})):
+            comlink_sh = Path(_commander_dir) / "comlink" / "comlink.sh"
+            channel = str(payload.get("channel", "")).strip()
+            message = str(payload.get("message", "")).strip()
+            destination = str(payload.get("destination", "")).strip()
+            allowed_channels = {
+                "sms", "telegram", "voip", "mesh_wifi",
+                "mesh_bluetooth", "radio", "satellite",
+            }
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
+            if channel not in allowed_channels:
+                return JSONResponse({"error": f"canal inválido: {channel}"}, status_code=400)
+            if not message:
+                return JSONResponse({"error": "message requerido"}, status_code=400)
+
+            command = ["bash", str(comlink_sh), "send", channel, message]
+            if destination:
+                command.append(destination)
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    command,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                return {
+                    "channel": channel,
+                    "returncode": result.returncode,
+                    "stdout": result.stdout[-1000:] if result.stdout else "",
+                    "stderr": result.stderr[-1000:] if result.stderr else "",
+                }
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": "COM-LINK timeout"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
         app.routes.extend(commander_router.routes)
         _COMMANDER_OK = True
         print(f"[COMMANDER] Router montado: /api/commander/* (dir: {_commander_dir})", flush=True)

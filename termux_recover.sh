@@ -4,7 +4,6 @@
 #
 # Uso:
 #   bash termux_recover.sh
-#   bash termux_recover.sh
 #
 # El script sincroniza ambos repositorios. Commander se integra en el dashboard
 # mediante /api/commander/*; no arranca un segundo servidor ni otro puerto.
@@ -37,7 +36,7 @@ echo ""
 info "Actualizando paquetes de Termux..."
 pkg update -y
 pkg upgrade -y
-pkg install -y python nodejs-lts git curl openssl-tool jq nmap \
+  pkg install -y python nodejs-lts git curl openssl-tool jq sqlite nmap \
   iproute2 bind-utils whois termux-api 2>/dev/null || {
   # Algunos mirrors de Termux no contienen todos los paquetes opcionales.
   warn "Un paquete opcional no está disponible; continúo con los esenciales."
@@ -76,6 +75,17 @@ elif [ -n "$COMMANDER_REPO_URL" ]; then
   ok "Commander listo: $COMMANDER_DIR"
 else
   die "No se pudo preparar Commander. Revisa la autenticación de GitHub en Termux."
+fi
+
+# ── 3.1 Preparar COM-LINK sin activar canales externos ─────────────────────
+COMLINK_DIR="$COMMANDER_DIR/comlink"
+if [ -d "$COMLINK_DIR" ] && [ -f "$COMLINK_DIR/comlink.sh" ]; then
+  info "Preparando COM-LINK..."
+  mkdir -p "$COMLINK_DIR/data/keys" "$COMLINK_DIR/data/logs" "$COMLINK_DIR/data/queue"
+  find "$COMLINK_DIR" -type f -name "*.sh" -exec chmod u+x {} +
+  command -v jq >/dev/null 2>&1 || die "jq es necesario para COM-LINK"
+  command -v sqlite3 >/dev/null 2>&1 || die "sqlite3 es necesario para COM-LINK (paquete Termux: sqlite)"
+  ok "COM-LINK preparado (sin iniciar SMS, radio, satélite ni mensajería)"
 fi
 
 # ── 4. Dependencias Python reales del backend ────────────────────────────────
