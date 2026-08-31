@@ -197,10 +197,19 @@ Si quieres actualizar y arrancar el sistema al terminar:
 bash setup.sh --start
 ```
 
+Este modo arranca el Dashboard en `8001` y el Gateway Mesh opcional en `8080`.
+Para arrancar el stack completo con Commander integrado y PHANTOM, usa:
+
+```bash
+bash setup.sh --unified
+```
+
+Ese modo usa Dashboard + Commander en `8001` y PHANTOM Master en `8002`.
+
 También puedes hacer ambas cosas:
 
 ```bash
-bash setup.sh --start --watch
+bash setup.sh --unified --watch
 ```
 
 El sincronizador respalda cambios del repositorio y también de submódulos
@@ -235,15 +244,35 @@ if [ -f "$WATCH_PID_FILE" ]; then
 fi
 ```
 
-En una actualización normal, el script:
+## 5. Verificación de puertos
+
+Con `--unified`, comprueba el stack completo desde otra sesión de Termux:
+
+```bash
+curl -s http://127.0.0.1:8001/api/health
+curl -s http://127.0.0.1:8001/api/commander/health
+curl -s http://127.0.0.1:8002/api/status
+tail -f ~/.sourceseal/watcher.log
+```
+
+Con `--start`, el Gateway Mesh opcional se comprueba aparte:
+
+```bash
+curl -s http://127.0.0.1:8001/api/health
+curl -s http://127.0.0.1:8080/health
+tail -f ~/.sourceseal/watcher.log
+```
+
+Durante la preparación, `setup.sh`:
 
 1. actualiza los paquetes de Termux;
-2. hace `fetch` y `pull --rebase` de ambos repositorios;
+2. sincroniza ambos repositorios y sus submódulos;
 3. verifica `commander.py` y prepara COM-LINK;
 4. instala las dependencias Python;
 5. instala y compila el frontend;
-6. preserva `.env`;
-7. levanta dashboard, Commander in-process y PHANTOM.
+6. verifica el watcher y los componentes de alcance.
+
+Los servicios solo se inician si usas `--start` o `--unified`.
 
 ## 5. Comprobaciones después del arranque
 

@@ -8,6 +8,7 @@
 # Uso como bootstrap guardado en $HOME:
 #   bash ~/setup.sh
 #   bash ~/setup.sh --start
+#   bash ~/setup.sh --unified
 #
 # El script actualiza solo mediante el sincronizador SSH del repositorio.
 # No recibe comandos remotos, no ejecuta shell recibido desde Telegram y no
@@ -40,8 +41,9 @@ SourceSeal setup.sh — Termux
 
   bash setup.sh          Actualiza y prepara; no inicia servidores.
   bash setup.sh --start  Actualiza, prepara y luego inicia start-termux.sh.
+  bash setup.sh --unified Actualiza y luego inicia Dashboard + Commander + PHANTOM.
   bash setup.sh --watch  Actualiza y deja el watcher local en segundo plano.
-  bash setup.sh --start --watch  Hace ambas cosas.
+  bash setup.sh --unified --watch  Hace ambas cosas con el stack unificado.
 
 Variables opcionales:
   REDTEAM_DIR, COMMANDER_DIR, REDTEAM_REPO_URL, COMMANDER_REPO_URL
@@ -49,15 +51,21 @@ EOF
 }
 
 START_AFTER_SETUP=0
+UNIFIED_AFTER_SETUP=0
 WATCH_AFTER_SETUP=0
 for argument in "$@"; do
   case "$argument" in
     --start) START_AFTER_SETUP=1 ;;
+    --unified) UNIFIED_AFTER_SETUP=1 ;;
     --watch) WATCH_AFTER_SETUP=1 ;;
     --help|-h) usage; exit 0 ;;
     *) die "Opción no reconocida: $argument. Usa --help." ;;
   esac
 done
+
+if [ "$START_AFTER_SETUP" = "1" ] && [ "$UNIFIED_AFTER_SETUP" = "1" ]; then
+  die "Usa --start o --unified, no ambos."
+fi
 
 command -v pkg >/dev/null 2>&1 || die "Ejecuta setup.sh dentro de Termux."
 
@@ -137,6 +145,11 @@ if [ "$WATCH_AFTER_SETUP" = "1" ]; then
     echo "$!" > "$WATCH_PID_FILE"
     ok "Watcher iniciado (PID $(cat "$WATCH_PID_FILE")); log: $WATCH_LOG"
   fi
+fi
+
+if [ "$UNIFIED_AFTER_SETUP" = "1" ]; then
+  info "Iniciando stack unificado porque se indicó --unified..."
+  exec env COMMANDER_DIR="$COMMANDER_DIR" bash "$REPO_DIR/iniciar_unificado.sh"
 fi
 
 if [ "$START_AFTER_SETUP" = "1" ]; then

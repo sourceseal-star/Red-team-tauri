@@ -74,8 +74,9 @@ Flujo completo recomendado desde Termux:
 ```bash
 cd ~/Red-team-tauri
 bash setup.sh                 # actualizar todo sin arrancar
-bash setup.sh --start         # actualizar todo y arrancar
-bash setup.sh --start --watch # actualizar, arrancar y observar cambios
+bash setup.sh --start         # Dashboard :8001 + Gateway opcional :8080
+bash setup.sh --unified       # Dashboard/Commander :8001 + PHANTOM :8002
+bash setup.sh --unified --watch # stack unificado + watcher
 ```
 
 Si solo quieres ejecutar lo que ya tienes localmente sin tocar Git:
@@ -83,6 +84,15 @@ Si solo quieres ejecutar lo que ya tienes localmente sin tocar Git:
 ```bash
 cd ~/Red-team-tauri
 COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
+```
+
+Verificación del stack unificado:
+
+```bash
+curl -s http://127.0.0.1:8001/api/health
+curl -s http://127.0.0.1:8001/api/commander/health
+curl -s http://127.0.0.1:8002/api/status
+tail -f ~/.sourceseal/watcher.log
 ```
 
 El flujo histórico sigue disponible con `bash termux_recover.sh` cuando se
