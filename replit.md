@@ -68,6 +68,22 @@ curl http://localhost:8001/api/v1/status       # LEVIATHAN unificado
 curl http://localhost:8001/api/integrated/health  # ARTO + SEAL + LEVIATHAN
 ```
 
+### Monitor de operaciones seguro
+
+SourceSeal incluye un monitor administrativo protegido dentro del backend
+unificado. Consulta métricas, estado de los repositorios y una auditoría local
+encadenada sin aceptar comandos remotos ni ejecutar shell arbitrario:
+
+```bash
+curl -H "Authorization: Bearer TU_TOKEN" http://localhost:8001/api/operations/status
+curl -H "Authorization: Bearer TU_TOKEN" http://localhost:8001/api/operations/repos
+curl -H "Authorization: Bearer TU_TOKEN" http://localhost:8001/api/operations/audit
+```
+
+El monitor no recibe comandos de Telegram, no hace `pull`, `push`, `deploy`,
+`kill` ni aislamiento de red. Los detalles están en
+[`redteam/monitor/README.md`](redteam/monitor/README.md).
+
 COM-LINK informa la preparación real por canal en
 `/api/commander/comlink/status`; `available` no equivale a siete canales
 operativos. La verificación y las limitaciones de hardware están en

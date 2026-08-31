@@ -643,6 +643,14 @@ try:
 except Exception as e:
     print(f"[ANDROID] No cargado: {e}", flush=True)
 
+# ── SourceSeal Operations Monitor (solo lectura + auditoría local) ───────────
+try:
+    from monitor.operations_monitor import router as operations_monitor_router
+    app.include_router(operations_monitor_router)
+    print("[OPERATIONS] Monitor seguro montado en /api/operations/*", flush=True)
+except Exception as e:
+    print(f"[OPERATIONS] No cargado: {e}", flush=True)
+
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
                    allow_methods=["GET", "POST", "DELETE", "PATCH", "OPTIONS"], 
                    allow_headers=["X-API-Key", "Content-Type", "Authorization"],
