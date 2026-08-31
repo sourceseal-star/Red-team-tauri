@@ -94,6 +94,21 @@ bash replit_start.sh
 
 → http://localhost:8001
 
+### NEXUS OMNI
+NEXUS OMNI escucha internamente en `:8004`, pero en Replit se accede desde el
+panel del dashboard unificado mediante `/api/nexus/ui`; no es necesario abrir
+`localhost:8004` desde el navegador. Sus credenciales viven en `.env` con
+`NEXUS_USER` y `NEXUS_PASS`. Si `NEXUS_PASS` no existe, el arranque genera una
+contraseña segura, protege `.env` con permisos `600` y la muestra una sola vez
+en el log de arranque. Para rotarla:
+
+```bash
+python3 nexus_omni_v9.py --reset-credentials
+```
+
+Después de rotar, reinicia el dashboard y vuelve a iniciar Nexus desde el
+panel si fuera necesario. Nunca guardes estos valores en Git.
+
 ---
 
 ## 📡 ENDPOINTS IoT NUEVOS

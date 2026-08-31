@@ -30,10 +30,13 @@
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {subdomains:'abcd'}).addTo(map);
     
     let markers = {};
-    let ws = new WebSocket(`ws://${location.host}/ws`);
-    
-    ws.onmessage = (evt) => {
-        const data = JSON.parse(evt.data);
+    const NEXUS_API_BASE = window.NEXUS_API_BASE || '/api';
+
+    async function refreshState() {
+      try {
+        const response = await fetch(`${NEXUS_API_BASE}/state`);
+        if (!response.ok) return;
+        const data = await response.json();
         document.getElementById('status').innerText = data.stats.scanning ? "SCANNING..." : "MONITORING";
         document.getElementById('mode').innerText = data.stats.mode.toUpperCase();
         document.getElementById('crit-count').innerText = data.stats.critical;
@@ -48,7 +51,13 @@
         });
         
         drawVectors(data.vectors);
-    };
+      } catch (_) {
+        document.getElementById('status').innerText = "CONNECTION LOST";
+      }
+    }
+
+    refreshState();
+    setInterval(refreshState, 1500);
 
     function drawVectors(vectors) {
         const canvas = document.getElementById('vector-canvas');
@@ -73,7 +82,12 @@
     }
 
     function startScan() {
-        fetch('/api/scan', {method:'POST'}).then(()=>alert("Escaneo Cognitivo Iniciado"));
+        fetch(`${NEXUS_API_BASE}/scan`, {method:'POST'})
+            .then((response) => {
+                if (!response.ok) throw new Error("scan failed");
+                alert("Escaneo Cognitivo Iniciado");
+            })
+            .catch(() => alert("No se pudo iniciar el escaneo"));
     }
 </script>
 </body>

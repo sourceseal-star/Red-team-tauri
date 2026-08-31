@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from nexus_credentials import ensure_nexus_credentials
 try:
     import aiohttp
 except ImportError:
@@ -36,8 +37,15 @@ from io import BytesIO
 # ============================================================
 # CONFIGURACIÓN NEURAL
 # ============================================================
+RESET_CREDENTIALS = "--reset-credentials" in sys.argv[1:]
+NEXUS_CREDENTIALS = ensure_nexus_credentials(reset=RESET_CREDENTIALS)
+
+if RESET_CREDENTIALS:
+    print("[NEXUS] Credenciales rotadas. Reinicia el servicio para aplicar el nuevo acceso.", flush=True)
+    raise SystemExit(0)
+
 CONFIG = {
-    "db_path": "nexus_omni.db",
+    "db_path": os.environ.get("NEXUS_DB", "nexus_omni.db"),
     "ports_critical": [21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 993, 995, 1433, 1521, 3306, 3389, 5432, 5900, 8080, 8443, 8888, 37777, 34567, 554],
     "ports_common": [80, 443, 8080, 8000, 554],
     
@@ -54,8 +62,8 @@ CONFIG = {
     },
     
     "base_coords": {"lat": 4.7110, "lon": -74.0721},
-    "auth_user": "admin",
-    "auth_pass": "sourceseal",
+    "auth_user": NEXUS_CREDENTIALS.user,
+    "auth_pass": NEXUS_CREDENTIALS.password,
     "telegram_token": "", 
     "telegram_chat_id": ""
 }
@@ -354,6 +362,20 @@ async def get_analytics(credentials: HTTPBasicCredentials = Depends(verify_auth)
         "scanning": scanner.scanning, "health": "OPTIMAL"
     }
 
+@app.get("/api/state")
+async def get_state(credentials: HTTPBasicCredentials = Depends(verify_auth)):
+    """Estado completo para el proxy del dashboard unificado."""
+    devices = db.get_all_devices()
+    vectors = [
+        {"source": d["lat"], "target": d["lon"], "risk": d["risk_score"]}
+        for d in devices if d["threat_level"] in ["HIGH", "CRITICAL"]
+    ]
+    return {
+        "devices": devices,
+        "vectors": vectors,
+        "stats": await get_analytics(credentials),
+    }
+
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -370,12 +392,17 @@ async def ws_endpoint(websocket: WebSocket):
             await websocket.send_json({
                 "devices": devices,
                 "vectors": vectors,
-                "stats": await get_analytics(HTTPBasicCredentials(username="admin", password="sourceseal"))
+                "stats": await get_analytics(
+                    HTTPBasicCredentials(
+                        username=CONFIG["auth_user"],
+                        password=CONFIG["auth_pass"],
+                    )
+                )
             })
             await asyncio.sleep(1) # Update rate 1s
     except WebSocketDisconnect: pass
 
 if __name__ == "__main__":
     print("🌐 NEXUS OMNI-SENTIENT v9.0 ONLINE")
-    print(f"🔐 admin / sourceseal")
+    print(f"🔐 Acceso configurado para {NEXUS_CREDENTIALS.user}; el secreto no se vuelve a mostrar aquí")
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("NEXUS_PORT", "8004")))

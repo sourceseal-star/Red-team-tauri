@@ -93,6 +93,16 @@ if [ "$READY" != "1" ]; then
   exit 1
 fi
 
+# -- 6. NEXUS OMNI (interno en :8004, visible a través del proxy del dashboard) --
+echo "[start] Iniciando NEXUS OMNI en :8004..."
+NEXUS_START_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X POST "http://127.0.0.1:$PORT/api/services/start?name=nexus-omni" 2>/dev/null || echo "000")
+if [ "$NEXUS_START_CODE" = "200" ]; then
+  echo "[start] OK NEXUS solicitado; su UI queda disponible dentro del dashboard en /api/nexus/ui"
+else
+  echo "[start] ! NEXUS no pudo iniciarse automáticamente (HTTP $NEXUS_START_CODE); puede iniciarse desde Control Tower."
+fi
+
 echo ""
 echo "[start] Sistema unificado corriendo:"
 echo "        -> Backend + Frontend: http://0.0.0.0:$PORT"
@@ -102,7 +112,7 @@ echo "        -> Health: http://localhost:$PORT/api/health"
 echo "        -> ARTO Status: http://localhost:$PORT/api/arto/status"
 echo ""
 
-# -- 6. GHOST HUNTER PHANTOM (Master + Nodo en :8002) --
+# -- 7. GHOST HUNTER PHANTOM (Master + Nodo en :8002) --
 echo "[start] Iniciando GHOST HUNTER PHANTOM..."
 cd "$ROOT/ghost_hunter_phantom"
 BACKEND_API="http://localhost:$PORT" MASTER_PORT=8002 NUM_NODES=1 bash start.sh all &

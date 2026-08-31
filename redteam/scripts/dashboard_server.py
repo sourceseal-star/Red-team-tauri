@@ -65,9 +65,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 BASE       = SCRIPT_DIR.parent                         # redteam/
 ROOT       = BASE                                       # alias
 DIST       = (BASE.parent / "tauri-frontend" / "dist").resolve()
+PROJECT_ROOT = BASE.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from nexus_credentials import ensure_nexus_credentials
+
 NEXUS_PORT = int(os.environ.get("NEXUS_PORT", "8004"))
-NEXUS_AUTH_USER = os.environ.get("NEXUS_AUTH_USER", "admin")
-NEXUS_AUTH_PASS = os.environ.get("NEXUS_AUTH_PASS", "sourceseal")
+NEXUS_CREDENTIALS = ensure_nexus_credentials()
+NEXUS_AUTH_USER = NEXUS_CREDENTIALS.user
+NEXUS_AUTH_PASS = NEXUS_CREDENTIALS.password
 
 REPORTS   = ROOT / "reports"
 EVIDENCE  = ROOT / "evidence"
@@ -7598,9 +7604,42 @@ async def nexus_ui_proxy():
             )
         if r.status_code != 200:
             return HTMLResponse(f"<h2>NEXUS OMNI respondió HTTP {r.status_code}.</h2>", status_code=502)
-        return HTMLResponse(r.text)
+        # The browser sees the dashboard origin, not the internal :8004
+        # origin. Route Nexus API calls through the dashboard proxy.
+        html = r.text.replace(
+            "</head>",
+            "<script>window.NEXUS_API_BASE='/api/nexus';</script></head>",
+            1,
+        )
+        return HTMLResponse(html)
     except Exception:
         return HTMLResponse("<h2>NEXUS OMNI no está corriendo. Inícialo desde Control Tower.</h2>", status_code=503)
+
+async def _nexus_proxy_json(method: str, path: str, **kwargs):
+    """Forward a Nexus JSON request using the shared Basic credentials."""
+    import httpx as _hx
+    async with _hx.AsyncClient() as client:
+        response = await client.request(
+            method,
+            f"http://127.0.0.1:{NEXUS_PORT}{path}",
+            auth=(NEXUS_AUTH_USER, NEXUS_AUTH_PASS),
+            timeout=5,
+            **kwargs,
+        )
+    if response.status_code != 200:
+        return JSONResponse(
+            {"error": f"NEXUS OMNI respondió HTTP {response.status_code}."},
+            status_code=502,
+        )
+    return JSONResponse(response.json())
+
+@app.get("/api/nexus/state")
+async def nexus_state_proxy():
+    return await _nexus_proxy_json("GET", "/api/state")
+
+@app.post("/api/nexus/scan")
+async def nexus_scan_proxy():
+    return await _nexus_proxy_json("POST", "/api/scan")
 
 # === MODULO A — Reportes PDF con Hash Sellado ===
 async def _generate_audit_pdf(devices, subnet="", exploits=None):
