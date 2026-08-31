@@ -4,6 +4,12 @@
 The project deliberately avoids a dotenv dependency here because Nexus is also
 started as a standalone Python process.  Both processes must resolve the same
 credentials from the same file and environment.
+
+AUTHORITY RULE (permanent):
+  .env is the single source of truth for credentials.
+  If a value exists in .env or the environment, it is USED — never regenerated,
+  never overwritten, never printed to stdout.
+  Recovery is always the protected .env file (chmod 600), not console output.
 """
 
 from __future__ import annotations
@@ -112,45 +118,45 @@ def resolve_project_value(name: str, default: str = "") -> str:
 def ensure_managed_secret(
     name: str,
     *,
-    announce: bool = True,
+    announce: bool = False,
     reset: bool = False,
 ) -> str:
-    """Resolve or generate a project secret and make it available to children."""
+    """Resolve or generate a project secret and make it available to children.
+
+    AUTHORITY: If the value exists in .env or the environment, it is used
+    as-is.  It is never regenerated, never overwritten, and never printed
+    to stdout.  Recovery is always the protected .env file.
+    Only when the value is truly absent does this function generate one.
+    """
     file_values = _read_env_file(ENV_PATH)
+
     if reset:
         value = secrets.token_urlsafe(48)
         _write_env_values(ENV_PATH, {name: value})
         os.environ[name] = value
-        if announce:
-            print(f"[SECRETS] {name} regenerado y guardado en {ENV_PATH}", flush=True)
-            print(f"[SECRETS] {name}={value}", flush=True)
         return value
 
     value = os.environ.get(name, "").strip() or file_values.get(name, "").strip()
-    generated = False
     if not value:
         value = secrets.token_urlsafe(48)
         _write_env_values(ENV_PATH, {name: value})
-        generated = True
-    elif ENV_PATH.exists():
+
+    os.environ[name] = value
+
+    if ENV_PATH.exists():
         os.chmod(ENV_PATH, 0o600)
 
-    # Child services inherit the resolved value even when it came from .env.
-    os.environ[name] = value
-    if generated and announce:
-        print(f"[SECRETS] {name} generado y guardado en {ENV_PATH}", flush=True)
-        print(f"[SECRETS] {name}={value}", flush=True)
     return value
 
 
-def ensure_nexus_credentials(*, reset: bool = False, announce: bool = True) -> NexusCredentials:
-    """Resolve credentials and create a protected local .env when needed.
+def ensure_nexus_credentials(*, reset: bool = False, announce: bool = False) -> NexusCredentials:
+    """Resolve Nexus credentials from .env (the single source of truth).
 
-    Normal resolution follows environment > .env > generated value.  An
-    explicit reset intentionally replaces the effective password for the
-    current process and persists it to .env so the next process uses it too.
+    AUTHORITY: If NEXUS_USER and NEXUS_PASS exist in .env or the environment,
+    they are used as-is.  They are never regenerated, never overwritten, and
+    never printed to stdout.  Recovery is always the protected .env file.
+    Only when NEXUS_PASS is truly absent does this function generate one.
     """
-
     file_values = _read_env_file(ENV_PATH)
     user = (
         os.environ.get("NEXUS_USER", "").strip()
@@ -165,18 +171,17 @@ def ensure_nexus_credentials(*, reset: bool = False, announce: bool = True) -> N
         generated = True
     else:
         password = os.environ.get("NEXUS_PASS", "").strip() or file_values.get("NEXUS_PASS", "").strip()
-        generated = False
         if not password:
             password = secrets.token_urlsafe(48)
             _write_env_values(ENV_PATH, {"NEXUS_USER": user, "NEXUS_PASS": password})
             generated = True
-        elif ENV_PATH.exists():
-            # A pre-existing file must never remain world-readable.
-            os.chmod(ENV_PATH, 0o600)
+        else:
+            generated = False
 
-    if generated and announce:
-        print(f"[NEXUS] Credenciales generadas y guardadas en {ENV_PATH}", flush=True)
-        print(f"[NEXUS] NEXUS_USER={user}", flush=True)
-        print(f"[NEXUS] NEXUS_PASS={password}", flush=True)
+    if ENV_PATH.exists():
+        os.chmod(ENV_PATH, 0o600)
+
+    os.environ["NEXUS_USER"] = user
+    os.environ["NEXUS_PASS"] = password
 
     return NexusCredentials(user=user, password=password, env_path=ENV_PATH, generated=generated)
