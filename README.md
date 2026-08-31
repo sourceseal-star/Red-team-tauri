@@ -45,15 +45,14 @@ bash replit_start.sh
 ### Termux (Android)
 
 ```bash
-bash arrancar.sh
-```
-
-Este comando inicia el dashboard unificado y PHANTOM en el dispositivo. Para
-incluir Commander desde su repositorio hermano:
-
-```bash
+# Primera instalación y todas las actualizaciones:
 bash termux_recover.sh
 ```
+
+Este comando instala dependencias, sincroniza Red-team-tauri y Commander,
+compila el frontend y levanta el dashboard unificado junto con PHANTOM.
+La guía completa para autenticación SSH, actualización, comprobaciones y
+recuperación está en [`TERMUX_SYNC.md`](TERMUX_SYNC.md).
 
 Commander se expone en `http://localhost:8001/api/commander/*`; no se inicia un
 segundo servidor en el puerto 8003. Si el repositorio privado no está disponible,
