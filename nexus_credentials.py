@@ -98,6 +98,51 @@ def _write_env_values(path: Path, updates: dict[str, str]) -> None:
         raise RuntimeError(f"No se pudo proteger o actualizar {path}") from exc
 
 
+def update_project_env(values: dict[str, str]) -> None:
+    """Persist non-empty managed values without exposing them to callers."""
+    _write_env_values(ENV_PATH, values)
+
+
+def resolve_project_value(name: str, default: str = "") -> str:
+    """Resolve one value using environment > local .env > default."""
+    file_values = _read_env_file(ENV_PATH)
+    return os.environ.get(name, "").strip() or file_values.get(name, "").strip() or default
+
+
+def ensure_managed_secret(
+    name: str,
+    *,
+    announce: bool = True,
+    reset: bool = False,
+) -> str:
+    """Resolve or generate a project secret and make it available to children."""
+    file_values = _read_env_file(ENV_PATH)
+    if reset:
+        value = secrets.token_urlsafe(48)
+        _write_env_values(ENV_PATH, {name: value})
+        os.environ[name] = value
+        if announce:
+            print(f"[SECRETS] {name} regenerado y guardado en {ENV_PATH}", flush=True)
+            print(f"[SECRETS] {name}={value}", flush=True)
+        return value
+
+    value = os.environ.get(name, "").strip() or file_values.get(name, "").strip()
+    generated = False
+    if not value:
+        value = secrets.token_urlsafe(48)
+        _write_env_values(ENV_PATH, {name: value})
+        generated = True
+    elif ENV_PATH.exists():
+        os.chmod(ENV_PATH, 0o600)
+
+    # Child services inherit the resolved value even when it came from .env.
+    os.environ[name] = value
+    if generated and announce:
+        print(f"[SECRETS] {name} generado y guardado en {ENV_PATH}", flush=True)
+        print(f"[SECRETS] {name}={value}", flush=True)
+    return value
+
+
 def ensure_nexus_credentials(*, reset: bool = False, announce: bool = True) -> NexusCredentials:
     """Resolve credentials and create a protected local .env when needed.
 

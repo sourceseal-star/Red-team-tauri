@@ -7,6 +7,8 @@ contiene valores reales.
 |---|---|---|---|
 | `NEXUS_USER` | Usuario HTTP Basic de Nexus Omni | `.env` local o secreto del entorno | Editar el valor y reiniciar Nexus |
 | `NEXUS_PASS` | Contraseña HTTP Basic de Nexus Omni | `.env` con permisos `600` o secreto del entorno | `python3 nexus_omni_v9.py --reset-credentials`, después reiniciar el dashboard |
+| `ADMIN_EMAIL` | Identidad del administrador del dashboard | `.env` o configuración del entorno | Editar el valor y reiniciar |
+| `ADMIN_PASSWORD` | Contraseña del acceso principal al dashboard | `.env` con permisos `600` o secreto del entorno | `python3 gestionar_credenciales.py --reset-dashboard`, después reiniciar |
 | `REDTEAM_API_KEY` | Acceso a rutas protegidas del dashboard | `.env` o secreto del entorno | Generar una nueva clave y reiniciar el dashboard |
 | `C2_API_SECRET` | Autenticación de integraciones C2, si se habilita | Secreto del entorno | Rotar en el proveedor y reiniciar el servicio |
 | `TELEGRAM_BOT_TOKEN` | Alertas de Telegram, si se habilitan | Secreto del entorno | Revocar el bot anterior y crear uno nuevo |
@@ -20,6 +22,9 @@ contiene valores reales.
 | `GITHUB_TOKEN` | Operaciones autorizadas de GitHub | Secreto del entorno o credential helper | Revocar el token y crear uno con alcance mínimo |
 | `CORSET_SCOPE_B64` | Alcance autorizado de escaneo | `.env` o configuración del entorno | Cambiar cuando cambie el alcance aprobado |
 | `SESSION_SECRET` | Sesiones del entorno Replit | Replit Secrets | Rotar solo coordinadamente con las sesiones activas |
+| `ORCHESTRATOR_KEY` | Autenticación del gateway federado | `.env` o secreto del nodo | Rotar en el nodo coordinador |
+| `NODE_MOTOR_KEY` / `NODE_INTEL_KEY` | Acceso a nodos remotos opcionales | `.env` o configuración de cada nodo | Rotar en el servicio remoto |
+| `REDIS_URL` | Acceso a Redis opcional | Secreto del entorno | Rotar la credencial en Redis |
 
 ## Reglas
 
@@ -28,6 +33,48 @@ contiene valores reales.
   mensajes de commit.
 - En Replit, guarda los secretos mediante el gestor de Secrets del workspace;
   no los pegues en el chat ni en archivos versionados.
+
+## Recuperar el acceso en el workspace
+
+Desde la raíz del proyecto:
+
+```bash
+# Solo nombres, origen y permisos; no muestra valores
+python3 gestionar_credenciales.py --status
+
+# Recuperación explícita para el operador local
+python3 gestionar_credenciales.py --show
+
+# Crea las credenciales internas que falten
+python3 gestionar_credenciales.py --generate-missing
+```
+
+El acceso principal usa `ADMIN_EMAIL` y `ADMIN_PASSWORD`; el token que protege
+las rutas del dashboard es `REDTEAM_API_KEY`. Nexus usa `NEXUS_USER` y
+`NEXUS_PASS`. Las cuatro credenciales internas se guardan en `.env` con modo
+`600`; el dashboard nunca guarda la contraseña en texto plano. El comando
+`--show` debe ejecutarse solo en una terminal privada y su salida no debe
+copiarse a chats, commits, capturas ni tickets.
+
+Para rotar:
+
+```bash
+python3 gestionar_credenciales.py --reset-nexus
+python3 gestionar_credenciales.py --reset-dashboard
+```
+
+Después de cualquier rotación reinicia `SourceSeal Dashboard`. Si la variable
+correspondiente existe como Replit Secret o variable de entorno, esa fuente
+tiene prioridad sobre `.env` y también debe actualizarse allí.
+
+## Credenciales de proveedores y dispositivos
+
+Las claves de Shodan, AbuseIPDB, Hunter, VirusTotal, Censys, Google y GitHub
+deben recuperarse desde sus respectivos paneles y guardarse como Secrets del
+workspace. No se pueden generar localmente porque el proveedor debe emitirlas.
+Las credenciales de cámaras o dispositivos son de cada activo autorizado y no
+son credenciales de acceso al dashboard; deben introducirse solo durante una
+operación aprobada.
 
 ## GitHub Actions / GitHub Secrets
 

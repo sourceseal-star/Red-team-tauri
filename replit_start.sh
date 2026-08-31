@@ -95,7 +95,18 @@ fi
 
 # -- 6. NEXUS OMNI (interno en :8004, visible a través del proxy del dashboard) --
 echo "[start] Iniciando NEXUS OMNI en :8004..."
+# The dashboard now protects service control with REDTEAM_API_KEY. Read it
+# locally for this internal call without ever printing it.
+NEXUS_API_KEY="${REDTEAM_API_KEY:-}"
+if [ -z "$NEXUS_API_KEY" ] && [ -f "$ROOT/.env" ]; then
+  NEXUS_API_KEY=$(sed -n 's/^REDTEAM_API_KEY=//p' "$ROOT/.env" | head -n 1)
+fi
+NEXUS_AUTH_ARGS=()
+if [ -n "$NEXUS_API_KEY" ]; then
+  NEXUS_AUTH_ARGS=(-H "X-API-Key: $NEXUS_API_KEY")
+fi
 NEXUS_START_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  "${NEXUS_AUTH_ARGS[@]}" \
   -X POST "http://127.0.0.1:$PORT/api/services/start?name=nexus-omni" 2>/dev/null || echo "000")
 if [ "$NEXUS_START_CODE" = "200" ]; then
   echo "[start] OK NEXUS solicitado; su UI queda disponible dentro del dashboard en /api/nexus/ui"

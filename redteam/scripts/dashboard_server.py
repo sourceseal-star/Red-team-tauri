@@ -34,6 +34,8 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import hashlib as _hashlib
+import hmac as _hmac
 import json
 import os
 import re
@@ -68,7 +70,12 @@ DIST       = (BASE.parent / "tauri-frontend" / "dist").resolve()
 PROJECT_ROOT = BASE.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-from nexus_credentials import ensure_nexus_credentials
+from nexus_credentials import (
+    ensure_managed_secret,
+    ensure_nexus_credentials,
+    resolve_project_value,
+    update_project_env,
+)
 
 NEXUS_PORT = int(os.environ.get("NEXUS_PORT", "8004"))
 NEXUS_CREDENTIALS = ensure_nexus_credentials()
@@ -168,7 +175,7 @@ except Exception as _ia_err:
     _INTERCEPTOR_ADVANCED_OK = False
     print(f"[WARN] interceptor_advanced import falló: {_ia_err}", flush=True)
 
-API_KEY = os.environ.get("REDTEAM_API_KEY", "").strip()
+API_KEY = ensure_managed_secret("REDTEAM_API_KEY")
 
 # Las rutas activas se mantienen en este backend unificado; la autenticación
 # usa REDTEAM_API_KEY tanto para login como para las rutas protegidas.
@@ -3632,30 +3639,70 @@ import secrets as _secrets
 import json as _json
 import time as _time
 
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@redteam.local").strip()
+ADMIN_EMAIL = resolve_project_value("ADMIN_EMAIL", "admin@redteam.local")
+ADMIN_PASSWORD = ensure_managed_secret("ADMIN_PASSWORD")
 # FIX CRITICO: antes leia "API_KEY" (env var que nunca se seteaba) mientras
 # el middleware de seguridad exige "REDTEAM_API_KEY" (variable API_KEY definida
 # arriba, linea ~136). Esto causaba que el login emitiera un token que NUNCA
 # coincidia con el que el middleware validaba -> 401 en TODO despues de loguear.
-DASHBOARD_TOKEN = API_KEY or "local-dev-token"
+DASHBOARD_TOKEN = API_KEY
 
 _AUTH_DIR = os.path.join(os.path.dirname(__file__), ".auth")
 _PASS_FILE = os.path.join(_AUTH_DIR, "password.json")
 _WEBAUTHN_FILE = os.path.join(_AUTH_DIR, "webauthn.json")
-os.makedirs(_AUTH_DIR, exist_ok=True)
+os.makedirs(_AUTH_DIR, mode=0o700, exist_ok=True)
+try:
+    os.chmod(_AUTH_DIR, 0o700)
+except OSError:
+    pass
 
-def _get_password():
-    if os.path.exists(_PASS_FILE):
-        try:
-            with open(_PASS_FILE) as f:
-                return _json.load(f).get("password", "")
-        except Exception:
-            pass
-    return os.environ.get("ADMIN_PASSWORD", "admin123").strip()
+def _password_matches(candidate):
+    """Validate a password without keeping it in the auth file."""
+    try:
+        with open(_PASS_FILE, encoding="utf-8") as f:
+            record = _json.load(f)
+        stored_hash = record.get("password_hash", "")
+        salt = record.get("salt", "")
+        iterations = int(record.get("iterations", 310000))
+        if stored_hash and salt:
+            derived = _hashlib.pbkdf2_hmac(
+                "sha256", candidate.encode("utf-8"), bytes.fromhex(salt), iterations
+            ).hex()
+            return _hmac.compare_digest(derived, stored_hash)
+        # One-time migration for the old plaintext auth file.
+        legacy = record.get("password", "")
+        if legacy and _hmac.compare_digest(candidate, legacy):
+            _set_password(candidate)
+            return True
+    except (OSError, ValueError, TypeError, _json.JSONDecodeError):
+        pass
+    return bool(candidate) and _hmac.compare_digest(candidate, ADMIN_PASSWORD)
 
 def _set_password(new_pass):
-    with open(_PASS_FILE, 'w') as f:
-        _json.dump({"password": new_pass, "changed": _time.time()}, f)
+    global ADMIN_PASSWORD
+    if not new_pass:
+        raise ValueError("La contraseña no puede estar vacía")
+    salt = os.urandom(16)
+    iterations = 310000
+    password_hash = _hashlib.pbkdf2_hmac(
+        "sha256", new_pass.encode("utf-8"), salt, iterations
+    ).hex()
+    with open(_PASS_FILE, "w", encoding="utf-8") as f:
+        _json.dump({
+            "algorithm": "pbkdf2-sha256",
+            "iterations": iterations,
+            "salt": salt.hex(),
+            "password_hash": password_hash,
+            "changed": _time.time(),
+        }, f)
+    try:
+        os.chmod(_PASS_FILE, 0o600)
+    except OSError:
+        pass
+    # Keep the operator recovery file synchronized with an in-app password change.
+    update_project_env({"ADMIN_PASSWORD": new_pass})
+    ADMIN_PASSWORD = new_pass
+    os.environ["ADMIN_PASSWORD"] = new_pass
 
 def _load_webauthn():
     if os.path.exists(_WEBAUTHN_FILE):
@@ -3674,7 +3721,7 @@ def _save_webauthn(data):
 async def auth_login(body: dict = Body(...)):
     email = (body.get("email") or "").strip()
     password = body.get("password") or ""
-    if email != ADMIN_EMAIL or password != _get_password():
+    if email != ADMIN_EMAIL or not _password_matches(password):
         raise HTTPException(status_code=401, detail="Credenciales invalidas")
     return {"token": DASHBOARD_TOKEN, "email": email}
 
@@ -3682,7 +3729,7 @@ async def auth_login(body: dict = Body(...)):
 async def change_password(body: dict = Body(...)):
     current = body.get("current_password", "")
     new = body.get("new_password", "")
-    if current != _get_password():
+    if not _password_matches(current):
         raise HTTPException(status_code=401, detail="Contrasena actual incorrecta")
     if len(new) < 6:
         raise HTTPException(status_code=400, detail="Minimo 6 caracteres")
@@ -3698,7 +3745,7 @@ async def webauthn_status():
 async def webauthn_register_begin(body: dict = Body(...)):
     email = (body.get("email") or "").strip()
     password = body.get("password") or ""
-    if email != ADMIN_EMAIL or password != _get_password():
+    if email != ADMIN_EMAIL or not _password_matches(password):
         raise HTTPException(status_code=401, detail="Credenciales invalidas")
     challenge = _secrets.token_urlsafe(32)
     data = _load_webauthn()
@@ -3988,7 +4035,6 @@ except RuntimeError:
 # FASE 3: EVIDENCIA BLINDADA (Hash + Blockchain + QR + PDF)
 # ============================================================
 
-import hashlib as _hashlib
 import csv as _csv
 import io as _io
 import base64 as _b64

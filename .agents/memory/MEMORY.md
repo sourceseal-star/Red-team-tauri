@@ -3,3 +3,4 @@
 - [Termux unified startup](termux-unified-startup.md) — Commander se integra in-process; arrancar sin hacer pull evita romper cambios locales
 - [Android field integrations](android-field-integrations.md) — Termux/Android son capacidades opcionales y las operaciones deben ser bajo demanda del operador
 - [COM-LINK status semantics](comlink-status.md) — `available` indica que el núcleo funciona; `channels_ready` indica si existe un canal físico utilizable
+- [Nexus Omni access](nexus-omni-access.md) — en Replit, Nexus :8004 debe consumirse mediante el proxy del dashboard :8001

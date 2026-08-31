@@ -177,7 +177,12 @@ Hikvision, Dahua, Xiongmai, D-Link, Netgear, GoAhead, Ubiquiti, ONVIF
 |---|---|---|
 | `PORT` | `8001` | Puerto HTTP del dashboard |
 | `HOST` | `0.0.0.0` | Host de escucha |
-| `REDTEAM_API_KEY` | local-dev-token | Clave para endpoints protegidos |
+| `REDTEAM_API_KEY` | — | Clave generada si falta para endpoints protegidos |
+| `ADMIN_EMAIL` | admin@redteam.local | Usuario de acceso al dashboard |
+| `ADMIN_PASSWORD` | — | Contraseña del acceso principal; se genera si falta |
+| `NEXUS_USER` | admin | Usuario HTTP Basic de Nexus Omni |
+| `NEXUS_PASS` | — | Contraseña Nexus; se genera si falta |
+| `NEXUS_PORT` | 8004 | Puerto interno de Nexus Omni |
 | `CORSET_SCOPE_B64` | — | Alcance autorizado de escaneo |
 | `SHODAN_API_KEY` | — | Intel Shodan |
 | `ABUSEIPDB_KEY` | — | Reputación de IPs |
@@ -185,6 +190,32 @@ Hikvision, Dahua, Xiongmai, D-Link, Netgear, GoAhead, Ubiquiti, ONVIF
 
 El backend no rellena resultados con datos simulados. Para operar escaneos reales,
 define un alcance autorizado mediante `CORSET_SCOPE_B64`.
+
+### Recuperación de credenciales
+
+Las credenciales internas se generan y guardan en `.env` con permisos `600`.
+Para consultar solo su origen:
+
+```bash
+python3 gestionar_credenciales.py --status
+```
+
+Para recuperarlas explícitamente en una terminal privada:
+
+```bash
+python3 gestionar_credenciales.py --show
+```
+
+El acceso principal usa `ADMIN_EMAIL` + `ADMIN_PASSWORD`, las rutas protegidas
+usan `REDTEAM_API_KEY` y Nexus usa `NEXUS_USER` + `NEXUS_PASS`. Para rotar:
+
+```bash
+python3 gestionar_credenciales.py --reset-dashboard
+python3 gestionar_credenciales.py --reset-nexus
+```
+
+Reinicia el workflow después de rotar. No copies la salida de `--show` a GitHub,
+chats, capturas ni documentación.
 
 ## Solución de problemas
 
