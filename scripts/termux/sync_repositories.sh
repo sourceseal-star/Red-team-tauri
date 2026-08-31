@@ -13,6 +13,25 @@ COMMANDER_URL="${COMMANDER_REPO_URL:-git@github.com:sourceseal-star/commander.gi
 REDTEAM_DIR="${REDTEAM_DIR:-$HOME/Red-team-tauri}"
 COMMANDER_DIR="${COMMANDER_DIR:-$HOME/commander}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
+CHECK_ONLY=0
+
+for argument in "$@"; do
+  case "$argument" in
+    --check-only) CHECK_ONLY=1 ;;
+    --help|-h)
+      cat <<'EOF'
+SourceSeal sync_repositories.sh — Termux
+
+  bash sync_repositories.sh              Sincroniza con respaldo local.
+  bash sync_repositories.sh --check-only Solo comprueba rutas, Git y estado.
+
+El modo --check-only no hace clone, fetch, pull, stash, reset ni instala nada.
+EOF
+      exit 0
+    ;;
+    *) fail "Opción no reconocida: $argument. Usa --help." ;;
+  esac
+done
 
 say() { printf '[sync] %s\n' "$*"; }
 fail() { printf '[sync] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -20,6 +39,23 @@ fail() { printf '[sync] ERROR: %s\n' "$*" >&2; exit 1; }
 for command in git ssh python3; do
   command -v "$command" >/dev/null 2>&1 || fail "Falta '$command'. Ejecuta: pkg install -y git openssh python"
 done
+
+reject_dangerous_path() {
+  local dir="$1"
+  local label="$2"
+  local normalized="$dir"
+  if command -v realpath >/dev/null 2>&1; then
+    normalized="$(realpath -m "$dir" 2>/dev/null || printf '%s' "$dir")"
+  fi
+  case "$normalized" in
+    ""|"/"|"$HOME"|"/home/runner"|"/data/data/com.termux/files/home")
+      fail "$label apunta a una ruta protegida ($normalized). Usa una carpeta de repositorio explícita."
+    ;;
+  esac
+}
+
+reject_dangerous_path "$REDTEAM_DIR" "Red-team-tauri"
+reject_dangerous_path "$COMMANDER_DIR" "Commander"
 
 uses_ssh_url() {
   case "$1" in
@@ -128,6 +164,16 @@ sync_repo() {
   local dir="$3"
 
   say "===== $label ====="
+  if [ "$CHECK_ONLY" = "1" ]; then
+    say "$label: check-only; ruta=$dir"
+    if [ -d "$dir/.git" ]; then
+      git -C "$dir" status --short --untracked-files=all
+      say "$label: repositorio local detectado"
+    else
+      say "$label: no hay repositorio local; no se clonará en check-only"
+    fi
+    return
+  fi
   if [ ! -d "$dir/.git" ]; then
     if [ -e "$dir" ]; then
       fail "$dir existe pero no es un repositorio Git; muévelo o define ${label}_DIR antes de continuar"
