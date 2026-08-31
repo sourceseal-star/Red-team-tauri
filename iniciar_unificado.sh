@@ -7,6 +7,7 @@
 #   :8002 — GHOST HUNTER PHANTOM Master
 #
 # Commander no necesita un servidor ni un puerto adicional.
+# v2: auth_bootstrap antes del backend — .env es la única fuente de verdad
 # =====================================================================
 set -Eeuo pipefail
 
@@ -19,6 +20,12 @@ if [ -f "$ROOT/.env" ]; then
     # shellcheck disable=SC1091
     . "$ROOT/.env"
     set +a
+fi
+
+# -- 0. Sincronizar hash de password desde .env si falta --
+if [ -f "$ROOT/auth_bootstrap.py" ]; then
+    echo "[unified] Sincronizando credenciales desde .env..."
+    (cd "$ROOT" && python3 auth_bootstrap.py --verbose) || true
 fi
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
