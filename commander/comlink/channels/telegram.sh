@@ -30,6 +30,8 @@ send_telegram() {
             error "Error cifrando mensaje"
             return 1
         fi
+    elif [ -n "$encrypted" ] && [ "$encrypted" != "no_encrypt" ]; then
+        final_message="$encrypted"
     fi
 
     # Dividir mensaje si es largo (Telegram tiene límite de 4096 caracteres)
@@ -47,7 +49,7 @@ send_telegram() {
 
     info "Enviando ${#parts[@]} parte(s) a $destination via Telegram..."
 
-    local success=true
+    local send_succeeded=true
     for part in "${parts[@]}"; do
         # Construir JSON con jq para que comillas, saltos de línea y Unicode
         # no rompan la petición.
@@ -70,14 +72,14 @@ send_telegram() {
             debug "Parte enviada a Telegram"
         else
             error "Error enviando a Telegram: $(echo "$response" | jq -r '.description // "Desconocido"')"
-            success=false
+            send_succeeded=false
             break
         fi
 
         sleep 1  # Evitar límites de velocidad
     done
 
-    if [ "$success" = true ]; then
+    if [ "$send_succeeded" = true ]; then
         success "Mensaje enviado a Telegram (Chat ID: $destination)"
         return 0
     else

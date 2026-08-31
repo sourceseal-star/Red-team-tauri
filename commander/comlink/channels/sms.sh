@@ -24,6 +24,8 @@ send_sms() {
             error "Error cifrando mensaje para $destination"
             return 1
         fi
+    elif [ -n "$encrypted" ] && [ "$encrypted" != "no_encrypt" ]; then
+        final_message="$encrypted"
     fi
 
     # Dividir mensaje si es largo (SMS tiene límite de 160 caracteres)
@@ -41,7 +43,7 @@ send_sms() {
 
     info "Enviando ${#parts[@]} parte(s) a $destination via SMS..."
 
-    local success=true
+    local send_succeeded=true
     for part in "${parts[@]}"; do
         # Enviar via Termux API
         # termux-sms-send recibe el texto como argumento. Enviarlo por stdin
@@ -50,7 +52,7 @@ send_sms() {
 
         if [ $? -ne 0 ]; then
             error "Error enviando parte del mensaje a $destination"
-            success=false
+            send_succeeded=false
             break
         fi
 
@@ -58,7 +60,7 @@ send_sms() {
         sleep 1  # Esperar para evitar límites de velocidad
     done
 
-    if [ "$success" = true ]; then
+    if [ "$send_succeeded" = true ]; then
         success "SMS enviado a $destination (${#parts[@]} parte(s))"
         return 0
     else

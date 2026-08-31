@@ -77,6 +77,7 @@ info() { log "INFO" "$1"; }
 warning() { log "WARNING" "$1"; }
 error() { log "ERROR" "$1"; }
 critical() { log "CRITICAL" "$1"; }
+success() { log "INFO" "$1"; }
 
 # Rotar logs
 rotate_logs() {

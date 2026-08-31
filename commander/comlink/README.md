@@ -295,6 +295,31 @@ comlink send emergencia "Mensaje importante"
 ```bash
 comlink location emergencia
 ```
+
+### **🚨 Alerta de emergencia multicanal**
+
+La alerta usa únicamente los adaptadores configurados para el contacto,
+intenta cada canal compatible una vez y deja los fallos en la cola persistente.
+La ubicación GPS se añade si Termux:API está disponible; si no, el informe lo
+indica sin inventar coordenadas. No autodialea SIP ni simula radio o satélite.
+
+Primero revisa el plan sin transmitir:
+
+```bash
+comlink emergency emergencia "Necesito ayuda" --dry-run
+```
+
+Para transmitir se requiere confirmación explícita:
+
+```bash
+comlink emergency emergencia "Necesito ayuda" --confirm
+```
+
+Los contactos pueden incluir opcionalmente `mesh_wifi_ip` y
+`mesh_bluetooth_mac` junto a `phone` y `telegram_chat_id`. En el archivo
+actual los contactos están en la raíz (`data/contacts.json`); también se acepta
+el formato legado bajo `.contacts`. La alerta guarda solo un hash del mensaje y los estados
+por canal en `data/last_emergency.json` con permisos restringidos.
 - Envía tu ubicación GPS actual al contacto "emergencia" usando el mejor canal disponible.
 
 ### **📞 Llamada VoIP**

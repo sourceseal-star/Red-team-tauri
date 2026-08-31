@@ -120,8 +120,8 @@ send_with_fallback() {
         if [ "$ENCRYPTION_ENABLED" = "true" ]; then
             encrypted=$(encrypt_message "$message" "$contact_id")
             if [ $? -ne 0 ]; then
-                warning "No se pudo cifrar el mensaje para $contact_id"
-                encrypted="no_encrypt"
+                error "No se pudo cifrar el mensaje para $contact_id; no se enviará en texto plano"
+                return 1
             fi
         fi
 

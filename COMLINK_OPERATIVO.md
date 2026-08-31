@@ -76,6 +76,37 @@ Para probar un canal externo se necesita una prueba controlada con un destino
 propio y consentimiento del operador. El endpoint y los comandos de envío son
 acciones reales; no se ejecutan automáticamente durante el arranque.
 
+## Alerta multicanal controlada
+
+El flujo de emergencia está disponible desde la CLI:
+
+```bash
+# Solo muestra canales y no transmite
+bash commander/comlink/comlink.sh emergency emergency "Necesito ayuda" --dry-run
+
+# Transmite únicamente después de la confirmación explícita del operador
+bash commander/comlink/comlink.sh emergency emergency "Necesito ayuda" --confirm
+```
+
+La alerta intenta SMS, Telegram, Mesh WiFi y Mesh Bluetooth solamente cuando
+el contacto tiene un destino válido y el adaptador local existe. Los fallos se
+encolan con prioridad alta para `comlink queue`; si el cifrado está habilitado,
+la cola conserva el payload cifrado y no hace fallback a texto plano. SIP se
+mantiene como llamada interactiva; radio y satélite permanecen bloqueados hasta
+integrar un driver verificable.
+
+Los campos opcionales por contacto son:
+
+```json
+{
+  "mesh_wifi_ip": "192.168.1.20",
+  "mesh_bluetooth_mac": "AA:BB:CC:DD:EE:FF"
+}
+```
+
+La alerta escribe `data/last_emergency.json` con el hash SHA-256 del mensaje,
+estado por canal y motivo de cada resultado; no guarda el texto de la alerta.
+
 ## Preparación por canal
 
 ### SMS
@@ -89,7 +120,7 @@ acciones reales; no se ejecutan automáticamente durante el arranque.
    ```
 
 3. Concede permisos de SMS a Termux:API y configura
-   `contacts.emergency.phone` en `commander/comlink/data/contacts.json`.
+   `emergency.phone` en `commander/comlink/data/contacts.json`.
 4. Ejecuta `status-json`; solo cuando indique SMS listo, prueba con un número
    propio.
 

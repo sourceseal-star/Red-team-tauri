@@ -452,6 +452,68 @@ try:
             except Exception as exc:
                 return JSONResponse({"error": str(exc)}, status_code=500)
 
+        @commander_router.post("/api/commander/comlink/emergency")
+        async def commander_comlink_emergency(payload: dict = Body(default={})):
+            """Run the explicitly confirmed COM-LINK emergency broadcast."""
+            comlink_sh = Path(_commander_dir) / "comlink" / "comlink.sh"
+            contact = str(payload.get("contact", "")).strip()
+            message = str(payload.get("message", "")).strip()
+            dry_run = payload.get("dry_run") is True
+            confirm = payload.get("confirm") is True
+            include_location = payload.get("include_location", True) is not False
+
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
+            if not contact:
+                return JSONResponse({"error": "contact requerido"}, status_code=400)
+            if not message:
+                return JSONResponse({"error": "message requerido"}, status_code=400)
+            if not dry_run and not confirm:
+                return JSONResponse(
+                    {"error": "confirm=true requerido para transmitir; usa dry_run=true para revisar"},
+                    status_code=400,
+                )
+
+            command = ["bash", str(comlink_sh), "emergency", contact, message]
+            command.append("--dry-run" if dry_run else "--confirm")
+            if not include_location:
+                command.append("--no-location")
+
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    command,
+                    capture_output=True,
+                    text=True,
+                    timeout=45,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                report = None
+                for line in reversed((result.stdout or "").splitlines()):
+                    try:
+                        candidate = json.loads(line)
+                        if isinstance(candidate, dict) and "results" in candidate:
+                            report = candidate
+                            break
+                    except json.JSONDecodeError:
+                        continue
+                return JSONResponse(
+                    {
+                        "ok": result.returncode == 0,
+                        "returncode": result.returncode,
+                        "contact": contact,
+                        "dry_run": dry_run,
+                        "report": report,
+                        "stdout": (result.stdout or "")[-2000:],
+                        "stderr": (result.stderr or "")[-1000:],
+                    },
+                    status_code=200 if result.returncode == 0 else 502,
+                )
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": "COM-LINK emergency timeout"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
         app.routes.extend(commander_router.routes)
         _COMMANDER_OK = True
         print(f"[COMMANDER] Router montado: /api/commander/* (dir: {_commander_dir})", flush=True)

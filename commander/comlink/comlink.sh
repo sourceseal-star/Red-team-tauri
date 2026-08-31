@@ -59,6 +59,7 @@ source "$UTILS_DIR/compress.sh"
 source "$CRYPTO_DIR/aes.sh"
 source "$CRYPTO_DIR/rsa.sh"
 source "$CRYPTO_DIR/key_manager.sh"
+source "$CORE_DIR/emergency.sh"
 
 # ============================================================
 # FUNCIONES GLOBALES
@@ -1202,6 +1203,9 @@ process_command() {
             fi
             send_location "$1" "auto"
             ;;
+        "emergency")
+            emergency_alert "$@"
+            ;;
         "voip")
             if [ $# -lt 1 ]; then
                 error "Uso: comlink voip <comando> [argumentos]"
@@ -1308,6 +1312,8 @@ help_menu() {
     echo "    comlink sms <número> <mensaje>              - Envía un SMS"
     echo "    comlink telegram <mensaje> [chat_id]        - Envía mensaje por Telegram"
     echo "    comlink location <contacto>                 - Envía la ubicación"
+    echo "    comlink emergency <contacto> <mensaje>      - Alerta multicanal confirmada"
+    echo "      (añade --dry-run para revisar; --confirm para transmitir)"
     echo ""
     echo -e "\033[1m  📞 VoIP:\033[0m"
     echo "    comlink voip call <destino>                 - Realiza una llamada VoIP"
@@ -1346,6 +1352,12 @@ help_menu() {
     echo ""
     echo -e "\033[1m  # Enviar ubicación\033[0m"
     echo "    comlink location emergencia"
+    echo ""
+    echo -e "\033[1m  # Revisar una alerta sin transmitir\033[0m"
+    echo "    comlink emergency emergencia \"Necesito ayuda\" --dry-run"
+    echo ""
+    echo -e "\033[1m  # Transmitir alerta por canales preparados\033[0m"
+    echo "    comlink emergency emergencia \"Necesito ayuda\" --confirm"
     echo ""
     echo -e "\033[1m  # Llamada VoIP\033[0m"
     echo "    comlink voip call usuario@192.168.1.100"

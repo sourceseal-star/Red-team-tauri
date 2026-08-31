@@ -28,6 +28,8 @@ send_mesh_wifi() {
                 error "Error cifrando mensaje"
                 return 1
             fi
+        elif [ -n "$encrypted" ] && [ "$encrypted" != "no_encrypt" ]; then
+            final_message="$encrypted"
         fi
 
         # Enviar via HTTP POST. jq evita que un mensaje con comillas o saltos

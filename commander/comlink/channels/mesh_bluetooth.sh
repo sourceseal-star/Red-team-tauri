@@ -28,6 +28,8 @@ send_mesh_bluetooth() {
                 error "Error cifrando mensaje"
                 return 1
             fi
+        elif [ -n "$encrypted" ] && [ "$encrypted" != "no_encrypt" ]; then
+            final_message="$encrypted"
         fi
 
         # Enviar via rfcomm
