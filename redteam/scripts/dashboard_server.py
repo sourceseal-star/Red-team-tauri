@@ -161,13 +161,8 @@ except Exception as _ia_err:
 
 API_KEY = os.environ.get("REDTEAM_API_KEY", "").strip()
 
-# ── Motor de Cierre (leads/checkout/metrics) — antes corria como un 2do
-# proceso FastAPI en el MISMO puerto 8001 que este backend, lo que hacia
-# que solo uno de los dos pudiera estar vivo a la vez. Se monta aqui como
-# sub-app para que TODO viva en un solo proceso/puerto de verdad.
-    # Alinear el API key: dashboard_server.py emite tokens via REDTEAM_API_KEY
-    # su propio default distinto ("dev-key-cambiar-en-produccion") -> con
-    # esto ambos aceptan el MISMO token emitido por /api/auth/login.
+# Las rutas activas se mantienen en este backend unificado; la autenticación
+# usa REDTEAM_API_KEY tanto para login como para las rutas protegidas.
 
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(

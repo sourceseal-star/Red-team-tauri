@@ -55,15 +55,6 @@ incluir Commander desde su repositorio hermano:
 bash termux_recover.sh
 ```
 
-### Termux + Commander
-
-Para sincronizar el repositorio privado `commander` y cargarlo dentro del mismo
-backend del dashboard:
-
-```bash
-bash termux_recover.sh
-```
-
 Commander se expone en `http://localhost:8001/api/commander/*`; no se inicia un
 segundo servidor en el puerto 8003. Si el repositorio privado no está disponible,
 el dashboard principal sigue funcionando y muestra Commander como no disponible.

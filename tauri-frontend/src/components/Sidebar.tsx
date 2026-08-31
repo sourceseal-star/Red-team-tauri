@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, Shield, Bug, Workflow,
   Globe, Smartphone, Terminal, Settings, Info, MapPin, Camera, Network, TrendingUp,
-  Server, BarChart3
+  Server
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -21,7 +21,6 @@ const items = [
   { to: '/topology', label: 'Topology',    icon: Network },
   { to: '/about',    label: 'About',       icon: Info },
   { to: '/services',      label: 'Servicios',    icon: Server },
-  { to: '/motor-metrics', label: 'Motor Métricas', icon: BarChart3 },
   { to: '/ventas',  label: 'Ventas',      icon: TrendingUp },
 ]
 
