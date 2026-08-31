@@ -348,7 +348,112 @@ try:
 
         @commander_router.get("/api/commander/health")
         async def commander_health():
-            return {"available": True, "dir": _commander_dir}
+            return {
+                "available": True,
+                "dir": _commander_dir,
+                "version": getattr(_commander_mod, "__version__", "3.5.0"),
+                "capabilities": [
+                    "network_scan",
+                    "camera_scan",
+                    "complete_audit",
+                    "osint",
+                    "audit_history",
+                    "checkpoint_resume",
+                    "encrypted_reports",
+                    "sourceseal_anchor",
+                ],
+                "execution_context": "Integrado en el proceso del dashboard",
+            }
+
+        def _commander_db_path():
+            config = getattr(_commander_mod, "CONFIG", {})
+            return os.path.expanduser(str(config.get("db_path", "~/commander.db")))
+
+        def _commander_report_dir():
+            config = getattr(_commander_mod, "CONFIG", {})
+            return Path(os.path.expanduser(str(
+                config.get("report_dir", "~/storage/downloads/commander_reports")
+            )))
+
+        def _commander_audits(limit=50):
+            import sqlite3
+            _commander_mod.init_db()
+            conn = sqlite3.connect(_commander_db_path())
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """SELECT id, target, scan_type, timestamp, status, hash,
+                          checkpoint_data
+                   FROM audits ORDER BY timestamp DESC LIMIT ?""",
+                (max(1, min(int(limit), 100)),),
+            ).fetchall()
+            conn.close()
+            result = []
+            for row in rows:
+                item = dict(row)
+                checkpoint = item.pop("checkpoint_data", None)
+                try:
+                    item["phase"] = json.loads(checkpoint).get("phase") if checkpoint else None
+                except (TypeError, json.JSONDecodeError):
+                    item["phase"] = None
+                result.append(item)
+            return result
+
+        @commander_router.get("/api/commander/status")
+        async def commander_status():
+            try:
+                audits = await run_in_threadpool(_commander_audits, 100)
+                return {
+                    "available": True,
+                    "version": getattr(_commander_mod, "__version__", "3.5.0"),
+                    "database": _commander_db_path(),
+                    "audits_total": len(audits),
+                    "audits_pending": sum(1 for item in audits if item["status"] != "completed"),
+                    "audits_completed": sum(1 for item in audits if item["status"] == "completed"),
+                    "reports_dir": str(_commander_report_dir()),
+                    "capabilities": [
+                        "network_scan", "camera_scan", "complete_audit", "osint",
+                        "audit_history", "checkpoint_resume", "encrypted_reports",
+                        "sourceseal_anchor",
+                    ],
+                }
+            except Exception as exc:
+                return JSONResponse({"available": False, "error": str(exc)}, status_code=503)
+
+        @commander_router.get("/api/commander/audits")
+        async def commander_audits(limit: int = Query(default=50, ge=1, le=100)):
+            try:
+                return {"audits": await run_in_threadpool(_commander_audits, limit)}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.get("/api/commander/audits/{scan_id}")
+        async def commander_audit_detail(scan_id: int):
+            def _detail():
+                import sqlite3
+                _commander_mod.init_db()
+                conn = sqlite3.connect(_commander_db_path())
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    """SELECT id, target, scan_type, timestamp, data_json, hash,
+                              status, checkpoint_data
+                       FROM audits WHERE id = ?""",
+                    (scan_id,),
+                ).fetchone()
+                conn.close()
+                if not row:
+                    return None
+                item = dict(row)
+                for key in ("data_json", "checkpoint_data"):
+                    raw = item.get(key)
+                    try:
+                        item[key] = json.loads(raw) if raw else None
+                    except (TypeError, json.JSONDecodeError):
+                        pass
+                return item
+            detail = await run_in_threadpool(_detail)
+            if detail is None:
+                return JSONResponse({"error": "Auditoría no encontrada"}, status_code=404)
+            return {"audit": detail}
 
         @commander_router.post("/api/commander/scan/network")
         async def commander_scan_network(payload: dict = Body(default={})):
@@ -356,11 +461,114 @@ try:
             ports = payload.get("ports", "22,80,443,3306,8080,554,21,25,53,139,445,3389")
             if not target:
                 return JSONResponse({"error": "target requerido"}, status_code=400)
+            if payload.get("authorized") is not True:
+                return JSONResponse(
+                    {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
+                    status_code=400,
+                )
             try:
                 result = await run_in_threadpool(_commander_mod.scan_network, target, ports)
                 return {"target": target, "result": result}
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
+
+        @commander_router.post("/api/commander/scan/cameras")
+        async def commander_scan_cameras(payload: dict = Body(default={})):
+            target = str(payload.get("target", "")).strip()
+            if not target:
+                return JSONResponse({"error": "target requerido"}, status_code=400)
+            if payload.get("authorized") is not True:
+                return JSONResponse(
+                    {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
+                    status_code=400,
+                )
+            try:
+                result = await run_in_threadpool(_commander_mod.scan_cameras, target)
+                return {"target": target, "result": result}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/audit")
+        async def commander_complete_audit(payload: dict = Body(default={})):
+            target = str(payload.get("target", "")).strip()
+            email = str(payload.get("email", "")).strip() or None
+            if not target:
+                return JSONResponse({"error": "target requerido"}, status_code=400)
+            if payload.get("authorized") is not True:
+                return JSONResponse(
+                    {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
+                    status_code=400,
+                )
+            try:
+                def _run():
+                    scan_id = _commander_mod.create_scan_record(target, "dashboard_audit")
+                    report_path = _commander_mod.run_audit_phased(scan_id, target, email)
+                    return {
+                        "scan_id": scan_id,
+                        "target": target,
+                        "report": str(report_path) if report_path else None,
+                    }
+                result = await run_in_threadpool(_run)
+                return {"ok": True, **result}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/audits/{scan_id}/resume")
+        async def commander_resume_audit(scan_id: int, payload: dict = Body(default={})):
+            email = str(payload.get("email", "")).strip() or None
+            if payload.get("authorized") is not True:
+                return JSONResponse(
+                    {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
+                    status_code=400,
+                )
+            try:
+                result = await run_in_threadpool(_commander_mod.resume_scan, scan_id, email)
+                return {"ok": True, "scan_id": scan_id, "report": str(result) if result else None}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.get("/api/commander/reports")
+        async def commander_reports():
+            try:
+                directory = _commander_report_dir()
+                if not directory.exists():
+                    return {"reports": []}
+                reports = []
+                for path in sorted(
+                    (item for item in directory.iterdir() if item.is_file()),
+                    key=lambda item: item.stat().st_mtime,
+                    reverse=True,
+                )[:100]:
+                    stat = path.stat()
+                    reports.append({
+                        "name": path.name,
+                        "size": stat.st_size,
+                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                        "encrypted": path.suffix == ".enc" or path.name.endswith(".html.enc"),
+                    })
+                return {"reports": reports, "directory": str(directory)}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/anchor")
+        async def commander_anchor(payload: dict = Body(default={})):
+            hash_value = str(payload.get("hash", "")).strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{64}", hash_value):
+                return JSONResponse({"error": "hash SHA-256 inválido"}, status_code=400)
+            if payload.get("confirm") is not True:
+                return JSONResponse(
+                    {"error": "confirm=true requerido para solicitar el anclaje"},
+                    status_code=400,
+                )
+            try:
+                proof = await run_in_threadpool(
+                    _commander_mod.anchor_to_sourceseal,
+                    hash_value,
+                    {"source": "sourceseal-commander-dashboard"},
+                )
+                return {"ok": bool(proof and proof[0]), "hash": hash_value, "proof": proof[1] if proof else None}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=502)
 
         @commander_router.post("/api/commander/osint")
         async def commander_osint(payload: dict = Body(default={})):
@@ -377,9 +585,113 @@ try:
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
 
+        def _comlink_paths():
+            comlink_dir = Path(_commander_dir) / "comlink"
+            return (
+                comlink_dir / "comlink.sh",
+                comlink_dir / "data" / "config.json",
+                comlink_dir / "data" / "contacts.json",
+                comlink_dir / "data" / "queue" / "queue.db",
+                comlink_dir / "data" / "last_emergency.json",
+            )
+
+        def _read_comlink_json(path: Path, default):
+            try:
+                with path.open("r", encoding="utf-8") as handle:
+                    return json.load(handle)
+            except (OSError, json.JSONDecodeError):
+                return default
+
+        def _write_comlink_json(path: Path, value):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = path.with_name(f"{path.name}.tmp")
+            with temp_path.open("w", encoding="utf-8") as handle:
+                json.dump(value, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+            os.replace(temp_path, path)
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
+
+        def _comlink_contacts_document(document):
+            if isinstance(document, dict) and isinstance(document.get("contacts"), dict):
+                return document["contacts"], "contacts"
+            return document if isinstance(document, dict) else {}, None
+
+        def _redact_comlink_config(config):
+            safe = json.loads(json.dumps(config if isinstance(config, dict) else {}))
+            telegram = safe.get("telegram")
+            if isinstance(telegram, dict) and "bot_token" in telegram:
+                telegram["bot_token"] = {"configured": bool(telegram.get("bot_token"))}
+            voip = safe.get("voip", {})
+            if isinstance(voip, dict) and isinstance(voip.get("sip"), dict):
+                sip = voip["sip"]
+                if "password" in sip:
+                    sip["password"] = {"configured": bool(sip.get("password"))}
+            network = safe.get("network", {})
+            if isinstance(network, dict) and isinstance(network.get("mesh_wifi"), dict):
+                mesh_wifi = network["mesh_wifi"]
+                if "password" in mesh_wifi:
+                    mesh_wifi["password"] = {"configured": bool(mesh_wifi.get("password"))}
+            return safe
+
+        def _comlink_data_snapshot(include_messages=True):
+            import sqlite3
+            _, config_path, contacts_path, queue_path, emergency_path = _comlink_paths()
+            config = _read_comlink_json(config_path, {})
+            contacts_doc = _read_comlink_json(contacts_path, {})
+            contacts, _ = _comlink_contacts_document(contacts_doc)
+            queue = []
+            stats = {name: 0 for name in ("pending", "processing", "sent", "failed")}
+            if queue_path.exists():
+                conn = sqlite3.connect(str(queue_path))
+                conn.row_factory = sqlite3.Row
+                for row in conn.execute(
+                    "SELECT status, COUNT(*) AS count FROM messages GROUP BY status"
+                ).fetchall():
+                    stats[str(row["status"])] = int(row["count"])
+                if include_messages:
+                    queue = [
+                        dict(row) for row in conn.execute(
+                            """SELECT id, contact_id, channel, message, encrypted,
+                                      timestamp, status, priority, attempts,
+                                      last_attempt, metadata
+                               FROM messages
+                               ORDER BY priority DESC, timestamp ASC
+                               LIMIT 100"""
+                        ).fetchall()
+                    ]
+                conn.close()
+            return {
+                "config": _redact_comlink_config(config),
+                "contacts": contacts,
+                "queue": queue,
+                "queue_stats": stats,
+                "last_emergency": _read_comlink_json(emergency_path, None),
+            }
+
+        def _run_comlink_command(args, timeout=30):
+            comlink_sh, *_ = _comlink_paths()
+            if not comlink_sh.exists():
+                raise FileNotFoundError("COM-LINK no disponible")
+            result = subprocess.run(
+                ["bash", str(comlink_sh), *args],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=str(comlink_sh.parent),
+            )
+            return {
+                "ok": result.returncode == 0,
+                "returncode": result.returncode,
+                "stdout": (result.stdout or "")[-4000:],
+                "stderr": (result.stderr or "")[-2000:],
+            }
+
         @commander_router.get("/api/commander/comlink/status")
         async def commander_comlink_status():
-            comlink_sh = Path(_commander_dir) / "comlink" / "comlink.sh"
+            comlink_sh, *_ = _comlink_paths()
             if not comlink_sh.exists():
                 return JSONResponse({"available": False, "ready_count": 0, "channels": []}, status_code=503)
             try:
@@ -411,9 +723,222 @@ try:
                 return JSONResponse({"available": True, "ready_count": 0, "channels": [],
                                      "error": str(exc)}, status_code=503)
 
+        @commander_router.get("/api/commander/comlink/data")
+        async def commander_comlink_data():
+            try:
+                return await run_in_threadpool(_comlink_data_snapshot)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.put("/api/commander/comlink/config")
+        async def commander_comlink_config(payload: dict = Body(default={})):
+            """Update only non-secret COM-LINK settings from the dashboard."""
+            _, config_path, _, _, _ = _comlink_paths()
+            updates = payload.get("config", payload.get("updates", {}))
+            if not isinstance(updates, dict):
+                return JSONResponse({"error": "config debe ser un objeto"}, status_code=400)
+
+            allowed = {
+                "device": {"name": str, "id": str},
+                "network": {
+                    "fallback_order": list, "retry_attempts": int, "retry_delay": int,
+                    "mesh_wifi": {"ssid": str, "port": int},
+                    "mesh_bluetooth": {"name": str, "channel": int},
+                },
+                "telegram": {"default_chat_id": str, "webhook_url": str},
+                "voip": {
+                    "sip": {"server": str, "username": str, "port": int},
+                    "asterisk": {"enabled": bool, "config_path": str},
+                },
+                "radio": {"enabled": bool, "frequency": (str, int, float), "mode": str, "baudrate": int},
+                "satellite": {"enabled": bool, "provider": str, "device": str},
+                "security": {
+                    "encryption": bool, "auto_delete": bool, "auto_delete_days": int,
+                    "log_level": str, "key_length": int, "stealth_mode": bool,
+                },
+            }
+            forbidden = {"bot_token", "password", "private_key", "private_key_pem"}
+            errors = []
+            config = _read_comlink_json(config_path, {})
+
+            for section, values in updates.items():
+                schema = allowed.get(section)
+                if schema is None or not isinstance(values, dict):
+                    errors.append(f"sección no editable o inválida: {section}")
+                    continue
+                destination = config.setdefault(section, {})
+                for key, value in values.items():
+                    expected = schema.get(key)
+                    path = f"{section}.{key}"
+                    if expected is None or key in forbidden:
+                        errors.append(f"campo no editable: {path}")
+                        continue
+                    if isinstance(expected, dict):
+                        if not isinstance(value, dict):
+                            errors.append(f"{path} debe ser un objeto")
+                            continue
+                        nested = destination.setdefault(key, {})
+                        for nested_key, nested_value in value.items():
+                            nested_expected = expected.get(nested_key)
+                            nested_path = f"{path}.{nested_key}"
+                            if nested_expected is None or nested_key in forbidden:
+                                errors.append(f"campo no editable: {nested_path}")
+                            elif not isinstance(nested_value, nested_expected):
+                                errors.append(f"tipo inválido: {nested_path}")
+                            else:
+                                nested[nested_key] = nested_value
+                    elif not isinstance(value, expected):
+                        errors.append(f"tipo inválido: {path}")
+                    else:
+                        destination[key] = value
+
+            fallback = updates.get("network", {}).get("fallback_order")
+            valid_channels = {"sms", "telegram", "voip", "mesh_wifi", "mesh_bluetooth", "radio", "satellite"}
+            if fallback is not None and (not fallback or any(item not in valid_channels for item in fallback)):
+                errors.append("network.fallback_order contiene un canal inválido")
+            if errors:
+                return JSONResponse({"error": "No se guardó la configuración", "details": errors}, status_code=400)
+            try:
+                await run_in_threadpool(_write_comlink_json, config_path, config)
+                return {"ok": True, "config": _redact_comlink_config(config)}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.get("/api/commander/comlink/contacts")
+        async def commander_comlink_contacts():
+            try:
+                snapshot = await run_in_threadpool(_comlink_data_snapshot, False)
+                return {"contacts": snapshot["contacts"]}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/comlink/contacts")
+        async def commander_comlink_contact_create(payload: dict = Body(default={})):
+            if payload.get("confirm") is not True:
+                return JSONResponse({"error": "confirm=true requerido para modificar contactos"}, status_code=400)
+            contact_id = str(payload.get("id", "")).strip()
+            name = str(payload.get("name", "")).strip()
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact_id):
+                return JSONResponse({"error": "id inválido"}, status_code=400)
+            if not name:
+                return JSONResponse({"error": "name requerido"}, status_code=400)
+            _, _, contacts_path, _, _ = _comlink_paths()
+            fields = ("name", "phone", "telegram_chat_id", "sip_address",
+                      "mesh_wifi_ip", "mesh_bluetooth_mac", "priority", "trusted")
+            contact = {key: payload[key] for key in fields if key in payload}
+            contact["name"] = name
+            try:
+                contact["priority"] = max(1, min(int(contact.get("priority", 5)), 10))
+            except (TypeError, ValueError):
+                return JSONResponse({"error": "priority inválida"}, status_code=400)
+            contact["trusted"] = bool(contact.get("trusted", True))
+            try:
+                document = _read_comlink_json(contacts_path, {})
+                contacts, wrapper = _comlink_contacts_document(document)
+                if contact_id in contacts:
+                    return JSONResponse({"error": "el contacto ya existe"}, status_code=409)
+                contacts[contact_id] = contact
+                _write_comlink_json(contacts_path, document if wrapper else contacts)
+                return {"ok": True, "id": contact_id, "contact": contact}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.put("/api/commander/comlink/contacts/{contact_id}")
+        async def commander_comlink_contact_update(contact_id: str, payload: dict = Body(default={})):
+            if payload.get("confirm") is not True:
+                return JSONResponse({"error": "confirm=true requerido para modificar contactos"}, status_code=400)
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact_id):
+                return JSONResponse({"error": "id inválido"}, status_code=400)
+            _, _, contacts_path, _, _ = _comlink_paths()
+            fields = ("name", "phone", "telegram_chat_id", "sip_address",
+                      "mesh_wifi_ip", "mesh_bluetooth_mac", "priority", "trusted")
+            updates = {key: payload[key] for key in fields if key in payload}
+            if "name" in updates and not str(updates["name"]).strip():
+                return JSONResponse({"error": "name no puede estar vacío"}, status_code=400)
+            if "priority" in updates:
+                try:
+                    updates["priority"] = max(1, min(int(updates["priority"]), 10))
+                except (TypeError, ValueError):
+                    return JSONResponse({"error": "priority inválida"}, status_code=400)
+            if "trusted" in updates:
+                updates["trusted"] = bool(updates["trusted"])
+            try:
+                document = _read_comlink_json(contacts_path, {})
+                contacts, wrapper = _comlink_contacts_document(document)
+                if contact_id not in contacts:
+                    return JSONResponse({"error": "contacto no encontrado"}, status_code=404)
+                contacts[contact_id].update(updates)
+                _write_comlink_json(contacts_path, document if wrapper else contacts)
+                return {"ok": True, "id": contact_id, "contact": contacts[contact_id]}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.delete("/api/commander/comlink/contacts/{contact_id}")
+        async def commander_comlink_contact_delete(contact_id: str, payload: dict = Body(default={})):
+            if payload.get("confirm") is not True:
+                return JSONResponse({"error": "confirm=true requerido para eliminar contactos"}, status_code=400)
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact_id):
+                return JSONResponse({"error": "id inválido"}, status_code=400)
+            _, _, contacts_path, _, _ = _comlink_paths()
+            try:
+                document = _read_comlink_json(contacts_path, {})
+                contacts, wrapper = _comlink_contacts_document(document)
+                if contact_id not in contacts:
+                    return JSONResponse({"error": "contacto no encontrado"}, status_code=404)
+                del contacts[contact_id]
+                _write_comlink_json(contacts_path, document if wrapper else contacts)
+                return {"ok": True, "deleted": contact_id}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/comlink/action")
+        async def commander_comlink_action(payload: dict = Body(default={})):
+            action = str(payload.get("action", "")).strip()
+            confirm_required = {"send_location", "queue_process", "queue_retry_failed", "queue_clean"}
+            if action in confirm_required and payload.get("confirm") is not True:
+                return JSONResponse({"error": "confirm=true requerido para esta acción"}, status_code=400)
+            if action == "send_location":
+                contact = str(payload.get("contact", "")).strip()
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact):
+                    return JSONResponse({"error": "contact inválido"}, status_code=400)
+                args, timeout = ["location", contact], 30
+            elif action == "queue_process":
+                channel = str(payload.get("channel", "")).strip()
+                allowed_channels = {"", "sms", "telegram", "voip", "mesh_wifi", "mesh_bluetooth", "radio", "satellite"}
+                if channel not in allowed_channels:
+                    return JSONResponse({"error": "canal inválido"}, status_code=400)
+                args, timeout = ["queue-process"] + ([channel] if channel else []), 90
+            elif action == "queue_retry_failed":
+                args, timeout = ["queue-retry-failed"], 90
+            elif action == "queue_clean":
+                try:
+                    days = max(0, min(int(payload.get("days", 30)), 3650))
+                except (TypeError, ValueError):
+                    return JSONResponse({"error": "days inválido"}, status_code=400)
+                args, timeout = ["queue-clean", str(days)], 30
+            elif action == "device_info":
+                args, timeout = ["device-info"], 20
+            elif action == "battery_status":
+                args, timeout = ["battery-status"], 15
+            elif action == "location_status":
+                args, timeout = ["location-get"], 20
+            else:
+                return JSONResponse({"error": f"acción no permitida: {action}"}, status_code=400)
+            try:
+                result = await run_in_threadpool(_run_comlink_command, args, timeout)
+                if action in {"queue_process", "queue_retry_failed", "queue_clean"}:
+                    result["data"] = await run_in_threadpool(_comlink_data_snapshot, True)
+                return {"action": action, **result}
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": "COM-LINK timeout"}, status_code=504)
+            except FileNotFoundError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=503)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
         @commander_router.post("/api/commander/comlink/send")
         async def commander_comlink_send(payload: dict = Body(default={})):
-            comlink_sh = Path(_commander_dir) / "comlink" / "comlink.sh"
+            comlink_sh, *_ = _comlink_paths()
             channel = str(payload.get("channel", "")).strip()
             message = str(payload.get("message", "")).strip()
             destination = str(payload.get("destination", "")).strip()
@@ -427,6 +952,11 @@ try:
                 return JSONResponse({"error": f"canal inválido: {channel}"}, status_code=400)
             if not message:
                 return JSONResponse({"error": "message requerido"}, status_code=400)
+            if payload.get("confirm") is not True:
+                return JSONResponse(
+                    {"error": "confirm=true requerido para transmitir desde el dashboard"},
+                    status_code=400,
+                )
 
             command = ["bash", str(comlink_sh), "send", channel, message]
             if destination:
@@ -455,7 +985,7 @@ try:
         @commander_router.post("/api/commander/comlink/emergency")
         async def commander_comlink_emergency(payload: dict = Body(default={})):
             """Run the explicitly confirmed COM-LINK emergency broadcast."""
-            comlink_sh = Path(_commander_dir) / "comlink" / "comlink.sh"
+            comlink_sh, *_ = _comlink_paths()
             contact = str(payload.get("contact", "")).strip()
             message = str(payload.get("message", "")).strip()
             dry_run = payload.get("dry_run") is True

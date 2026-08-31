@@ -1203,6 +1203,25 @@ process_command() {
             fi
             send_location "$1" "auto"
             ;;
+        "location-get")
+            get_gps_location
+            ;;
+        "device-info")
+            get_device_info
+            ;;
+        "battery-status")
+            get_battery_status
+            ;;
+        "queue-process")
+            process_queue "${1:-}"
+            ;;
+        "queue-clean")
+            clean_queue "${1:-30}"
+            ;;
+        "queue-retry-failed")
+            sqlite3 "$QUEUE_DB" "UPDATE messages SET status = 'pending', attempts = 0 WHERE status = 'failed';"
+            process_queue
+            ;;
         "emergency")
             emergency_alert "$@"
             ;;
