@@ -154,40 +154,65 @@ in-process y PHANTOM. Déjalo abierto y presiona `Ctrl+C` cuando termines.
 
 ## 4. Actualizar y sincronizar
 
-Detén el sistema con `Ctrl+C` en la terminal donde está corriendo y revisa
-primero si tienes cambios locales:
+Este es el flujo recomendado para actualizar todo desde Termux. Detén el
+sistema con `Ctrl+C` en la terminal donde está corriendo y ejecuta:
 
 ```bash
 cd ~/Red-team-tauri
-git status --short
-git -C ~/commander status --short 2>/dev/null || true
+bash setup.sh
 ```
 
-Si tienes cambios que quieres conservar, haz commit o guárdalos explícitamente
-antes de actualizar:
+`setup.sh` actualiza SourceSeal y Commander, instala dependencias, recompila el
+frontend y verifica los componentes nuevos. Si quieres dejar además el watcher
+local ejecutándose:
 
 ```bash
-git add -A
-git commit -m "Cambios locales de Termux"
+bash setup.sh --watch
 ```
 
-O, si todavía no quieres hacer commit:
+Si quieres actualizar y arrancar el sistema al terminar:
 
 ```bash
-git stash push -u -m "respaldo local antes de actualizar"
-git -C ~/commander stash push -u -m "respaldo local antes de actualizar" 2>/dev/null || true
+bash setup.sh --start
 ```
 
-Después sincroniza y vuelve a levantar todo con el mismo comando:
+También puedes hacer ambas cosas:
+
+```bash
+bash setup.sh --start --watch
+```
+
+El sincronizador respalda cambios del repositorio y también de submódulos
+anidados antes de actualizar. Si un submódulo tiene commits locales, crea una
+rama `backup/termux-...`; si tiene cambios sin commit, los guarda en su stash.
+Solo después alinea los submódulos y actualiza el repositorio padre. Si aun así
+detecta cambios, se detiene y muestra el estado sin borrar nada.
+
+Para consultar o recuperar un respaldo local:
+
+```bash
+git stash list
+git -C ~/commander stash list 2>/dev/null || true
+git branch --list 'backup/termux-*'
+git -C ~/commander branch --list 'backup/termux-*' 2>/dev/null || true
+```
+
+Si necesitas arrancar inmediatamente la copia local sin actualizar Git:
 
 ```bash
 cd ~/Red-team-tauri
-bash termux_recover.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
-El sincronizador ahora se detiene antes de tocar Git si encuentra cambios
-locales sin guardar. En ese caso, usa el arranque local de la sección anterior
-o guarda primero el trabajo con commit/stash.
+Para detener el watcher:
+
+```bash
+WATCH_PID_FILE="$HOME/.sourceseal/watcher.pid"
+if [ -f "$WATCH_PID_FILE" ]; then
+  kill "$(cat "$WATCH_PID_FILE")" 2>/dev/null || true
+  rm -f "$WATCH_PID_FILE"
+fi
+```
 
 En una actualización normal, el script:
 

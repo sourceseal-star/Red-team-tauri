@@ -41,12 +41,46 @@ say "SSH de GitHub: OK"
 backup_dirty_work() {
   local dir="$1"
   local label="$2"
-  if [ -n "$(git -C "$dir" status --porcelain)" ]; then
+  if [ -n "$(git -C "$dir" status --porcelain --untracked-files=all)" ]; then
     say "$label: guardando cambios locales en stash..."
     git -C "$dir" stash push --include-untracked \
       -m "Termux backup before sync $STAMP" >/dev/null
     say "$label: cambios guardados; se pueden recuperar con git stash list/pop"
   fi
+}
+
+backup_nested_submodules() {
+  local dir="$1"
+  local label="$2"
+
+  # git stash del repositorio padre no incluye cambios dentro de submódulos.
+  # Respaldamos primero su working tree y sus commits locales, y después
+  # actualizamos los gitlinks para que el padre pueda quedar limpio.
+  if ! git -C "$dir" submodule status >/dev/null 2>&1; then
+    return
+  fi
+
+  STAMP="$STAMP" git -C "$dir" submodule foreach --recursive '
+    if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
+      git stash push --include-untracked \
+        -m "Termux nested backup before sync $STAMP" >/dev/null
+      printf "[sync] %s: cambios guardados en stash\n" "$path"
+    fi
+
+    expected="$(git rev-parse "$sha1")"
+    current="$(git rev-parse HEAD)"
+    if [ "$current" != "$expected" ]; then
+      backup_branch="backup/termux-$STAMP"
+      if git show-ref --verify --quiet "refs/heads/$backup_branch"; then
+        backup_branch="$backup_branch-submodule"
+      fi
+      git branch "$backup_branch" HEAD
+      printf "[sync] %s: respaldo creado en rama %s\n" "$path" "$backup_branch"
+    fi
+  '
+
+  git -C "$dir" submodule update --init --recursive --force
+  say "$label: submódulos locales respaldados y alineados"
 }
 
 sync_repo() {
@@ -74,6 +108,7 @@ sync_repo() {
     fi
 
     backup_dirty_work "$dir" "$label"
+    backup_nested_submodules "$dir" "$label"
     git -C "$dir" fetch origin --prune
 
     if ! git -C "$dir" show-ref --verify --quiet refs/heads/main; then
@@ -82,7 +117,9 @@ sync_repo() {
       git -C "$dir" switch main
     fi
 
-    if ! git -C "$dir" diff --quiet || ! git -C "$dir" diff --cached --quiet; then
+    remaining="$(git -C "$dir" status --porcelain=v1 --untracked-files=all)"
+    if [ -n "$remaining" ]; then
+      printf '%s\n' "$remaining" >&2
       fail "$label: quedaron cambios después del respaldo; no se hará reset"
     fi
 
@@ -91,8 +128,15 @@ sync_repo() {
       git -C "$dir" branch "$backup_branch" HEAD
       say "$label: respaldo creado en rama $backup_branch"
       git -C "$dir" reset --hard origin/main
+      git -C "$dir" submodule update --init --recursive --force
     else
       say "$label: ya estaba actualizado"
+    fi
+
+    remaining="$(git -C "$dir" status --porcelain=v1 --untracked-files=all)"
+    if [ -n "$remaining" ]; then
+      printf '%s\n' "$remaining" >&2
+      fail "$label: quedaron cambios después de actualizar; no continuaré con dependencias"
     fi
   fi
 

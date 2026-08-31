@@ -69,6 +69,22 @@ bash setup.sh --watch
 tail -f ~/.sourceseal/watcher.log
 ```
 
+Flujo completo recomendado desde Termux:
+
+```bash
+cd ~/Red-team-tauri
+bash setup.sh                 # actualizar todo sin arrancar
+bash setup.sh --start         # actualizar todo y arrancar
+bash setup.sh --start --watch # actualizar, arrancar y observar cambios
+```
+
+Si solo quieres ejecutar lo que ya tienes localmente sin tocar Git:
+
+```bash
+cd ~/Red-team-tauri
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
+```
+
 El flujo histórico sigue disponible con `bash termux_recover.sh` cuando se
 necesite preparar y levantar todo en una sola operación.
 Si el Commander incluido no está disponible, puedes indicar el repositorio
