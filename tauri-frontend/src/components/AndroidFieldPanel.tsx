@@ -41,6 +41,8 @@ export default function AndroidFieldPanel() {
   const [wifi, setWifi] = useState<any>(null)
   const [wifiLoading, setWifiLoading] = useState(false)
   const [nearby, setNearby] = useState<any[]>([])
+  const [interfaces, setInterfaces] = useState<any[]>([])
+  const [selectedSubnet, setSelectedSubnet] = useState('')
   const [autoHosts, setAutoHosts] = useState<any[]>([])
   const [autoLoading, setAutoLoading] = useState(false)
   const [target, setTarget] = useState('')
@@ -62,7 +64,26 @@ export default function AndroidFieldPanel() {
     catch (e: any) { setMessage({ type: 'error', text: `Android: ${e.message}` }) }
   }, [request])
 
-  useEffect(() => { loadStatus() }, [loadStatus])
+  const loadInterfaces = useCallback(async () => {
+    try {
+      const data = await request('/api/network/interfaces')
+      const usable = (Array.isArray(data) ? data : []).filter((iface: any) =>
+        iface.network_cidr && iface.type_hint !== 'loopback' && iface.type_hint !== 'error' &&
+        !String(iface.network_cidr).startsWith('127.')
+      )
+      setInterfaces(usable)
+      if (!selectedSubnet) {
+        const preferred = usable.find((iface: any) =>
+          ['wifi', 'hotspot', 'mobile', 'ethernet', 'auto-detected'].includes(iface.type_hint)
+        )
+        if (preferred) setSelectedSubnet(preferred.network_cidr)
+      }
+    } catch (e: any) {
+      setMessage({ type: 'error', text: `Interfaces: ${e.message}` })
+    }
+  }, [request, selectedSubnet])
+
+  useEffect(() => { loadStatus(); loadInterfaces() }, [loadStatus, loadInterfaces])
 
   const readLocation = async () => {
     setLocationLoading(true); setMessage(null)
@@ -115,9 +136,12 @@ export default function AndroidFieldPanel() {
   }
 
   const automaticScan = async () => {
+    const subnet = selectedSubnet.trim()
+    if (!subnet) return setMessage({ type: 'error', text: 'Selecciona o escribe una red de campo antes de escanear.' })
+    if (subnet.startsWith('127.')) return setMessage({ type: 'error', text: 'La red loopback no es una red de campo válida.' })
     setAutoLoading(true); setMessage(null)
     try {
-      const data = await request('/api/discover/network')
+      const data = await request(`/api/discover/network?subnet=${encodeURIComponent(subnet)}`)
       setAutoHosts(data.results || [])
       setMessage({ type: 'ok', text: `Escaneo automático: ${data.hosts_up || 0} hosts (${data.method || 'red local'}).` })
     } catch (e: any) { setMessage({ type: 'error', text: e.message }) }
@@ -223,7 +247,20 @@ export default function AndroidFieldPanel() {
 
         <Card>
           <h3 className="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2"><ScanLine size={15} /> Escaneo automático de red</h3>
-          <p className="text-xs text-slate-500 mb-3">A elección del operador: detecta la subred local y descubre hosts sin iniciar nada automáticamente al abrir este panel.</p>
+          <p className="text-xs text-slate-500 mb-3">Elige la interfaz o introduce el CIDR. El escaneo solo comienza al pulsar el botón.</p>
+          <div className="flex gap-2 mb-3 flex-wrap">
+            <select value={selectedSubnet} onChange={e => setSelectedSubnet(e.target.value)}
+              className={`${inputClass} flex-1 min-w-[12rem]`}>
+              <option value="">Seleccionar interfaz...</option>
+              {interfaces.map((iface, i) => (
+                <option key={`${iface.name}-${i}`} value={iface.network_cidr}>
+                  {iface.name} ({iface.type_hint}) — {iface.network_cidr}
+                </option>
+              ))}
+            </select>
+            <input className={`${inputClass} flex-1 min-w-[12rem]`} placeholder="o escribe 192.168.1.0/24"
+              value={selectedSubnet} onChange={e => setSelectedSubnet(e.target.value)} />
+          </div>
           <Button onClick={automaticScan} disabled={autoLoading} tone="amber">
             {autoLoading ? <RefreshCw size={13} className="animate-spin" /> : <Radar size={13} />} Ejecutar escaneo automático
           </Button>

@@ -191,9 +191,12 @@ class AdaptiveScanner:
         self.scanning = False
         self.port_success_rate = {} # Aprende qué puertos están abiertos frecuentemente
         self.watchdog_task = None
+        self.last_activity = time.time()
 
     def start_watchdog(self):
         """Monitorea la salud del escáner y lo reinicia si se cuelga."""
+        if self.watchdog_task and not self.watchdog_task.done():
+            return
         async def watchdog():
             while True:
                 await asyncio.sleep(30)
@@ -201,6 +204,14 @@ class AdaptiveScanner:
                     print("️ WATCHDOG: Escáner congelado. Reiniciando...")
                     self.scanning = False # Forzar parada para reinicio externo
         self.watchdog_task = asyncio.create_task(watchdog())
+
+    async def stop_watchdog(self):
+        if self.watchdog_task and not self.watchdog_task.done():
+            self.watchdog_task.cancel()
+            try:
+                await self.watchdog_task
+            except asyncio.CancelledError:
+                pass
 
     async def adapt_strategy(self, network_cidr: str, found_count: int):
         """Ajusta el modo de escaneo dinámicamente según los resultados."""
@@ -304,6 +315,14 @@ class AdaptiveScanner:
 
 scanner = AdaptiveScanner()
 
+@app.on_event("startup")
+async def start_scanner_watchdog():
+    scanner.start_watchdog()
+
+@app.on_event("shutdown")
+async def stop_scanner_watchdog():
+    await scanner.stop_watchdog()
+
 # ============================================================
 # 3. API Y WEBSOCKET EN TIEMPO REAL
 # ============================================================
@@ -359,5 +378,4 @@ async def ws_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     print("🌐 NEXUS OMNI-SENTIENT v9.0 ONLINE")
     print(f"🔐 admin / sourceseal")
-    scanner.start_watchdog()
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("NEXUS_PORT", "8004")))
