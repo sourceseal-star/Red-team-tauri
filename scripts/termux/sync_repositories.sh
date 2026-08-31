@@ -21,22 +21,34 @@ for command in git ssh python3; do
   command -v "$command" >/dev/null 2>&1 || fail "Falta '$command'. Ejecuta: pkg install -y git openssh python"
 done
 
-say "Comprobando autenticación SSH de GitHub..."
-SSH_CHECK="$(ssh -o BatchMode=yes -o ConnectTimeout=10 -T git@github.com 2>&1 || true)"
-if ! printf '%s\n' "$SSH_CHECK" | grep -Eqi 'successfully authenticated|Hi sourceseal-star'; then
-  printf '\n'
-  printf 'No hay una sesión SSH válida con GitHub.\n'
-  printf 'Añade esta clave pública en GitHub → Settings → SSH and GPG keys:\n\n'
-  if [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
-    cat "$HOME/.ssh/id_ed25519.pub"
-  else
-    printf '  ssh-keygen -t ed25519 -C "termux" -f ~/.ssh/id_ed25519\n'
-    printf '  cat ~/.ssh/id_ed25519.pub\n'
+uses_ssh_url() {
+  case "$1" in
+    git@*|ssh://*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if uses_ssh_url "$REDTEAM_URL" || uses_ssh_url "$COMMANDER_URL"; then
+  say "Comprobando autenticación SSH de GitHub..."
+  SSH_CHECK="$(ssh -o BatchMode=yes -o ConnectTimeout=10 -T git@github.com 2>&1 || true)"
+  if ! printf '%s\n' "$SSH_CHECK" | grep -Eqi 'successfully authenticated|Hi sourceseal-star'; then
+    printf '\n'
+    printf 'No hay una sesión SSH válida con GitHub.\n'
+    printf 'Añade esta clave pública en GitHub → Settings → SSH and GPG keys:\n\n'
+    if [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
+      cat "$HOME/.ssh/id_ed25519.pub"
+    else
+      printf '  ssh-keygen -t ed25519 -C "termux" -f ~/.ssh/id_ed25519\n'
+      printf '  cat ~/.ssh/id_ed25519.pub\n'
+    fi
+    printf '\nDespués prueba: ssh -T git@github.com\n'
+    printf 'O ejecuta el sincronizador con URLs HTTPS explícitas si el repositorio es público.\n'
+    exit 2
   fi
-  printf '\nDespués prueba: ssh -T git@github.com\n'
-  exit 2
+  say "SSH de GitHub: OK"
+else
+  say "URLs HTTPS explícitas: omitiendo comprobación SSH"
 fi
-say "SSH de GitHub: OK"
 
 backup_dirty_work() {
   local dir="$1"
