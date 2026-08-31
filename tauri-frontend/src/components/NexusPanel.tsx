@@ -92,7 +92,7 @@ export default function NexusPanel() {
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-8 flex flex-col items-center">
           <AlertCircle size={32} className="text-slate-600 mb-3" />
           <p className="text-sm text-slate-500">NEXUS OMNI no está corriendo.</p>
-          <p className="text-xs text-slate-600 mt-1">Presiona "Iniciar" para arrancar el motor en :8002.</p>
+           <p className="text-xs text-slate-600 mt-1">Presiona "Iniciar" para arrancar el motor en :{nexusPort}.</p>
           <p className="text-xs text-slate-700 mt-2">El motor se inicia desde este panel; sus alertas externas son opcionales.</p>
         </div>
       )}

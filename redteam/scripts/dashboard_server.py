@@ -6896,44 +6896,6 @@ async def kraken_daemon_status():
     return {"running": _kraken_running}
 
 
-#  FRONTEND ESTÁTICO — SPA
-# ═════════════════════════════════════════════════════════════════════════════
-
-if DIST.exists() and DIST.is_dir():
-    assets_dir = DIST / "assets"
-    if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-
-    @app.get("/{full_path:path}")
-    async def spa_fallback(full_path: str):
-        if not full_path:
-            index = DIST / "index.html"
-            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
-        # NUNCA servir el SPA para rutas API — devuelve 404 JSON
-        # Si empieza con un prefijo conocido de API/backend, no servir el SPA.
-        # El catch-all está registrado antes que muchas rutas API, asi que
-        # si no excluimos estas, las captura y devuelve 404 JSON.
-        if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/", "leviathan/")):
-            return JSONResponse({"error": "not found"}, status_code=404)
-        if full_path.startswith("assets/"):
-            candidate = DIST / full_path
-            if candidate.exists() and candidate.is_file():
-                return FileResponse(candidate)
-            return JSONResponse({"error": "not found"}, status_code=404)
-        candidate = DIST / full_path
-        if candidate.exists() and candidate.is_file():
-            return FileResponse(candidate)
-        index = DIST / "index.html"
-        return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
-else:
-    @app.get("/{full_path:path}")
-    async def no_dist_fallback(full_path: str):
-        if full_path.startswith(("api/", "canary/", "ws", "health", "motor/", "hls/")):
-            return JSONResponse({"error": "not found"}, status_code=404)
-        return JSONResponse({"status": "ok", "backend": "red-team-tauri-unified",
-                            "dist_built": False, "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})"})
-
-
 # ═════════════════════════════════════════════════════════════════════════════
 #  MAIN — debe ir al FINAL para que todos los @app endpoints se registren
 # ═════════════════════════════════════════════════════════════════════════════
@@ -6955,11 +6917,30 @@ async def phantom_alert(payload: Dict[str, Any] = Body(default={})):
     })
     # Persistir como evidencia
     try:
-        alert_file = EVIDENCE_DIR / f"phantom_alert_{int(time.time()*1000)}.json"
+        alert_file = EVIDENCE / f"phantom_alert_{int(time.time()*1000)}.json"
         alert_file.write_text(json.dumps(payload, indent=2, default=str))
     except Exception:
         pass
     return {"status": "received", "severity": severity}
+
+@app.get("/api/phantom/status")
+async def phantom_status():
+    """Estado del Master PHANTOM mediante el backend unificado."""
+    try:
+        import httpx as _hx
+        async with _hx.AsyncClient(timeout=2) as client:
+            response = await client.get("http://127.0.0.1:8002/api/status")
+        try:
+            status_data = response.json()
+        except Exception:
+            status_data = {}
+        return {
+            "available": response.status_code == 200,
+            "status": status_data,
+            "http_status": response.status_code,
+        }
+    except Exception as exc:
+        return {"available": False, "status": None, "error": str(exc)[:160]}
 
 
 # ── NEXUS OMNI v9.0 proxy ───────────────────────────────────
@@ -7172,6 +7153,41 @@ async def monitor_start(interval_minutes: int = Query(5)):
 async def monitor_stop():
     _MONITOR_STATE["running"] = False
     return {"ok": True, "message": "Detenido"}
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  FRONTEND ESTÁTICO — SPA
+# ═════════════════════════════════════════════════════════════════════════════
+# Este catch-all debe registrarse después de TODAS las rutas API. Si se registra
+# antes, FastAPI captura las rutas declaradas más abajo y devuelve un 404 JSON.
+if DIST.exists() and DIST.is_dir():
+    assets_dir = DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        if not full_path:
+            index = DIST / "index.html"
+            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
+        if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/", "leviathan/")):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if full_path.startswith("assets/"):
+            candidate = DIST / full_path
+            if candidate.exists() and candidate.is_file():
+                return FileResponse(candidate)
+            return JSONResponse({"error": "not found"}, status_code=404)
+        candidate = DIST / full_path
+        if candidate.exists() and candidate.is_file():
+            return FileResponse(candidate)
+        index = DIST / "index.html"
+        return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
+else:
+    @app.get("/{full_path:path}")
+    async def no_dist_fallback(full_path: str):
+        if full_path.startswith(("api/", "canary/", "ws", "health", "motor/", "hls/")):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return JSONResponse({"status": "ok", "backend": "red-team-tauri-unified",
+                            "dist_built": False, "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})"})
 
 if __name__ == "__main__":
     import uvicorn
