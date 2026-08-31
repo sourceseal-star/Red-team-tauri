@@ -137,11 +137,20 @@ if [ "$WATCH_AFTER_SETUP" = "1" ]; then
   WATCH_PID_FILE="$WATCH_STATE_DIR/watcher.pid"
   WATCH_LOG="$WATCH_STATE_DIR/watcher.log"
   mkdir -p "$WATCH_STATE_DIR"
-  if [ -f "$WATCH_PID_FILE" ] && kill -0 "$(cat "$WATCH_PID_FILE" 2>/dev/null)" 2>/dev/null; then
-    ok "Watcher ya estaba activo (PID $(cat "$WATCH_PID_FILE"))"
+  WATCH_PID=""
+  if [ -f "$WATCH_PID_FILE" ]; then
+    WATCH_PID="$(cat "$WATCH_PID_FILE" 2>/dev/null || true)"
+  fi
+  WATCH_COMMAND=""
+  if [[ "$WATCH_PID" =~ ^[0-9]+$ ]] && kill -0 "$WATCH_PID" 2>/dev/null; then
+    WATCH_COMMAND="$(ps -p "$WATCH_PID" -o args= 2>/dev/null || true)"
+  fi
+  if [[ "$WATCH_COMMAND" == *"$REPO_DIR/watcher.py"* ]]; then
+    ok "Watcher ya estaba activo (PID $WATCH_PID)"
   else
     rm -f "$WATCH_PID_FILE"
-    nohup python3 "$REPO_DIR/watcher.py" >"$WATCH_LOG" 2>&1 </dev/null &
+    SOURCESEAL_STATE_DIR="$WATCH_STATE_DIR" \
+      nohup python3 "$REPO_DIR/watcher.py" >"$WATCH_LOG" 2>&1 </dev/null &
     echo "$!" > "$WATCH_PID_FILE"
     ok "Watcher iniciado (PID $(cat "$WATCH_PID_FILE")); log: $WATCH_LOG"
   fi

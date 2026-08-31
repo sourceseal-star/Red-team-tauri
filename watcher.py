@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 
@@ -23,7 +24,13 @@ WATCH_PATHS = (
     PROJECT_ROOT / "redteam" / "runner",
     PROJECT_ROOT / "redteam" / "modules",
 )
-STATE_PATH = Path.home() / ".sourceseal" / "watcher_state.json"
+DEFAULT_STATE_DIR = Path.home() / ".sourceseal"
+
+
+def state_path() -> Path:
+    """Return the state file location configured for this process."""
+    configured_dir = os.environ.get("SOURCESEAL_STATE_DIR")
+    return Path(configured_dir).expanduser() / "watcher_state.json" if configured_dir else DEFAULT_STATE_DIR / "watcher_state.json"
 
 
 def file_hash(path: Path) -> str:
@@ -52,18 +59,20 @@ def scan_files() -> dict[str, dict[str, int | str]]:
 
 
 def load_state() -> dict[str, dict[str, int | str]]:
+    path = state_path()
     try:
-        value = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"))
         return value if isinstance(value, dict) else {}
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return {}
 
 
 def save_state(state: dict[str, dict[str, int | str]]) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temporary = STATE_PATH.with_suffix(".tmp")
+    path = state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
-    temporary.replace(STATE_PATH)
+    temporary.replace(path)
 
 
 def detect_changes(previous: dict, current: dict) -> list[tuple[str, str, str]]:

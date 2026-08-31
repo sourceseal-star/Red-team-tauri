@@ -7,8 +7,8 @@
 #
 # El script sincroniza ambos repositorios. Commander se integra en el dashboard
 # mediante /api/commander/*; no arranca un segundo servidor ni otro puerto.
-# Usa la URL oficial por defecto;
-# puedes sustituirla por SSH con COMMANDER_REPO_URL si tu autenticación lo requiere.
+# Usa SSH por defecto para no exponer tokens en URLs, historiales ni procesos.
+# Puedes sustituir ambas URLs con REDTEAM_REPO_URL y COMMANDER_REPO_URL.
 # =====================================================================
 set -Eeuo pipefail
 
@@ -21,7 +21,8 @@ elif [ -f "$REPO_DIR/commander/commander.py" ]; then
 else
   COMMANDER_DIR="$HOME/commander"
 fi
-COMMANDER_REPO_URL="${COMMANDER_REPO_URL:-https://github.com/sourceseal-star/commander.git}"
+REDTEAM_REPO_URL="${REDTEAM_REPO_URL:-git@github.com:sourceseal-star/Red-team-tauri.git}"
+COMMANDER_REPO_URL="${COMMANDER_REPO_URL:-git@github.com:sourceseal-star/commander.git}"
 PORT="${PORT:-8001}"
 TERMUX_ANDROID=0
 if [ -d "/data/data/com.termux" ]; then
@@ -91,7 +92,7 @@ ok "Paquetes base instalados"
 # ── 2. Resolver el repositorio Red-team-tauri ───────────────────────────────
 if [ ! -d "$REPO_DIR/.git" ]; then
   info "Clonando Red-team-tauri en $REPO_DIR..."
-  git clone https://github.com/sourceseal-star/Red-team-tauri.git "$REPO_DIR"
+  git clone "$REDTEAM_REPO_URL" "$REPO_DIR"
 else
   info "Sincronizando Red-team-tauri..."
   git -C "$REPO_DIR" fetch origin
