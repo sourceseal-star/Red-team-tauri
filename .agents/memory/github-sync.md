@@ -15,6 +15,7 @@ description: How git auth is configured and which repo to use for this project
 - Git credential helper: `git config credential.helper store` → `~/.git-credentials` holds `https://sourceseal-star:TOKEN@github.com`
 - Remote URL is clean (no token embedded): `https://github.com/sourceseal-star/Red-team-tauri.git`
 - Shell `git push/pull` may depend on the current credential-helper state; do not assume it is available after reconnecting GitHub. A healthy Replit connection can coexist with a rejected local HTTPS push.
+- Verify the remote URL includes `github.com`; an imported workspace may retain a malformed `https://owner/repo.git` URL and surface `UNAUTHENTICATED` before credentials are even evaluated.
 
 **Publishing through the connected integration:**
 - Read `GET /repos/{owner}/{repo}/git/ref/heads/main` to obtain the current commit.
