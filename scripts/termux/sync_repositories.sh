@@ -93,6 +93,14 @@ backup_nested_submodules() {
       say "$label/$nested_path: respaldo creado en rama $backup_branch"
     fi
 
+    if ! git -C "$nested_dir" cat-file -e "${expected}^{commit}" 2>/dev/null; then
+      say "$label/$nested_path: obteniendo el commit requerido desde su remoto..."
+      git -C "$nested_dir" fetch --all --prune
+    fi
+    if ! git -C "$nested_dir" cat-file -e "${expected}^{commit}" 2>/dev/null; then
+      fail "$label/$nested_path: el commit $expected no existe en el clon ni en sus remotos; no haré reset"
+    fi
+
     git -C "$nested_dir" reset --hard "$expected" >/dev/null
   done <<EOF
 $gitlink_paths
