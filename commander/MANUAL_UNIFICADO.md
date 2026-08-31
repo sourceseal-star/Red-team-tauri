@@ -1,7 +1,7 @@
 # 📡 COMMANDER + COM-LINK + RED-TEAM-TAURI v6.0 — Manual Unificado
 
 > **Sistema Integral de Auditoría de Red, Inteligencia IoT/Cámaras, Operaciones Distribuidas y Comunicaciones Mesh de Emergencia**  
-> **Fecha de Emisión:** 2026-08-25 | **Versión:** 6.0  
+> **Última actualización:** 2026-08-30 | **Versión:** 6.0
 > **Compatibilidad:** Termux (Android F-Droid), Linux (Debian/Ubuntu/Arch), macOS | 100% Offline-Capable
 
 ---
@@ -27,6 +27,11 @@
 ---
 
 ## Visión General y Arquitectura
+
+En el despliegue conjunto con Red-team-tauri, Commander se carga dentro del
+backend unificado y queda disponible en `/api/commander/*`. La ejecución CLI
+independiente sigue disponible para auditorías puntuales. No se requiere un
+servidor Commander separado ni el puerto `8003` para el flujo normal.
 
 El ecosistema **COMMANDER v6.0** unifica el escaneo de red, inteligencia OSINT, análisis e invasión controlada de dispositivos IoT/Cámaras IP, orquestación de operaciones distribuidas Master-Worker, conectores de eventos en tiempo real y transmisión de alertas mediante redes Mesh de comunicación resiliente.
 

@@ -1,10 +1,15 @@
 # 🔱 COMMANDER — Tactical Intelligence Suite
 
+**Última actualización:** 2026-08-30
+
 **Auditoría de seguridad para Termux (Android) | v4.0.0**
 
 Suite CLI de auditoría de seguridad que combina escaneo de red (nmap), detección de cámaras IP, OSINT, cifrado Fernet y anclaje blockchain SourceSeal. Diseñada para condiciones reales de campo.
 
-> ⚠️ **Repositorio independiente de Red-team-tauri.** Este repo NO depende ni se conecta al backend FastAPI de Red-team-tauri. Es una herramienta CLI standalone.
+> ⚠️ **Repositorio independiente de Red-team-tauri.** Como CLI, Commander
+> funciona standalone. En el despliegue conjunto, el dashboard principal puede
+> cargarlo in-process y exponerlo bajo `/api/commander/*`; no se inicia otro
+> servidor en `8003`.
 
 ---
 

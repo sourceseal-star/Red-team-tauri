@@ -1,7 +1,7 @@
 # 🦑 LEVIATHAN — Guía de Inicio y Ejecución
 **Versión:** 3.0.0 — Edición Industrial
 **Autor:** Harold Paredes / SourceSeal Red Team
-**Fecha:** 21 de Agosto 2026
+**Última actualización:** 30 de Agosto 2026
 
 ---
 
@@ -39,11 +39,11 @@ problema — LEVIATHAN es opcional y degradable.
 # 1. Clonar y entrar al repo
 cd ~/Red-team-tauri
 
-# 2. Sincronizar
-git pull origin main
+# 2. Preparar/sincronizar de forma segura
+bash termux_recover.sh
 
-# 3. Arrancar el backend (incluye LEVIATHAN automáticamente)
-bash arrancar.sh
+# Si ya tienes la copia preparada, arranca sin tocar Git:
+bash arrancar_termux.sh
 ```
 
 El backend arranca en `http://localhost:8001`.

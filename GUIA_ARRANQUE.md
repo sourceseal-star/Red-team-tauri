@@ -1,6 +1,8 @@
 # SourceSeal Console — Guía de Arranque Rápido
 # Moto Edge 50 Fusion + Termux
 
+**Última actualización:** 2026-08-30
+
 ## ━━━━ PASO 1: Configurar API Keys (una sola vez) ━━━━
 
 ### AbuseIPDB (gratis — reputación de IPs)
@@ -26,19 +28,23 @@
 
 ```bash
 cd ~/Red-team-tauri
-bash arrancar.sh
+bash arrancar_termux.sh
 ```
 
-Eso hace todo automáticamente:
-- git stash + pull + stash pop (sincroniza sin perder cambios locales)
-- Instala deps (python, node, nmap, whois, dig)
-- Verifica deps LEVIATHAN (aiohttp, requests)
-- Verifica/crea .env con API keys
-- Compila frontend (tauri-frontend)
-- Copia build a redteam/scripts/dist/
-- Mata procesos anteriores en el puerto 8001
-- Levanta backend en puerto 8001
-- Muestra tu IP local para acceso desde otros dispositivos
+Este es el arranque local seguro: no hace `pull`, `reset`, `stash` ni instala
+paquetes. Levanta el dashboard, Commander integrado y PHANTOM usando la copia
+que ya tienes en el teléfono.
+
+Para la primera instalación o una actualización completa, usa el recuperador:
+
+```bash
+COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
+  bash termux_recover.sh
+```
+
+El recuperador instala dependencias, sincroniza ambos repositorios si están
+limpios, compila el frontend y arranca todo. `arrancar.sh` es un alias
+compatible del recuperador, no el arranque local.
 
 ## ━━━━ PASO 2b: (Opcional) Detección de Objetos con IA ━━━━
 
@@ -147,11 +153,11 @@ curl -X POST http://localhost:8001/api/arto/start
 ### git pull falla con "unstaged changes"
 ```bash
 cd ~/Red-team-tauri
-git stash
-git pull origin main
-git stash pop
-# Si conflicto en stash pop:
-git checkout . && git pull origin main
+git status --short
+# Ejecutar la versión local sin modificarla:
+bash arrancar_termux.sh
+# Para actualizar, guarda los cambios y luego:
+bash termux_recover.sh
 ```
 
 ### Verificar módulos
@@ -175,10 +181,13 @@ tail -50 backend.log
 bash termux_setup.sh
 ```
 
+> `termux_setup.sh` es un alias compatible del recuperador; úsalo solo para
+> preparar/sincronizar, no para arrancar una copia local con cambios pendientes.
+
 ### Puerto 8001 ocupado
 ```bash
 pkill -9 -f dashboard_server.py
-bash arrancar.sh
+bash arrancar_termux.sh
 ```
 
 ## ━━━━ EN REPLIT ━━━━

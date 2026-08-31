@@ -1,6 +1,6 @@
 # SourceSeal Console — Estado del Proyecto
 
-**Ultima actualizacion:** 2026-08-26
+**Ultima actualizacion:** 2026-08-30
 **Version:** 6.1-LEVIATHAN-IoT-PHANTOM
 **Repositorio:** https://github.com/sourceseal-star/Red-team-tauri
 **Branch:** main
@@ -77,8 +77,15 @@ Red-team-tauri/
 
 ### Termux (recomendado)
 ```bash
-git stash && git pull origin main && git stash pop
-bash arrancar.sh
+cd ~/Red-team-tauri
+bash arrancar_termux.sh
+```
+
+Para preparar o actualizar ambos repositorios de forma segura:
+
+```bash
+COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
+  bash termux_recover.sh
 ```
 
 ### Replit
@@ -104,7 +111,7 @@ bash replit_start.sh
 
 ## ⏳ PENDIENTES
 
-1. **Probar en Termux** — `git pull && bash arrancar.sh` y verificar:
+1. **Probar en Termux** — `bash arrancar_termux.sh` y verificar:
    - El frontend compila (revisar output de npm run build)
    - El sidebar muestra LEVIATHAN, ARTO, SEAL, IoT, OSINT
    - El boton "Escanear Todo" en Camaras funciona

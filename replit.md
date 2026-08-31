@@ -1,5 +1,7 @@
 # SourceSeal Console — Centro de Control
 
+**Última actualización:** 2026-08-30
+
 Dashboard de operaciones de seguridad ofensiva y defensiva. El flujo activo en Replit
 es el dashboard unificado de `Red-team-tauri` con LEVIATHAN v3.1 integrado.
 
@@ -11,6 +13,19 @@ bash replit_start.sh
 
 El workflow **SourceSeal Dashboard** arranca automáticamente el backend y sirve el
 frontend compilado en el puerto **8001**.
+
+### Comandos principales
+
+| Necesidad | Comando |
+|---|---|
+| Ejecutar en Replit | `bash replit_start.sh` |
+| Preparar/sincronizar Termux | `bash termux_recover.sh` |
+| Arrancar Termux sin tocar Git | `bash arrancar_termux.sh` |
+| Verificar módulos | `python3 leviathan_core/tools/verify_modules.py` |
+
+En Replit no se debe lanzar un segundo backend manualmente. En Termux, Commander
+se integra en el proceso del dashboard; no se arranca un servicio separado en
+`8003`.
 
 En Termux, `bash arrancar_termux.sh` inicia el dashboard, Commander integrado y
 PHANTOM sin tocar Git. `bash arrancar.sh` es un alias de compatibilidad que
@@ -146,8 +161,11 @@ define un alcance autorizado mediante `CORSET_SCOPE_B64`.
 
 ### git pull falla con "unstaged changes"
 ```bash
-git stash && git pull origin main && git stash pop
-# Si conflicto: git checkout . && git pull origin main
+git status --short
+# En Termux, arranca la copia local sin tocar cambios:
+bash arrancar_termux.sh
+# Para actualizar, guarda los cambios y usa:
+bash termux_recover.sh
 ```
 
 ### Verificar que todo carga

@@ -1,10 +1,10 @@
 # ============================================================================
 # Red-Team-Tauri v6.1 — Dashboard + IoT + OSINT + LEVIATHAN
-# ACTUALIZADO: 2026-08-26
+# ACTUALIZADO: 2026-08-30
 # ============================================================================
 
 > **Backend unico:** `redteam/scripts/dashboard_server.py` (:8001)
-> **Arranque:** `bash arrancar.sh` (Termux) / `bash replit_start.sh` (Replit)
+> **Arranque:** `bash arrancar_termux.sh` (Termux) / `bash replit_start.sh` (Replit)
 
 ## Instalacion
 
@@ -13,12 +13,29 @@
 git clone https://github.com/sourceseal-star/Red-team-tauri.git
 cd Red-team-tauri
 
-# 2. Sincronizar con main
-git fetch origin && git reset --hard origin/main
-
-# 3. Arrancar (instala todo automaticamente)
-bash arrancar.sh
+# 2. Preparar y sincronizar de forma segura
+COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
+  bash termux_recover.sh
 ```
+
+> `termux_recover.sh` se detiene si detecta cambios locales sin guardar. No
+> ejecuta `git reset --hard` ni borra trabajo local.
+
+## Comandos principales
+
+```bash
+# Ejecutar la copia local sin pull, reset, stash ni instalación
+bash arrancar_termux.sh
+
+# Alias compatible: prepara/sincroniza y luego arranca
+bash arrancar.sh
+
+# Solo Replit
+bash replit_start.sh
+```
+
+Commander queda integrado bajo `/api/commander/*`; no arranques
+`commander_server.py` ni un servidor adicional en `8003`.
 
 ## Configurar API Keys (opcional — todo funciona sin ellas con fallbacks)
 

@@ -1,5 +1,7 @@
 # Guía de Termux: actualizar, sincronizar y levantar todo
 
+**Última actualización:** 2026-08-30
+
 Esta es la guía del flujo activo para Android:
 
 - **Red-team-tauri**: dashboard + frontend en `http://127.0.0.1:8001`.
@@ -9,6 +11,22 @@ Esta es la guía del flujo activo para Android:
 
 No ejecutes `commander.py` ni `commander_server.py` aparte para el flujo normal.
 No se usa el puerto `8003`.
+
+## Comandos principales
+
+```bash
+# Arranque local inmediato: no toca Git
+cd ~/Red-team-tauri
+bash arrancar_termux.sh
+
+# Preparar, sincronizar y arrancar
+COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
+  bash termux_recover.sh
+```
+
+`arrancar.sh` y `termux_setup.sh` se mantienen como alias compatibles del
+recuperador. Si hay cambios locales sin guardar, el recuperador se detiene; usa
+`arrancar_termux.sh` para probar primero la versión local.
 
 ## 1. Preparación inicial
 

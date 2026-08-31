@@ -1,5 +1,7 @@
 # 🛡️ Red-Team-Tauri — SourceSeal Console v6.0
 
+**Última actualización:** 2026-08-30
+
 Sistema de operaciones de red team con **ARTO** (AI autónomo) + **SEAL SUPER PACK** (inteligencia de red y cámaras) + **KRAKEN v3.0** (motor de explotación) + **VPN interceptor** + **OSINT advanced** + **Honeypot**.
 
 Backend Python/FastAPI · Frontend React/Vite/TypeScript · Sin mocks · Sin dummy data.
@@ -45,8 +47,10 @@ bash replit_start.sh
 ### Termux (Android)
 
 ```bash
-# Primera instalación y actualizaciones:
-bash termux_recover.sh
+# Primera instalación o actualización segura:
+cd ~/Red-team-tauri
+COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
+  bash termux_recover.sh
 ```
 
 Este comando instala dependencias, sincroniza Red-team-tauri y Commander,
@@ -56,6 +60,21 @@ Si ya tienes cambios locales y solo quieres probar el sistema sin sincronizar:
 ```bash
 bash arrancar_termux.sh
 ```
+
+Comandos principales:
+
+| Acción | Comando |
+|---|---|
+| Preparar/sincronizar y ejecutar todo | `bash termux_recover.sh` |
+| Ejecutar la copia local sin tocar Git | `bash arrancar_termux.sh` |
+| Alias compatible del recuperador | `bash arrancar.sh` |
+| Ejecutar solo el dashboard en Replit | `bash replit_start.sh` |
+| Comprobar módulos LEVIATHAN | `python3 leviathan_core/tools/verify_modules.py` |
+
+`arrancar_termux.sh` no hace `pull`, `reset`, `stash` ni instala paquetes. Usa
+este comando cuando tengas cambios locales o cuando la sincronización de Git
+falle por cambios sin guardar. Commander se integra dentro del dashboard y no
+requiere iniciar `commander.py`, `commander_server.py` ni otro servidor en `8003`.
 
 La guía completa para autenticación SSH, actualización, comprobaciones y
 recuperación está en [`TERMUX_SYNC.md`](TERMUX_SYNC.md).
@@ -477,7 +496,8 @@ Si ARTO aparece corriendo pero las operaciones de scan devuelven vacío:
 | Plataforma | Comando | Nota |
 |---|---|---|
 | Replit | `bash replit_start.sh` | Auto-deploy, deps via Nix |
-| Termux | `bash arrancar.sh` | Sincroniza, prepara y arranca todo sin borrar cambios |
+| Termux preparar/actualizar | `bash termux_recover.sh` | Sincroniza de forma segura, prepara y arranca |
+| Termux ejecutar local | `bash arrancar_termux.sh` | Arranca sin tocar cambios locales |
 | Manual | ver arriba | Linux/Mac/Windows |
 
 ### Módulos opcionales (Termux)
