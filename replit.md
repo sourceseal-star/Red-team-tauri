@@ -12,8 +12,10 @@ bash replit_start.sh
 El workflow **SourceSeal Dashboard** arranca automáticamente el backend y sirve el
 frontend compilado en el puerto **8001**.
 
-En Termux, `bash arrancar.sh` inicia el dashboard y PHANTOM. Para sincronizar
-también Commander y cargarlo dentro del dashboard, usa `bash termux_recover.sh`.
+En Termux, `bash arrancar_termux.sh` inicia el dashboard, Commander integrado y
+PHANTOM sin tocar Git. `bash arrancar.sh` es un alias de compatibilidad que
+sincroniza ambos repositorios mediante `termux_recover.sh`; si hay cambios
+locales sin guardar, se detiene y no los borra.
 
 ### Despliegue conjunto en Termux: Red-team-tauri + Commander
 
@@ -156,7 +158,9 @@ python3 leviathan_core/tools/verify_modules.py
 ### Puerto 8001 ocupado
 ```bash
 pkill -9 -f dashboard_server.py
-bash arrancar.sh   # o bash replit_start.sh
+bash arrancar_termux.sh  # Termux, sin sincronizar
+# En Replit:
+bash replit_start.sh
 ```
 
 ### LEVIATHAN no carga

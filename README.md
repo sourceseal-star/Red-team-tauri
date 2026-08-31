@@ -477,7 +477,7 @@ Si ARTO aparece corriendo pero las operaciones de scan devuelven vacío:
 | Plataforma | Comando | Nota |
 |---|---|---|
 | Replit | `bash replit_start.sh` | Auto-deploy, deps via Nix |
-| Termux | `bash arrancar.sh` | Instala todo automáticamente |
+| Termux | `bash arrancar.sh` | Sincroniza, prepara y arranca todo sin borrar cambios |
 | Manual | ver arriba | Linux/Mac/Windows |
 
 ### Módulos opcionales (Termux)

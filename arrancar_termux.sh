@@ -30,7 +30,8 @@ command -v python3 >/dev/null 2>&1 || die "python3 no está instalado"
 command -v curl >/dev/null 2>&1 || die "curl no está instalado"
 [ -f "$ROOT/iniciar_unificado.sh" ] || die "No encuentro iniciar_unificado.sh en $ROOT"
 [ -f "$ROOT/redteam/scripts/dashboard_server.py" ] || die "Falta el backend del dashboard"
-[ -d "$ROOT/ghost_hunter_phantom" ] || die "Falta el módulo PHANTOM"
+[ -f "$ROOT/ghost_hunter_phantom/master.py" ] || die "Falta ghost_hunter_phantom/master.py"
+[ -f "$ROOT/ghost_hunter_phantom/node.py" ] || die "Falta ghost_hunter_phantom/node.py"
 
 if [ ! -f "$COMMANDER_DIR/commander.py" ] && [ -f "$ROOT/commander/commander.py" ]; then
   COMMANDER_DIR="$ROOT/commander"
@@ -47,6 +48,7 @@ fi
 
 export COMMANDER_DIR
 export PYTHONUNBUFFERED=1
+export PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 if [ -f "$COMMANDER_DIR/commander.py" ]; then
   printf '[arranque] Commander: %s\n' "$COMMANDER_DIR"

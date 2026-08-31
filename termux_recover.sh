@@ -13,7 +13,7 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="${REDTEAM_REPO_DIR:-$HOME/Red-team-tauri}"
+REPO_DIR="${REDTEAM_REPO_DIR:-$ROOT}"
 COMMANDER_DIR="${COMMANDER_DIR:-$HOME/commander}"
 COMMANDER_REPO_URL="${COMMANDER_REPO_URL:-https://github.com/sourceseal-star/commander.git}"
 PORT="${PORT:-8001}"
@@ -30,9 +30,9 @@ check_repo_clean_before_sync() {
   local repo_dir="$1"
   local repo_name="$2"
   if [ -d "$repo_dir/.git" ] && [ -n "$(git -C "$repo_dir" status --porcelain)" ]; then
-    die "$repo_name tiene cambios locales sin guardar. No haré pull ni los borraré.
+  die "$repo_name tiene cambios locales sin guardar. No haré pull ni los borraré.
 Usa primero 'bash arrancar_termux.sh' para trabajar con tu versión local,
-o guarda los cambios con commit/stash y vuelve a ejecutar termux_recover.sh."
+o guarda esos cambios con commit/stash y vuelve a ejecutar termux_recover.sh."
   fi
 }
 
