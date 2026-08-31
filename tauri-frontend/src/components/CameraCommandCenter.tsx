@@ -182,30 +182,30 @@ export default function CameraCommandCenter() {
   return (
     <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3 flex-wrap gap-2">
-        <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+      <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3 flex-wrap gap-2 min-w-0">
+        <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2 w-full sm:w-auto min-w-0">
           <Camera size={18} className="text-red-400" />
-          Camera Command Center
+          <span className="truncate">Camera Command Center</span>
         </h2>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto min-w-0">
           <input
             value={network}
             onChange={e => setNetwork(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-200 font-mono w-28"
+            className="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-200 font-mono w-28 max-w-full"
             placeholder="192.168.1"
             title="Prefijo de red (ej: 192.168.1)"
           />
           <input
             value={customPorts}
             onChange={e => setCustomPorts(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-200 font-mono w-36"
+            className="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-200 font-mono w-36 max-w-full"
             placeholder="Puertos extra (ej: 554,9999)"
             title="Puertos adicionales separados por coma. Ej: 554,8554,37777,9999"
           />
           <button
             onClick={runDiscovery}
             disabled={scanning}
-            className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg flex items-center gap-1.5 disabled:opacity-50"
+            className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
           >
             {scanning ? <RefreshCw size={12} className="animate-spin" /> : <Scan size={12} />}
             {scanning ? 'Escaneando...' : 'Descubrir Todo'}

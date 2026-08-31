@@ -65,6 +65,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 BASE       = SCRIPT_DIR.parent                         # redteam/
 ROOT       = BASE                                       # alias
 DIST       = (BASE.parent / "tauri-frontend" / "dist").resolve()
+NEXUS_PORT = int(os.environ.get("NEXUS_PORT", "8004"))
+NEXUS_AUTH_USER = os.environ.get("NEXUS_AUTH_USER", "admin")
+NEXUS_AUTH_PASS = os.environ.get("NEXUS_AUTH_PASS", "sourceseal")
 
 REPORTS   = ROOT / "reports"
 EVIDENCE  = ROOT / "evidence"
@@ -874,7 +877,7 @@ SERVICE_DEFS = {
         "env": {"NODE_ID": "phantom_node_1", "MASTER_URL": "http://localhost:8002", "BACKEND_API": "http://localhost:8001"}},
     "commander": {"description": "COMMANDER — Auditoría de red, OSINT, forense (repo hermano, in-process)",
         "cmd": None, "log_file": str(LOGS_DIR / "dashboard.log"), "in_process_flag": "_COMMANDER_OK"},
-    "nexus-omni": {"description": "NEXUS OMNI v9.0 — IA predictiva, adaptativa, auto-reparable (:8002)",
+    "nexus-omni": {"description": "NEXUS OMNI v9.0 — IA predictiva, adaptativa, auto-reparable (:8004)",
         "cmd": [sys.executable, str(ROOT.parent / "nexus_omni_v9.py")],
         "log_file": str(LOGS_DIR / "nexus_omni.log"),
         "env": {"NEXUS_DB": str(ROOT / "nexus_omni.db")},
@@ -6965,19 +6968,31 @@ async def nexus_health():
     try:
         import httpx as _hx
         async with _hx.AsyncClient() as c:
-            r = await c.get("http://localhost:8002/", timeout=2)
-        return {"available": r.status_code == 200, "port": 8002}
-    except: return {"available": False, "port": 8002}
+            r = await c.get(
+                f"http://127.0.0.1:{NEXUS_PORT}/",
+                auth=(NEXUS_AUTH_USER, NEXUS_AUTH_PASS),
+                timeout=2,
+            )
+        return {"available": r.status_code == 200, "port": NEXUS_PORT, "http_status": r.status_code}
+    except Exception as exc:
+        return {"available": False, "port": NEXUS_PORT, "error": str(exc)[:160]}
 
 @app.get("/api/nexus/ui")
 async def nexus_ui_proxy():
-    """Sirve la UI de NEXUS OMNI desde :8002 via proxy."""
+    """Sirve la UI de NEXUS OMNI desde su puerto interno via proxy."""
     try:
         import httpx as _hx
         async with _hx.AsyncClient() as c:
-            r = await c.get("http://localhost:8002/", timeout=3)
+            r = await c.get(
+                f"http://127.0.0.1:{NEXUS_PORT}/",
+                auth=(NEXUS_AUTH_USER, NEXUS_AUTH_PASS),
+                timeout=3,
+            )
+        if r.status_code != 200:
+            return HTMLResponse(f"<h2>NEXUS OMNI respondió HTTP {r.status_code}.</h2>", status_code=502)
         return HTMLResponse(r.text)
-    except: return HTMLResponse("<h2>NEXUS OMNI no está corriendo. Inícialo desde Control Tower.</h2>", status_code=503)
+    except Exception:
+        return HTMLResponse("<h2>NEXUS OMNI no está corriendo. Inícialo desde Control Tower.</h2>", status_code=503)
 
 # === MODULO A — Reportes PDF con Hash Sellado ===
 async def _generate_audit_pdf(devices, subnet="", exploits=None):

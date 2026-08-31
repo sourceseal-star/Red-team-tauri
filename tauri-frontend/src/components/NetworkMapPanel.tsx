@@ -95,12 +95,12 @@ export default function NetworkMapPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-white flex items-center gap-2"><MapPin size={18} className="text-cyan-400" /> Mapa de Red</h2>
+      <div className="flex items-center justify-between flex-wrap gap-2 min-w-0">
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2"><MapPin size={18} className="text-cyan-400 shrink-0" /> <span className="truncate">Mapa de Red</span></h2>
           <p className="text-xs text-slate-500">Descubrimiento ARP + TCP scan (sin root)</p>
         </div>
-        <button onClick={() => { discover(); scanWifi() }} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs font-bold text-white flex items-center gap-1">
+        <button onClick={() => { discover(); scanWifi() }} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs font-bold text-white flex items-center gap-1 whitespace-nowrap">
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Re-escanear
         </button>
       </div>
@@ -108,9 +108,9 @@ export default function NetworkMapPanel() {
       {interfaces.length > 0 && (
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
           <h3 className="text-sm font-bold text-cyan-400 mb-2 flex items-center gap-2"><Radar size={14} /> Selector de Red</h3>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap sm:flex-nowrap min-w-0">
             <select value={selectedIface} onChange={(e) => setSelectedIface(e.target.value)}
-              className="flex-1 bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs text-white">
+              className="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs text-white">
               {interfaces.map((iface, i) => (
                 <option key={i} value={iface.network_cidr}>
                   {iface.name} ({iface.type_hint}) — {iface.ip_address} [{iface.network_cidr}]
@@ -118,7 +118,7 @@ export default function NetworkMapPanel() {
               ))}
             </select>
             <button onClick={() => { if (selectedIface) { discoverWithSubnet(selectedIface) } }}
-              className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded text-xs font-bold text-white">
+              className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded text-xs font-bold text-white whitespace-nowrap">
               Escanear
             </button>
           </div>

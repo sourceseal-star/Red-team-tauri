@@ -26,7 +26,11 @@ from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-import aiohttp
+try:
+    import aiohttp
+except ImportError:
+    # El motor puede escanear y servir su API sin alertas Telegram.
+    aiohttp = None
 from io import BytesIO
 
 # ============================================================
@@ -265,6 +269,9 @@ class AdaptiveScanner:
 
     async def send_alert(self, ip, ports, risk):
         msg = f" NEXUS CRITICAL: {ip} | Riesgo: {risk}% | Puertos: {ports}"
+        if aiohttp is None:
+            print("⚠️ aiohttp no instalado: alerta Telegram omitida; NEXUS continúa operativo.")
+            return
         try:
             async with aiohttp.ClientSession() as session:
                 await session.post(f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendMessage",
@@ -353,4 +360,4 @@ if __name__ == "__main__":
     print("🌐 NEXUS OMNI-SENTIENT v9.0 ONLINE")
     print(f"🔐 admin / sourceseal")
     scanner.start_watchdog()
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("NEXUS_PORT", "8004")))

@@ -151,40 +151,58 @@ function CommandPalette({ open, onClose, onNavigate }: { open: boolean; onClose:
 // COMPONENTE: STATUS BAR (Footer real)
 // ==========================================
 function StatusBar() {
-  const [stats, setStats] = useState({ cpu: 0, ram: 0, disk: 0, services: 0, backend: false });
+  const [stats, setStats] = useState({ cpu: 0, ram: 0, disk: null as number | null, services: 0, backend: false });
   useEffect(() => {
-    const interval = setInterval(async () => {
+    const refresh = async () => {
       try {
-        const res = await fetch('/api/health', { cache: 'no-store' });
-        const data = await res.json();
+        const token = localStorage.getItem('api_token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const healthResponse = await fetch('/api/health', { cache: 'no-store', headers });
+        if (!healthResponse.ok) throw new Error(`health ${healthResponse.status}`);
+        const data = await healthResponse.json();
+
+        const [resourcesResponse, servicesResponse] = await Promise.allSettled([
+          fetch('/api/resources', { cache: 'no-store', headers }),
+          fetch('/api/services', { cache: 'no-store', headers }),
+        ]);
+        const resources = resourcesResponse.status === 'fulfilled' && resourcesResponse.value.ok
+          ? await resourcesResponse.value.json()
+          : {};
+        const services = servicesResponse.status === 'fulfilled' && servicesResponse.value.ok
+          ? await servicesResponse.value.json()
+          : [];
+
         setStats({
-          cpu: Math.floor(Math.random() * 30 + 5), // Reemplazar por endpoint real
-          ram: Math.floor(Math.random() * 40 + 20),
-          disk: 62,
-          services: 4,
-          backend: data.status === 'ok',
+          cpu: Number(resources.cpu_usage ?? 0),
+          ram: Number(resources.memory_percent ?? data.memory?.systemUsedPercent ?? 0),
+          disk: resources.disk_percent == null ? null : Number(resources.disk_percent),
+          services: Array.isArray(services) ? services.filter((s: any) => s.status === 'running').length : 0,
+          backend: data.status === 'ok' || data.status === 'operational',
         });
       } catch {
         setStats(s => ({ ...s, backend: false, services: 0 }));
       }
-    }, 10000);
+    };
+
+    refresh();
+    const interval = setInterval(refresh, 10000);
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <footer className="h-8 bg-slate-950 border-t border-slate-800 flex items-center px-3 gap-4 text-[10px] font-mono">
-      <div className="flex items-center gap-1.5">
+    <footer className="min-h-8 h-auto bg-slate-950 border-t border-slate-800 flex items-center px-3 py-1 gap-x-4 gap-y-1 text-[10px] font-mono flex-wrap">
+      <div className="flex items-center gap-1.5 whitespace-nowrap">
         <div className={`w-1.5 h-1.5 rounded-full ${stats.backend ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
         <span className={stats.backend ? 'text-green-400' : 'text-red-400'}>
           {stats.backend ? 'Backend Online' : 'Backend Offline'}
         </span>
       </div>
       <div className="w-px h-3 bg-slate-800" />
-      <span className="text-slate-500">Svcs: <span className="text-slate-300">{stats.services}</span></span>
-      <span className="text-slate-500">CPU: <span className="text-cyan-400">{stats.cpu}%</span></span>
-      <span className="text-slate-500">RAM: <span className="text-purple-400">{stats.ram}%</span></span>
-      <span className="text-slate-500">Disk: <span className="text-amber-400">{stats.disk}%</span></span>
-      <div className="ml-auto flex items-center gap-2">
+      <span className="text-slate-500 whitespace-nowrap">Svcs: <span className="text-slate-300">{stats.services}</span></span>
+      <span className="text-slate-500 whitespace-nowrap">CPU: <span className="text-cyan-400">{stats.cpu.toFixed(1)}%</span></span>
+      <span className="text-slate-500 whitespace-nowrap">RAM: <span className="text-purple-400">{stats.ram.toFixed(1)}%</span></span>
+      <span className="text-slate-500 whitespace-nowrap">Disk: <span className="text-amber-400">{stats.disk == null ? '—' : `${stats.disk}%`}</span></span>
+      <div className="ml-auto flex items-center gap-2 whitespace-nowrap">
         <span className="text-slate-600">v2.1.0</span>
         <span className="px-1.5 py-0.5 bg-red-900/30 border border-red-800 rounded text-red-400 text-[9px] font-bold">DEFENSIVE USE ONLY</span>
       </div>
@@ -227,7 +245,7 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
     <ToastProvider>
       <div className={`h-screen flex flex-col ${darkMode ? 'dark' : ''}`}>
         {/* TopBar */}
-        <header className="h-12 bg-slate-900 border-b border-slate-800 flex items-center px-3 gap-3 shrink-0">
+        <header className="h-12 bg-slate-900 border-b border-slate-800 flex items-center px-3 gap-3 shrink-0 min-w-0">
           <button 
             onClick={() => setMobileOpen(!mobileOpen)}
             className="lg:hidden p-1.5 hover:bg-slate-800 rounded-lg text-slate-400"
@@ -255,7 +273,7 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
             )}
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2 shrink-0">
             {/* Búsqueda global */}
             <button 
               onClick={() => setCommandOpen(true)}
@@ -367,8 +385,8 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
           )}
 
           {/* Main Content */}
-          <main className="flex-1 overflow-y-auto bg-slate-950">
-            <div className="p-4 lg:p-6 max-w-[1600px] mx-auto">
+          <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-slate-950">
+            <div className="p-4 lg:p-6 max-w-[1600px] mx-auto min-w-0 w-full">
               {/* Header de página */}
               <div className="flex items-center justify-between mb-6">
                 <div>

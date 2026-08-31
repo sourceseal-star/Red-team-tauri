@@ -9,6 +9,7 @@ function authHGet(): Record<string, string> {
 export default function NexusPanel() {
   const [health, setHealth] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  const nexusPort = health?.port || 8004
 
   const checkHealth = useCallback(async () => {
     try {
@@ -34,15 +35,15 @@ export default function NexusPanel() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="space-y-4 min-w-0">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="min-w-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <Cpu size={18} className="text-purple-400" /> NEXUS OMNI v9.0
           </h2>
-          <p className="text-xs text-slate-500">IA predictiva · adaptativa · auto-reparable · :8002</p>
+          <p className="text-xs text-slate-500">IA predictiva · adaptativa · auto-reparable · :{nexusPort}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {health?.available ? (
             <button onClick={stopNexus} disabled={loading}
               className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-xs font-bold text-white flex items-center gap-1">
@@ -62,14 +63,14 @@ export default function NexusPanel() {
       </div>
 
       {/* Estado */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center gap-4">
+      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex items-center gap-4 flex-wrap">
         <div className={`w-2 h-2 rounded-full ${health?.available ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
         <span className="text-xs text-slate-500">Estado:</span>
         <span className={`text-xs font-bold ${health?.available ? 'text-green-400' : 'text-red-400'}`}>
-          {health?.available ? 'ONLINE (:8002)' : 'OFFLINE'}
+          {health?.available ? `ONLINE (:${nexusPort})` : 'OFFLINE'}
         </span>
         {health?.available && (
-          <a href="http://localhost:8002" target="_blank" rel="noopener"
+          <a href="/api/nexus/ui" target="_blank" rel="noopener"
             className="ml-auto text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1">
             <ExternalLink size={12} /> Abrir en pestaña nueva
           </a>
@@ -84,7 +85,7 @@ export default function NexusPanel() {
             <span className="text-xs text-slate-400">NEXUS OMNI — Motor cognitivo activo</span>
             <Zap size={12} className="text-amber-400 ml-auto" />
           </div>
-          <iframe src="http://localhost:8002" className="w-full" style={{ height: '600px', border: 'none' }}
+          <iframe src="/api/nexus/ui" className="w-full" style={{ height: '600px', border: 'none' }}
             title="NEXUS OMNI" />
         </div>
       ) : (
@@ -92,7 +93,7 @@ export default function NexusPanel() {
           <AlertCircle size={32} className="text-slate-600 mb-3" />
           <p className="text-sm text-slate-500">NEXUS OMNI no está corriendo.</p>
           <p className="text-xs text-slate-600 mt-1">Presiona "Iniciar" para arrancar el motor en :8002.</p>
-          <p className="text-xs text-slate-700 mt-2">Necesita aiohttp: pip install aiohttp</p>
+          <p className="text-xs text-slate-700 mt-2">El motor se inicia desde este panel; sus alertas externas son opcionales.</p>
         </div>
       )}
 
