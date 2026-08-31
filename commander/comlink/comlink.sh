@@ -1519,7 +1519,8 @@ status_json() {
           {id:"satellite", ready:$satellite, reason:$satellite_reason, requires:["módem","driver del proveedor"]}
         ] as $channels |
         {
-          available:true,
+          available:($core_ready and ([$channels[] | select(.ready)] | length) > 0),
+          core_ready:$core_ready,
           version:$version,
           device:{id:$device_id,name:$device_name},
           core:{ready:$core_ready,missing:$missing},

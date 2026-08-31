@@ -1115,7 +1115,7 @@ Si tienes problemas o preguntas:
 **COM-LINK v3.0** es ahora un **sistema de comunicación de emergencia completo, resiliente y ultra-seguro** que puede operar en **casi cualquier escenario**, desde zonas urbanas con internet hasta áreas remotas sin ninguna infraestructura.
 
 **Características clave:**
-✅ **7 canales de comunicación** (SMS, Telegram, VoIP, Mesh WiFi, Mesh Bluetooth, Radio, Satélite)
+✅ **7 adaptadores de comunicación** (SMS, Telegram, VoIP, Mesh WiFi, Mesh Bluetooth, Radio, Satélite); la disponibilidad se verifica en tiempo de ejecución y depende del hardware, permisos y configuración.
 ✅ **Fallback automático inteligente**
 ✅ **Cifrado de extremo a extremo** (AES-256-GCM + RSA-4096)
 ✅ **Comunicación Mesh P2P** (WiFi + Bluetooth)

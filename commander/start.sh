@@ -102,7 +102,7 @@ check_deps() {
     separator
     echo -e "${W}  Resumen:${N}"
     info "Commander: auditoría de red + OSINT + forense"
-    info "COM-LINK: 7 canales de comunicación de emergencia"
+    info "COM-LINK: 7 adaptadores; canales operativos según hardware y configuración"
     pause
 }
 

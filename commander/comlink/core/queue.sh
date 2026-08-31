@@ -9,10 +9,14 @@ QUEUE_DB="$INSTALL_DIR/data/queue/queue.db"
 # ============================================================
 # FUNCIONES
 # ============================================================
+sqlite_escape() {
+    printf '%s' "$1" | sed "s/'/''/g"
+}
+
 # Inicializar base de datos
 init_queue() {
     if [ ! -f "$QUEUE_DB" ]; then
-        sqlite3 "$QUEUE_DB" <<EOF
+        sqlite3 "$QUEUE_DB" >/dev/null <<EOF
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 
@@ -48,14 +52,21 @@ add_to_queue() {
     local priority="${5:-0}"
     local metadata="${6:-}"
 
-    # Escapar comillas simples para SQLite
-    message=$(echo "$message" | sed "s/'/''/g")
-    encrypted=$(echo "$encrypted" | sed "s/'/''/g")
-    metadata=$(echo "$metadata" | sed "s/'/''/g")
+    if ! [[ "$priority" =~ ^-?[0-9]+$ ]]; then
+        error "Prioridad no válida: $priority"
+        return 1
+    fi
+
+    local contact_id_sql channel_sql message_sql encrypted_sql metadata_sql
+    contact_id_sql=$(sqlite_escape "$contact_id")
+    channel_sql=$(sqlite_escape "$channel")
+    message_sql=$(sqlite_escape "$message")
+    encrypted_sql=$(sqlite_escape "$encrypted")
+    metadata_sql=$(sqlite_escape "$metadata")
 
     sqlite3 "$QUEUE_DB" <<EOF
 INSERT INTO messages (contact_id, channel, message, encrypted, priority, status, metadata)
-VALUES ('$contact_id', '$channel', '$message', '$encrypted', $priority, 'pending', '$metadata');
+VALUES ('$contact_id_sql', '$channel_sql', '$message_sql', '$encrypted_sql', $priority, 'pending', '$metadata_sql');
 EOF
 
     if [ $? -eq 0 ]; then
@@ -72,16 +83,23 @@ get_pending_messages() {
     local channel_filter="${1:-}"
     local limit="${2:-10}"
 
+    if ! [[ "$limit" =~ ^[0-9]+$ ]]; then
+        error "Límite no válido: $limit"
+        return 1
+    fi
+
     if [ -n "$channel_filter" ]; then
-        sqlite3 "$QUEUE_DB" "SELECT id, contact_id, channel, message, encrypted, priority, attempts FROM messages WHERE status = 'pending' AND channel = '$channel_filter' ORDER BY priority DESC, timestamp ASC LIMIT $limit;"
+        local channel_sql
+        channel_sql=$(sqlite_escape "$channel_filter")
+        sqlite3 -json "$QUEUE_DB" "SELECT id, contact_id, channel, message, encrypted, priority, attempts FROM messages WHERE status = 'pending' AND channel = '$channel_sql' ORDER BY priority DESC, timestamp ASC LIMIT $limit;"
     else
-        sqlite3 "$QUEUE_DB" "SELECT id, contact_id, channel, message, encrypted, priority, attempts FROM messages WHERE status = 'pending' ORDER BY priority DESC, timestamp ASC LIMIT $limit;"
+        sqlite3 -json "$QUEUE_DB" "SELECT id, contact_id, channel, message, encrypted, priority, attempts FROM messages WHERE status = 'pending' ORDER BY priority DESC, timestamp ASC LIMIT $limit;"
     fi
 }
 
 # Obtener todos los mensajes pendientes
 get_all_pending_messages() {
-    sqlite3 "$QUEUE_DB" "SELECT id, contact_id, channel, message, encrypted, priority, attempts FROM messages WHERE status = 'pending' ORDER BY priority DESC, timestamp ASC;"
+    sqlite3 -json "$QUEUE_DB" "SELECT id, contact_id, channel, message, encrypted, priority, attempts FROM messages WHERE status = 'pending' ORDER BY priority DESC, timestamp ASC;"
 }
 
 # Actualizar estado de un mensaje
@@ -90,10 +108,25 @@ update_message_status() {
     local status="$2"
     local encrypted="${3:-}"
 
+    if ! [[ "$id" =~ ^[0-9]+$ ]]; then
+        error "ID de mensaje no válido: $id"
+        return 1
+    fi
+    case "$status" in
+        pending|processing|sent|failed) ;;
+        *)
+            error "Estado de mensaje no válido: $status"
+            return 1
+            ;;
+    esac
+
+    local status_sql encrypted_sql
+    status_sql=$(sqlite_escape "$status")
     if [ -n "$encrypted" ]; then
-        sqlite3 "$QUEUE_DB" "UPDATE messages SET status = '$status', encrypted = '$encrypted', attempts = attempts + 1, last_attempt = CURRENT_TIMESTAMP WHERE id = $id;"
+        encrypted_sql=$(sqlite_escape "$encrypted")
+        sqlite3 "$QUEUE_DB" "UPDATE messages SET status = '$status_sql', encrypted = '$encrypted_sql', attempts = attempts + 1, last_attempt = CURRENT_TIMESTAMP WHERE id = $id;"
     else
-        sqlite3 "$QUEUE_DB" "UPDATE messages SET status = '$status', attempts = attempts + 1, last_attempt = CURRENT_TIMESTAMP WHERE id = $id;"
+        sqlite3 "$QUEUE_DB" "UPDATE messages SET status = '$status_sql', attempts = attempts + 1, last_attempt = CURRENT_TIMESTAMP WHERE id = $id;"
     fi
 }
 
@@ -102,22 +135,27 @@ process_queue() {
     local channel_filter="${1:-}"
 
     # Obtener mensajes pendientes
-    local messages=$(get_pending_messages "$channel_filter" 100)
+    local messages
+    messages=$(get_pending_messages "$channel_filter" 100)
 
-    if [ -z "$messages" ]; then
+    if [ -z "$messages" ] || [ "$(jq 'length' <<<"$messages")" -eq 0 ]; then
         debug "No hay mensajes pendientes en la cola"
         return 0
     fi
 
     local message_count
-    message_count=$(printf '%s\n' "$messages" | wc -l | tr -d ' ')
+    message_count=$(jq 'length' <<<"$messages")
     debug "Procesando ${message_count} mensajes pendientes..."
 
-    while IFS="|" read -r id contact_id channel message encrypted priority attempts; do
-        # Saltar encabezado
-        if [[ "$id" == "id" ]]; then
-            continue
-        fi
+    while IFS= read -r row; do
+        local id contact_id channel message encrypted priority attempts
+        id=$(jq -r '.id' <<<"$row")
+        contact_id=$(jq -r '.contact_id' <<<"$row")
+        channel=$(jq -r '.channel' <<<"$row")
+        message=$(jq -r '.message // ""' <<<"$row")
+        encrypted=$(jq -r '.encrypted // ""' <<<"$row")
+        priority=$(jq -r '.priority // 0' <<<"$row")
+        attempts=$(jq -r '.attempts // 0' <<<"$row")
 
         # Actualizar estado a processing
         update_message_status "$id" "processing" "$encrypted"
@@ -181,7 +219,7 @@ process_queue() {
             error "Función de envío no encontrada para el canal $channel"
             update_message_status "$id" "failed"
         fi
-    done <<< "$messages"
+    done < <(jq -c '.[]' <<<"$messages")
 
     return 0
 }
