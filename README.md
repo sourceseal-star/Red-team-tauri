@@ -61,6 +61,14 @@ y arrancar al terminar:
 bash setup.sh --start
 ```
 
+Para observar cambios locales realizados después con `nano` y sellarlos en la
+auditoría:
+
+```bash
+bash setup.sh --watch
+tail -f ~/.sourceseal/watcher.log
+```
+
 El flujo histórico sigue disponible con `bash termux_recover.sh` cuando se
 necesite preparar y levantar todo en una sola operación.
 Si el Commander incluido no está disponible, puedes indicar el repositorio

@@ -40,17 +40,24 @@ SourceSeal setup.sh — Termux
 
   bash setup.sh          Actualiza y prepara; no inicia servidores.
   bash setup.sh --start  Actualiza, prepara y luego inicia start-termux.sh.
+  bash setup.sh --watch  Actualiza y deja el watcher local en segundo plano.
+  bash setup.sh --start --watch  Hace ambas cosas.
 
 Variables opcionales:
   REDTEAM_DIR, COMMANDER_DIR, REDTEAM_REPO_URL, COMMANDER_REPO_URL
 EOF
 }
 
-case "${1:-}" in
-  ""|--start) ;;
-  --help|-h) usage; exit 0 ;;
-  *) die "Opción no reconocida: $1. Usa --help." ;;
-esac
+START_AFTER_SETUP=0
+WATCH_AFTER_SETUP=0
+for argument in "$@"; do
+  case "$argument" in
+    --start) START_AFTER_SETUP=1 ;;
+    --watch) WATCH_AFTER_SETUP=1 ;;
+    --help|-h) usage; exit 0 ;;
+    *) die "Opción no reconocida: $argument. Usa --help." ;;
+  esac
+done
 
 command -v pkg >/dev/null 2>&1 || die "Ejecuta setup.sh dentro de Termux."
 
@@ -106,12 +113,33 @@ if [ ! -f "$REPO_DIR/redteam/monitor/operations_monitor.py" ]; then
   die "La actualización no contiene el monitor seguro esperado."
 fi
 ok "Monitor seguro verificado"
+python3 -m py_compile \
+  "$REPO_DIR/watcher.py" \
+  "$REPO_DIR/redteam/runner/hot_loader.py" \
+  "$REPO_DIR/redteam/runner/engagement_guard.py" \
+  "$REPO_DIR/redteam/modules/base.py"
+ok "Watcher y componentes de alcance verificados"
 
 printf '\n'
 info "Actualización terminada: $(git -C "$REPO_DIR" log -1 --oneline)"
 info "Ejecución separada: bash \"$REPO_DIR/start-termux.sh\""
 
-if [ "${1:-}" = "--start" ]; then
+if [ "$WATCH_AFTER_SETUP" = "1" ]; then
+  WATCH_STATE_DIR="${SOURCESEAL_STATE_DIR:-$HOME/.sourceseal}"
+  WATCH_PID_FILE="$WATCH_STATE_DIR/watcher.pid"
+  WATCH_LOG="$WATCH_STATE_DIR/watcher.log"
+  mkdir -p "$WATCH_STATE_DIR"
+  if [ -f "$WATCH_PID_FILE" ] && kill -0 "$(cat "$WATCH_PID_FILE" 2>/dev/null)" 2>/dev/null; then
+    ok "Watcher ya estaba activo (PID $(cat "$WATCH_PID_FILE"))"
+  else
+    rm -f "$WATCH_PID_FILE"
+    nohup python3 "$REPO_DIR/watcher.py" >"$WATCH_LOG" 2>&1 </dev/null &
+    echo "$!" > "$WATCH_PID_FILE"
+    ok "Watcher iniciado (PID $(cat "$WATCH_PID_FILE")); log: $WATCH_LOG"
+  fi
+fi
+
+if [ "$START_AFTER_SETUP" = "1" ]; then
   info "Iniciando SourceSeal porque se indicó --start..."
   exec bash "$REPO_DIR/start-termux.sh"
 fi

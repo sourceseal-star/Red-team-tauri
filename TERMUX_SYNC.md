@@ -116,6 +116,23 @@ defecto. Para actualizar y arrancar al terminar:
 bash setup.sh --start
 ```
 
+Para registrar cambios locales hechos después con `nano`:
+
+```bash
+bash setup.sh --watch
+tail -f ~/.sourceseal/watcher.log
+```
+
+El watcher calcula SHA-256 de los archivos Python de `redteam/runner` y
+`redteam/modules`, registra los cambios en la auditoría local y deja que el
+próximo `/api/scan` cargue el código actualizado en un proceso nuevo. No
+ejecuta automáticamente el archivo modificado ni reinicia procesos. Se puede
+combinar con el arranque:
+
+```bash
+bash setup.sh --start --watch
+```
+
 También puedes guardar una copia del script en `~/setup.sh` y ejecutar
 `bash ~/setup.sh`; si la carpeta `~/Red-team-tauri` no existe, el bootstrap la
 clona usando `REDTEAM_REPO_URL`.
