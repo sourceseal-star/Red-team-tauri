@@ -41,7 +41,7 @@ RESET_CREDENTIALS = "--reset-credentials" in sys.argv[1:]
 NEXUS_CREDENTIALS = ensure_nexus_credentials(reset=RESET_CREDENTIALS)
 
 if RESET_CREDENTIALS:
-    print("[NEXUS] Credenciales rotadas. Reinicia el servicio para aplicar el nuevo acceso.", flush=True)
+    print("[NEXUS] Credenciales rotadas en .env. Reinicia el servicio para aplicar el nuevo acceso.", flush=True)
     raise SystemExit(0)
 
 CONFIG = {
@@ -64,39 +64,46 @@ CONFIG = {
     "base_coords": {"lat": 4.7110, "lon": -74.0721},
     "auth_user": NEXUS_CREDENTIALS.user,
     "auth_pass": NEXUS_CREDENTIALS.password,
-    "telegram_token": "", 
-    "telegram_chat_id": ""
 }
 
-app = FastAPI(title="NEXUS OMNI v9.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# ============================================================
+# 1. NÚCLEO COGNITIVO — Base de datos + Predicción
+# ============================================================
 security = HTTPBasic()
+app = FastAPI(title="NEXUS OMNI-SENTIENT v9.0")
 
-# ============================================================
-# 1. CEREBRO DE DATOS (Predictivo + Histórico)
-# ============================================================
-class NexusDB:
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class NeuralDB:
     def __init__(self):
         self.conn = sqlite3.connect(CONFIG["db_path"], check_same_thread=False)
-        self._init_schema()
-        self.history_cache = {} # Memoria RAM para series temporales rápidas
-
-    def _init_schema(self):
-        c = self.conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS devices (
-            id TEXT PRIMARY KEY, ip TEXT, mac TEXT, vendor TEXT, 
-            risk_score REAL, threat_level TEXT, ports TEXT, os_guess TEXT, 
-            lat REAL, lon REAL, first_seen TEXT, last_seen TEXT, 
-            scan_history TEXT, profile_json TEXT, sealed_hash TEXT
-        )''')
-        c.execute('''CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT, 
-            event_type TEXT, severity TEXT, details TEXT, timestamp TEXT
-        )''')
-        c.execute('''CREATE TABLE IF NOT EXISTS adaptation_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, strategy TEXT, 
-            reason TEXT, timestamp TEXT
-        )''')
+        self.conn.execute('''
+            CREATE TABLE IF NOT EXISTS devices (
+                id TEXT PRIMARY KEY,
+                ip TEXT, mac TEXT, hostname TEXT,
+                ports TEXT, os_guess TEXT, vendor TEXT,
+                risk_score REAL, threat_level TEXT,
+                first_seen TEXT, last_seen TEXT,
+                scan_history TEXT, seal_hash TEXT,
+                lat REAL, lon REAL
+            )''')
+        self.conn.execute('''
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT, event_type TEXT,
+                description TEXT, severity TEXT, timestamp TEXT
+            )''')
+        self.conn.execute('''
+            CREATE TABLE IF NOT EXISTS adaptations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action TEXT, reason TEXT, timestamp TEXT
+            )''')
         self.conn.commit()
 
     def update_device(self, dev: Dict) -> Tuple[bool, float, str]:
@@ -145,53 +152,52 @@ class NexusDB:
         data_str = json.dumps(dev, sort_keys=True)
         seal_hash = hashlib.sha256(data_str.encode()).hexdigest()
         
-        sql = '''INSERT OR REPLACE INTO devices 
-            (id, ip, mac, vendor, risk_score, threat_level, ports, os_guess, lat, lon, 
-             first_seen, last_seen, scan_history, profile_json, sealed_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
-        
-        vals = (dev["id"], ip, dev.get("mac",""), dev.get("vendor",""), dynamic_risk, threat_level,
-                json.dumps(dev.get("ports",[])), dev.get("os_guess","Unknown"),
-                dev["location"]["lat"], dev["location"]["lon"],
-                history[0]["time"], now, json.dumps(history), json.dumps(dev), seal_hash)
-        
-        c.execute(sql, vals)
+        self.conn.execute('''
+            INSERT OR REPLACE INTO devices 
+            (id, ip, mac, hostname, ports, os_guess, vendor, risk_score, threat_level,
+             first_seen, last_seen, scan_history, seal_hash, lat, lon)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ''', (
+            dev["id"], ip, dev.get("mac",""), dev.get("hostname",""),
+            json.dumps(dev.get("ports",[])), dev.get("os",""), dev.get("vendor",""),
+            dynamic_risk, threat_level,
+            dev.get("first_seen", now), now, json.dumps(history), seal_hash,
+            dev.get("lat", CONFIG["base_coords"]["lat"] + random.uniform(-0.01, 0.01)),
+            dev.get("lon", CONFIG["base_coords"]["lon"] + random.uniform(-0.01, 0.01))
+        ))
         self.conn.commit()
-        
-        is_new = row is None
-        return is_new, dynamic_risk, threat_level
+        return anomaly_detected, dynamic_risk, threat_level
 
     def _calculate_base_risk(self, dev: Dict) -> float:
-        score = 0.0
+        risk = 0.0
         ports = dev.get("ports", [])
-        if 23 in ports: score += 40
-        if 21 in ports: score += 20
-        if 3389 in ports: score += 25
-        if any(p in [80, 443, 8080] for p in ports) and dev.get("vendor") in ["Hikvision", "Dahua"]: score += 15
-        return min(score, 70.0)
+        critical = set(CONFIG["ports_critical"]) & set(ports)
+        risk += len(critical) * 15
+        if 22 in ports and 445 in ports: risk += 20
+        if 3389 in ports: risk += 15
+        if 23 in ports: risk += 25 # Telnet = muy riesgoso
+        return min(risk, 100)
 
-    def _log_event(self, device_id: str, etype: str, details: str, severity: str):
-        c = self.conn.cursor()
-        c.execute("INSERT INTO events (device_id, event_type, severity, details, timestamp) VALUES (?, ?, ?, ?, ?)",
-                  (device_id, etype, severity, details, datetime.now().isoformat()))
+    def _log_event(self, device_id, etype, desc, sev):
+        self.conn.execute("INSERT INTO events (device_id, event_type, description, severity, timestamp) VALUES (?,?,?,?,?)",
+                         (device_id, etype, desc, sev, datetime.now().isoformat()))
+        self.conn.commit()
+
+    def log_adaptation(self, action, reason):
+        self.conn.execute("INSERT INTO adaptations (action, reason, timestamp) VALUES (?,?,?)",
+                         (action, reason, datetime.now().isoformat()))
         self.conn.commit()
 
     def get_all_devices(self) -> List[Dict]:
         c = self.conn.cursor()
-        c.execute("SELECT id, ip, vendor, risk_score, threat_level, ports, os_guess, lat, lon, last_seen, scan_history FROM devices")
-        cols = ["id", "ip", "vendor", "risk_score", "threat_level", "ports", "os_guess", "lat", "lon", "last_seen", "scan_history"]
+        c.execute("SELECT * FROM devices ORDER BY risk_score DESC")
+        cols = [d[0] for d in c.description]
         return [dict(zip(cols, row)) for row in c.fetchall()]
 
-    def log_adaptation(self, strategy: str, reason: str):
-        c = self.conn.cursor()
-        c.execute("INSERT INTO adaptation_log (strategy, reason, timestamp) VALUES (?, ?, ?)",
-                  (strategy, reason, datetime.now().isoformat()))
-        self.conn.commit()
-
-db = NexusDB()
+db = NeuralDB()
 
 # ============================================================
-# 2. ESCÁNER ADAPTATIVO (Reinforcement Learning Lite)
+# 2. ESCÁNER ADAPTATIVO — Aprende y se ajusta solo
 # ============================================================
 class AdaptiveScanner:
     def __init__(self):
@@ -209,7 +215,7 @@ class AdaptiveScanner:
             while True:
                 await asyncio.sleep(30)
                 if self.scanning and time.time() - self.last_activity > 60:
-                    print("️ WATCHDOG: Escáner congelado. Reiniciando...")
+                    print("⚠️ WATCHDOG: Escáner congelado. Reiniciando...")
                     self.scanning = False # Forzar parada para reinicio externo
         self.watchdog_task = asyncio.create_task(watchdog())
 
@@ -229,7 +235,7 @@ class AdaptiveScanner:
         if critical_count > 3 and self.mode != "frenzy":
             self.mode = "frenzy"
             db.log_adaptation("MODE_CHANGE", f"Elevado a FRENZY por {critical_count} amenazas críticas.")
-            print(f" AMENAZA ALTA DETECTADA. CAMBIANDO A MODO FRENZY.")
+            print(f"🚨 AMENAZA ALTA DETECTADA. CAMBIANDO A MODO FRENZY.")
         elif found_count == 0 and self.mode == "active":
             self.mode = "stealth" # Bajar intensidad si no hay nada
             db.log_adaptation("MODE_CHANGE", "Bajado a STEALTH por falta de objetivos.")
@@ -239,63 +245,45 @@ class AdaptiveScanner:
         config = CONFIG["modes"][self.mode]
         timeout = config["timeout"]
         
-        # Selección inteligente de puertos: Priorizar los que históricamente están abiertos
-        ports_to_scan = CONFIG["ports_critical"]
-        if self.mode == "frenzy": ports_to_scan = CONFIG["ports_critical"] + CONFIG["ports_common"]
-        
-        # Desordenar en stealth/ghost
-        if self.mode in ["stealth", "passive"]: random.shuffle(ports_to_scan)
-
         open_ports = []
-        # Escaneo concurrente limitado
-        sem = asyncio.Semaphore(config["concurrent"])
-        
-        async def check_port(port):
-            async with sem:
-                try:
-                    if self.mode == "passive": await asyncio.sleep(random.uniform(0.5, 2.0))
-                    reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
-                    writer.close()
-                    await writer.wait_closed()
-                    return port
-                except: return None
+        concurrent = config["concurrent"]
 
-        tasks = [check_port(p) for p in ports_to_scan]
+        async def check_port(port: int):
+            try:
+                _, writer = await asyncio.wait_for(
+                    asyncio.open_connection(ip, port), timeout=timeout
+                )
+                writer.close()
+                await writer.wait_closed()
+                return port
+            except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+                return None
+
+        # Escaneo concurrente
+        tasks = [check_port(p) for p in CONFIG["ports_critical"]]
         results = await asyncio.gather(*tasks)
-        open_ports = [p for p in results if p]
-        
-        if not open_ports: return None
+        open_ports = [p for p in results if p is not None]
 
-        # Geo y OS (Simplificado para velocidad)
-        loc = {"lat": CONFIG["base_coords"]["lat"] + random.uniform(-0.001, 0.001), 
-               "lon": CONFIG["base_coords"]["lon"] + random.uniform(-0.001, 0.001)}
+        if not open_ports:
+            return None
+
+        # Generar ID único
+        dev_id = hashlib.md5(f"{ip}:{open_ports}".encode()).hexdigest()
         
-        dev = {
-            "id": f"tgt_{ip}", "ip": ip, "mac": "", "vendor": "Unknown",
-            "ports": open_ports, "os_guess": "Unknown", "location": loc
+        return {
+            "id": dev_id, "ip": ip, "ports": open_ports,
+            "os": self._guess_os(open_ports),
+            "first_seen": datetime.now().isoformat(),
+            "risk_score": 0, # Se calcula en update_device
         }
-        
-        # Actualizar DB y obtener predicción
-        is_new, risk, threat = db.update_device(dev)
-        dev["risk_score"] = risk
-        dev["threat_level"] = threat
-        
-        # Alerta inmediata si es nuevo y crítico
-        if is_new and threat == "CRITICAL" and CONFIG["telegram_token"]:
-            await self.send_alert(ip, open_ports, risk)
-            
-        return dev
 
-    async def send_alert(self, ip, ports, risk):
-        msg = f" NEXUS CRITICAL: {ip} | Riesgo: {risk}% | Puertos: {ports}"
-        if aiohttp is None:
-            print("⚠️ aiohttp no instalado: alerta Telegram omitida; NEXUS continúa operativo.")
-            return
-        try:
-            async with aiohttp.ClientSession() as session:
-                await session.post(f"https://api.telegram.org/bot{CONFIG['telegram_token']}/sendMessage",
-                                   json={"chat_id": CONFIG["telegram_chat_id"], "text": msg})
-        except: pass
+    def _guess_os(self, ports: List[int]) -> str:
+        if 3389 in ports: return "Windows"
+        if 22 in ports and 5432 in ports: return "Linux/PostgreSQL"
+        if 22 in ports: return "Linux/Unix"
+        if 445 in ports: return "Windows/SMB"
+        if 23 in ports: return "Router/IoT"
+        return "Unknown"
 
     async def run_discovery(self, network_cidr: str):
         self.scanning = True
@@ -404,5 +392,5 @@ async def ws_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     print("🌐 NEXUS OMNI-SENTIENT v9.0 ONLINE")
-    print(f"🔐 Acceso configurado para {NEXUS_CREDENTIALS.user}; el secreto no se vuelve a mostrar aquí")
+    print(f"🔐 Acceso configurado para usuario '{NEXUS_CREDENTIALS.user}' — credenciales en .env (no se muestran)")
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("NEXUS_PORT", "8004")))
