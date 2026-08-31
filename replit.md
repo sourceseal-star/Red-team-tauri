@@ -25,7 +25,7 @@ bash termux_recover.sh
 
 El script usa por defecto `https://github.com/sourceseal-star/commander.git` y deja estos servicios locales:
 - Dashboard Red-team-tauri: `http://localhost:8001`
-- Dashboard Commander: `http://localhost:8003`
+- Commander integrado: `http://localhost:8001/api/commander/*`
 - GHOST HUNTER PHANTOM: `http://localhost:8002/api/status`
 
 Como Commander es privado, Git debe estar autenticado en Termux antes de ejecutar el script. No pongas tokens en la URL ni los guardes en el repositorio. Si prefieres SSH:
@@ -42,6 +42,7 @@ Health check:
 
 ```bash
 curl http://localhost:8001/api/health
+curl -H "Authorization: Bearer TU_TOKEN" http://localhost:8001/api/commander/health
 curl http://localhost:8001/api/v1/status       # LEVIATHAN unificado
 curl http://localhost:8001/api/integrated/health  # ARTO + SEAL + LEVIATHAN
 ```

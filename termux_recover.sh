@@ -1,12 +1,14 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # =====================================================================
-# RECUPERACIÓN TERMUX — Red-team-tauri + Commander
+# RECUPERACIÓN TERMUX — Red-team-tauri + Commander in-process
 #
 # Uso:
 #   bash termux_recover.sh
 #   bash termux_recover.sh
 #
-# El script sincroniza ambos repositorios. Commander usa la URL oficial por defecto;
+# El script sincroniza ambos repositorios. Commander se integra en el dashboard
+# mediante /api/commander/*; no arranca un segundo servidor ni otro puerto.
+# Usa la URL oficial por defecto;
 # puedes sustituirla por SSH con COMMANDER_REPO_URL si tu autenticación lo requiere.
 # =====================================================================
 set -Eeuo pipefail
@@ -136,4 +138,4 @@ fi
 
 info "Iniciando sistema unificado en http://127.0.0.1:$PORT ..."
 cd "$REPO_DIR"
-exec env COMMANDER_DIR="$COMMANDER_DIR" COMMANDER_PORT="${COMMANDER_PORT:-8003}" bash "$REPO_DIR/iniciar_unificado.sh"
+exec env COMMANDER_DIR="$COMMANDER_DIR" bash "$REPO_DIR/iniciar_unificado.sh"

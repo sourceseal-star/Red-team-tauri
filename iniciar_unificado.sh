@@ -1,8 +1,9 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # =====================================================================
-# SOURCESEAL UNIFIED LAUNCHER — Red-team-tauri + GHOST HUNTER PHANTOM
+# SOURCESEAL UNIFIED LAUNCHER — Red-team-tauri + Commander + GHOST HUNTER PHANTOM
 # Arranca todo en simultáneo:
 #   :8001 — Dashboard FastAPI (dashboard_server.py)
+#            └── COMMANDER in-process (/api/commander/*)
 #   :8002 — GHOST HUNTER PHANTOM Master (master.py)
 # =====================================================================
 
@@ -10,9 +11,8 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 COMMANDER_DIR="${COMMANDER_DIR:-$HOME/commander}"
-COMMANDER_PORT="${COMMANDER_PORT:-8003}"
 START_COMMANDER="${START_COMMANDER:-1}"
-COMMANDER_PID=""
+export COMMANDER_DIR
 
 echo ""
 echo "╔═══════════════════════════════════════════════════════╗"
@@ -26,13 +26,12 @@ echo "[unified] Limpiando procesos previos..."
 pkill -f "dashboard_server.py" 2>/dev/null || true
 pkill -f "ghost_hunter_phantom/master.py" 2>/dev/null || true
 pkill -f "ghost_hunter_phantom/node.py" 2>/dev/null || true
-pkill -f "commander_server.py" 2>/dev/null || true
 sleep 1
 
 # ─── 1. Dashboard backend (:8001) ─────────────────────────
 echo "[unified] Arrancando Dashboard en :8001..."
 cd "$ROOT/redteam/scripts"
-PORT=8001 python3 dashboard_server.py &
+PORT=8001 COMMANDER_DIR="$COMMANDER_DIR" PYTHONUNBUFFERED=1 python3 dashboard_server.py &
 DASHBOARD_PID=$!
 echo "[unified] Dashboard PID: $DASHBOARD_PID"
 
@@ -51,24 +50,33 @@ done
 
 cd "$ROOT"
 
-# ─── 2. COMMANDER Dashboard (:8003) ─────────────────────
-if [ "$START_COMMANDER" != "0" ] && [ -f "$COMMANDER_DIR/commander_server.py" ]; then
-    echo "[unified] Arrancando COMMANDER Dashboard en :$COMMANDER_PORT..."
-    cd "$COMMANDER_DIR"
-    COMMANDER_PORT="$COMMANDER_PORT" COMMANDER_HOST="0.0.0.0" BACKEND_API="http://localhost:8001" PYTHONUNBUFFERED=1 python3 commander_server.py &
-    COMMANDER_PID=$!
-    echo "[unified] Commander PID: $COMMANDER_PID"
-
+# ─── 2. COMMANDER in-process (/api/commander/*) ──────────
+if [ "$START_COMMANDER" = "0" ]; then
+    echo "[unified] Commander desactivado por START_COMMANDER=0"
+elif [ -f "$COMMANDER_DIR/commander.py" ]; then
+    echo "[unified] Verificando COMMANDER integrado en :8001..."
+    COMMANDER_AUTH=()
+    if [ -n "${REDTEAM_API_KEY:-}" ]; then
+        COMMANDER_AUTH=(-H "Authorization: Bearer ${REDTEAM_API_KEY}")
+    fi
+    COMMANDER_READY=0
     for i in $(seq 1 15); do
-        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$COMMANDER_PORT/api/health" 2>/dev/null || echo "000")
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${COMMANDER_AUTH[@]}" \
+            "http://localhost:8001/api/commander/health" 2>/dev/null || echo "000")
         if [ "$HTTP_CODE" = "200" ]; then
-            echo "[unified] ✅ Commander listo en :$COMMANDER_PORT"
+            echo "[unified] ✅ Commander integrado listo en :8001/api/commander/*"
+            COMMANDER_READY=1
             break
         fi
         sleep 1
     done
+    if [ "$COMMANDER_READY" != "1" ]; then
+        echo "[unified] ⚠️ Commander no respondió; Dashboard continúa activo"
+    fi
 else
-    echo "[unified] ⚠️ Commander no encontrado o desactivado: $COMMANDER_DIR"
+    echo "[unified] ⚠️ Commander no encontrado: $COMMANDER_DIR"
+    echo "[unified]    /api/commander/* permanecerá desactivado"
 fi
 
 cd "$ROOT"
@@ -107,13 +115,13 @@ echo "╔═══════════════════════�
 echo "║  SOURCESEAL UNIFIED — Sistema activo                   ║"
 echo "║                                                       ║"
 echo "║  Dashboard:  http://localhost:8001                     ║"
-║  Commander:  http://localhost:8003/api/health         ║
+echo "║  Commander:  http://localhost:8001/api/commander/health ║"
 echo "║  PHANTOM:    http://localhost:8002/api/status         ║"
 echo "║  Caza:       POST :8002/api/hunt/start                ║"
 echo "║  WS nodes:   ws://localhost:8002/ws/nodes             ║"
 echo "║                                                       ║"
-║  PIDs: Dashboard=$DASHBOARD_PID Commander=$COMMANDER_PID ║
-║        Master=$MASTER_PID Node=$NODE_PID               ║
+echo "║  PIDs: Dashboard=$DASHBOARD_PID                     ║"
+echo "║        Master=$MASTER_PID Node=$NODE_PID               ║"
 echo "╚═══════════════════════════════════════════════════════╝"
 echo ""
 echo "[unified] Presiona Ctrl+C para detener todo."
@@ -126,11 +134,9 @@ cleanup() {
     kill $DASHBOARD_PID 2>/dev/null || true
     kill $MASTER_PID 2>/dev/null || true
     kill $NODE_PID 2>/dev/null || true
-    [ -n "$COMMANDER_PID" ] && kill "$COMMANDER_PID" 2>/dev/null || true
     pkill -f "dashboard_server.py" 2>/dev/null || true
     pkill -f "ghost_hunter_phantom/master.py" 2>/dev/null || true
     pkill -f "ghost_hunter_phantom/node.py" 2>/dev/null || true
-    pkill -f "commander_server.py" 2>/dev/null || true
     echo "[unified] ✅ Apagado completo"
     exit 0
 }

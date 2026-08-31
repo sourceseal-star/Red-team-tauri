@@ -48,6 +48,19 @@ bash replit_start.sh
 bash arrancar.sh
 ```
 
+### Termux + Commander
+
+Para sincronizar el repositorio privado `commander` y cargarlo dentro del mismo
+backend del dashboard:
+
+```bash
+bash termux_recover.sh
+```
+
+Commander se expone en `http://localhost:8001/api/commander/*`; no se inicia un
+segundo servidor en el puerto 8003. Si el repositorio privado no está disponible,
+el dashboard principal sigue funcionando y muestra Commander como no disponible.
+
 ### Manual (cualquier Linux/Mac)
 
 ```bash
@@ -171,7 +184,8 @@ Red-team-tauri/
 ├── src-tauri/                        # Tauri desktop (Rust) — wrapper nativo
 ├── android/                          # VpnService Java (captura sin root)
 ├── replit_start.sh                   # Arranque Replit
-├── arrancar.sh                       # Arranque Termux
+├── arrancar.sh                       # Arranque Termux (dashboard + PHANTOM)
+├── termux_recover.sh                  # Termux + sincronización de Commander
 ├── quickstart.sh                     # Arranque + test automático
 └── replit.nix                        # Dependencias Nix (Replit)
 ```
