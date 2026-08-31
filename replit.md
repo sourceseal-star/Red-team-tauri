@@ -41,15 +41,18 @@ cd ~/Red-team-tauri
 bash termux_recover.sh
 ```
 
-El script usa por defecto `https://github.com/sourceseal-star/commander.git` y deja estos servicios locales:
+El script usa primero el Commander incluido en `Red-team-tauri` y deja estos servicios locales:
 - Dashboard Red-team-tauri: `http://localhost:8001`
 - Commander integrado: `http://localhost:8001/api/commander/*`
 - GHOST HUNTER PHANTOM: `http://localhost:8002/api/status`
 
-Como Commander es privado, Git debe estar autenticado en Termux antes de ejecutar el script. No pongas tokens en la URL ni los guardes en el repositorio. Si prefieres SSH:
+Si el Commander incluido no está disponible, Git debe estar autenticado en
+Termux antes de usar un repositorio externo. No pongas tokens en la URL ni los
+guardes en el repositorio. Puedes indicar una URL SSH así:
 
 ```bash
-bash termux_recover.sh
+COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
+  bash termux_recover.sh
 ```
 
 Para la guía detallada de autenticación SSH, sincronización segura de ambos

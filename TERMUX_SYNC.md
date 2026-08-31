@@ -162,6 +162,11 @@ curl http://127.0.0.1:8001/api/health
 curl http://127.0.0.1:8002/api/status
 ```
 
+En Android/Termux con Python 3.14, `psutil` se omite intencionalmente porque
+su compilación upstream no soporta Android. El backend lo trata como opcional;
+el dashboard, Commander y PHANTOM siguen funcionando sin las métricas avanzadas
+de proceso/memoria que aporta esa librería.
+
 Para comprobar las rutas protegidas sin mostrar la API key en pantalla:
 
 ```bash

@@ -23,6 +23,10 @@ else
 fi
 COMMANDER_REPO_URL="${COMMANDER_REPO_URL:-https://github.com/sourceseal-star/commander.git}"
 PORT="${PORT:-8001}"
+TERMUX_ANDROID=0
+if [ -d "/data/data/com.termux" ]; then
+  TERMUX_ANDROID=1
+fi
 
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'; N='\033[0m'
 info() { echo -e "${C}[termux]${N} $*"; }
@@ -134,9 +138,16 @@ fi
 # ── 4. Dependencias Python reales del backend ────────────────────────────────
 info "Instalando dependencias Python..."
 # Termux administra pip mediante el paquete python-pip; no intentar actualizarlo con pip.
-python -m pip install \
-  fastapi uvicorn httpx pydantic psutil aiohttp \
+PYTHON_PACKAGES=(
+  fastapi uvicorn httpx pydantic aiohttp
   dnspython beautifulsoup4 python-whois requests
+)
+if [ "$TERMUX_ANDROID" = "1" ]; then
+  warn "Android/Termux detectado: omito psutil, no compila con Python 3.14 en Android."
+else
+  PYTHON_PACKAGES+=(psutil)
+fi
+python -m pip install "${PYTHON_PACKAGES[@]}"
 if [ -f "$COMMANDER_DIR/requirements.txt" ]; then
   info "Instalando dependencias de Commander..."
   python -m pip install -r "$COMMANDER_DIR/requirements.txt"
