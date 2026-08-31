@@ -2,3 +2,4 @@
 - [Frontend dependency cache](frontend-dependency-cache.md) — el arranque debe validar dependencias concretas, no solo la existencia de node_modules
 - [Termux unified startup](termux-unified-startup.md) — Commander se integra in-process; arrancar sin hacer pull evita romper cambios locales
 - [Android field integrations](android-field-integrations.md) — Termux/Android son capacidades opcionales y las operaciones deben ser bajo demanda del operador
+- [COM-LINK status semantics](comlink-status.md) — `available` indica que el núcleo funciona; `channels_ready` indica si existe un canal físico utilizable

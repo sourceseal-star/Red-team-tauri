@@ -1550,7 +1550,11 @@ status_json() {
           {id:"satellite", ready:$satellite, reason:$satellite_reason, requires:["módem","driver del proveedor"]}
         ] as $channels |
         {
-          available:($core_ready and ([$channels[] | select(.ready)] | length) > 0),
+          # available describe el motor COM-LINK, no la presencia de un
+          # canal físico. En Replit/PC el núcleo y sus comandos locales
+          # pueden operar aunque Termux:API, SIM o radios no existan.
+          available:$core_ready,
+          channels_ready:(([$channels[] | select(.ready)] | length) > 0),
           core_ready:$core_ready,
           version:$version,
           device:{id:$device_id,name:$device_name},

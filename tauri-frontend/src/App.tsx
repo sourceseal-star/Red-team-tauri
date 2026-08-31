@@ -46,7 +46,7 @@ function App() {
     <LanguageProvider>
     <ARTOProvider>
     <AppShell activeModule={module} onNavigate={setModule}>
-      {module === 'warroom' && <WarRoom />}
+      {module === 'warroom' && <WarRoom onNavigate={setModule} />}
       {module === 'cameras' && <CameraCommandCenter />}
       {module === 'threat' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
