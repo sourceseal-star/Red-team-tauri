@@ -14,7 +14,7 @@ description: How git auth is configured and which repo to use for this project
 - `GITHUB_TOKEN` secret holds a Personal Access Token with `repo` scope
 - Git credential helper: `git config credential.helper store` → `~/.git-credentials` holds `https://sourceseal-star:TOKEN@github.com`
 - Remote URL is clean (no token embedded): `https://github.com/sourceseal-star/Red-team-tauri.git`
-- Shell `git push/pull` may depend on the current credential-helper state; do not assume it is available after reconnecting GitHub.
+- Shell `git push/pull` may depend on the current credential-helper state; do not assume it is available after reconnecting GitHub. A healthy Replit connection can coexist with a rejected local HTTPS push.
 
 **Publishing through the connected integration:**
 - Read `GET /repos/{owner}/{repo}/git/ref/heads/main` to obtain the current commit.
@@ -28,6 +28,10 @@ integration is connected.
 **How to apply:** Prefer the connected integration for authenticated publishing.
 Build blobs/tree/commit from the local diff, verify the expected parent SHA, then
 advance `main` through the plural `refs` endpoint.
+
+**How to apply:** After publishing through the integration, verify both the remote
+ref SHA and tree SHA; the local tracking ref may still describe the pre-publish
+commit even when the remote is correct.
 
 **How to apply:** If git push fails after a container restart, re-run:
 ```bash
