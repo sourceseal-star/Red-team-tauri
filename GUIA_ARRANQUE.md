@@ -147,6 +147,39 @@ curl http://localhost:8001/api/arto/status
 curl -X POST http://localhost:8001/api/arto/start
 ```
 
+## ━━━━ ANDROID / CAMPO ━━━━
+
+En el Dashboard abre **Android / Campo**. Las funciones son bajo demanda:
+
+1. **Leer ubicación** obtiene una posición puntual desde `termux-location`.
+2. **Abrir en OsmAnd** envía esas coordenadas a la aplicación instalada.
+3. **Estado Wi‑Fi** muestra la conexión y las interfaces visibles.
+4. **Escaneo cercano** consulta redes Wi‑Fi mediante Termux:API.
+5. **Escaneo automático de red** descubre la red local solo cuando pulsas el botón.
+6. **Escaneo manual de puertos** requiere escribir el objetivo, elegir puertos y
+   confirmar que tienes autorización.
+
+Para Termux instala el paquete y la aplicación separada Termux:API:
+
+```bash
+pkg install termux-api iproute2 nmap
+```
+
+Pruebas equivalentes desde la terminal:
+
+```bash
+curl http://localhost:8001/api/android/status
+curl http://localhost:8001/api/android/location
+curl http://localhost:8001/api/android/wifi
+curl http://localhost:8001/api/discover/network
+curl -X POST http://localhost:8001/api/android/port-scan \
+  -H "Content-Type: application/json" \
+  -d '{"target":"192.168.1.1","ports":"22,80,443","confirm_manual":true}'
+```
+
+El último comando usa TCP connect, no explota servicios ni captura tráfico.
+Utilízalo únicamente sobre objetivos propios o expresamente autorizados.
+
 ## ━━━━ SI ALGO FALLA ━━━━
 
 ### git pull falla con "unstaged changes"

@@ -96,6 +96,30 @@ y `message` en JSON. No se ejecuta ningún canal externo durante el arranque;
 SMS, Telegram, radio, satélite y mesh solo se activan mediante una llamada
 explícita y con su configuración correspondiente.
 
+### Android / Campo
+
+El módulo **Android / Campo** del Dashboard integra las aplicaciones instaladas
+en el mismo teléfono sin iniciar servidores adicionales:
+
+- GPS puntual mediante `termux-location`;
+- apertura de coordenadas en OsmAnd;
+- estado de Wi‑Fi, interfaces y detección orientativa de hotspot;
+- detección y apertura de NetGuard (sus reglas siguen bajo control de la app);
+- escaneo automático de la red local, ejecutado solo al pulsar el botón;
+- escaneo manual TCP por IP/CIDR y puertos introducidos por el operador.
+
+En Termux, instala el paquete y la aplicación independiente **Termux:API**, y
+concede el permiso de ubicación:
+
+```bash
+pkg install termux-api iproute2 nmap
+```
+
+El escaneo manual exige confirmación en la interfaz y está limitado a 256 hosts
+y 32 puertos por ejecución. El automático descubre la red local únicamente
+cuando se solicita; no se ejecuta al abrir el panel. Usa estas funciones solo
+sobre redes y dispositivos autorizados.
+
 ### Manual (cualquier Linux/Mac)
 
 ```bash

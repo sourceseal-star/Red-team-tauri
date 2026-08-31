@@ -30,6 +30,7 @@ import SealPanel from './components/SealPanel';
 import LeviathanPanel from './components/LeviathanPanel';
 import CommanderPanel from './components/CommanderPanel';
 import NetworkMapPanel from './components/NetworkMapPanel';
+import AndroidFieldPanel from './components/AndroidFieldPanel';
 import NexusPanel from './components/NexusPanel';
 
 function App() {
@@ -71,6 +72,7 @@ function App() {
       {module === 'commander' && <CommanderPanel />}
       {module === 'netmap' && <NetworkMapPanel />}
       {module === 'nexus' && <NexusPanel />}
+      {module === 'android' && <AndroidFieldPanel />}
     </AppShell>
     </ARTOProvider>
     </LanguageProvider>

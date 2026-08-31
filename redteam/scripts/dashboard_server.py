@@ -525,6 +525,32 @@ except Exception as e:
     print(f"[OSINT] No cargado: {e}")
 # == END CORSET + TRIAGE + OSINT INTEGRATION ================================"
 
+def _android_field_scope_status() -> dict:
+    if _corset is None:
+        return {
+            "active": False,
+            "configured": False,
+            "note": "Corset no está configurado en este proceso",
+        }
+    try:
+        status = _corset.status()
+        configured = bool(status.get(
+            "scope_loaded",
+            status.get("networks", 0) > 0 or status.get("hosts", 0) > 0,
+        ))
+        return {"active": bool(status.get("active")), "configured": configured, **status}
+    except Exception as exc:
+        return {"active": False, "configured": False, "error": str(exc)}
+
+try:
+    from android_field import router as android_field_router
+    from android_field import configure_scope as configure_android_scope
+    configure_android_scope(_android_field_scope_status)
+    app.include_router(android_field_router)
+    print("[ANDROID] Integraciones de campo cargadas", flush=True)
+except Exception as e:
+    print(f"[ANDROID] No cargado: {e}", flush=True)
+
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
                    allow_methods=["GET", "POST", "DELETE", "PATCH", "OPTIONS"], 
                    allow_headers=["X-API-Key", "Content-Type", "Authorization"],
@@ -634,7 +660,8 @@ async def security_middleware(request: Request, call_next):
     # Timeout: los escaneos de red (nmap, ONVIF) pueden tardar hasta 60s en
     # Termux. El resto de endpoints se limita a 25s para evitar cuelgues.
     _scan_paths = ("/api/scan/", "/api/enhanced/discover", "/api/network/cameras",
-                   "/api/iot/scan", "/api/capture/")
+                   "/api/iot/scan", "/api/capture/", "/api/discover/network",
+                   "/api/android/port-scan")
     _timeout = 150.0 if any(path.startswith(p) for p in _scan_paths for path in [request.url.path]) else 25.0
     try:
         return await asyncio.wait_for(call_next(request), timeout=_timeout)
