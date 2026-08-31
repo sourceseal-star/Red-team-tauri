@@ -14,8 +14,7 @@ git clone https://github.com/sourceseal-star/Red-team-tauri.git
 cd Red-team-tauri
 
 # 2. Preparar y sincronizar de forma segura
-COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
-  bash termux_recover.sh
+bash termux_recover.sh
 ```
 
 > `termux_recover.sh` se detiene si detecta cambios locales sin guardar. No

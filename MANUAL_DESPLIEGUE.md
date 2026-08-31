@@ -70,8 +70,7 @@ cd Red-team-tauri
 pkg install -y termux-api
 
 # 7. Preparar/sincronizar Red-team-tauri + Commander y arrancar
-COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
-  bash termux_recover.sh
+bash termux_recover.sh
 ```
 
 Para ejecutar la copia local sin modificarla ni sincronizar Git:
@@ -83,6 +82,13 @@ bash arrancar_termux.sh
 `termux_recover.sh` conserva `.env` y se detiene ante cambios locales sin
 guardar. `arrancar.sh` es solo un alias compatible del recuperador; no es el
 comando de arranque local.
+
+Si se necesita usar un checkout independiente de Commander:
+
+```bash
+COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
+  bash termux_recover.sh
+```
 
 ---
 

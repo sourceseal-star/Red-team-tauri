@@ -49,7 +49,7 @@ El script usa por defecto `https://github.com/sourceseal-star/commander.git` y d
 Como Commander es privado, Git debe estar autenticado en Termux antes de ejecutar el script. No pongas tokens en la URL ni los guardes en el repositorio. Si prefieres SSH:
 
 ```bash
-COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git bash termux_recover.sh
+bash termux_recover.sh
 ```
 
 Para la guía detallada de autenticación SSH, sincronización segura de ambos

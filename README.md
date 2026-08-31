@@ -49,12 +49,13 @@ bash replit_start.sh
 ```bash
 # Primera instalación o actualización segura:
 cd ~/Red-team-tauri
-COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
-  bash termux_recover.sh
+bash termux_recover.sh
 ```
 
 Este comando instala dependencias, sincroniza Red-team-tauri y Commander,
 compila el frontend y levanta el dashboard unificado junto con PHANTOM.
+Si el Commander incluido no está disponible, puedes indicar el repositorio
+independiente con `COMMANDER_REPO_URL=...`.
 Si ya tienes cambios locales y solo quieres probar el sistema sin sincronizar:
 
 ```bash

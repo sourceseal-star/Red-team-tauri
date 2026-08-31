@@ -84,8 +84,7 @@ bash arrancar_termux.sh
 Para preparar o actualizar ambos repositorios de forma segura:
 
 ```bash
-COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
-  bash termux_recover.sh
+bash termux_recover.sh
 ```
 
 ### Replit

@@ -20,8 +20,7 @@ python3 commander.py --list
 Desde la raíz de `Red-team-tauri`:
 
 ```bash
-COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
-  bash termux_recover.sh
+bash termux_recover.sh
 # Si ya está preparado y no quieres tocar Git:
 bash arrancar_termux.sh
 ```

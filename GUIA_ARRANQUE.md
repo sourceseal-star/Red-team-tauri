@@ -38,8 +38,7 @@ que ya tienes en el teléfono.
 Para la primera instalación o una actualización completa, usa el recuperador:
 
 ```bash
-COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
-  bash termux_recover.sh
+bash termux_recover.sh
 ```
 
 El recuperador instala dependencias, sincroniza ambos repositorios si están

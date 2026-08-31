@@ -100,14 +100,16 @@ instalación de paquetes. Levanta el dashboard, Commander integrado y PHANTOM.
 ### Preparar o actualizar todo
 
 ```bash
-COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
-  bash termux_recover.sh
+bash termux_recover.sh
 ```
 
 Este recuperador sincroniza ambos repositorios solo después de comprobar que no
 hay cambios locales sin guardar; después instala dependencias, compila el
 frontend y arranca el sistema unificado. `arrancar.sh` queda como alias
 compatible de este recuperador.
+
+Si el Commander incluido no está disponible, se puede indicar un checkout
+independiente mediante `COMMANDER_REPO_URL=...`.
 
 ### Alternativa: start-termux.sh
 

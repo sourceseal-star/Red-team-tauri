@@ -20,8 +20,7 @@ cd ~/Red-team-tauri
 bash arrancar_termux.sh
 
 # Preparar, sincronizar y arrancar
-COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
-  bash termux_recover.sh
+bash termux_recover.sh
 ```
 
 `arrancar.sh` y `termux_setup.sh` se mantienen como alias compatibles del
@@ -85,8 +84,7 @@ Si Red-team-tauri ya está clonado, basta con:
 
 ```bash
 cd ~/Red-team-tauri
-COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
-  bash termux_recover.sh
+bash termux_recover.sh
 ```
 
 El script crea Commander en `~/commander`, prepara COM-LINK y conserva el
@@ -138,8 +136,7 @@ Después sincroniza y vuelve a levantar todo con el mismo comando:
 
 ```bash
 cd ~/Red-team-tauri
-COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
-  bash termux_recover.sh
+bash termux_recover.sh
 ```
 
 El sincronizador ahora se detiene antes de tocar Git si encuentra cambios

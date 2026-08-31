@@ -14,7 +14,13 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="${REDTEAM_REPO_DIR:-$ROOT}"
-COMMANDER_DIR="${COMMANDER_DIR:-$HOME/commander}"
+if [ -n "${COMMANDER_DIR:-}" ]; then
+  COMMANDER_DIR="$COMMANDER_DIR"
+elif [ -f "$REPO_DIR/commander/commander.py" ]; then
+  COMMANDER_DIR="$REPO_DIR/commander"
+else
+  COMMANDER_DIR="$HOME/commander"
+fi
 COMMANDER_REPO_URL="${COMMANDER_REPO_URL:-https://github.com/sourceseal-star/commander.git}"
 PORT="${PORT:-8001}"
 
@@ -29,15 +35,36 @@ command -v pkg >/dev/null 2>&1 || die "Ejecuta este script dentro de Termux de F
 check_repo_clean_before_sync() {
   local repo_dir="$1"
   local repo_name="$2"
-  if [ -d "$repo_dir/.git" ] && [ -n "$(git -C "$repo_dir" status --porcelain)" ]; then
-  die "$repo_name tiene cambios locales sin guardar. No haré pull ni los borraré.
+  if [ -d "$repo_dir/.git" ]; then
+    if [ -n "$(git -C "$repo_dir" status --porcelain --untracked-files=all)" ]; then
+      die "$repo_name tiene cambios locales sin guardar. No haré pull ni los borraré.
 Usa primero 'bash arrancar_termux.sh' para trabajar con tu versión local,
 o guarda esos cambios con commit/stash y vuelve a ejecutar termux_recover.sh."
+    fi
   fi
 }
 
+ensure_repo_location_is_safe() {
+  local repo_dir="$1"
+  local repo_name="$2"
+  if [ -e "$repo_dir" ] && [ ! -d "$repo_dir/.git" ]; then
+    if [ -n "$(find "$repo_dir" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+      die "$repo_name existe pero no es un repositorio Git completo: $repo_dir
+No borraré sus archivos. Muévelo a una carpeta de respaldo y vuelve a ejecutar:
+  mv \"$repo_dir\" \"${repo_dir}.incompleto-$(date +%Y%m%d-%H%M%S)\"
+  bash termux_recover.sh"
+    fi
+  fi
+}
+
+ensure_repo_location_is_safe "$REPO_DIR" "Red-team-tauri"
+if [ "$COMMANDER_DIR" != "$REPO_DIR/commander" ]; then
+  ensure_repo_location_is_safe "$COMMANDER_DIR" "Commander"
+fi
 check_repo_clean_before_sync "$REPO_DIR" "Red-team-tauri"
-check_repo_clean_before_sync "$COMMANDER_DIR" "Commander"
+if [ "$COMMANDER_DIR" != "$REPO_DIR/commander" ]; then
+  check_repo_clean_before_sync "$COMMANDER_DIR" "Commander"
+fi
 
 echo ""
 echo -e "${C}════════════════════════════════════════════════════════${N}"
@@ -65,8 +92,11 @@ else
   info "Sincronizando Red-team-tauri..."
   git -C "$REPO_DIR" fetch origin
   branch="$(git -C "$REPO_DIR" branch --show-current)"
-  [ -n "$branch" ] || branch="main"
-  git -C "$REPO_DIR" pull --rebase origin "$branch"
+  if [ -n "$branch" ]; then
+    git -C "$REPO_DIR" pull --rebase origin "$branch"
+  else
+    git -C "$REPO_DIR" switch -c main --track origin/main
+  fi
 fi
 ok "Red-team-tauri sincronizado: $(git -C "$REPO_DIR" log -1 --oneline)"
 
