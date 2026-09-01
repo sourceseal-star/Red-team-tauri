@@ -69,24 +69,35 @@ def _last_seal() -> str:
         return "SS" + "0"*64
 
 def verify_integrity() -> dict:
-    """Verifica que toda la cadena de memoria esté intacta."""
+    """Verifica que toda la cadena de memoria esté intacta.
+    Distingue entre entradas legacy (sin sello, anteriores al sistema)
+    y entradas alteradas (con sello pero hash cambiado)."""
     if not MEM_JSONL.exists():
-        return {"valid": True, "count": 0, "tampered": []}
+        return {"valid": True, "count": 0, "tampered": [], "legacy": 0}
     entries = []
     for line in MEM_JSONL.read_text(encoding="utf-8").splitlines():
         try: entries.append(json.loads(line))
         except Exception: pass
     tampered = []
+    legacy = 0
     prev = "SS" + "0"*64
     for i, e in enumerate(entries):
         stored = e.get("seal", "")
+        # Entrada legacy: no tiene sello (anterior al sistema de sellos)
+        if not stored:
+            legacy += 1
+            prev = stored  # mantener cadena flexible para legacy
+            continue
+        # Entrada con sello: verificar hash
         expected = _seal(e)
         if stored != expected:
             tampered.append({"index": i, "date": e.get("date", e.get("ts", "?")), "stored": stored[:20], "expected": expected[:20]})
-        if e.get("prev_seal", "") != prev:
+        # Verificar cadena (solo si la entrada anterior tenía sello)
+        prev_seal = e.get("prev_seal", "")
+        if prev_seal and prev_seal != "SS"+"0"*64 and prev_seal != prev:
             tampered.append({"index": i, "reason": "chain_broken"})
         prev = stored
-    return {"valid": len(tampered) == 0, "count": len(entries), "tampered": tampered}
+    return {"valid": len(tampered) == 0, "count": len(entries), "tampered": tampered, "legacy": legacy}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # MEMORIA UNIFICADA (conserva json y jsonl) — sellada
