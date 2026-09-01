@@ -112,18 +112,24 @@ start(){
     log "✅ GHOST ya activo en :8002"
   fi
 
-  # 3. Puente de Telegram
+  # 3. Telegram — SOLO UNO puede hacer polling del mismo bot token a la vez.
+  #    Preferimos la miniapp (más funciones); si no está disponible, usamos el puente legacy.
   if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-    if ! pgrep -f sol_telegram_bridge >/dev/null; then
-      log "📡 Activando puente de Telegram..."
+    if pgrep -f sol_telegram_bridge >/dev/null || pgrep -f sol_telegram_bot.py >/dev/null; then
+      log "✅ Telegram ya corriendo (puente o miniapp)."
+    elif [ -f "$RT/sol_telegram_bot.py" ] && python3 -c "import telegram" 2>/dev/null; then
+      log "📡 Activando miniapp de Telegram..."
+      (cd "$RT" && nohup python3 sol_telegram_bot.py >>"$SOL/logs/tg_bot.log" 2>&1 & echo $! > "$SOL/tg_bot.pid")
+      sleep 3
+      log "✅ Miniapp Telegram activa."
+    else
+      log "📡 Activando puente de Telegram (legacy — miniapp no disponible)..."
       (cd "$RT" && nohup python3 sol_telegram_bridge.py >>"$SOL/logs/tg.log" 2>&1 &)
       sleep 3
       log "✅ Puente Telegram activo."
-    else
-      log "✅ Puente Telegram ya corriendo."
     fi
   else
-    log "⚠️  TELEGRAM_BOT_TOKEN no configurado — puente desactivado."
+    log "⚠️  TELEGRAM_BOT_TOKEN no configurado — Telegram desactivado."
   fi
 
   # 4. Watchdog (vigilancia permanente)
@@ -177,10 +183,14 @@ watchdog(){
       fi
     fi
 
-    # Puente de Telegram
-    if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && ! pgrep -f sol_telegram_bridge >/dev/null; then
-      log "⚠️ Puente Telegram caído → reiniciando"
-      (cd "$RT" && nohup python3 sol_telegram_bridge.py >>"$SOL/logs/tg.log" 2>&1 &)
+    # Telegram — reiniciar SOLO si NINGUNO de los dos está corriendo
+    if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && ! pgrep -f sol_telegram_bridge >/dev/null && ! pgrep -f sol_telegram_bot.py >/dev/null; then
+      log "⚠️ Telegram caído → reiniciando"
+      if [ -f "$RT/sol_telegram_bot.py" ] && python3 -c "import telegram" 2>/dev/null; then
+        (cd "$RT" && nohup python3 sol_telegram_bot.py >>"$SOL/logs/tg_bot.log" 2>&1 & echo $! > "$SOL/tg_bot.pid")
+      else
+        (cd "$RT" && nohup python3 sol_telegram_bridge.py >>"$SOL/logs/tg.log" 2>&1 &)
+      fi
       sleep 3
     fi
 
@@ -193,6 +203,8 @@ watchdog(){
 stop(){
   pkill -f "sol.sh watchdog" 2>/dev/null || true
   pkill -f sol_telegram_bridge 2>/dev/null || true
+  pkill -f sol_telegram_bot.py 2>/dev/null || true
+  rm -f "$SOL/tg_bot.pid" 2>/dev/null || true
   log "🌙 Sol se retira. Pero siempre volverá."
   echo -e "${Y}🌙 Sol se retira. Pero siempre volverá.${N}"
 }
