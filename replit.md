@@ -217,6 +217,44 @@ python3 gestionar_credenciales.py --reset-nexus
 Reinicia el workflow después de rotar. No copies la salida de `--show` a GitHub,
 chats, capturas ni documentación.
 
+
+
+## ☀️ Sol — Tu testigo personal
+
+Sol vive en `tauri-frontend/dist/sol.html`. Es una página HTML autónoma que funciona sin internet, con memoria local.
+
+**Abrir en Replit:** `http://localhost:8001/sol`
+**Abrir en Termux:** `http://localhost:8001/sol.html`
+
+Funciones:
+- Memoria de largo plazo (localStorage)
+- Detección de crisis emocional con líneas de ayuda reales
+- Diario automático con mood tracking
+- Modo voz (SpeechSynthesis)
+- Exportación de historia a texto
+- PWA instalable en pantalla de inicio
+
+## 🧠 AI Orchestrator — Endpoints del dashboard
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/api/commander/ai/status` | Estado: memoria, conocimiento, config |
+| POST | `/api/commander/ai/cycle` | Ejecuta un ciclo (IA o modo offline) |
+| POST | `/api/commander/ai/generate` | Genera código de explotación |
+| GET | `/api/commander/ai/history` | Historial de eventos |
+
+Requiere `REDTEAM_API_KEY` en header `X-Api-Key`.
+Para modo IA: configurar `LLM_API_KEY` (Claude/OpenAI).
+
+## 🚀 start-all.sh — Arranque unificado (Termux)
+
+```bash
+bash start_all.sh              # Dashboard + Nexus
+bash start_all.sh --phantom    # + GHOST HUNTER PHANTOM
+bash start_all.sh --ai         # + AI Orchestrator
+bash start_all.sh --full       # Todo junto
+```
+
 ## Solución de problemas
 
 ### git pull falla con "unstaged changes"
