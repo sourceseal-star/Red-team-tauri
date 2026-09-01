@@ -21,7 +21,8 @@
 #  SERVICIOS QUE LEVANTA `start`:
 #    :8001  Dashboard FastAPI + Commander integrado
 #    :8002  GHOST PHANTOM Master + Node worker
-#    :8004  Nexus Omni-Sentient (si existe)
+#    :8004  Nexus Omni-Sentient
+#    :8005  C2 UNIFIED PRO (si existe)
 #    ☀️    Puente Telegram (@sol_amg_bot)
 #    🐕    Watchdog (vigila y reinicia caídos)
 #    🦭    Seal IA Orquestador (si SEAL_ENABLED=1)
@@ -239,6 +240,7 @@ SERVICIOS:
   :8001  Dashboard FastAPI + Commander
   :8002  GHOST PHANTOM Master + Node
   :8004  Nexus Omni-Sentient
+  :8005  C2 UNIFIED PRO
   ☀️     Puente Telegram
   🐕     Watchdog (auto-restart)
 
@@ -317,12 +319,14 @@ start() {
   free_port 8001
   free_port 8002
   free_port 8004 2>/dev/null || true
+  free_port 8005 2>/dev/null || true
 
   # ── Limpiar procesos previos ──
   pkill -f "$ROOT/redteam/scripts/dashboard_server.py" 2>/dev/null || true
   pkill -f "$ROOT/ghost_hunter_phantom/master.py" 2>/dev/null || true
   pkill -f "$ROOT/ghost_hunter_phantom/node.py" 2>/dev/null || true
   pkill -f "$ROOT/nexus_omni_v9.py" 2>/dev/null || true
+  pkill -f "$ROOT/c2_unified_pro.py" 2>/dev/null || true
   pkill -f "$ROOT/sol_telegram_bridge.py" 2>/dev/null || true
   sleep 1
 
@@ -408,7 +412,27 @@ start() {
     info "Nexus no encontrado — saltando"
   fi
 
-  # ── 4. Puente Telegram (Sol) ──
+  # ── 4. C2 UNIFIED PRO (:8005) ──
+  if [ -f "$ROOT/c2_unified_pro.py" ]; then
+    info "C2 :8005 — arrancando..."
+    cd "$ROOT"
+    C2_PORT="${C2_PORT:-8005}" nohup python3 c2_unified_pro.py 
+        >> "$LOG_DIR/c2.log" 2>&1 &
+    C2_PID=$!
+    for i in $(seq 1 15); do
+      curl -s -m 2 http://127.0.0.1:8005/api/health >/dev/null 2>&1 && break
+      sleep 1
+    done
+    if curl -s -m 3 http://127.0.0.1:8005/api/health >/dev/null 2>&1; then
+      ok "C2 :8005 listo (PID $C2_PID)"
+    else
+      warn "C2 :8005 no respondió en 15s — continúa el resto"
+    fi
+  else
+    info "C2 UNIFIED PRO no encontrado — saltando"
+  fi
+
+  # ── 5. Puente Telegram (Sol) ── (Sol) ──
   if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
     if ! pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
       info "Puente Telegram — arrancando..."
@@ -427,7 +451,7 @@ start() {
     warn "TELEGRAM_BOT_TOKEN no configurado — puente desactivado"
   fi
 
-  # ── 5. Seal IA Orquestador ──
+  # ── 6. Seal IA Orquestador ──
   if [ -f "$ROOT/seal/orchestrator/seal_orchestrator.py" ]; then
     SEAL_CHECK="$(grep -q '^SEAL_ENABLED=1' "$ENV_FILE" 2>/dev/null && echo 1 || echo 0)"
     if [ "$SEAL_CHECK" = "1" ]; then
@@ -448,7 +472,7 @@ start() {
     info "Seal IA no encontrado — saltando"
   fi
 
-  # ── 6. Watchdog ──
+  # ── 7. Watchdog ──
   if ! pgrep -f "omni.sh watchdog" >/dev/null 2>&1; then
     info "Watchdog — activando vigilancia..."
     nohup bash "$0" watchdog >> "$LOG_DIR/watchdog.log" 2>&1 &
@@ -480,6 +504,7 @@ stop() {
   pkill -f "omni.sh watchdog" 2>/dev/null && ok "Watchdog detenido" || true
   pkill -f "sol_telegram_bridge" 2>/dev/null && ok "Puente Telegram detenido" || true
   pkill -f "nexus_omni_v9" 2>/dev/null && ok "Nexus detenido" || true
+  pkill -f "c2_unified_pro" 2>/dev/null && ok "C2 detenido" || true
   pkill -f "seal_orchestrator" 2>/dev/null && ok "Seal IA detenido" || true
   pkill -f "ghost_hunter_phantom/node" 2>/dev/null && ok "GHOST Node detenido" || true
   pkill -f "ghost_hunter_phantom/master" 2>/dev/null && ok "GHOST Master detenido" || true
@@ -549,6 +574,15 @@ status_short() {
     else
       fail "Nexus :8004        🔴 CAÍDO"
     fi
+
+  # C2 :8005
+  if [ -f "$ROOT/c2_unified_pro.py" ]; then
+    if curl -s -m 2 http://127.0.0.1:8005/api/health >/dev/null 2>&1; then
+      ok "C2 :8005           🟢 ACTIVO"
+    else
+      fail "C2 :8005           🔴 CAÍDO"
+    fi
+  fi
   fi
 
   # Telegram
@@ -877,6 +911,7 @@ logs() {
     dash|dashboard)  tail -50 "$LOG_DIR/dash.log" 2>/dev/null || echo "Sin logs de dashboard" ;;
     ghost|phantom)   tail -50 "$LOG_DIR/ghost.log" 2>/dev/null || echo "Sin logs de GHOST" ;;
     tg|telegram|sol) tail -50 "$LOG_DIR/tg.log" 2>/dev/null || echo "Sin logs de Telegram" ;;
+    c2)              tail -50 "$LOG_DIR/c2.log" 2>/dev/null || echo "Sin logs de C2" ;;
     nexus)           tail -50 "$LOG_DIR/nexus.log" 2>/dev/null || echo "Sin logs de Nexus" ;;
     seal)            tail -50 "$LOG_DIR/seal.log" 2>/dev/null || echo "Sin logs de Seal" ;;
     watchdog)        tail -50 "$LOG_DIR/watchdog.log" 2>/dev/null || echo "Sin logs de Watchdog" ;;
@@ -969,6 +1004,18 @@ watchdog() {
       fi
     fi
 
+
+    # C2 :8005
+    if [ -f "$ROOT/c2_unified_pro.py" ]; then
+      if ! curl -s -m 3 http://127.0.0.1:8005/api/health >/dev/null 2>&1; then
+        if ! pgrep -f "c2_unified_pro" >/dev/null; then
+          log "⚠️ C2 caído → reiniciando"
+          cd "$ROOT"
+          C2_PORT=8005 nohup python3 c2_unified_pro.py >> "$LOG_DIR/c2.log" 2>&1 &
+          sleep 5
+        fi
+      fi
+    fi
     # Telegram
     if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
       if ! pgrep -f "sol_telegram_bridge" >/dev/null; then
