@@ -1057,6 +1057,186 @@ try:
             except Exception as exc:
                 return JSONResponse({"error": str(exc)}, status_code=500)
 
+        # ─── COM-LINK: Gestión de claves criptográficas (wrapper no-interactivo) ──
+        @commander_router.get("/api/commander/comlink/keys")
+        async def commander_comlink_keys_list():
+            """Lista las claves criptográficas generadas para cada contacto."""
+            comlink_sh, config_path, contacts_path, queue_path, _ = _comlink_paths()
+            keys_dir = Path(_commander_dir) / "comlink" / "data" / "keys"
+            if not keys_dir.exists():
+                return {"keys": {}, "available": True}
+            contacts_doc = _read_comlink_json(contacts_path, {})
+            contacts = contacts_doc.get("contacts", {})
+            result = {}
+            for f in sorted(keys_dir.iterdir()):
+                if f.is_file():
+                    # Nombre: <contact_id>_<type>.<ext>
+                    name = f.name
+                    parts = name.rsplit("_", 1)
+                    if len(parts) != 2:
+                        continue
+                    contact_id, type_ext = parts
+                    if contact_id not in result:
+                        result[contact_id] = {
+                            "contact_name": contacts.get(contact_id, {}).get("name", contact_id),
+                            "aes": False, "rsa_public": False, "rsa_private": False,
+                        }
+                    if type_ext == "key.txt":
+                        result[contact_id]["aes"] = True
+                    elif type_ext == "public.pem":
+                        result[contact_id]["rsa_public"] = True
+                    elif type_ext == "private.pem":
+                        result[contact_id]["rsa_private"] = True
+            return {"keys": result, "available": True}
+
+        @commander_router.post("/api/commander/comlink/keys/generate")
+        async def commander_comlink_keys_generate(payload: dict = Body(default={})):
+            """Genera par de claves AES+RSA para un contacto (wrapper de generate_keys)."""
+            comlink_sh, *_ = _comlink_paths()
+            contact_id = str(payload.get("contact_id", "")).strip()
+            if not contact_id or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact_id):
+                return JSONResponse({"error": "contact_id inválido (alfanumérico, 1-64 chars)"}, status_code=400)
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
+            # generate_keys no es un subcomando CLI — es una función interna.
+            # La invocamos via source del key_manager.sh con las variables de entorno.
+            script = (
+                f'source "$(dirname "$0")/crypto/key_manager.sh"; '
+                f'generate_keys "{contact_id}"'
+            )
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    ["bash", "-c", script],
+                    capture_output=True, text=True, timeout=15,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                return {
+                    "ok": result.returncode == 0,
+                    "contact_id": contact_id,
+                    "returncode": result.returncode,
+                    "stdout": result.stdout[-500:] if result.stdout else "",
+                    "stderr": result.stderr[-500:] if result.stderr else "",
+                }
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": "Timeout generando claves"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.delete("/api/commander/comlink/keys/{contact_id}")
+        async def commander_comlink_keys_delete(contact_id: str):
+            """Elimina todas las claves de un contacto."""
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact_id):
+                return JSONResponse({"error": "contact_id inválido"}, status_code=400)
+            keys_dir = Path(_commander_dir) / "comlink" / "data" / "keys"
+            if not keys_dir.exists():
+                return {"ok": True, "deleted": 0}
+            deleted = 0
+            for f in keys_dir.glob(f"{contact_id}_*"):
+                try:
+                    f.unlink()
+                    deleted += 1
+                except OSError:
+                    pass
+            return {"ok": True, "deleted": deleted, "contact_id": contact_id}
+
+        # ─── COM-LINK: Mesh P2P (discovery + start/stop servidores) ─────────────
+        @commander_router.post("/api/commander/comlink/mesh/discover")
+        async def commander_comlink_mesh_discover(payload: dict = Body(default={})):
+            """Ejecuta discovery de dispositivos en la red local (scan_all del discovery.sh)."""
+            comlink_sh, *_ = _comlink_paths()
+            method = str(payload.get("method", "all")).strip()
+            if method not in ("all", "wifi", "bluetooth"):
+                return JSONResponse({"error": "method inválido: all|wifi|bluetooth"}, status_code=400)
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
+            # Invocar discovery.sh directamente con el metodo pedido
+            discovery_sh = Path(_commander_dir) / "comlink" / "mesh" / "discovery.sh"
+            if not discovery_sh.exists():
+                return JSONResponse({"error": "discovery.sh no encontrado"}, status_code=503)
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    ["bash", str(discovery_sh), f"scan_{method}" if method != "all" else "scan_all"],
+                    capture_output=True, text=True, timeout=30,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                # Intentar parsear dispositivos conocidos del JSON
+                known_path = Path(_commander_dir) / "comlink" / "data" / "known_devices.json"
+                known = _read_comlink_json(known_path, []) if known_path.exists() else []
+                return {
+                    "ok": result.returncode == 0,
+                    "method": method,
+                    "returncode": result.returncode,
+                    "stdout": result.stdout[-2000:] if result.stdout else "",
+                    "stderr": result.stderr[-500:] if result.stderr else "",
+                    "known_devices": known,
+                }
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": "Discovery timeout"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/comlink/mesh/server")
+        async def commander_comlink_mesh_server(payload: dict = Body(default={})):
+            """Inicia o detiene el servidor P2P HTTP (mesh WiFi)."""
+            comlink_sh, *_ = _comlink_paths()
+            action = str(payload.get("action", "")).strip()
+            if action not in ("start", "stop"):
+                return JSONResponse({"error": "action requerido: start|stop"}, status_code=400)
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
+            p2p_http = Path(_commander_dir) / "comlink" / "mesh" / "p2p_http.sh"
+            if not p2p_http.exists():
+                return JSONResponse({"error": "p2p_http.sh no encontrado"}, status_code=503)
+            func = "start_p2p_http_server" if action == "start" else "stop_p2p_http_server"
+            script = f'source "$(dirname "$0")/mesh/p2p_http.sh"; {func}'
+            timeout = 10 if action == "stop" else 30
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    ["bash", "-c", script],
+                    capture_output=True, text=True, timeout=timeout,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                return {
+                    "ok": result.returncode == 0,
+                    "action": action,
+                    "returncode": result.returncode,
+                    "stdout": result.stdout[-1000:] if result.stdout else "",
+                    "stderr": result.stderr[-500:] if result.stderr else "",
+                }
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": f"P2P server {action} timeout"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.get("/api/commander/comlink/mesh/known-devices")
+        async def commander_comlink_mesh_known_devices():
+            """Lista los dispositivos COM-LINK conocidos."""
+            known_path = Path(_commander_dir) / "comlink" / "data" / "known_devices.json"
+            if not known_path.exists():
+                return {"devices": []}
+            data = _read_comlink_json(known_path, [])
+            return {"devices": data if isinstance(data, list) else []}
+
+        @commander_router.post("/api/commander/comlink/mesh/known-devices")
+        async def commander_comlink_mesh_add_known_device(payload: dict = Body(default={})):
+            """Añade un dispositivo COM-LINK conocido manualmente."""
+            ip = str(payload.get("ip", "")).strip()
+            name = str(payload.get("name", "")).strip()
+            device_id = str(payload.get("device_id", "")).strip()
+            if not ip or not re.fullmatch(r"[0-9.]{7,15}", ip):
+                return JSONResponse({"error": "ip inválida"}, status_code=400)
+            known_path = Path(_commander_dir) / "comlink" / "data" / "known_devices.json"
+            devices = _read_comlink_json(known_path, [])
+            if not isinstance(devices, list):
+                devices = []
+            entry = {"ip": ip, "name": name or ip, "id": device_id or f"dev_{len(devices)+1}"}
+            devices.append(entry)
+            _write_comlink_json(known_path, devices)
+            return {"ok": True, "device": entry}
+
         app.routes.extend(commander_router.routes)
         _COMMANDER_OK = True
         print(f"[COMMANDER] Router montado: /api/commander/* (dir: {_commander_dir})", flush=True)
@@ -3494,8 +3674,6 @@ DEFAULT_OPS = {
     "virustotal_api_key": "",
     "abuseipdb_key": "",
     "github_token": "",
-    "telegram_bot_token": "",
-    "telegram_chat_id": "",
     "scan_subnet": "",           # vacío = auto-detectar
     "scan_ports": "80,443,22,554,8080,8000,23,21,445,139,53,8443,37777,8081,88",
     "scan_timeout": 0.5,         # segundos por puerto TCP
@@ -3523,8 +3701,6 @@ def _apply_ops_to_env(ops: dict):
         "virustotal_api_key": "VIRUSTOTAL_API_KEY",
         "abuseipdb_key": "ABUSEIPDB_KEY",
         "github_token": "GITHUB_TOKEN",
-        "telegram_bot_token": "TELEGRAM_BOT_TOKEN",
-        "telegram_chat_id": "TELEGRAM_CHAT_ID",
     }
     for cfg_key, env_key in key_map.items():
         val = ops.get(cfg_key, "")
@@ -3540,7 +3716,7 @@ async def ops_config_get():
     Las API keys se devuelven enmascaradas (solo primeros 4 + últimos 4 chars)."""
     ops = _load_ops()
     safe = dict(ops)
-    for k in ("shodan_api_key", "virustotal_api_key", "abuseipdb_key", "github_token", "telegram_bot_token"):
+    for k in ("shodan_api_key", "virustotal_api_key", "abuseipdb_key", "github_token"):
         v = safe.get(k, "")
         if v and len(v) > 12:
             safe[k] = v[:4] + "••••" + v[-4:]
@@ -7812,14 +7988,6 @@ async def telegram_set_config(request: Request):
     if body.get("token"): _TELEGRAM_CONFIG["token"] = body["token"]
     if body.get("chat_id"): _TELEGRAM_CONFIG["chat_id"] = body["chat_id"]
     _TELEGRAM_CONFIG["enabled"] = bool(body.get("enabled", _TELEGRAM_CONFIG["token"] and _TELEGRAM_CONFIG["chat_id"]))
-    # Persistir en ops.json para que sobreviva a un restart (mismo patron que
-    # las API keys de OSINT). Sin esto, el token se perdia al reiniciar porque
-    # solo vivia en memoria (_TELEGRAM_CONFIG) hasta que alguien lo re-escribia
-    # a mano en .env.
-    _ops = _load_ops()
-    if body.get("token"): _ops["telegram_bot_token"] = body["token"]
-    if body.get("chat_id"): _ops["telegram_chat_id"] = body["chat_id"]
-    _save_ops(_ops)
     return {"ok": True, "enabled": _TELEGRAM_CONFIG["enabled"]}
 
 @app.post("/api/telegram/test")
