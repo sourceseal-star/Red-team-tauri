@@ -171,6 +171,50 @@ wait_for_http() {
     exit 1
 }
 
+# ─── 0.c Preflight: verificar .env antes de arrancar (fail-closed) ──
+ENV_FILE="$ROOT/.env"
+_fail_lockout() {
+    echo ""
+    echo "[unified][LOCKOUT-PREVENT] ═══════════════════════════════════"
+    echo "[unified][LOCKOUT-PREVENT]  DETENIDO: $1"
+    echo "[unified][LOCKOUT-PREVENT]  No se arrancó ningún servicio."
+    echo "[unified][LOCKOUT-PREVENT]  No se regeneró ninguna credencial."
+    echo "[unified][LOCKOUT-PREVENT] ────────────────────────────────────"
+    echo "[unified][LOCKOUT-PREVENT]  Para recuperar:"
+    echo "[unified][LOCKOUT-PREVENT]    bash scripts/restore_env.sh"
+    echo "[unified][LOCKOUT-PREVENT]  o si tienes respaldo manual:"
+    echo "[unified][LOCKOUT-PREVENT]    bash control_claves.sh restore"
+    echo "[unified][LOCKOUT-PREVENT]  o definir desde cero:"
+    echo "[unified][LOCKOUT-PREVENT]    bash control_claves.sh set"
+    echo "[unified][LOCKOUT-PREVENT] ═══════════════════════════════════"
+    exit 1
+}
+
+if [ ! -f "$ENV_FILE" ]; then
+    _fail_lockout ".env NO EXISTE en $ENV_FILE"
+fi
+
+# Verificar que las 3 variables críticas tienen valor
+_ENV_MISSING=""
+for v in ADMIN_PASSWORD NEXUS_PASS REDTEAM_API_KEY; do
+    _val="$(grep "^${v}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | head -1 | tr -d "\047\042")"
+    if [ -z "$_val" ]; then
+        _ENV_MISSING="$_ENV_MISSING $v"
+    fi
+done
+
+if [ -n "$_ENV_MISSING" ]; then
+    _fail_lockout "Variables vacías o ausentes:$_ENV_MISSING"
+fi
+
+# Verificar permisos 600 (warn, no abortar — algunos dispositivos no soportan chmod preciso)
+_ENV_PERMS="$(stat -c '%a' "$ENV_FILE" 2>/dev/null || stat -f '%A' "$ENV_FILE" 2>/dev/null || echo '?')"
+if [ "$_ENV_PERMS" != "600" ]; then
+    echo "[unified][WARN] .env permisos=$_ENV_PERMS (recomendado 600). Ejecuta: chmod 600 $ENV_FILE"
+fi
+
+echo "[unified] ✅ Preflight .env: 3 variables presentes, permisos=$_ENV_PERMS"
+
 # ─── 1. Dashboard backend ─────────────────────────────────
 echo "[unified] Arrancando Dashboard en :$PORT..."
 cd "$ROOT/redteam/scripts"

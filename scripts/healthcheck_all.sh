@@ -58,7 +58,7 @@ check_http "Controller :8005 /api/status" "http://127.0.0.1:8005/api/status" "20
 # 4b. Commander Dashboard standalone :8003 (si se ejecuta por separado)
 check_http "Cmdr Dash :8003 (standalone)" "http://127.0.0.1:8003/" "any"
 
-# 5. .env permisos (600)
+# 5. .env existe + permisos 600 + 3 variables críticas + snapshot
 echo "  Archivos de configuración:"
 if [ -f "$ROOT/.env" ]; then
     PERMS="$(stat -c '%a' "$ROOT/.env" 2>/dev/null || stat -f '%Lp' "$ROOT/.env" 2>/dev/null || echo "?")"
@@ -67,8 +67,30 @@ if [ -f "$ROOT/.env" ]; then
     else
         fail ".env permisos=$PERMS (esperaba 600)"
     fi
+    # 5b. Verificar 3 variables críticas
+    _ENV_MISSING=""
+    for v in ADMIN_PASSWORD NEXUS_PASS REDTEAM_API_KEY; do
+        _val="$(grep "^${v}=" "$ROOT/.env" 2>/dev/null | cut -d= -f2- | tr -d "'\"" | head -1)"
+        if [ -z "$_val" ]; then
+            _ENV_MISSING="$_ENV_MISSING $v"
+        fi
+    done
+    if [ -z "$_ENV_MISSING" ]; then
+        ok ".env 3 variables críticas presentes"
+    else
+        fail ".env variables faltantes:$_ENV_MISSING"
+    fi
 else
-    fail ".env no encontrado en $ROOT/.env"
+    fail ".env no encontrado — usa control_claves.sh set o scripts/restore_env.sh"
+fi
+
+# 5c. Snapshot de .env existe
+_SNAP_DIR="${HOME}/.c2/snapshots"
+_SNAP_COUNT=$(ls -1 "$_SNAP_DIR"/env_*.aes 2>/dev/null | wc -l)
+if [ "$_SNAP_COUNT" -ge 1 ]; then
+    ok "snapshots .env: $_SNAP_COUNT en ~/.c2/snapshots/"
+else
+    echo "  ⚠️  no hay snapshots — ejecuta: bash scripts/snapshot_env.sh"
 fi
 
 # 6. Ledger SourceSeal — buscar en .env y en archivos del repo

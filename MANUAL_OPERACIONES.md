@@ -56,3 +56,108 @@ Archivos clave: `.env`, `control_claves.sh`, `auth_bootstrap.py`,
 - Cuota Replit murió post-push parcial → rescate manual vía Termux.
 - Credenciales auto-generadas "impresas una vez" → lockout de horas → solución: control_claves.sh (.env dueño = operador).
 - Nexus no arrancaba con el launcher + ss ciego + /tmp capado → diagnóstico real con curl/pgrep; arranque manual.
+
+
+## 8. Recuperación de Lockout
+
+> Si no puedes entrar al dashboard o Nexus responde 401/403, NO intentes regenerar
+> credenciales desde un agente. Usa estos pasos en orden.
+
+### Escenario A: .env existe pero una clave está mal
+
+```bash
+cd ~/Red-team-tauri
+
+# 1. Verificar estado sin revelar valores
+bash control_claves.sh status
+
+# 2. Si necesitas redefinir manualmente
+nano .env
+# Cambiar SOLO la variable problemática
+chmod 600 .env
+
+# 3. Borrar hash viejo para que se regenere
+rm -f redteam/scripts/.auth/password.json
+
+# 4. Reiniciar
+bash iniciar_unificado.sh
+```
+
+### Escenario B: .env se borró o corrompió
+
+```bash
+cd ~/Red-team-tauri
+
+# Opción 1 — Restaurar desde snapshot cifrado
+bash scripts/restore_env.sh
+# Lista snapshots disponibles, elige uno, pide passphrase
+
+# Opción 2 — Restaurar desde respaldo de control_claves
+bash control_claves.sh restore
+# Pide passphrase del respaldo en ~/.c2/env_respaldo.aes
+
+# Opción 3 — Definir desde cero (último recurso)
+bash control_claves.sh set
+# Te pedira nuevas credenciales
+
+# Después de cualquier opción:
+bash iniciar_unificado.sh
+bash scripts/healthcheck_all.sh
+```
+
+### Escenario C: Nexus Omni inaccesible (401/403)
+
+```bash
+cd ~/Red-team-tauri
+
+# 1. Verificar que Nexus está corriendo
+curl -s http://127.0.0.1:8004/ -o /dev/null -w "%{http_code}"
+
+# 2. Si no responde, arrancar desde Control Tower o manualmente:
+python3 nexus_omni_v9.py &
+
+# 3. Si responde pero da 401 — credenciales no coinciden
+# Verificar que NEXUS_USER y NEXUS_PASS en .env son correctos
+grep "^NEXUS_USER=" .env
+grep "^NEXUS_PASS=" .env
+
+# 4. Probar acceso directo con las credenciales del .env
+NEXUS_USER_VAL="$(grep "^NEXUS_USER=" .env | cut -d= -f2)"
+NEXUS_PASS_VAL="$(grep "^NEXUS_PASS=" .env | cut -d= -f2)"
+curl -u "$NEXUS_USER_VAL:$NEXUS_PASS_VAL" http://127.0.0.1:8004/
+
+# 5. Si funciona directo pero no via dashboard proxy:
+# El dashboard lee las mismas credenciales de .env vía nexus_credentials.py
+# Reiniciar el dashboard para que relea:
+pkill -f dashboard_server.py
+bash iniciar_unificado.sh
+```
+
+### Prevención: crear snapshot antes de cambios
+
+```bash
+# ANTES de cualquier cambio en el sistema:
+bash scripts/snapshot_env.sh
+# Pide passphrase, guarda copia cifrada en ~/.c2/snapshots/
+
+# Verificar que el snapshot funciona:
+# (restore_env.sh te deja elegir y probar sin tocar el .env real)
+```
+
+### Scripts de recuperación disponibles
+
+| Script | Cuándo usarlo |
+|--------|---------------|
+| `scripts/restore_env.sh` | .env borrado o corrompido — restaura desde snapshot |
+| `scripts/snapshot_env.sh` | Antes de cambios — crea snapshot cifrado |
+| `control_claves.sh restore` | .env borrado — restaura desde respaldo de control_claves |
+| `control_claves.sh set` | Desde cero — define nuevas credenciales |
+| `control_claves.sh status` | Verificar sin revelar valores |
+
+### Reglas de oro
+
+1. **.env es la única fuente de verdad** — el código nunca lo sobrescribe si los valores ya existen
+2. **Nunca borrar .env sin tener un snapshot** — ejecuta `snapshot_env.sh` antes de cualquier cambio
+3. **Si un agente (Replit u otro) toca el repo**, verifica con `control_claves.sh status` después
+4. **El preflight de iniciar_unificado.sh aborta si .env falta o está incompleto** — no arranca servicios con credenciales vacías
+5. **password.json se regenera solo** desde .env — borrarlo es seguro, borrar .env NO
