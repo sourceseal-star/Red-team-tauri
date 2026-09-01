@@ -158,7 +158,7 @@ check_internet() {
 
 # Verificar conexión a red celular
 check_cellular() {
-    local network_type=$(termux-telephony-device-info 2>/dev/null | jq -r '.network_type // "unknown"')
+    local network_type=$(timeout 3 termux-telephony-device-info 2>/dev/null | jq -r '.network_type // "unknown"')
     if [ "$network_type" = "cellular" ] || [ "$network_type" = "mobile" ]; then
         return 0
     else
@@ -168,7 +168,7 @@ check_cellular() {
 
 # Verificar conexión WiFi
 check_wifi() {
-    local wifi_state=$(termux-wifi-connectioninfo 2>/dev/null | jq -r '.state // "unknown"')
+    local wifi_state=$(timeout 3 termux-wifi-connectioninfo 2>/dev/null | jq -r '.state // "unknown"')
     if [ "$wifi_state" = "CONNECTED" ]; then
         return 0
     else
@@ -191,7 +191,7 @@ check_lan() {
 # Verificar Bluetooth
 check_bluetooth() {
     if command -v hcitool &>/dev/null && \
-       hcitool dev 2>/dev/null | grep -q "hci"; then
+       timeout 3 hcitool dev 2>/dev/null | grep -q "hci"; then
         return 0
     else
         return 1

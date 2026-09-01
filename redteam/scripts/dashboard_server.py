@@ -2204,128 +2204,113 @@ async def network_info():
     return {"subnet": subnet, "local_ip": net.get("ip", ""),
             "local_hostname": socket.gethostname() if hasattr(socket, "gethostname") else ""}
 
+def _detect_gateway(subnet: str = "") -> str:
+    """Detecta el gateway real via `ip route show default`. Si falla (comun
+    en Android sin root -- SELinux bloquea la tabla de rutas para apps sin
+    privilegios), asume .1 de la subred detectada como ultimo recurso
+    (convencion casi universal en redes domesticas/hotspots)."""
+    try:
+        out = subprocess.check_output(["ip", "route", "show", "default"],
+                                      stderr=subprocess.DEVNULL, timeout=3).decode()
+        for line in out.splitlines():
+            parts = line.split()
+            if parts and parts[0] == "default" and "via" in parts:
+                return parts[parts.index("via") + 1]
+    except Exception:
+        pass
+    try:
+        import ipaddress as _ipa
+        net = _ipa.ip_network(subnet, strict=False)
+        return str(list(net.hosts())[0])
+    except Exception:
+        return ""
+
 @app.get("/api/discover/network")
 async def discover_network(subnet: str = ""):
-    """Descubrimiento de red SIN root — Wake-Up Sweep + ARP + TCP scan.
-    1. Detecta subnet via ip route
-    2. Ping al gateway + primeras 20 IPs (wake-up sweep, llena ARP table)
-    3. Lee ip neigh + /proc/net/arp
-    4. TCP connect scan en puertos de camara/router/DVR
-    5. Clasifica tipo por MAC + puertos abiertos
-    """
-    import ipaddress as _ipa
-    import concurrent.futures as _cf
+    """Descubrimiento de red SIN root — TCP connect() en toda la subred
+    (metodo primario, probado) + ARP como enriquecimiento opcional de MAC.
 
-    # 1. Detectar subnet
+    IMPORTANTE (Android/Termux): `ip neigh` y /proc/net/arp estan bloqueados
+    por SELinux para apps sin root en la gran mayoria de dispositivos -> SIEMPRE
+    devuelven vacio sin importar cuantos dispositivos reales haya en la red.
+    Antes este endpoint dependia de ARP como filtro obligatorio (si ARP no
+    encontraba nada, el TCP scan de respaldo NUNCA se ejecutaba) -- por eso
+    la topologia se veia siempre vacia en Termux. Ahora el TCP connect() de
+    subred completa (el mismo motor probado de /api/scan/topology) es SIEMPRE
+    el metodo primario; ARP solo agrega la MAC cuando esta disponible.
+    """
     if not subnet:
         subnet = await asyncio.to_thread(subnet_from_iface)
     local_info = _detect_local_network()
     local_ip = local_info.get("ip", "")
-    gateway = local_info.get("gateway", "")
+    gateway = await asyncio.to_thread(_detect_gateway, subnet)
 
-    # 2. Wake-Up Sweep — ping al gateway + primeras 20 IPs
-    # Sin esto, ip neigh esta vacio si acabas de conectarte
+    # 1. ARP opcional -- solo enriquece con MAC, nunca bloquea el descubrimiento
+    arp_macs = {}
     try:
-        if gateway:
-            await asyncio.to_thread(lambda: subprocess.run(
-                ["ping", "-c", "1", "-W", "0.2", "-q", gateway],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1
-            ))
-        # Generar primeras 20 IPs de la subred
-        net = _ipa.ip_network(subnet, strict=False)
-        common_ips = [str(ip) for i, ip in enumerate(net.hosts()) if i < 20 and str(ip) != local_ip]
-        def _quick_ping(ip):
-            try:
-                subprocess.run(["ping", "-c", "1", "-W", "0.1", "-q", ip],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.3)
-            except: pass
-        # Ping paralelo (max 10 workers para no saturar el movil)
-        with _cf.ThreadPoolExecutor(max_workers=10) as executor:
-            list(executor.map(_quick_ping, common_ips))
-    except Exception as e:
-        print(f"[discover] Wake-up sweep error: {e}", flush=True)
-
-    # 3. ARP table via ip neigh
-    hosts = []
-    try:
-        ok, out = await _nmap_or_empty(["ip", "neigh"], timeout=5)
+        ok, out = await _nmap_or_empty(["ip", "neigh"], timeout=3)
         if ok:
             for line in out.splitlines():
                 parts = line.strip().split()
-                if len(parts) >= 4 and parts[0] not in (local_ip, ""):
+                if len(parts) >= 4:
                     ip = parts[0]
-                    mac = parts[4] if len(parts) > 4 and parts[4] != "lladdr" else None
-                    state = parts[-1] if parts[-1] in ("REACHABLE", "STALE", "DELAY", "PERMANENT") else "unknown"
+                    mac = next((p for p in parts if len(p) == 17 and p.count(":") == 5), None)
                     if mac and mac != "00:00:00:00:00:00":
-                        # Clasificar tipo por MAC (OUI prefixes comunes)
-                        mac_lower = mac.lower()
-                        dev_type = "unknown"
-                        if mac_lower.startswith(("cc:ea", "f8:a9", "00:0c", "44:19")): dev_type = "camera"
-                        elif mac_lower.startswith(("00:1c", "b8:45", "c8:3a", "dc:a6")): dev_type = "router"
-                        hosts.append({"ip": ip, "mac": mac, "state": state, "ports": [], "type": dev_type,
-                                      "vendor": None, "risk": "low", "risk_reasons": [], "source": "arp+wakeup"})
+                        arp_macs[ip] = mac
     except Exception:
         pass
-
-    # 4. Fallback /proc/net/arp
-    if len(hosts) == 0:
+    if not arp_macs:
         try:
             arp_data = await asyncio.to_thread(lambda: open("/proc/net/arp").read())
             for line in arp_data.splitlines()[1:]:
                 parts = line.split()
-                if len(parts) >= 6:
-                    ip = parts[0]; mac = parts[3]
-                    if ip != local_ip and mac != "00:00:00:00:00:00":
-                        mac_lower = mac.lower()
-                        dev_type = "unknown"
-                        if mac_lower.startswith(("cc:ea", "f8:a9", "00:0c", "44:19")): dev_type = "camera"
-                        elif mac_lower.startswith(("00:1c", "b8:45", "c8:3a", "dc:a6")): dev_type = "router"
-                        hosts.append({"ip": ip, "mac": mac, "state": "REACHABLE", "ports": [], "type": dev_type,
-                                      "vendor": None, "risk": "low", "risk_reasons": [], "source": "proc_arp"})
+                if len(parts) >= 6 and parts[3] != "00:00:00:00:00:00":
+                    arp_macs[parts[0]] = parts[3]
         except Exception:
             pass
 
-    # 5. TCP scan en puertos de camara/router/DVR
-    CAMERA_PORTS = [80, 443, 554, 8000, 8080, 37777, 34567, 6789, 8888, 9000, 23, 22, 21, 53, 161]
-    if hosts:
-        async def tcp_scan(ip):
-            open_ports = []
-            for port in CAMERA_PORTS:
-                try:
-                    _, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=0.5)
-                    writer.close(); await writer.wait_closed()
-                    open_ports.append(port)
-                except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
-                    pass
-            return open_ports
-        results = await asyncio.gather(*[tcp_scan(h["ip"]) for h in hosts], return_exceptions=True)
-        for h, ports in zip(hosts, results):
-            if isinstance(ports, list):
-                h["ports"] = [{"port": p, "service": SERVICE_NAMES.get(p, "unknown"), "state": "open", "banner": ""} for p in ports]
-                pn = set(ports)
-                # Priorizar clasificacion por puertos sobre MAC
-                if 554 in pn or 37777 in pn or 34567 in pn:
-                    h["type"] = "camera"; h["risk"] = "high" if 554 in pn and 80 in pn else "medium"
-                    h["risk_reasons"] = ["RTSP abierto"] if 554 in pn else []
-                    if 37777 in pn: h["risk_reasons"].append("DVR Hikvision"); h["risk"] = "critical"
-                    if 34567 in pn: h["risk_reasons"].append("DVR Dahua"); h["risk"] = "critical"
-                elif 23 in pn:
-                    h["type"] = "router"; h["risk"] = "high"; h["risk_reasons"] = ["Telnet abierto"]
-                elif 80 in pn or 443 in pn:
-                    h["type"] = "router" if h["ip"].endswith(".1") else "server"; h["risk"] = "medium"
-                elif h["type"] == "unknown":
-                    h["type"] = "iot"; h["risk"] = "low"
+    # 2. Descubrimiento REAL: TCP connect() en toda la subred (SIEMPRE corre,
+    # sin importar el resultado de ARP -- este es el fix del bug).
+    tcp_ips = set(await _discover_hosts_tcp(subnet))
+    if gateway:
+        tcp_ips.add(gateway)
+    tcp_ips.update(arp_macs.keys())
+    tcp_ips.discard(local_ip)
 
-    # 6. Gateway
-    if gateway and gateway not in [h["ip"] for h in hosts]:
-        hosts.insert(0, {"ip": gateway, "mac": None, "state": "REACHABLE", "ports": [], "type": "router",
-                        "vendor": "gateway", "risk": "medium", "risk_reasons": ["Gateway"], "source": "route"})
-    # 7. IP local
-    hosts.append({"ip": local_ip, "mac": None, "state": "LOCAL", "ports": [], "type": "phone",
-                  "vendor": "this device", "risk": "low", "risk_reasons": [], "source": "local"})
-    await broadcast({"type": "progress", "payload": f"Descubrimiento: {len(hosts)} dispositivos (Wake-Up + ARP + TCP)"})
+    # 3. Fingerprint de cada host encontrado (tipo, riesgo, puertos, vendor)
+    hosts = []
+    if tcp_ips:
+        ip_list = sorted(tcp_ips)
+        fp_results = await asyncio.gather(*[_fingerprint_host(ip) for ip in ip_list])
+        for ip, fp in zip(ip_list, fp_results):
+            mac = arp_macs.get(ip)
+            dev_type = fp["type"]
+            risk = fp["risk"]
+            risk_reasons = list(fp["risk_reasons"])
+            if ip == gateway:
+                if dev_type == "unknown":
+                    dev_type = "router"
+                if not risk_reasons:
+                    risk_reasons.append("Gateway")
+                if risk == "low":
+                    risk = "medium"
+            hosts.append({
+                "ip": ip, "mac": mac, "state": "REACHABLE", "type": dev_type,
+                "vendor": fp["vendor"] or ("gateway" if ip == gateway else None),
+                "risk": risk, "risk_reasons": risk_reasons,
+                "ports": [{"port": p, "service": SERVICE_NAMES.get(p, "unknown"), "state": "open",
+                           "banner": (fp["banners"].get(p) or "")[:80]} for p in fp["ports"]],
+                "source": "tcp+arp" if mac else "tcp",
+            })
+
+    # 4. IP local siempre presente (el propio dispositivo)
+    hosts.append({"ip": local_ip, "mac": None, "state": "LOCAL", "type": "phone",
+                  "vendor": "this device", "risk": "low", "risk_reasons": [], "ports": [],
+                  "source": "local"})
+
+    await broadcast({"type": "progress", "payload": f"Descubrimiento: {len(hosts)} dispositivos (TCP full-scan + ARP)"})
     return {"results": hosts, "hosts_up": len(hosts), "subnet": subnet, "local_ip": local_ip,
-            "gateway": gateway, "method": "wakeup+arp+tcp", "timestamp": datetime.now().isoformat()}
+            "gateway": gateway, "method": "tcp+arp", "timestamp": datetime.now().isoformat()}
 
 @app.get("/api/discover/wifi")
 async def discover_wifi():
