@@ -230,10 +230,32 @@ Seal IA **no usa puerto propio** — su API está montada en el dashboard (8001)
 Si en el futuro se necesita una instancia standalone, usar puerto **8006**
 (nunca 8000, 8001, 8002, 8004, 8005 que ya están asignados).
 
-## 10. Telegram = Interfaz de Seal IA
+## 10. Telegram = Interfaz de Sol (Seal IA por debajo)
 
-Seal IA vive en Telegram via `sol_telegram_bridge.py` — un poller que recibe
-comandos y texto libre, ejecuta escaneos asíncronos y entrega reportes sellados.
+Sol ☀️ es la cara pública en Telegram de las operaciones de Red-team-tauri —
+vive via `sol_telegram_bridge.py`, un poller que recibe comandos y texto libre,
+ejecuta escaneos asíncronos y entrega reportes sellados. El motor de escaneo
+es Seal IA 🦭, pero de cara al usuario en Telegram habla como Sol.
+
+### ⚠️ REGLA DE ORO — Token dedicado, NUNCA compartido
+
+Sol usa un `TELEGRAM_BOT_TOKEN` **propio, creado con @BotFather solo para esto**.
+
+**NUNCA** uses el mismo token que el SealBot de negocio de `origenprogreso`
+(sourceseal.co, planes Ciudadano/Pro). Ambos harían `getUpdates` (long polling)
+sobre el mismo bot simultáneamente, y Telegram reparte los updates entre quien
+pida primero — sin coordinación entre procesos. Resultado: respuestas mezcladas
+e impredecibles (visto en producción el 2026-09-01: dos bots respondiendo al
+mismo mensaje, uno con lógica de suscripción y otro con Sol).
+
+Setup de un bot dedicado:
+1. Habla con `@BotFather` en Telegram → `/newbot`
+2. Nombre: `Sol` (o el que prefieras) → obtén el token
+3. Avatar: `/setuserpic` → sube una imagen (el Bot API no permite que el bot
+   se ponga su propia foto — debe hacerse manualmente vía BotFather)
+4. Personalidad: `/setdescription` y `/setabouttext` para la bio pública
+5. Pon ESE token (no el de origenprogreso) en `TELEGRAM_BOT_TOKEN` del `.env`
+   de Red-team-tauri
 
 ### Arranque
 

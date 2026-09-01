@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SOL TELEGRAM BRIDGE — Seal IA en Telegram v2
-=============================================
-Poller de Telegram que expone Seal IA como interfaz conversacional.
+SOL TELEGRAM BRIDGE — Sol en Telegram v2
+=========================================
+Poller de Telegram que expone a Sol, la asistente operativa de Red-team-tauri,
+como interfaz conversacional. Motor de escaneo/reportes: Seal IA (por debajo).
+
+IMPORTANTE: usa un TELEGRAM_BOT_TOKEN DEDICADO, creado con @BotFather solo
+para este bot. NUNCA reutilices el token del SealBot de negocio (origenprogreso/
+sourceseal.co) — correr dos pollers de getUpdates sobre el mismo token causa
+respuestas mezcladas e impredecibles (Telegram reparte los updates entre
+quien pida primero, sin coordinación entre procesos).
 
 Características:
 - Escaneos asíncronos (Telegram no se bloquea)
@@ -280,17 +287,19 @@ def offline_response(text: str, uid: int) -> str:
 
     # Saludos
     if any(w in text_lower for w in ["hola", "buenas", "hey", "saludos", "qué tal", "que tal"]):
-        return ("🦭 ¡Hola! Soy Seal IA, tu asistente de operaciones de seguridad.\n\n"
-                "Puedo escanear tu red, generar reportes sellados y conversar sobre seguridad.\n"
-                "Usa /seal para ver mis comandos disponibles.")
+        return ("☀️ ¡Hola! Soy Sol, la asistente operativa de Red-team-tauri.\n\n"
+                "Manejo escaneos de red, reportes sellados y cadena de custodia.\n"
+                "Por debajo corre el motor Seal IA 🦭 — Usa /seal para ver mis comandos.")
 
     # Quién eres
     if any(w in text_lower for w in ["quién eres", "quien eres", "qué eres", "que eres", "tu nombre"]):
-        return ("🦭 Soy Seal IA, la asistente oficial de SourceSeal Global Protocol.\n"
+        return ("☀️ Soy Sol, tu asistente operativa de Red-team-tauri.\n"
                 "Vigilo tu red, escaneo dispositivos, genero reportes con cadena de custodia,\n"
                 "y converso contigo sobre seguridad ofensiva y defensiva.\n\n"
-                "Sin una clave IA (LLM_API_KEY) trabajo con reflejos tácticos —\n"
-                "con ella, pienso con contexto MITRE ATT&CK.")
+                "Por debajo uso el motor Seal IA 🦭. Sin LLM_API_KEY trabajo con\n"
+                "reflejos tácticos — con ella, pienso con contexto MITRE ATT&CK.\n\n"
+                "(Si buscas planes, precios o el sello Ciudadano/Pro, eso lo maneja\n"
+                "otro bot — @SealBot en sourceseal.co, no yo.)")
 
     # Ayuda
     if any(w in text_lower for w in ["ayuda", "help", "comandos", "qué puedes hacer", "que puedes hacer"]):
@@ -314,7 +323,7 @@ def offline_response(text: str, uid: int) -> str:
         from seal_ia_knowledge import build_system_prompt
         # No ejecutar el LLM, solo indicar el modo
         has_llm = "con IA" if LLM_API_KEY else "offline (reflejos tácticos)"
-        return (f"🦭 Recibido. Estoy en modo {has_llm}.\n\n"
+        return (f"☀️ Recibido. Estoy en modo {has_llm}.\n\n"
                 f"No puedo procesar texto libre en profundidad sin una clave IA configurada,\n"
                 f"pero mis comandos operativos están todos disponibles:\n\n"
                 f"• /seal scan — escaneo de tu red\n"
@@ -325,7 +334,7 @@ def offline_response(text: str, uid: int) -> str:
                 f"• /cliente — texto para reenviar al cliente\n\n"
                 f"Configura LLM_API_KEY en .env para activar razonamiento con contexto MITRE.")
     except Exception:
-        return ("🦭 Modo offline. Usa /seal para ver comandos disponibles.\n"
+        return ("☀️ Modo offline. Usa /seal para ver comandos disponibles.\n"
                 "Configura LLM_API_KEY en .env para activar IA conversacional.")
 
 
@@ -469,7 +478,7 @@ tr.vuln {{ background: rgba(255,71,87,0.08); }}
 </head>
 <body>
 <div class="header">
-    <h1>🦭 Reporte de Auditoría de Seguridad</h1>
+    <h1>☀️ Reporte de Auditoría de Seguridad</h1>
     <div class="meta">SourceSeal Red Team — {datetime.now().strftime("%Y-%m-%d %H:%M")} | Alcance: {network}</div>
 </div>
 <div class="stats">
@@ -499,7 +508,7 @@ tr.vuln {{ background: rgba(255,71,87,0.08); }}
 
 def _help_text() -> str:
     return (
-        "🦭 <b>Seal IA — Comandos</b>\n\n"
+        "☀️ <b>Sol — Comandos</b>\n\n"
         "/seal — Esta ayuda\n"
         "/seal status — Estado del orquestador\n"
         "/seal scan — Escaneo asíncrono + reporte HTML\n"
@@ -509,7 +518,7 @@ def _help_text() -> str:
         "/engagement set X — Cambiar alcance (confirma en 30s)\n"
         "/chain — Cadena de custodia\n"
         "/cliente — Texto listo para reenviar al cliente\n\n"
-        "Texto libre — Conversa con Seal IA 🦭"
+        "Texto libre — Conversa conmigo, Sol ☀️"
     )
 
 
@@ -555,9 +564,9 @@ def _seal_status() -> str:
 def _seal_scan(uid: int) -> str:
     """Inicia escaneo asíncrono con candado."""
     if not SCAN_LOCK.acquire(blocking=False):
-        return "🦭 Ya hay un escaneo en curso. Te aviso al terminar."
+        return "☀️ Ya hay un escaneo en curso. Te aviso al terminar."
 
-    send_message("🦭 Escaneo iniciado sobre el alcance autorizado. Aviso al terminar (2-5 min).", uid)
+    send_message("☀️ Escaneo iniciado sobre el alcance autorizado. Aviso al terminar (2-5 min).", uid)
 
     threading.Thread(target=_run_scan, args=(uid,), daemon=True).start()
     return ""  # Ya respondimos con send_message
@@ -577,14 +586,14 @@ def _run_scan(uid: int):
         )
 
         if r.returncode != 0:
-            send_message(f"🦭 El escaneo tuvo problemas: {r.stderr[:300]}", uid)
+            send_message(f"☀️ El escaneo tuvo problemas: {r.stderr[:300]}", uid)
             return
 
         # Buscar el JSON de salida generado por el escaneo
         json_files = sorted(ROOT.glob("seal_intel_*.json"))
         if not json_files:
             # El escaneo puede no haber encontrado dispositivos
-            send_message("🦭 Escaneo completado. No se encontraron dispositivos con servicios abiertos.", uid)
+            send_message("☀️ Escaneo completado. No se encontraron dispositivos con servicios abiertos.", uid)
             seal_ledger("TG_SCAN", {"net": net, "status": "no_devices", "report": None})
             return
 
@@ -595,7 +604,7 @@ def _run_scan(uid: int):
 
         if report_path and report_path.exists():
             h = hashlib.sha256(report_path.read_bytes()).hexdigest()
-            send_message("🦭 Escaneo completo. Reporte generado y sellado.", uid)
+            send_message("☀️ Escaneo completo. Reporte generado y sellado.", uid)
             caption = (
                 f"📄 {report_path.name}\n"
                 f"🔗 SHA-256: {h[:32]}…\n"
@@ -608,13 +617,13 @@ def _run_scan(uid: int):
                 "sha256": h,
             })
         else:
-            send_message("🦭 Escaneo completado pero no se pudo generar el reporte.", uid)
+            send_message("☀️ Escaneo completado pero no se pudo generar el reporte.", uid)
             seal_ledger("TG_SCAN", {"net": net, "status": "report_failed"})
 
     except subprocess.TimeoutExpired:
-        send_message("🦭 El escaneo superó los 15 min — cancelado.", uid)
+        send_message("☀️ El escaneo superó los 15 min — cancelado.", uid)
     except Exception as e:
-        send_message(f"🦭 Error en escaneo: {str(e)[:300]}", uid)
+        send_message(f"☀️ Error en escaneo: {str(e)[:300]}", uid)
     finally:
         SCAN_LOCK.release()
         log("[scan] Candado liberado")
@@ -624,13 +633,13 @@ def _seal_ultimo() -> str:
     """Muestra el último sello TG_SCAN."""
     last = get_last_seal_by_action("TG_SCAN")
     if not last:
-        return "🦭 No hay sellos TG_SCAN aún. Ejecuta /seal scan."
+        return "☀️ No hay sellos TG_SCAN aún. Ejecuta /seal scan."
 
     d = last.get("data", {})
     ts = last.get("timestamp", "?")
     h = last.get("seal_hash", "?")
     return (
-        f"🦭 <b>Último sello TG_SCAN</b>\n\n"
+        f"☀️ <b>Último sello TG_SCAN</b>\n\n"
         f"📅 {ts}\n"
         f"🌐 Alcance: {d.get('net', '?')}\n"
         f"📄 Reporte: {d.get('report', '—')}\n"
@@ -642,7 +651,7 @@ def cmd_reporte(uid: int) -> str:
     """Envía el último reporte HTML."""
     reports = sorted(REPORTS_DIR.glob("reporte_*.html"))
     if not reports:
-        return "🦭 No hay reportes generados aún. Ejecuta /seal scan primero."
+        return "☀️ No hay reportes generados aún. Ejecuta /seal scan primero."
 
     last = reports[-1]
     h = hashlib.sha256(last.read_bytes()).hexdigest()
@@ -650,14 +659,14 @@ def cmd_reporte(uid: int) -> str:
     sent = send_document(last, uid, caption=caption)
     if sent:
         return ""
-    return "🦭 No se pudo enviar el reporte. Verifica conexión."
+    return "☀️ No se pudo enviar el reporte. Verifica conexión."
 
 
 def cmd_engagement(uid: int, args: list) -> str:
     """Gestiona el alcance de escaneo."""
     if not args:
         return (
-            f"🦭 <b>Alcance autorizado actual</b>\n\n"
+            f"☀️ <b>Alcance autorizado actual</b>\n\n"
             f"🌐 {os.environ.get('SEAL_NETWORK', SEAL_NETWORK)}\n\n"
             f"Para cambiar: /engagement set <red/CIDR>\n"
             f"Ejemplo: /engagement set 10.0.0.0/24"
@@ -665,23 +674,23 @@ def cmd_engagement(uid: int, args: list) -> str:
 
     if args[0].lower() == "set":
         if len(args) < 2:
-            return "🦭 Uso: /engagement set <red/CIDR>\nEjemplo: /engagement set 10.0.0.0/24"
+            return "☀️ Uso: /engagement set <red/CIDR>\nEjemplo: /engagement set 10.0.0.0/24"
 
         new_net = args[1]
         # Validar formato básico de CIDR
         if "/" not in new_net:
-            return "🦭 Formato inválido. Usa notación CIDR: 192.168.1.0/24"
+            return "☀️ Formato inválido. Usa notación CIDR: 192.168.1.0/24"
 
         # Guardar pendiente y pedir confirmación
         ENGAGEMENT_PENDING[uid] = {"net": new_net, "ts": time.time()}
         return (
-            f"🦭 <b>Confirmación requerida</b>\n\n"
+            f"☀️ <b>Confirmación requerida</b>\n\n"
             f"Cambio de alcance: {os.environ.get('SEAL_NETWORK', SEAL_NETWORK)} → <code>{new_net}</code>\n\n"
             f"⚠️ Esto se sellará al ledger como ENGAGEMENT_CHANGE.\n"
             f"Responde <b>si</b> en los próximos 30 segundos para confirmar."
         )
 
-    return "🦭 Uso: /engagement o /engagement set <red/CIDR>"
+    return "☀️ Uso: /engagement o /engagement set <red/CIDR>"
 
 
 def _check_engagement_confirm(uid: int, text: str) -> Optional[str]:
@@ -694,7 +703,7 @@ def _check_engagement_confirm(uid: int, text: str) -> Optional[str]:
 
     if elapsed > 30:
         del ENGAGEMENT_PENDING[uid]
-        return "🦭 La confirmación expiró (30s). El alcance NO cambió."
+        return "☀️ La confirmación expiró (30s). El alcance NO cambió."
 
     if text.strip().lower() == "si":
         new_net = pending["net"]
@@ -723,10 +732,10 @@ def _check_engagement_confirm(uid: int, text: str) -> Optional[str]:
                 os.chmod(ENV_FILE, 0o600)
                 os.environ["SEAL_NETWORK"] = new_net
             else:
-                return "🦭 .env no encontrado. No se pudo cambiar el alcance."
+                return "☀️ .env no encontrado. No se pudo cambiar el alcance."
 
         except Exception as e:
-            return f"🦭 Error escribiendo .env: {str(e)[:200]}"
+            return f"☀️ Error escribiendo .env: {str(e)[:200]}"
 
         # Sellar al ledger
         seal_ledger("ENGAGEMENT_CHANGE", {
@@ -735,11 +744,11 @@ def _check_engagement_confirm(uid: int, text: str) -> Optional[str]:
             "user_id": uid,
         })
 
-        return f"🦭 Alcance actualizado y sellado: {new_net}"
+        return f"☀️ Alcance actualizado y sellado: {new_net}"
 
     if text.strip().lower() in ["no", "cancelar", "cancel"]:
         del ENGAGEMENT_PENDING[uid]
-        return "🦭 Cambio cancelado. El alcance NO cambió."
+        return "☀️ Cambio cancelado. El alcance NO cambió."
 
     return None
 
@@ -748,7 +757,7 @@ def cmd_chain() -> str:
     """Muestra la cadena de custodia."""
     summary = get_ledger_summary()
     if summary["count"] == 0:
-        return "🦭 No hay sellos en el ledger. Ejecuta /seal scan para generar el primero."
+        return "☀️ No hay sellos en el ledger. Ejecuta /seal scan para generar el primero."
 
     actions_str = "\n".join(
         f"  • {k}: {v}" for k, v in summary["actions"].items()
@@ -756,7 +765,7 @@ def cmd_chain() -> str:
     last_hash = summary["last_hash"][:32] + "…" if summary["last_hash"] else "—"
 
     return (
-        f"🦭 <b>Cadena de Custodia SourceSeal</b>\n\n"
+        f"☀️ <b>Cadena de Custodia SourceSeal</b>\n\n"
         f"📦 Total de sellos: {summary['count']}\n"
         f"🔗 Último hash: <code>{last_hash}</code>\n\n"
         f"<b>Por tipo:</b>\n{actions_str}"
@@ -776,7 +785,7 @@ def cmd_cliente(uid: int) -> str:
         h_short = "(sin reporte aún)"
 
     return (
-        f"🦭 <b>Texto para el cliente</b> (copia y reenvía):\n\n"
+        f"☀️ <b>Texto para el cliente</b> (copia y reenvía):\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"Hola. Adjunto el reporte de auditoría de seguridad de su infraestructura.\n"
         f"Alcance autorizado: {net}.\n"
@@ -842,7 +851,7 @@ def process_message(text: str, uid: int, update_id: int) -> bool:
 
     if cmd.startswith("/"):
         # Comando no reconocido
-        send_message("🦭 Comando no reconocido. Usa /seal para ver los disponibles.", uid)
+        send_message("☀️ Comando no reconocido. Usa /seal para ver los disponibles.", uid)
         return True
 
     # Texto libre — conversación con Seal IA
@@ -865,7 +874,7 @@ def run_poller():
         log("   set -a; . ./.env; set +a")
         sys.exit(1)
 
-    log("🦭 Seal IA Telegram Bridge v2 iniciando...")
+    log("☀️ Sol Telegram Bridge v2 iniciando...")
     log(f"   Alcance: {os.environ.get('SEAL_NETWORK', SEAL_NETWORK)}")
     log(f"   LLM: {'activado' if LLM_API_KEY else 'offline (reflejos tácticos)'}")
     log(f"   Whitelist: {len(ALLOWED_USERS)} usuarios" if ALLOWED_USERS else "   Whitelist: chat_id default")
@@ -921,7 +930,7 @@ def run_poller():
                     process_message(text, uid, update["update_id"])
                 except Exception as e:
                     log(f"[process] Error: {e}")
-                    send_message(f"🦭 Error procesando: {str(e)[:200]}", uid)
+                    send_message(f"☀️ Error procesando: {str(e)[:200]}", uid)
 
         except requests.exceptions.Timeout:
             # Normal — long polling
@@ -930,7 +939,7 @@ def run_poller():
             log("[poller] Sin conexión — reintentando en 10s...")
             time.sleep(10)
         except KeyboardInterrupt:
-            log("🦭 Deteniendo poller...")
+            log("☀️ Deteniendo poller...")
             break
         except Exception as e:
             log(f"[poller] Error inesperado: {e}")
