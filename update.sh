@@ -123,8 +123,11 @@ if [ "$DASHBOARD_REQ_BEFORE" != "$DASHBOARD_REQ_AFTER" ] || [ "$FORCE_DEPS" = tr
     DEPS_CHANGED=true
 fi
 
+if [ "$BACKEND_REQ_BEFORE" != "$BACKEND_REQ_AFTER" ] || [ "$FORCE_DEPS" = true ]; then
     echo ""
+    echo -e "${Y}→ Deps del backend cambiaron. Reinstalando...${N}"
     pip install -q fastapi uvicorn "pydantic[email]" slowapi tenacity 2>/dev/null || true
+    pip install -q -r backend/requirements.txt 2>/dev/null || true
     DEPS_CHANGED=true
 fi
 
