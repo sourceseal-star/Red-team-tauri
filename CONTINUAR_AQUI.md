@@ -1,10 +1,14 @@
 # SourceSeal Console — Estado del Proyecto
 
-**Última actualización:** 2026-09-01
+**Última actualización:** 2026-09-01 12:50
 **Versión:** 7.0-TACTICAL-HOTRELOAD
 **Repositorio:** https://github.com/sourceseal-star/Red-team-tauri
 **Branch:** main
 **Último commit:** feat(infra): motor táctico profesional con hot-reload + módulos + playbooks
+
+> ⚠️ **LEE PRIMERO:** hay un bloqueador activo de Telegram (token inválido, no es
+> bug de código) con instrucciones paso a paso más abajo → busca
+> "BLOQUEADOR ACTIVO — Telegram Bot Token inválido".
 
 ---
 
@@ -143,6 +147,59 @@ nano redteam/modules/recon.py
 | GET | `/api/tactical/report/{filename}` | Descarga informe sellado |
 | GET | `/api/tactical/credentials` | Ver diccionario (conteo por vendor) |
 | GET | `/api/tactical/ports` | Puertos por defecto escaneados |
+
+---
+
+## 🚨 BLOQUEADOR ACTIVO — Telegram Bot Token inválido (01-sep-2026, 12:50)
+
+**Diagnóstico CONFIRMADO con `bash sol.sh tg-check`:**
+```
+Telegram responde: {"ok":false,"error_code":401,"description":"Unauthorized"}
+Traceback real (tg_bot.log): telegram.error.InvalidToken:
+  The token `8764595527:AAG7etrHhJc4qBvNaV_51fIhpFceL-NVAyM` was rejected by the server
+```
+
+**Esto NO es un bug de código.** Todo el pipeline (omni.sh, sol.sh, sol_telegram_bot.py,
+sol_telegram_bridge.py) está verificado y funcionando — ya se corrigieron y confirmaron:
+- Bug del C2 en foreground bloqueante (omni.sh línea ~420) — CORREGIDO
+- Conflicto 409 entre Miniapp/Puente Telegram — CORREGIDO (exclusividad mutua)
+- Auto-limpieza de procesos zombie antes de arrancar Telegram — AÑADIDO
+- Diagnóstico de un comando (`bash sol.sh tg-check`) — AÑADIDO, funcionando
+
+**El único paso pendiente es humano, no técnico:** el `TELEGRAM_BOT_TOKEN` guardado en
+`.env` fue rechazado por la API de Telegram (401 Unauthorized) — está caducado, mal copiado,
+o el bot fue borrado/regenerado en @BotFather.
+
+### Para resolver (cualquier cuenta/sesión puede hacerlo, no requiere IA):
+
+1. Abre Telegram, busca **@BotFather**.
+2. Si el bot sigue existiendo: envía `/mybots` → selecciona el bot → **API Token** →
+   copia el token nuevo (o usa `/revoke` primero si quieres invalidar el viejo).
+3. Si el bot ya no existe: `/newbot` → sigue las instrucciones → copia el token nuevo.
+4. Edita `.env` en `~/Red-team-tauri/.env` y reemplaza la línea:
+   ```
+   TELEGRAM_BOT_TOKEN=<token_nuevo_aquí>
+   ```
+   (usa `nano ~/Red-team-tauri/.env`, NO borres nada más del archivo)
+5. Verifica antes de arrancar nada:
+   ```bash
+   cd ~/Red-team-tauri
+   bash sol.sh tg-check
+   ```
+   Debe mostrar `"ok":true` y el username del bot. Si sigue en `401`, el token
+   sigue mal — repite desde el paso 2.
+6. Una vez `tg-check` confirme `ok:true`, arranca todo normal:
+   ```bash
+   bash omni.sh stop
+   bash omni.sh start
+   ```
+7. Confirma en el log que dice `✅ Miniapp Telegram activa` (no "Puente legacy" —
+   la Miniapp tiene más funciones: botones, recordatorios, voz, avatar).
+
+**Nadie necesita tocar código para esto** — es 100% configuración de credencial.
+Si quien continúa el trabajo es otra sesión de IA, que NO edite `sol_telegram_bot.py`,
+`sol_telegram_bridge.py`, `omni.sh` ni `sol.sh` para este problema — todos están
+verificados y correctos. Solo falta el token válido en `.env`.
 
 ---
 
