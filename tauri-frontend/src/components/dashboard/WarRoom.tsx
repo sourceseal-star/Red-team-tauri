@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 
 const TopologyMap = lazy(() => import('./TopologyMap'));
+import UltrasonicPanel from './UltrasonicPanel';
 
 interface UltraLogEntry { time: string; type: 'sent'|'received'|'error'|'info'; message: string }
 interface CameraItem { ip: string; port?: number; rtsp_url?: string; brand?: string; rtsp?: boolean }
@@ -665,31 +666,7 @@ export default function WarRoom() {
           )}
 
           {bottomView === 'comms' && (
-            <div className="flex flex-col gap-2 h-full">
-              <div className="flex items-center gap-2">
-                <input type="text" value={ultraMsg} onChange={e => setUltraMsg(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendUltrasonicBrowser(ultraMsg, freqOffset); }}
-                  placeholder="Mensaje a transmitir..."
-                  className="flex-1 bg-[var(--ss-bg-3)] border border-[var(--ss-border)] text-pink-300 px-2 py-1 rounded text-xs focus:border-pink-500 focus:outline-none" />
-                <button onClick={() => sendUltrasonicBrowser(ultraMsg, freqOffset)} disabled={isSending || !ultraMsg.trim()} className="px-3 py-1 text-xs bg-pink-600/30 border border-pink-500/30 text-pink-300 rounded hover:bg-pink-600/50 disabled:opacity-50 transition">
-                  <Send size={11} className="inline" /> Enviar
-                </button>
-                <button onClick={listenUltrasonic} disabled={isListening} className="px-3 py-1 text-xs bg-cyan-600/30 border border-cyan-500/30 text-cyan-300 rounded hover:bg-cyan-600/50 disabled:opacity-50 transition">
-                  <Radio size={11} className="inline" /> {isListening ? 'Escuchando...' : 'Escuchar'}
-                </button>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-gray-500">Offset:</span>
-                <input type="range" min="0" max="2000" value={freqOffset} onChange={e => setFreqOffset(Number(e.target.value))} className="flex-1" />
-                <span className="text-[10px] text-gray-400">{18000 + freqOffset}Hz</span>
-              </div>
-              <div className="flex-1 overflow-y-auto space-y-0.5">
-                {ultraLog.map((entry, i) => (
-                  <div key={i} className={`text-xs ${logColor(entry.type)}`}>
-                    <span className="text-gray-600 text-[10px]">[{entry.time}]</span> {entry.message}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <UltrasonicPanel />
           )}
         </div>
       </div>
