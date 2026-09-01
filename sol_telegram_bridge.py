@@ -33,6 +33,14 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 
+# Cerebro offline de Sol — import seguro con fallback
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from sol_core import pensar as _sol_pensar, remember as _sol_remember
+except Exception as _e:
+    _sol_pensar = None
+    _sol_remember = None
+
 # ═════════════════════════════════════════════════════════════════════════════
 # CONFIGURACIÓN
 # ═════════════════════════════════════════════════════════════════════════════
@@ -333,12 +341,8 @@ def check_backend_alerts():
 # /sol <texto> — Hablar con el cerebro offline de Sol
 # ═════════════════════════════════════════════════════════════════════════════
 
-def cmd_sol(chat_id, text):
-    """Procesa texto con el cerebro offline de Sol (sol_core.py)."""
-    # Extraer el mensaje después de /sol
-    parts = text.split(None, 1)
-    msg = parts[1] if len(parts) > 1 else "hola"
-
+def _sol_respond(chat_id, msg):
+    """Helper: procesa un mensaje con el cerebro offline de Sol y responde."""
     if _sol_pensar is not None:
         try:
             resp, intent = _sol_pensar(msg)
@@ -357,6 +361,13 @@ def cmd_sol(chat_id, text):
         )
 
 
+def cmd_sol(chat_id, text):
+    """Procesa texto con el cerebro offline de Sol (sol_core.py). Comando: /sol <texto>"""
+    parts = text.split(None, 1)
+    msg = parts[1] if len(parts) > 1 else "hola"
+    _sol_respond(chat_id, msg)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 
 def handle_update(update):
@@ -366,12 +377,22 @@ def handle_update(update):
     chat_id = str(message.get("chat", {}).get("id", ""))
     text = message.get("text", "").strip()
     user = message.get("from", {}).get("first_name", "Usuario")
-    if not text.startswith("/"):
+
+    if not text:
         return
-    log.info(f"Comando de {user} ({chat_id}): {text}")
+
+    # Autorización — se aplica a TODO mensaje (comando o conversación)
     if CHAT_ID and chat_id != CHAT_ID:
         log.warning(f"Chat no autorizado: {chat_id} (esperado: {CHAT_ID})")
         return
+
+    if not text.startswith("/"):
+        # Conversación natural — Sol escucha y responde con su cerebro, no solo comandos
+        log.info(f"Mensaje de {user} ({chat_id}): {text}")
+        _sol_respond(chat_id, text)
+        return
+
+    log.info(f"Comando de {user} ({chat_id}): {text}")
     parts = text.split()
     cmd = parts[0].lower().split("@")[0]
     arg = parts[1] if len(parts) > 1 else ""
