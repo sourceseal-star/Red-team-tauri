@@ -3494,6 +3494,8 @@ DEFAULT_OPS = {
     "virustotal_api_key": "",
     "abuseipdb_key": "",
     "github_token": "",
+    "telegram_bot_token": "",
+    "telegram_chat_id": "",
     "scan_subnet": "",           # vacío = auto-detectar
     "scan_ports": "80,443,22,554,8080,8000,23,21,445,139,53,8443,37777,8081,88",
     "scan_timeout": 0.5,         # segundos por puerto TCP
@@ -3521,6 +3523,8 @@ def _apply_ops_to_env(ops: dict):
         "virustotal_api_key": "VIRUSTOTAL_API_KEY",
         "abuseipdb_key": "ABUSEIPDB_KEY",
         "github_token": "GITHUB_TOKEN",
+        "telegram_bot_token": "TELEGRAM_BOT_TOKEN",
+        "telegram_chat_id": "TELEGRAM_CHAT_ID",
     }
     for cfg_key, env_key in key_map.items():
         val = ops.get(cfg_key, "")
@@ -3536,7 +3540,7 @@ async def ops_config_get():
     Las API keys se devuelven enmascaradas (solo primeros 4 + últimos 4 chars)."""
     ops = _load_ops()
     safe = dict(ops)
-    for k in ("shodan_api_key", "virustotal_api_key", "abuseipdb_key", "github_token"):
+    for k in ("shodan_api_key", "virustotal_api_key", "abuseipdb_key", "github_token", "telegram_bot_token"):
         v = safe.get(k, "")
         if v and len(v) > 12:
             safe[k] = v[:4] + "••••" + v[-4:]
@@ -7808,6 +7812,14 @@ async def telegram_set_config(request: Request):
     if body.get("token"): _TELEGRAM_CONFIG["token"] = body["token"]
     if body.get("chat_id"): _TELEGRAM_CONFIG["chat_id"] = body["chat_id"]
     _TELEGRAM_CONFIG["enabled"] = bool(body.get("enabled", _TELEGRAM_CONFIG["token"] and _TELEGRAM_CONFIG["chat_id"]))
+    # Persistir en ops.json para que sobreviva a un restart (mismo patron que
+    # las API keys de OSINT). Sin esto, el token se perdia al reiniciar porque
+    # solo vivia en memoria (_TELEGRAM_CONFIG) hasta que alguien lo re-escribia
+    # a mano en .env.
+    _ops = _load_ops()
+    if body.get("token"): _ops["telegram_bot_token"] = body["token"]
+    if body.get("chat_id"): _ops["telegram_chat_id"] = body["chat_id"]
+    _save_ops(_ops)
     return {"ok": True, "enabled": _TELEGRAM_CONFIG["enabled"]}
 
 @app.post("/api/telegram/test")
