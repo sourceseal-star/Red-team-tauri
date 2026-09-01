@@ -132,6 +132,7 @@
     <div class="controls">
         <button class="btn-small" onclick="exportMemory()">💾 Exportar</button>
         <button class="btn-small" onclick="toggleVoice()" id="voiceBtn">🔇 Voz</button>
+        <button class="btn-small" onclick="openTtsSettings()" title="Elegir una voz más natural en Ajustes de Android">🎙️ Mejorar voz</button>
         <button class="btn-small" onclick="toggleJournal()">📖 Diario</button>
         <button class="btn-small" onclick="clearChat()">🗑️ Limpiar</button>
     </div>
@@ -377,15 +378,85 @@ function escapeHtml(text) {
     return div.innerHTML.replace(/\n/g, '<br>');
 }
 
+// ─── Selección de la mejor voz en español disponible ─────────────────────
+// El navegador/Android puede tener varias voces es-*. Las voces "network"
+// (no locales) suelen ser motores en la nube (Google WaveNet-like) y sonar
+// mucho mas natural que la voz local por defecto del sistema.
+let _bestVoice = null;
+let _voicesReady = false;
+
+function _pickBestSpanishVoice() {
+    if (!('speechSynthesis' in window)) return null;
+    const voices = speechSynthesis.getVoices();
+    if (!voices.length) return null;
+    _voicesReady = true;
+
+    const esVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('es'));
+    if (!esVoices.length) return null;
+
+    // Prioridad de idioma: es-MX/es-US (suenan mas neutras/calidas para LatAm)
+    // luego es-419 (LatAm genérico), luego es-ES, luego cualquier es-*
+    const langPriority = ['es-us', 'es-mx', 'es-419', 'es-co', 'es-es'];
+    const score = (v) => {
+        let s = 0;
+        const lang = v.lang.toLowerCase();
+        const idx = langPriority.indexOf(lang);
+        s += idx >= 0 ? (10 - idx) : 1;
+        // Las voces no-locales (network) suelen ser de mayor calidad (nube)
+        if (v.localService === false) s += 5;
+        // Nombres que suelen indicar mejor calidad
+        const name = v.name.toLowerCase();
+        if (name.includes('natural') || name.includes('wavenet') || name.includes('neural')) s += 8;
+        if (name.includes('google')) s += 2;
+        return s;
+    };
+
+    esVoices.sort((a, b) => score(b) - score(a));
+    return esVoices[0];
+}
+
+function _initVoices() {
+    _bestVoice = _pickBestSpanishVoice();
+    if (!_bestVoice && 'speechSynthesis' in window) {
+        // Las voces a veces cargan async — reintentar cuando estén listas
+        speechSynthesis.onvoiceschanged = () => {
+            _bestVoice = _pickBestSpanishVoice();
+        };
+    }
+}
+_initVoices();
+
 function speak(text) {
     if ('speechSynthesis' in window) {
         speechSynthesis.cancel();
+        if (!_voicesReady) _bestVoice = _pickBestSpanishVoice();
         const u = new SpeechSynthesisUtterance(text.replace(/[^a-zA-Záéíóúñ¿¡\s.,!?-]/g, ''));
-        u.lang = 'es-ES';
-        u.rate = 0.92;
-        u.pitch = 1.05;
+        if (_bestVoice) {
+            u.voice = _bestVoice;
+            u.lang = _bestVoice.lang;
+        } else {
+            u.lang = 'es-ES';
+        }
+        u.rate = 0.95;
+        u.pitch = 1.0;
         speechSynthesis.speak(u);
     }
+}
+
+function openTtsSettings() {
+    // Abre la pantalla de Ajustes de Texto a Voz de Android para que Harold
+    // pueda instalar/elegir un motor y voz de mejor calidad (ej. Google TTS
+    // con una voz "Wavenet"/red neuronal en vez de la voz local básica).
+    fetch('/api/android/open-tts-settings', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            if (!d.opened) {
+                addMessage('sol', '⚠️ No pude abrir Ajustes de Voz automáticamente. Ve a: Ajustes → Sistema → Idiomas → Salida de texto a voz, e instala/selecciona un motor con voces de red (suenan más naturales).', null);
+            }
+        })
+        .catch(() => {
+            addMessage('sol', '⚠️ Ve manualmente a: Ajustes → Sistema → Idiomas → Salida de texto a voz.', null);
+        });
 }
 
 async function send() {

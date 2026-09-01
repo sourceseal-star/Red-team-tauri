@@ -401,6 +401,42 @@ async def open_netguard():
     return result
 
 
+def _open_tts_settings() -> dict:
+    """Abre la pantalla de Ajustes de Texto a Voz de Android para que el
+    usuario pueda instalar/elegir un motor y voz de mejor calidad (voces de
+    red tipo Wavenet/neural en vez de la voz local básica)."""
+    if not _available("am"):
+        return {"opened": False, "error": "Comando 'am' no disponible (¿estás en Termux?)"}
+    attempts = []
+    for action in ("android.settings.TTS_SETTINGS", "com.android.settings.TTS_SETTINGS"):
+        try:
+            result = subprocess.run(
+                ["am", "start", "-a", action],
+                capture_output=True, text=True, timeout=10, check=False
+            )
+            if result.returncode == 0:
+                return {"opened": True, "method": action}
+            err = (result.stderr or result.stdout or "").strip()
+            if err:
+                attempts.append(f"{action}: {err}")
+        except Exception as e:
+            attempts.append(f"{action}: {e}")
+    return {
+        "opened": False,
+        "error": "No se pudo abrir Ajustes de Voz automáticamente",
+        "hint": "Ve manualmente a: Ajustes → Sistema → Idiomas → Salida de texto a voz",
+        "attempts": attempts,
+    }
+
+
+@router.post("/open-tts-settings")
+async def open_tts_settings():
+    result = await asyncio.to_thread(_open_tts_settings)
+    if not result.get("opened"):
+        return JSONResponse(result, status_code=503)
+    return result
+
+
 @router.post("/port-scan")
 async def manual_port_scan(body: dict = Body(...)):
     if body.get("confirm_manual") is not True:
