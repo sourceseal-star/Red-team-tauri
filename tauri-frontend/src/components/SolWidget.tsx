@@ -29,7 +29,7 @@ export const SolWidget = () => {
   return (
     <div className="bg-gradient-to-br from-amber-500/10 to-orange-500/5 border border-amber-500/30 rounded-lg p-4 mb-4">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-2xl">☀️</span>
+        <img src="/sol_avatar.jpg" alt="Sol" className="w-8 h-8 rounded-full object-cover border-2 border-amber-500" />
         <h3 className="font-semibold text-amber-300">Sol</h3>
         <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded">COMPAÑERA</span>
       </div>

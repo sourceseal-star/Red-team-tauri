@@ -439,7 +439,7 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
               <a href="/sol.html" target="_blank" rel="noopener noreferrer"
                 className="mx-2 mb-1 flex items-center justify-between px-3 py-2.5 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 text-amber-300 hover:from-amber-500/30 hover:to-orange-500/30 min-h-[44px]">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">☀️</span>
+                  <img src="/sol_avatar.jpg" alt="Sol" className="w-7 h-7 rounded-full object-cover border border-amber-500/50" />
                   <span className="text-xs font-semibold">Abrir Sol</span>
                 </div>
                 <span className="text-[8px] bg-amber-500 text-slate-950 font-bold px-1.5 py-0.5 rounded">SIEMPRE</span>
@@ -520,7 +520,7 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
                 <a href="/sol.html" target="_blank" rel="noopener noreferrer"
                   className="mx-2 mb-2 flex items-center justify-between px-3 py-3 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 text-amber-300 hover:from-amber-500/30 hover:to-orange-500/30 min-h-[48px]">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl">☀️</span>
+                    <img src="/sol_avatar.jpg" alt="Sol" className="w-8 h-8 rounded-full object-cover border border-amber-500/50" />
                     <span className="font-semibold text-sm">Abrir Sol</span>
                   </div>
                   <span className="text-[10px] bg-amber-500 text-slate-950 font-bold px-1.5 py-0.5 rounded">SIEMPRE</span>
