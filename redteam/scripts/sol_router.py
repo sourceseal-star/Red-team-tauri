@@ -22,7 +22,7 @@ _sol_last_message = {"message": "☀️ Estoy aquí, Harold. ¿En qué piensas h
 if os.path.exists(_sol_core_path):
     try:
         sys.path.insert(0, _PROJECT_ROOT)
-        from sol_core import pensar as _p, remember as _r
+        from sol_core import generate_response as _p, remember as _r
         _sol_pensar = _p
         _sol_remember = _r
     except Exception as e:
@@ -44,11 +44,12 @@ async def think(req: ThinkRequest):
         return {"response": resp, "intent": "offline"}
 
     try:
-        resp, intent = _sol_pensar(req.message)
+        resp = _sol_pensar(req.message)
         if _sol_remember:
-            _sol_remember(req.message, resp, intent)
+            _sol_remember("user", req.message)
+            _sol_remember("sol", resp)
         _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
-        return {"response": resp, "intent": intent}
+        return {"response": resp, "intent": "chat"}
     except Exception as e:
         return {"response": f"☀️ Tuve un problema procesando eso: {e}", "intent": "error"}
 

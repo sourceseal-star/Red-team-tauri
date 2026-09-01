@@ -388,18 +388,51 @@ function speak(text) {
     }
 }
 
-function send() {
+async function send() {
     const text = inputEl.value.trim();
     if (!text) return;
     addMessage('you', text);
     inputEl.value = '';
     typingEl.classList.add('active');
-    const delay = 600 + Math.random() * 1400;
-    setTimeout(() => {
-        const r = getResponse(text);
-        addMessage('sol', r.msg, r.thought, r.crisis);
-        typingEl.classList.remove('active');
-    }, delay);
+
+    // Crisis se detecta siempre localmente primero — respuesta inmediata, sin depender de red
+    const crisis = detectCrisis(text);
+    if (crisis !== 'normal') {
+        learnFromMessage(text);
+        const delay = 400 + Math.random() * 600;
+        setTimeout(() => {
+            const r = crisisResponse(crisis);
+            addMessage('sol', r.msg, r.thought, r.crisis);
+            typingEl.classList.remove('active');
+        }, delay);
+        return;
+    }
+
+    // Cerebro real: sol_core.py v4 (memoria unificada ~/.sol/) vía el backend
+    try {
+        const res = await fetch('/api/sol/think', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text })
+        });
+        if (!res.ok) throw new Error('backend no respondió ok');
+        const data = await res.json();
+        learnFromMessage(text);
+        const minDelay = 400;
+        setTimeout(() => {
+            addMessage('sol', data.response, data.intent === 'offline' ? 'cerebro offline · fallback local' : 'sol_core.py v4', false);
+            typingEl.classList.remove('active');
+        }, minDelay);
+    } catch (e) {
+        // Sin conexión al backend — fallback al cerebro local en JS
+        // (getResponse() ya llama a learnFromMessage internamente)
+        const delay = 600 + Math.random() * 1400;
+        setTimeout(() => {
+            const r = getResponse(text);
+            addMessage('sol', r.msg, (r.thought || '') + ' · sin conexión, respondiendo local', r.crisis);
+            typingEl.classList.remove('active');
+        }, delay);
+    }
 }
 
 // ============================================================
