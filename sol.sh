@@ -368,6 +368,17 @@ telegram_bot() {
     echo "   Agrega: TELEGRAM_BOT_TOKEN=tu_token"
     return 1
   fi
+  # NO se puede correr la miniapp y el puente a la vez (conflicto 409 Telegram API)
+  if pgrep -f sol_telegram_bridge >/dev/null 2>&1; then
+    echo "⚠️  El puente legacy ya está corriendo. Detenlo primero:"
+    echo "   pkill -f sol_telegram_bridge"
+    echo "   O: bash sol.sh stop && bash sol.sh telegram"
+    return 1
+  fi
+  if pgrep -f sol_telegram_bot.py >/dev/null 2>&1; then
+    echo "✅ La miniapp ya está corriendo."
+    return 0
+  fi
   # Verificar python-telegram-bot
   if ! python3 -c "import telegram" 2>/dev/null; then
     echo "📦 Instalando python-telegram-bot..."
@@ -377,10 +388,11 @@ telegram_bot() {
   echo "📡 Iniciando miniapp de Sol en Telegram..."
   nohup python3 sol_telegram_bot.py > "$SOL/telegram_bot.log" 2>&1 &
   echo $! > "$SOL/telegram_bot.pid"
-  sleep 2
+  sleep 3
   if kill -0 "$(cat "$SOL/telegram_bot.pid" 2>/dev/null)" 2>/dev/null; then
     echo "✅ Miniapp Telegram activa (PID $(cat "$SOL/telegram_bot.pid"))"
     echo "   Busca tu bot en Telegram y envía /start"
+    echo "   Comandos: /help para ver todo lo que puedo hacer"
   else
     echo "❌ No arrancó — ver $SOL/telegram_bot.log"
     tail -5 "$SOL/telegram_bot.log" 2>/dev/null

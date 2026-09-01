@@ -1190,7 +1190,38 @@ bash sol.sh telegram
 └─────────────────────────────────┘
 ```
 
-### 9.5 Mensajes de Voz
+### 9.5 Instalación en Termux
+
+**Dependencias obligatorias:**
+```bash
+pip install python-telegram-bot
+```
+
+**Dependencias opcionales:**
+```bash
+# psutil (para /sysinfo) — NO uses pip, usa pkg:
+pkg install python-psutil
+
+# Vosk (para transcripción de voz offline):
+pip install vosk
+# Descargar modelo español de https://alphacephei.com/vosk/models
+# Descomprimir en ~/.sol/vosk-model-es/
+```
+
+**⚠️ IMPORTANTE — Conflicto 409 de Telegram:**
+Solo UN bot puede hacer long-polling del mismo token a la vez.
+`omni.sh` y `sol.sh` manejan esto automáticamente — priorizan
+la Miniapp y usan el Puente legacy solo como fallback.
+Si arrancas manualmente, asegúrate de que solo uno esté corriendo:
+```bash
+# Verificar
+pgrep -f sol_telegram_bot    # miniapp
+pgrep -f sol_telegram_bridge # puente
+
+# Solo uno debe devolver un PID
+```
+
+### 9.6 Mensajes de Voz
 
 Sol puede transcribir mensajes de voz (audio) y responderlos
 naturalmente. Requiere uno de:
@@ -1201,7 +1232,7 @@ naturalmente. Requiere uno de:
 
 Sin estos, Sol avisa que no pudo transcribir pero sigue funcionando.
 
-### 9.6 Recordatorios
+### 9.7 Recordatorios
 
 Los recordatorios corren en un hilo separado. Cuando vence el tiempo,
 Sol envía el mensaje automáticamente vía Telegram API.
@@ -1214,7 +1245,7 @@ Sol envía el mensaje automáticamente vía Telegram API.
 /cancel_reminder a1b2c3d4
 ```
 
-### 9.7 Archivos de Sol en Telegram
+### 9.8 Archivos de Sol en Telegram
 
 ```
 ~/.sol/
@@ -1228,7 +1259,7 @@ Sol envía el mensaje automáticamente vía Telegram API.
 └── voice_*.ogg               # Audios temporales (auto-limpiados)
 ```
 
-### 9.8 Detener Telegram
+### 9.9 Detener Telegram
 
 ```bash
 # Detener todo (omni.sh)

@@ -150,6 +150,25 @@ else
     echo "  ⚠️  Sol autónoma: INACTIVA (usa 'bash ~/sol.sh start')"
 fi
 
+# 9. Telegram — miniapp o puente (al menos uno debe estar activo)
+echo "  Telegram:"
+TG_ACTIVE=0
+if pgrep -f "sol_telegram_bot.py" >/dev/null 2>&1; then
+    ok "Telegram Miniapp ☀️ activa"
+    TG_ACTIVE=1
+elif pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
+    ok "Telegram Puente ☀️ activo (legacy)"
+    TG_ACTIVE=1
+fi
+if [ "$TG_ACTIVE" = "0" ]; then
+    if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+        fail "Telegram inactivo (ejecuta: bash omni.sh start)"
+    else
+        echo "  ⚠️  Telegram: TELEGRAM_BOT_TOKEN no configurado"
+        PASS=$((PASS + 1))
+    fi
+fi
+
 echo ""
 echo "────────────────────────────────────────────────────────"
 echo "  RESULTADO: $PASS OK · $FAIL FALLO"
