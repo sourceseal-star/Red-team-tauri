@@ -8,6 +8,20 @@
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
+# ─── Cargar .env de la raiz del repo (para SMTP, Telegram, OSINT keys) ──
+# Commander vive en un subdirectorio y se arranca independiente del backend
+# principal, asi que nunca heredaba las variables de .env. Sin esto,
+# SMTP_SENDER_EMAIL/PASSWORD y demas quedaban vacias aunque estuvieran en .env.
+REPO_ROOT="$(dirname "$ROOT")"
+if [ -f "$REPO_ROOT/.env" ]; then
+    set -a
+    . "$REPO_ROOT/.env"
+    set +a
+    echo "[commander] .env cargado desde $REPO_ROOT/.env"
+else
+    echo "[commander][WARN] No se encontro .env en $REPO_ROOT — SMTP/Telegram/OSINT usaran valores por defecto (vacios)."
+fi
+
 PORT=8003
 BACKEND_API="${BACKEND_API:-http://localhost:8001}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
@@ -62,3 +76,4 @@ cleanup() {
 trap cleanup SIGTERM SIGINT
 
 wait
+
