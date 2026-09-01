@@ -51,7 +51,7 @@ import urllib.error
 import urllib.parse
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query, Depends, HTTPException, Security, Body
 from fastapi.security import APIKeyHeader
@@ -6533,21 +6533,21 @@ else:
 
 # ── PHANTOM (GHOST HUNTER) — recibir alertas del master node :8002 ────────────
 @app.post("/api/phantom/alert", dependencies=[])
-async def phantom_alert(payload: Dict[str, Any] = Body(default={})):
+async def phantom_alert(payload: dict = Body(default={})):
     """Recibe hallazgos críticos del orquestador GHOST HUNTER PHANTOM."""
     severity = payload.get("severity", "medium")
     title = payload.get("title", "Hallazgo PHANTOM")
     # Broadcast por WebSocket a todos los clientes conectados
-    await broadcast_ws({
-        "event": "phantom_alert",
+    await broadcast({
+        "type": "phantom_alert",
         "severity": severity,
         "title": title,
         "data": payload,
-        "timestamp": now_iso(),
+        "timestamp": datetime.now().isoformat(),
     })
     # Persistir como evidencia
     try:
-        alert_file = EVIDENCE_DIR / f"phantom_alert_{int(time.time()*1000)}.json"
+        alert_file = EVIDENCE / f"phantom_alert_{int(time.time()*1000)}.json"
         alert_file.write_text(json.dumps(payload, indent=2, default=str))
     except Exception:
         pass
