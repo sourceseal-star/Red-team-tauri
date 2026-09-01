@@ -52,13 +52,34 @@ MISSING=""
 python3 -c "import fastapi" 2>/dev/null && ok "fastapi" || MISSING="$MISSING fastapi"
 python3 -c "import uvicorn" 2>/dev/null && ok "uvicorn" || MISSING="$MISSING uvicorn"
 python3 -c "import httpx" 2>/dev/null && ok "httpx" || MISSING="$MISSING httpx"
-python3 -c "import psutil" 2>/dev/null && ok "psutil" || MISSING="$MISSING psutil"
 python3 -c "from Crypto.Cipher import AES" 2>/dev/null && ok "pycryptodome" || MISSING="$MISSING pycryptodome"
 
 if [ -n "$MISSING" ]; then
     warn "Faltan:$MISSING — instalando..."
     pip install -q $MISSING 2>&1 | tail -3
     ok "Dependencias instaladas"
+fi
+
+# psutil se instala aparte: en Termux necesita compilar extensiones C y
+# falla con "implicit-function-declaration" en clang moderno si no se
+# ajustan las flags. Es OPCIONAL — el backend arranca sin él (try/except
+# en dashboard_server.py), así que un fallo aquí NUNCA debe detener el arranque.
+if python3 -c "import psutil" 2>/dev/null; then
+    ok "psutil"
+else
+    warn "psutil no instalado — intentando compilar..."
+    pip install -q --upgrade pip setuptools wheel 2>&1 | tail -2
+    if pip install -q psutil 2>/dev/null; then
+        ok "psutil instalado"
+    else
+        info "Build simple falló, instalando clang y reintentando..."
+        pkg install -y clang >/dev/null 2>&1 || true
+        if CFLAGS="-Wno-error=implicit-function-declaration" pip install -q psutil 2>/dev/null; then
+            ok "psutil instalado (con CFLAGS de compatibilidad)"
+        else
+            warn "psutil no se pudo instalar — el dashboard funcionará sin métricas de CPU/RAM del sistema (no es crítico)"
+        fi
+    fi
 fi
 
 # ─── 3. .ENV ────────────────────────────────────────────────────────

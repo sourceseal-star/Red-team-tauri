@@ -85,10 +85,24 @@ python3 -c "from Crypto.Cipher import AES" 2>/dev/null && ok "pycryptodome OK" |
     ok "pycryptodome instalado"
 }
 
-# Verificar dependencias críticas
-for pkg in fastapi uvicorn httpx pydantic psutil aiohttp; do
+# Verificar dependencias críticas (psutil aparte — ver abajo, es opcional y compila C)
+for pkg in fastapi uvicorn httpx pydantic aiohttp; do
     python3 -c "import $pkg" 2>/dev/null && ok "$pkg OK" || warn "$pkg falta"
 done
+
+# psutil: opcional (el backend arranca sin él). En Termux la wheel puede
+# fallar a compilar con clang moderno — se reintenta con CFLAGS de
+# compatibilidad, pero nunca bloquea la sincronización.
+if python3 -c "import psutil" 2>/dev/null; then
+    ok "psutil OK"
+else
+    warn "psutil falta — intentando instalar..."
+    pip install -q psutil 2>/dev/null || {
+        pkg install -y clang >/dev/null 2>&1 || true
+        CFLAGS="-Wno-error=implicit-function-declaration" pip install -q psutil 2>/dev/null
+    }
+    python3 -c "import psutil" 2>/dev/null && ok "psutil instalado" || warn "psutil no disponible (no crítico — el dashboard funciona sin métricas de sistema)"
+fi
 
 # Node (frontend)
 echo -e "\n${C}Node:${N}"
