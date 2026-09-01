@@ -37,11 +37,77 @@ from pathlib import Path
 # DEPENDENCIAS OPCIONALES (graceful degradation)
 # ============================================================
 try:
-    from cryptography.fernet import Fernet
+
+    # ─── Reemplazo de cryptography.fernet.Fernet (pycryptodome, sin Rust) ───
+    # El paquete 'cryptography' requiere compilar un core en Rust y tiene un
+    # historial de romperse tras actualizaciones de Termux/pkg (cffi, ABI).
+    # Esta clase implementa el mismo formato wire de Fernet
+    # (https://github.com/fernet/spec) usando pycryptodome (pure C, sin Rust,
+    # con paquete Termux estable). Es 100% compatible con claves y tokens
+    # generados por cryptography.fernet.Fernet — no invalida datos cifrados
+    # previamente.
+    import os as _fernet_os
+    import time as _fernet_time
+    import struct as _fernet_struct
+    import hashlib as _fernet_hashlib
+    import hmac as _fernet_hmac
+    import base64 as _fernet_b64
+    from Crypto.Cipher import AES as _FernetAES
+    from Crypto.Util.Padding import pad as _fernet_pad, unpad as _fernet_unpad
+
+
+    class Fernet:
+        def __init__(self, key):
+            if isinstance(key, str):
+                key = key.encode()
+            try:
+                key_bytes = _fernet_b64.urlsafe_b64decode(key)
+            except Exception as exc:
+                raise ValueError("Fernet key must be 32 url-safe base64-encoded bytes.") from exc
+            if len(key_bytes) != 32:
+                raise ValueError("Fernet key must be 32 url-safe base64-encoded bytes.")
+            self._signing_key = key_bytes[:16]
+            self._encryption_key = key_bytes[16:]
+
+        @staticmethod
+        def generate_key():
+            return _fernet_b64.urlsafe_b64encode(_fernet_os.urandom(32))
+
+        def encrypt(self, data):
+            if isinstance(data, str):
+                data = data.encode()
+            iv = _fernet_os.urandom(16)
+            cipher = _FernetAES.new(self._encryption_key, _FernetAES.MODE_CBC, iv)
+            ciphertext = cipher.encrypt(_fernet_pad(data, 16))
+            ts = int(_fernet_time.time())
+            payload = b"\x80" + _fernet_struct.pack(">Q", ts) + iv + ciphertext
+            h = _fernet_hmac.new(self._signing_key, payload, _fernet_hashlib.sha256).digest()
+            return _fernet_b64.urlsafe_b64encode(payload + h)
+
+        def decrypt(self, token, ttl=None):
+            if isinstance(token, str):
+                token = token.encode()
+            try:
+                data = _fernet_b64.urlsafe_b64decode(token)
+            except Exception as exc:
+                raise ValueError("Invalid token") from exc
+            if len(data) < 73 or data[0:1] != b"\x80":
+                raise ValueError("Invalid token")
+            payload, h = data[:-32], data[-32:]
+            expected_h = _fernet_hmac.new(self._signing_key, payload, _fernet_hashlib.sha256).digest()
+            if not _fernet_hmac.compare_digest(h, expected_h):
+                raise ValueError("Invalid token (bad signature)")
+            ts = _fernet_struct.unpack(">Q", payload[1:9])[0]
+            if ttl is not None and (_fernet_time.time() - ts) > ttl:
+                raise ValueError("Token expired")
+            iv = payload[9:25]
+            ciphertext = payload[25:]
+            cipher = _FernetAES.new(self._encryption_key, _FernetAES.MODE_CBC, iv)
+            return _fernet_unpad(cipher.decrypt(ciphertext), 16)
     HAS_CRYPTO = True
 except ImportError:
     HAS_CRYPTO = False
-    print("⚠️ cryptography no instalado — cifrado limitado (pip install cryptography)")
+    print("⚠️ pycryptodome no instalado — cifrado limitado (pip install pycryptodome)")
 
 try:
     import aiohttp
@@ -58,7 +124,7 @@ try:
 except ImportError:
     HAS_FASTAPI = False
     print("⚠️ FastAPI no instalado (pip install fastapi uvicorn)")
-    print("   Instala con: pip install fastapi uvicorn aiohttp cryptography")
+    print("   Instala con: pip install fastapi uvicorn aiohttp pycryptodome")
 
 import argparse
 
@@ -987,7 +1053,7 @@ async def background_heartbeat():
 # ============================================================
 async def run_master():
     if not HAS_FASTAPI:
-        log_error("FastAPI no instalado. Instala con: pip install fastapi uvicorn aiohttp cryptography")
+        log_error("FastAPI no instalado. Instala con: pip install fastapi uvicorn aiohttp pycryptodome")
         sys.exit(1)
 
     print("""

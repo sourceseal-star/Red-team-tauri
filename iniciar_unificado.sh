@@ -67,6 +67,8 @@ echo ""
 DASHBOARD_PID=""
 MASTER_PID=""
 NODE_PID=""
+NEXUS_PID=""
+CONTROLLER_PID=""
 STOPPING=0
 
 cleanup() {
@@ -88,32 +90,28 @@ cleanup() {
 }
 trap 'cleanup; exit 0' SIGTERM SIGINT
 
-# ─── 0.a Preflight: reparar cryptography si está roto (Termux) ───────
-ensure_cryptography() {
-    if "$PYTHON_BIN" -c "import cryptography" >/dev/null 2>&1; then
+# ─── 0.a Preflight: verificar pycryptodome (reemplaza cryptography) ───
+ensure_pycryptodome() {
+    if "$PYTHON_BIN" -c "from Crypto.Cipher import AES" >/dev/null 2>&1; then
         return 0
     fi
-    echo "[unified][preflight] 'cryptography' no importa; intentando reparar..."
-    "$PYTHON_BIN" -m pip uninstall -y cryptography >/dev/null 2>&1 || true
-    if command -v pkg >/dev/null 2>&1; then
-        pkg install -y python-cryptography >/dev/null 2>&1 || true
-    fi
-    if "$PYTHON_BIN" -c "import cryptography" >/dev/null 2>&1; then
-        echo "[unified][preflight] ✅ cryptography reparado vía pkg"
+    echo "[unified][preflight] pycryptodome no importa; instalando..."
+    "$PYTHON_BIN" -m pip install pycryptodome >/dev/null 2>&1 || true
+    if "$PYTHON_BIN" -c "from Crypto.Cipher import AES" >/dev/null 2>&1; then
+        echo "[unified][preflight] ✅ pycryptodome instalado"
         return 0
     fi
     if command -v pkg >/dev/null 2>&1; then
-        pkg install -y rust clang openssl libffi >/dev/null 2>&1 || true
+        pkg install -y python-pycryptodome >/dev/null 2>&1 || true
     fi
-    "$PYTHON_BIN" -m pip install --no-cache-dir --no-binary cryptography cryptography >/dev/null 2>&1 || true
-    if "$PYTHON_BIN" -c "import cryptography" >/dev/null 2>&1; then
-        echo "[unified][preflight] ✅ cryptography compilado localmente"
+    if "$PYTHON_BIN" -c "from Crypto.Cipher import AES" >/dev/null 2>&1; then
+        echo "[unified][preflight] ✅ pycryptodome instalado vía pkg"
         return 0
     fi
-    echo "[unified][preflight][ERROR] No pude reparar cryptography." >&2
+    echo "[unified][preflight][ERROR] No pude instalar pycryptodome." >&2
     return 1
 }
-ensure_cryptography || exit 1
+ensure_pycryptodome || exit 1
 
 # ─── 0.b Preflight: liberar puertos ocupados por instancias previas ──
 free_port() {

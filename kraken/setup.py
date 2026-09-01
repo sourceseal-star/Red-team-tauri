@@ -29,7 +29,7 @@ setup(
         "python-dotenv>=1.0",
         "pyyaml>=6.0",
         "passlib>=1.7",
-        "cryptography>=41.0",
+        "pycryptodome>=3.19",
     ],
     entry_points={
         "console_scripts": [

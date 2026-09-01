@@ -44,7 +44,7 @@ def generate_mock_jwt(device_id: str, nonce: str) -> str:
     encoded_payload = b64_encode(payload)
     mock_signature = "mock_signature_bytes_here"
     
-    # Return mock token prefix to inform the server to bypass cryptography checks
+    # Return mock token prefix to inform the server to bypass crypto checks
     return f"mock_play_integrity_jwt_token_for_{encoded_header}.{encoded_payload}.{mock_signature}"
 
 def send_post_request(url: str, data: Dict[str, Any]) -> Dict[str, Any]:

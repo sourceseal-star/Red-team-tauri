@@ -153,9 +153,9 @@ if [ -f "$COMMANDER_DIR/requirements.txt" ]; then
   info "Instalando dependencias de Commander..."
   python -m pip install -r "$COMMANDER_DIR/requirements.txt"
 else
-  python -m pip install cryptography
+  python -m pip install pycryptodome
 fi
-python3 -c "import cryptography" 2>/dev/null || die "cryptography no quedó disponible para Commander"
+python3 -c "from Crypto.Cipher import AES" 2>/dev/null || die "pycryptodome no quedó disponible para Commander"
 ok "Dependencias Python listas (Red-team-tauri + Commander)"
 
 # ── 5. Dependencias Node + build real del frontend ───────────────────────────

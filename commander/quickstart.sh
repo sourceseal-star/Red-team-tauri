@@ -87,12 +87,12 @@ if [ "$TEST_ONLY" -eq 0 ]; then
 
   # 4. Dependencias Python
   echo -e "${C}[4/4] Verificando dependencias Python...${N}"
-  python3 -c "from cryptography.fernet import Fernet" 2>/dev/null && {
-    ok "cryptography instalado"
+  python3 -c "from Crypto.Cipher import AES" 2>/dev/null && {
+    ok "pycryptodome instalado"
   } || {
-    warn "Instalando cryptography..."
-    pip install cryptography 2>&1 | tail -3
-    python3 -c "from cryptography.fernet import Fernet" 2>/dev/null && ok "cryptography instalado" || fail "cryptography falló"
+    warn "Instalando pycryptodome..."
+    pip install pycryptodome 2>&1 | tail -3
+    python3 -c "from Crypto.Cipher import AES" 2>/dev/null && ok "pycryptodome instalado" || fail "pycryptodome falló"
   }
 
   python3 -c "import sqlite3" 2>/dev/null && ok "sqlite3 (stdlib) OK" || fail "sqlite3 no disponible"
@@ -124,11 +124,15 @@ echo ""
 echo -e "${B}── Cifrado Fernet ──${N}"
 # Test 3: Cifrado/descifrado
 if python3 -c "
-from cryptography.fernet import Fernet
-key = Fernet.generate_key()
-f = Fernet(key)
-enc = f.encrypt(b'SourceSeal test')
-dec = f.decrypt(enc)
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
+import os
+key = os.urandom(16)
+iv = os.urandom(16)
+cipher = AES.new(key, AES.MODE_CBC, iv)
+enc = cipher.encrypt(pad(b'SourceSeal test', 16))
+cipher2 = AES.new(key, AES.MODE_CBC, iv)
+dec = unpad(cipher2.decrypt(enc), 16)
 assert dec == b'SourceSeal test'
 print('OK')
 " 2>/dev/null | grep -q "OK"; then

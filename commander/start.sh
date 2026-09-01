@@ -61,7 +61,7 @@ check_commander_deps() {
     command -v whois >/dev/null 2>&1 && ok "whois disponible" || warn "whois no instalado (OSINT limitado)"
     command -v sqlite3 >/dev/null 2>&1 && ok "sqlite3 disponible" || fail "sqlite3 no instalado"
     
-    python3 -c "from cryptography.fernet import Fernet" 2>/dev/null && ok "cryptography OK" || warn "pip install cryptography"
+    python3 -c "from Crypto.Cipher import AES" 2>/dev/null && ok "pycryptodome OK" || warn "pip install pycryptodome"
     python3 -c "import sqlite3" 2>/dev/null && ok "sqlite3 (stdlib) OK" || fail "sqlite3 stdlib no disponible"
     
     [ -f "$COMMANDER" ] && ok "commander.py encontrado" || fail "commander.py no encontrado"

@@ -1,5 +1,5 @@
 # Commander (core)
-cryptography>=41.0.0
+pycryptodome>=3.19  # antes cryptography (requeria Rust; historial de romperse en Termux)
 
 # SourceSeal Tactical (opcional pero recomendado)
 fastapi>=0.104.0

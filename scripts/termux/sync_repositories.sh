@@ -237,11 +237,11 @@ if [ -f "$COMMANDER_DIR/requirements.txt" ]; then
   python3 -m pip install -r "$COMMANDER_DIR/requirements.txt"
 fi
 
-if ! python3 -c 'from cryptography.fernet import Fernet' >/dev/null 2>&1; then
-  say "cryptography no puede importarse; reinstalando cryptography y cffi para el Python actual..."
-  python3 -m pip install --upgrade --force-reinstall --no-cache-dir cryptography cffi
+if ! python3 -c 'from Crypto.Cipher import AES' >/dev/null 2>&1; then
+  say "pycryptodome no puede importarse; reinstalando..."
+  python3 -m pip install --upgrade --force-reinstall --no-cache-dir pycryptodome
 else
-  say "cryptography: OK"
+  say "pycryptodome: OK"
 fi
 
 printf '\n'

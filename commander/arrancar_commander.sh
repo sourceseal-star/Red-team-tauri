@@ -39,7 +39,7 @@ pkill -f "commander_server.py" 2>/dev/null || true
 sleep 1
 
 # ─── Verificar dependencias Python ───────────────────────
-if ! "$PYTHON_BIN" -c "import cryptography, fastapi, httpx, pydantic, uvicorn" 2>/dev/null; then
+if ! "$PYTHON_BIN" -c "from Crypto.Cipher import AES; import fastapi, httpx, pydantic, uvicorn" 2>/dev/null; then
     echo "[commander] Instalando dependencias Python..."
     "$PYTHON_BIN" -m pip install -r "$ROOT/requirements.txt"
 fi
