@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Globe, Search, Mail, Server, Clock, FileText, Shield, AlertTriangle,
   Check, X, Download, Lock, Network, Fingerprint, Users, Globe2,
@@ -264,6 +264,45 @@ function ReverseIpView({ data }: { data?: ReverseIpData }) {
   );
 }
 
+// ─── INTEL STATUS BADGE — muestra qué APIs de Threat Intel están activas ───
+function IntelStatusBadge() {
+  const [sources, setSources] = useState<Record<string, { active: boolean; mode: string; url?: string }>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/ops/intel-status')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d?.sources) setSources(d.sources);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return <span className="text-[10px] text-gray-500 font-mono animate-pulse">Cargando APIs…</span>;
+
+  const entries = Object.entries(sources);
+  if (!entries.length) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {entries.map(([name, info]) => (
+        <span
+          key={name}
+          className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+            info.active
+              ? 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10'
+              : 'border-gray-700 text-gray-500 bg-gray-800/30'
+          }`}
+          title={info.active ? `${name} — modo ${info.mode}` : `${name} — inactivo`}
+        >
+          {name} {info.active ? '✅' : '⬜'}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function OSINTPanel() {
   const [target, setTarget] = useState('');
   const [selectedTool, setSelectedTool] = useState('whois');
@@ -358,9 +397,12 @@ export default function OSINTPanel() {
     <div className="bg-[var(--ss-bg-2)] border border-[var(--ss-border)] rounded-lg p-3.5 h-full flex flex-col font-sans space-y-3">
       {/* HEADER */}
       <div className="flex items-center justify-between pb-2 border-b border-[var(--ss-border)]">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-fuchsia-400 flex items-center gap-2 font-mono">
-          <Globe size={15} /> Super OSINT Engine
-        </h3>
+        <div className="flex flex-col gap-1">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-fuchsia-400 flex items-center gap-2 font-mono">
+            <Globe size={15} /> Super OSINT Engine
+          </h3>
+          <IntelStatusBadge />
+        </div>
         <button
           onClick={handleExport}
           disabled={!target.trim() || loadingTool === 'export'}

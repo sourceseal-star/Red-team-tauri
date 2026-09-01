@@ -247,30 +247,74 @@ async def android_wifi():
 
 def _open_osmand(uri: str) -> dict:
     package = _package_installed(["net.osmand", "net.osmand.plus"])
-    if package and _available("am"):
+    if not package:
+        return {"opened": False, "error": "OsmAnd no está instalado", "hint": "Instala OsmAnd desde F-Droid o Play Store"}
+    if not _available("am"):
+        if _available("termux-open-url"):
+            try:
+                result = subprocess.run(["termux-open-url", uri], capture_output=True, text=True, timeout=10, check=False)
+                if result.returncode == 0:
+                    return {"opened": True, "method": "termux-open-url", "uri": uri}
+            except Exception:
+                pass
+        return {"opened": False, "error": "Ni 'am' ni 'termux-open-url' disponibles"}
+
+    # Intentar osmand:// deep link primero (más directo para OsmAnd)
+    # Construir URI osmand:// si tenemos lat/lon del geo: URI
+    osmand_uri = None
+    if uri.startswith("geo:"):
+        coords = uri[4:].split("?")[0].split(",")
+        if len(coords) == 2:
+            try:
+                lat, lon = float(coords[0]), float(coords[1])
+                label_part = ""
+                if "?q=" in uri:
+                    label_part = "&label=" + uri.split("?q=")[1]
+                osmand_uri = f"osmand://goto?lat={lat}&lon={lon}{label_part}"
+            except (ValueError, IndexError):
+                pass
+
+    attempts = []
+
+    # Método 1: osmand:// deep link (si se pudo construir)
+    if osmand_uri:
+        try:
+            result = subprocess.run(
+                ["am", "start", "-a", "android.intent.action.VIEW", "-d", osmand_uri, "-p", package],
+                capture_output=True, text=True, timeout=10, check=False
+            )
+            if result.returncode == 0:
+                return {"opened": True, "method": "osmand-deeplink", "package": package, "uri": osmand_uri}
+            attempts.append(f"osmand://: {(result.stderr or '').strip()}")
+        except Exception as e:
+            attempts.append(f"osmand://: {e}")
+
+    # Método 2: geo: URI estándar (fallback)
+    try:
         result = subprocess.run(
             ["am", "start", "-a", "android.intent.action.VIEW", "-d", uri, "-p", package],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
+            capture_output=True, text=True, timeout=10, check=False
         )
         if result.returncode == 0:
-            return {"opened": True, "method": "android-intent", "package": package, "uri": uri}
-        error = (result.stderr or result.stdout or "intent rechazado").strip()
-    else:
-        error = "OsmAnd o el comando am no están disponibles"
+            return {"opened": True, "method": "geo-intent", "package": package, "uri": uri}
+        attempts.append(f"geo:: {(result.stderr or '').strip()}")
+    except Exception as e:
+        attempts.append(f"geo:: {e}")
+
+    # Método 3: termux-open-url (último recurso)
     if _available("termux-open-url"):
-        result = subprocess.run(
-            ["termux-open-url", uri],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        if result.returncode == 0:
-            return {"opened": True, "method": "termux-open-url", "uri": uri}
-    return {"opened": False, "error": error}
+        try:
+            result = subprocess.run(
+                ["termux-open-url", uri],
+                capture_output=True, text=True, timeout=10, check=False
+            )
+            if result.returncode == 0:
+                return {"opened": True, "method": "termux-open-url", "uri": uri}
+            attempts.append(f"termux-open-url: {(result.stderr or '').strip()}")
+        except Exception as e:
+            attempts.append(f"termux-open-url: {e}")
+
+    return {"opened": False, "error": "No se pudo abrir OsmAnd", "attempts": attempts, "package": package}
 
 
 @router.post("/open-osmand")
@@ -295,20 +339,58 @@ async def open_osmand(body: dict = Body(...)):
 
 def _open_netguard() -> dict:
     package = _package_installed(["eu.faircode.netguard", "eu.faircode.netguard.debug"])
-    if not package or not _available("am"):
-        return {"opened": False, "error": "NetGuard o el comando am no están disponibles"}
+    if not package:
+        return {"opened": False, "error": "NetGuard no está instalado", "hint": "Instala NetGuard desde F-Droid o Play Store"}
+    if not _available("am"):
+        return {"opened": False, "error": "Comando 'am' no disponible (¿estás en Termux?)", "package": package}
+
+    # Método 1: am start directo con activity conocida
+    # Método 2: am start con MAIN/LAUNCHER
+    # Método 3: cmd package resolve-activity (descubre la activity automáticamente)
+    # Método 4: Abrir manual (sin error rojo)
     commands = [
-        ["am", "start", "-n", f"{package}/.MainActivity"],
-        ["am", "start", "-a", "android.intent.action.MAIN",
-         "-c", "android.intent.category.LAUNCHER", "-p", package],
+        ("am start directo", ["am", "start", "-n", f"{package}/.MainActivity"]),
+        ("am start LAUNCHER", ["am", "start", "-a", "android.intent.action.MAIN",
+         "-c", "android.intent.category.LAUNCHER", "-p", package]),
     ]
-    error = "no se pudo abrir NetGuard"
-    for command in commands:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=10, check=False)
-        if result.returncode == 0:
-            return {"opened": True, "method": "android-intent", "package": package}
-        error = (result.stderr or result.stdout or error).strip()
-    return {"opened": False, "error": error, "package": package}
+
+    # Método 3: resolver la activity principal con cmd package
+    if _available("cmd"):
+        try:
+            resolve = subprocess.run(
+                ["cmd", "package", "resolve-activity", "--brief", package],
+                capture_output=True, text=True, timeout=5, check=False
+            )
+            if resolve.returncode == 0:
+                activity = (resolve.stdout or "").strip().splitlines()[-1].strip()
+                if activity and "/" in activity:
+                    commands.append(("cmd resolve-activity", ["am", "start", "-n", activity]))
+        except Exception:
+            pass  # fallback al método 4
+
+    errors = []
+    for label, command in commands:
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=10, check=False)
+            if result.returncode == 0:
+                return {"opened": True, "method": label, "package": package}
+            err = (result.stderr or result.stdout or "").strip()
+            if err:
+                errors.append(f"{label}: {err}")
+        except subprocess.TimeoutExpired:
+            errors.append(f"{label}: timeout")
+        except Exception as e:
+            errors.append(f"{label}: {e}")
+
+    # Método 4: abrir manual — no es un error rojo, es una indicación
+    return {
+        "opened": False,
+        "error": "No se pudo abrir automáticamente",
+        "hint": f"Abre NetGuard manualmente: Settings → Apps → NetGuard → Open",
+        "package": package,
+        "attempts": errors,
+        "manual": True
+    }
 
 
 @router.post("/open-netguard")

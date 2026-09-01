@@ -3676,6 +3676,11 @@ DEFAULT_OPS = {
     "virustotal_api_key": "",
     "abuseipdb_key": "",
     "github_token": "",
+    "censys_api_id": "",
+    "censys_api_secret": "",
+    "hunter_api_key": "",
+    "google_api_key": "",
+    "google_cse_id": "",
     "scan_subnet": "",           # vacío = auto-detectar
     "scan_ports": "80,443,22,554,8080,8000,23,21,445,139,53,8443,37777,8081,88",
     "scan_timeout": 0.5,         # segundos por puerto TCP
@@ -3703,6 +3708,11 @@ def _apply_ops_to_env(ops: dict):
         "virustotal_api_key": "VIRUSTOTAL_API_KEY",
         "abuseipdb_key": "ABUSEIPDB_KEY",
         "github_token": "GITHUB_TOKEN",
+        "censys_api_id": "CENSYS_API_ID",
+        "censys_api_secret": "CENSYS_API_SECRET",
+        "hunter_api_key": "HUNTER_API_KEY",
+        "google_api_key": "GOOGLE_API_KEY",
+        "google_cse_id": "GOOGLE_CSE_ID",
     }
     for cfg_key, env_key in key_map.items():
         val = ops.get(cfg_key, "")
@@ -3718,7 +3728,8 @@ async def ops_config_get():
     Las API keys se devuelven enmascaradas (solo primeros 4 + últimos 4 chars)."""
     ops = _load_ops()
     safe = dict(ops)
-    for k in ("shodan_api_key", "virustotal_api_key", "abuseipdb_key", "github_token"):
+    for k in ("shodan_api_key", "virustotal_api_key", "abuseipdb_key", "github_token",
+              "censys_api_id", "censys_api_secret", "hunter_api_key", "google_api_key", "google_cse_id"):
         v = safe.get(k, "")
         if v and len(v) > 12:
             safe[k] = v[:4] + "••••" + v[-4:]
@@ -3749,6 +3760,41 @@ async def ops_config_post(request: Request):
     _save_ops(current)
     _apply_ops_to_env(current)
     return {"ok": True, "applied": True}
+
+@app.get("/api/ops/intel-status")
+async def ops_intel_status():
+    """Reporta qué fuentes de Threat Intel están activas (con API key) vs inactivas.
+    No expone las keys — solo dice SÍ/NO por fuente."""
+    sources = [
+        ("VirusTotal", "VIRUSTOTAL_API_KEY", "https://www.virustotal.com"),
+        ("Shodan", "SHODAN_API_KEY", "https://www.shodan.io"),
+        ("Censys", "CENSYS_API_ID", "https://search.censys.io"),
+        ("AbuseIPDB", "ABUSEIPDB_KEY", "https://www.abuseipdb.com"),
+        ("Hunter.io", "HUNTER_API_KEY", "https://hunter.io"),
+        ("Google CSE", "GOOGLE_API_KEY", "https://console.cloud.google.com"),
+        ("GitHub", "GITHUB_TOKEN", "https://github.com"),
+        ("ThreatFox", None, "https://threatfox.abuse.ch"),
+    ]
+    result = {}
+    active_count = 0
+    for name, env_var, url in sources:
+        if env_var is None:
+            # ThreatFox — API pública, sin key
+            result[name] = {"active": True, "mode": "real", "url": url, "note": "API pública, sin autenticación"}
+            active_count += 1
+        else:
+            val = os.environ.get(env_var, "").strip()
+            if val:
+                result[name] = {"active": True, "mode": "real", "url": url}
+                active_count += 1
+            else:
+                result[name] = {"active": False, "mode": "disabled", "url": url, "hint": f"Set {env_var} en .env o Settings"}
+    return {
+        "sources": result,
+        "active_count": active_count,
+        "total_sources": len(sources),
+        "summary": f"{active_count}/{len(sources)} fuentes activas",
+    }
 
 @app.post("/api/ops/test-key")
 async def ops_test_key(request: Request):
