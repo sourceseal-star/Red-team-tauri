@@ -84,6 +84,57 @@ cleanup() {
 }
 trap 'cleanup; exit 0' SIGTERM SIGINT
 
+# ─── 0.a Preflight: reparar cryptography si está roto (Termux) ───────
+ensure_cryptography() {
+    if "$PYTHON_BIN" -c "import cryptography" >/dev/null 2>&1; then
+        return 0
+    fi
+    echo "[unified][preflight] 'cryptography' no importa; intentando reparar..."
+    "$PYTHON_BIN" -m pip uninstall -y cryptography >/dev/null 2>&1 || true
+    if command -v pkg >/dev/null 2>&1; then
+        pkg install -y python-cryptography >/dev/null 2>&1 || true
+    fi
+    if "$PYTHON_BIN" -c "import cryptography" >/dev/null 2>&1; then
+        echo "[unified][preflight] ✅ cryptography reparado vía pkg"
+        return 0
+    fi
+    if command -v pkg >/dev/null 2>&1; then
+        pkg install -y rust clang openssl libffi >/dev/null 2>&1 || true
+    fi
+    "$PYTHON_BIN" -m pip install --no-cache-dir --no-binary cryptography cryptography >/dev/null 2>&1 || true
+    if "$PYTHON_BIN" -c "import cryptography" >/dev/null 2>&1; then
+        echo "[unified][preflight] ✅ cryptography compilado localmente"
+        return 0
+    fi
+    echo "[unified][preflight][ERROR] No pude reparar cryptography." >&2
+    return 1
+}
+ensure_cryptography || exit 1
+
+# ─── 0.b Preflight: liberar puertos ocupados por instancias previas ──
+free_port() {
+    local port="$1"
+    local pids=""
+    if command -v fuser >/dev/null 2>&1; then
+        pids="$(fuser -n tcp "$port" 2>/dev/null || true)"
+    fi
+    if [ -z "$pids" ] && command -v lsof >/dev/null 2>&1; then
+        pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    fi
+    if [ -z "$pids" ] && command -v ss >/dev/null 2>&1; then
+        pids="$(ss -H -ltnp "sport = :$port" 2>/dev/null \
+            | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u)"
+    fi
+    if [ -n "$pids" ]; then
+        echo "[unified][preflight] Liberando puerto $port (PIDs: $pids)"
+        # shellcheck disable=SC2086
+        kill -9 $pids 2>/dev/null || true
+        sleep 1
+    fi
+}
+free_port "$PORT"
+free_port "$MASTER_PORT"
+
 echo "[unified] Limpiando procesos previos..."
 pkill -f "$ROOT/redteam/scripts/dashboard_server.py" 2>/dev/null || true
 pkill -f "$ROOT/ghost_hunter_phantom/master.py" 2>/dev/null || true
@@ -149,7 +200,7 @@ elif [ -f "$COMMANDER_DIR/commander.py" ]; then
         sleep 1
     done
     if [ "$COMMANDER_READY" != "1" ]; then
-        echo "[unified][WARN] Commander no respondió; Dashboard continúa activo"
+        echo "[unified][WARN] Commander no respondió; Dashboard continua activo"
     fi
 else
     echo "[unified][WARN] Commander no encontrado: $COMMANDER_DIR"
@@ -181,13 +232,13 @@ fi
 
 cd "$ROOT"
 echo ""
-echo "╔═══════════════════════════════════════════════════════╗"
+echo "╔══════════════════════════════════════════════════════╗"
 echo "║  SOURCESEAL UNIFIED — Sistema activo                   ║"
 echo "║  Dashboard:  http://127.0.0.1:$PORT                    ║"
 echo "║  Commander:  http://127.0.0.1:$PORT/api/commander/health║"
 echo "║  PHANTOM:    http://127.0.0.1:$MASTER_PORT/api/status  ║"
 echo "║  Caza:       POST :$MASTER_PORT/api/hunt/start          ║"
-echo "╚═══════════════════════════════════════════════════════╝"
+echo "╚══════════════════════════════════════════════════════╝"
 echo ""
 echo "[unified] Presiona Ctrl+C para detener todo."
 
