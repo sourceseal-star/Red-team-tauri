@@ -3233,6 +3233,37 @@ async def ai_history(limit: int = 20):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SOL — Testigo personal (HTML estático local, sin dependencias)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/sol")
+async def sol_page():
+    """Página de Sol — sirve el HTML estático desde tauri-frontend/dist/."""
+    import os
+    sol_path = os.path.join(PROJECT_ROOT, "..", "tauri-frontend", "dist", "sol.html")
+    if not os.path.isfile(sol_path):
+        # Fallback: buscar en otras ubicaciones comunes
+        for candidate in [
+            os.path.join(PROJECT_ROOT, "tauri-frontend", "dist", "sol.html"),
+            os.path.join(os.getcwd(), "tauri-frontend", "dist", "sol.html"),
+            os.path.join(os.getcwd(), "dist", "sol.html"),
+        ]:
+            if os.path.isfile(candidate):
+                sol_path = candidate
+                break
+    if os.path.isfile(sol_path):
+        return FileResponse(sol_path, media_type="text/html")
+    raise HTTPException(404, "Sol no encuentra su página. Ejecuta: bash setup.sh")
+
+@app.get("/sol.html")
+async def sol_page_alt():
+    """Alias directo."""
+    return await sol_page()
+
+
 # STARTUP
 # ═══════════════════════════════════════════════════════════════════════════════
 
