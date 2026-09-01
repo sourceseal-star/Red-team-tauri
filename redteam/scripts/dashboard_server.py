@@ -68,8 +68,17 @@ BASE       = SCRIPT_DIR.parent                         # redteam/
 ROOT       = BASE                                       # alias
 DIST       = (BASE.parent / "tauri-frontend" / "dist").resolve()
 PROJECT_ROOT = BASE.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# sys.path: garantizar que todos los módulos del repo sean importables
+# sin importar desde qué directorio se ejecute el script.
+for _p in [
+    str(PROJECT_ROOT),
+    str(SCRIPT_DIR),                           # redteam/scripts/ (modules.*, tlsproxy.*)
+    str(PROJECT_ROOT / "leviathan_core"),      # leviathan_core.*
+    str(PROJECT_ROOT / "kraken"),              # kraken.*
+    str(PROJECT_ROOT / "commander"),           # commander.*
+]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 from nexus_credentials import (
     ensure_managed_secret,
     ensure_nexus_credentials,

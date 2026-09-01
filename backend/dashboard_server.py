@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# DEPRECATED: No ejecutar directamente.
+# El backend activo es redteam/scripts/dashboard_server.py (231 rutas).
+# Este archivo queda solo como referencia histórica.
+# start_all.sh y iniciar_unificado.sh usan la versión completa.
 """
 SourceSeal Red Team Dashboard — Backend FastAPI v3.2
 Puerto: 8001 | Protocolo: SSP-ZKP-2048-L4

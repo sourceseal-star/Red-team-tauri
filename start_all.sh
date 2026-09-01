@@ -57,15 +57,20 @@ if [ ! -f "$COMMANDER_DIR/ai_orchestrator.py" ] && [ -f "$ROOT/commander/ai_orch
   export COMMANDER_DIR="$ROOT/commander"
 fi
 
+# PYTHONPATH: para que el backend completo encuentre leviathan_core, kraken, commander, modules, etc.
+export PYTHONPATH="$ROOT:$ROOT/redteam/scripts:$ROOT/leviathan_core:$ROOT/kraken:$ROOT/commander:${PYTHONPATH:-}"
+
 PIDS=()
 
-# 1. Dashboard (:8001)
-echo -e "${G}[1] Dashboard en :8001...${N}"
+# 1. Dashboard (:8001) — Backend completo (231 rutas)
+echo -e "${G}[1] Dashboard en :8001 (backend completo: redteam/scripts/dashboard_server.py)...${N}"
 pkill -f "dashboard_server.py" 2>/dev/null || true
 sleep 1
-nohup python3 "$ROOT/backend/dashboard_server.py" > "$HOME/dashboard.log" 2>&1 &
+cd "$ROOT/redteam/scripts"
+nohup python3 "$ROOT/redteam/scripts/dashboard_server.py" > "$HOME/dashboard.log" 2>&1 &
 DASH_PID=$!
 PIDS+=("$DASH_PID")
+cd "$ROOT"
 
 for i in $(seq 1 15); do
   curl -s http://127.0.0.1:8001/api/health >/dev/null 2>&1 && break
