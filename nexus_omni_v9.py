@@ -4,6 +4,15 @@
 NEXUS OMNI-SENTIENT v9.0 — Plataforma Cognitiva de Red
 Autor: Harold Paredes / SourceSeal Global Protocol
 Arquitectura: Predictiva, Adaptativa, Auto-Reparable.
+
+v9.1 — Datos reales:
+  - MAC real desde tabla ARP del sistema (ip neigh / arp -n)
+  - Vendor por prefijo OUI (tabla parcial, ampliable)
+  - Hostname real por DNS inverso
+  - Geolocalización real SOLO para IPs públicas (ip-api.com, sin API key)
+  - IPs privadas NO se geolocalizan con coordenadas falsas — se marcan
+    is_private=True y se muestran en el panel de red local, no en el mapa
+  - Eventos reales (anomalías/adaptaciones) expuestos via /api/events
 """
 
 import asyncio
@@ -18,6 +27,7 @@ import time
 import random
 import math
 import re
+import socket
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple, Any
 from collections import deque
@@ -30,7 +40,7 @@ from nexus_credentials import ensure_nexus_credentials
 try:
     import aiohttp
 except ImportError:
-    # El motor puede escanear y servir su API sin alertas Telegram.
+    # El motor puede escanear y servir su API sin alertas Telegram ni geo-IP real.
     aiohttp = None
 from io import BytesIO
 
@@ -48,11 +58,11 @@ CONFIG = {
     "db_path": os.environ.get("NEXUS_DB", "nexus_omni.db"),
     "ports_critical": [21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 993, 995, 1433, 1521, 3306, 3389, 5432, 5900, 8080, 8443, 8888, 37777, 34567, 554],
     "ports_common": [80, 443, 8080, 8000, 554],
-    
+
     # Umbrales de IA
     "anomaly_threshold": 3, # Cambios necesarios para alertar
     "prediction_window": 5, # Escaneos históricos para predecir
-    
+
     # Modos Adaptativos
     "modes": {
         "passive": {"timeout": 2.0, "concurrent": 2, "delay": 1.0},
@@ -60,11 +70,138 @@ CONFIG = {
         "active": {"timeout": 0.5, "concurrent": 40, "delay": 0.05},
         "frenzy": {"timeout": 0.2, "concurrent": 80, "delay": 0.01} # Solo si se detecta amenaza alta
     },
-    
+
     "base_coords": {"lat": 4.7110, "lon": -74.0721},
     "auth_user": NEXUS_CREDENTIALS.user,
     "auth_pass": NEXUS_CREDENTIALS.password,
 }
+
+# ============================================================
+# ENRIQUECIMIENTO DE DATOS REALES
+# ============================================================
+
+# Tabla OUI parcial (prefijos MAC -> fabricante). Datos públicos IEEE.
+# No es exhaustiva — dispositivos no listados devuelven "Desconocido"
+# en vez de inventar un fabricante. Ampliar según necesidad.
+MAC_VENDOR_PREFIXES = {
+    "B8:27:EB": "Raspberry Pi Foundation", "DC:A6:32": "Raspberry Pi Foundation",
+    "E4:5F:01": "Raspberry Pi Foundation",
+    "24:0A:C4": "Espressif (ESP32/ESP8266)", "30:AE:A4": "Espressif (ESP32/ESP8266)",
+    "3C:71:BF": "Espressif (ESP32/ESP8266)", "68:C6:3A": "Espressif (ESP32/ESP8266)",
+    "AC:67:B2": "Espressif (ESP32/ESP8266)",
+    "50:C7:BF": "TP-Link", "98:DA:C4": "TP-Link", "EC:08:6B": "TP-Link",
+    "5C:0A:5B": "Samsung", "78:1F:DB": "Samsung",
+    "00:E0:FC": "Huawei", "48:5D:60": "Huawei",
+    "34:CE:00": "Xiaomi", "64:09:80": "Xiaomi",
+    "68:37:E9": "Amazon", "FC:65:DE": "Amazon",
+    "54:60:09": "Google", "F4:F5:D8": "Google",
+    "44:19:B6": "Hikvision", "BC:AD:28": "Hikvision",
+    "3C:EF:8C": "Dahua", "9C:8E:CD": "Dahua",
+    "24:5A:4C": "Ubiquiti Networks", "FC:EC:DA": "Ubiquiti Networks",
+    "5C:AA:FD": "Sonos",
+    "00:1A:A1": "Cisco",
+    "04:D4:C4": "ASUSTek",
+}
+
+_ARP_CACHE: Dict[str, str] = {}
+_ARP_CACHE_TS: float = 0.0
+_GEO_CACHE: Dict[str, Optional[Dict]] = {}
+
+
+def _is_private_ip(ip: str) -> bool:
+    try:
+        return ipaddress.ip_address(ip).is_private
+    except ValueError:
+        return True
+
+
+def _vendor_from_mac(mac: str) -> str:
+    if not mac:
+        return ""
+    prefix = mac.upper()[:8]  # AA:BB:CC
+    return MAC_VENDOR_PREFIXES.get(prefix, "Desconocido")
+
+
+def _get_arp_table(force: bool = False) -> Dict[str, str]:
+    """Lee la tabla ARP real del sistema (ip neigh / arp -n).
+    Cachea 15s para no golpear el sistema en cada escaneo."""
+    global _ARP_CACHE, _ARP_CACHE_TS
+    if not force and (time.time() - _ARP_CACHE_TS) < 15 and _ARP_CACHE:
+        return _ARP_CACHE
+
+    table: Dict[str, str] = {}
+    # Intento 1: ip neigh (Linux moderno / Termux con paquete iproute2)
+    try:
+        res = subprocess.run(["ip", "neigh", "show"], capture_output=True, text=True, timeout=2)
+        for line in res.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and "lladdr" in parts:
+                ip = parts[0]
+                mac_idx = parts.index("lladdr") + 1
+                if mac_idx < len(parts):
+                    table[ip] = parts[mac_idx].upper()
+    except Exception:
+        pass
+
+    # Intento 2: arp -n (fallback si iproute2 no está disponible)
+    if not table:
+        try:
+            res = subprocess.run(["arp", "-n"], capture_output=True, text=True, timeout=2)
+            for line in res.stdout.splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 3 and re.match(r"^[0-9a-fA-F:]{17}$", parts[2]):
+                    table[parts[0]] = parts[2].upper()
+        except Exception:
+            pass
+
+    if table:
+        _ARP_CACHE = table
+        _ARP_CACHE_TS = time.time()
+    return table
+
+
+async def _resolve_hostname(ip: str) -> str:
+    """DNS inverso real con timeout corto — no bloquea el escaneo."""
+    loop = asyncio.get_event_loop()
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, socket.gethostbyaddr, ip),
+            timeout=1.5
+        )
+        return result[0]
+    except Exception:
+        return ""
+
+
+async def _geolocate_public_ip(ip: str) -> Optional[Dict]:
+    """Geolocalización REAL solo para IPs públicas. Usa ip-api.com
+    (gratis, sin API key, límite ~45 req/min). Nunca se llama para
+    rangos privados — ver _is_private_ip(). Resultado cacheado."""
+    if ip in _GEO_CACHE:
+        return _GEO_CACHE[ip]
+    if aiohttp is None:
+        return None
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"http://ip-api.com/json/{ip}",
+                params={"fields": "status,lat,lon,city,country,isp,org"},
+                timeout=aiohttp.ClientTimeout(total=3)
+            ) as resp:
+                data = await resp.json()
+                if data.get("status") == "success":
+                    geo = {
+                        "lat": data.get("lat"), "lon": data.get("lon"),
+                        "city": data.get("city", ""), "country": data.get("country", ""),
+                        "isp": data.get("isp", ""), "org": data.get("org", ""),
+                    }
+                    _GEO_CACHE[ip] = geo
+                    return geo
+    except Exception:
+        pass
+    _GEO_CACHE[ip] = None
+    return None
+
 
 # ============================================================
 # 1. NÚCLEO COGNITIVO — Base de datos + Predicción
@@ -93,6 +230,14 @@ class NeuralDB:
                 scan_history TEXT, seal_hash TEXT,
                 lat REAL, lon REAL
             )''')
+        # Migración: columnas nuevas para datos reales (is_private, geo_meta)
+        for col, coltype in [("is_private", "INTEGER DEFAULT 1"),
+                              ("geo_city", "TEXT"), ("geo_country", "TEXT"),
+                              ("geo_isp", "TEXT")]:
+            try:
+                self.conn.execute(f"ALTER TABLE devices ADD COLUMN {col} {coltype}")
+            except sqlite3.OperationalError:
+                pass  # La columna ya existe
         self.conn.execute('''
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,12 +255,12 @@ class NeuralDB:
         """Actualiza dispositivo y calcula predicción de amenaza."""
         now = datetime.now().isoformat()
         ip = dev["ip"]
-        
+
         # Cargar historial
         c = self.conn.cursor()
         c.execute("SELECT scan_history, risk_score FROM devices WHERE id=?", (dev["id"],))
         row = c.fetchone()
-        
+
         history = []
         old_risk = 0.0
         if row:
@@ -142,7 +287,7 @@ class NeuralDB:
         if anomaly_detected: dynamic_risk += 30
         if len(history) > 1 and history[-1]["risk"] > history[-2]["risk"]:
             dynamic_risk += 10 # Tendencia al alza
-        
+
         threat_level = "LOW"
         if dynamic_risk > 80: threat_level = "CRITICAL"
         elif dynamic_risk > 50: threat_level = "HIGH"
@@ -151,19 +296,27 @@ class NeuralDB:
         # Guardar
         data_str = json.dumps(dev, sort_keys=True)
         seal_hash = hashlib.sha256(data_str.encode()).hexdigest()
-        
+
+        # NOTA: lat/lon ya NO se rellenan con jitter aleatorio. Solo se
+        # guardan coordenadas si vinieron de una geolocalización REAL
+        # (IP pública consultada en _geolocate_public_ip). Para IPs
+        # privadas (LAN) lat/lon quedan NULL — is_private=1 indica al
+        # frontend que debe mostrarse en el panel de red local, no en
+        # el mapa geográfico.
         self.conn.execute('''
-            INSERT OR REPLACE INTO devices 
+            INSERT OR REPLACE INTO devices
             (id, ip, mac, hostname, ports, os_guess, vendor, risk_score, threat_level,
-             first_seen, last_seen, scan_history, seal_hash, lat, lon)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             first_seen, last_seen, scan_history, seal_hash, lat, lon,
+             is_private, geo_city, geo_country, geo_isp)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', (
-            dev["id"], ip, dev.get("mac",""), dev.get("hostname",""),
-            json.dumps(dev.get("ports",[])), dev.get("os",""), dev.get("vendor",""),
+            dev["id"], ip, dev.get("mac", ""), dev.get("hostname", ""),
+            json.dumps(dev.get("ports", [])), dev.get("os", ""), dev.get("vendor", ""),
             dynamic_risk, threat_level,
             dev.get("first_seen", now), now, json.dumps(history), seal_hash,
-            dev.get("lat", CONFIG["base_coords"]["lat"] + random.uniform(-0.01, 0.01)),
-            dev.get("lon", CONFIG["base_coords"]["lon"] + random.uniform(-0.01, 0.01))
+            dev.get("lat"), dev.get("lon"),
+            int(dev.get("is_private", True)),
+            dev.get("geo_city", ""), dev.get("geo_country", ""), dev.get("geo_isp", ""),
         ))
         self.conn.commit()
         return anomaly_detected, dynamic_risk, threat_level
@@ -191,6 +344,18 @@ class NeuralDB:
     def get_all_devices(self) -> List[Dict]:
         c = self.conn.cursor()
         c.execute("SELECT * FROM devices ORDER BY risk_score DESC")
+        cols = [d[0] for d in c.description]
+        return [dict(zip(cols, row)) for row in c.fetchall()]
+
+    def get_recent_events(self, limit: int = 30) -> List[Dict]:
+        c = self.conn.cursor()
+        c.execute("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))
+        cols = [d[0] for d in c.description]
+        return [dict(zip(cols, row)) for row in c.fetchall()]
+
+    def get_recent_adaptations(self, limit: int = 15) -> List[Dict]:
+        c = self.conn.cursor()
+        c.execute("SELECT * FROM adaptations ORDER BY id DESC LIMIT ?", (limit,))
         cols = [d[0] for d in c.description]
         return [dict(zip(cols, row)) for row in c.fetchall()]
 
@@ -231,7 +396,7 @@ class AdaptiveScanner:
         """Ajusta el modo de escaneo dinámicamente según los resultados."""
         # Si encontramos muchos dispositivos críticos, subir a 'active'
         critical_count = len([d for d in db.get_all_devices() if d.get("threat_level") == "CRITICAL"])
-        
+
         if critical_count > 3 and self.mode != "frenzy":
             self.mode = "frenzy"
             db.log_adaptation("MODE_CHANGE", f"Elevado a FRENZY por {critical_count} amenazas críticas.")
@@ -240,11 +405,11 @@ class AdaptiveScanner:
             self.mode = "stealth" # Bajar intensidad si no hay nada
             db.log_adaptation("MODE_CHANGE", "Bajado a STEALTH por falta de objetivos.")
 
-    async def scan_host(self, ip: str) -> Optional[Dict]:
+    async def scan_host(self, ip: str, arp_table: Optional[Dict[str, str]] = None) -> Optional[Dict]:
         self.last_activity = time.time()
         config = CONFIG["modes"][self.mode]
         timeout = config["timeout"]
-        
+
         open_ports = []
         concurrent = config["concurrent"]
 
@@ -267,12 +432,35 @@ class AdaptiveScanner:
         if not open_ports:
             return None
 
+        # ── Enriquecimiento con datos REALES ──
+        arp_table = arp_table or {}
+        mac = arp_table.get(ip, "")
+        vendor = _vendor_from_mac(mac)
+        hostname = await _resolve_hostname(ip)
+        is_private = _is_private_ip(ip)
+
+        lat, lon, geo_city, geo_country, geo_isp = None, None, "", "", ""
+        if not is_private:
+            # Solo se geolocaliza con datos reales si la IP es pública.
+            # Los rangos privados (LAN) NUNCA reciben coordenadas — antes
+            # se les asignaba una posición aleatoria alrededor de Bogotá,
+            # lo cual era información falsa. Ahora se muestran en el
+            # panel de "Red Local" del frontend, sin pin en el mapa.
+            geo = await _geolocate_public_ip(ip)
+            if geo:
+                lat, lon = geo.get("lat"), geo.get("lon")
+                geo_city, geo_country, geo_isp = geo.get("city", ""), geo.get("country", ""), geo.get("isp", "")
+
         # Generar ID único
         dev_id = hashlib.md5(f"{ip}:{open_ports}".encode()).hexdigest()
-        
+
         return {
             "id": dev_id, "ip": ip, "ports": open_ports,
             "os": self._guess_os(open_ports),
+            "mac": mac, "vendor": vendor, "hostname": hostname,
+            "is_private": is_private,
+            "lat": lat, "lon": lon,
+            "geo_city": geo_city, "geo_country": geo_country, "geo_isp": geo_isp,
             "first_seen": datetime.now().isoformat(),
             "risk_score": 0, # Se calcula en update_device
         }
@@ -289,7 +477,7 @@ class AdaptiveScanner:
         self.scanning = True
         self.last_activity = time.time()
         print(f"🧠 NEXUS OMNI iniciado en {network_cidr} (Modo: {self.mode.upper()})")
-        
+
         my_ip = "192.168.1.50"
         try:
             res = subprocess.run(["ip", "route"], capture_output=True, text=True, timeout=1)
@@ -297,14 +485,20 @@ class AdaptiveScanner:
                 if "src" in line: my_ip = line.split()[line.split().index("src")+1]
         except: pass
 
+        # Tabla ARP real del sistema — una sola lectura por corrida de escaneo
+        arp_table = _get_arp_table(force=True)
+
         net = ipaddress.ip_network(network_cidr, strict=False)
         targets = [str(ip) for ip in net.hosts() if str(ip) != my_ip]
         if self.mode == "passive": targets = targets[:10]
 
-        tasks = [self.scan_host(ip) for ip in targets]
+        tasks = [self.scan_host(ip, arp_table) for ip in targets]
         results = await asyncio.gather(*tasks)
         found = [r for r in results if r]
-        
+
+        for dev in found:
+            db.update_device(dev)
+
         await self.adapt_strategy(network_cidr, len(found))
         self.scanning = False
         return found
@@ -344,23 +538,38 @@ async def get_analytics(credentials: HTTPBasicCredentials = Depends(verify_auth)
     devices = db.get_all_devices()
     total = len(devices)
     critical = len([d for d in devices if d["threat_level"] == "CRITICAL"])
-    anomalies = 0 # Contar eventos reales si fuera necesario
+    anomalies = len(db.get_recent_events(limit=100))
     return {
-        "total": total, "critical": critical, "mode": scanner.mode, 
-        "scanning": scanner.scanning, "health": "OPTIMAL"
+        "total": total, "critical": critical, "mode": scanner.mode,
+        "scanning": scanner.scanning, "health": "OPTIMAL", "anomalies": anomalies
+    }
+
+@app.get("/api/events")
+async def get_events(credentials: HTTPBasicCredentials = Depends(verify_auth)):
+    """Eventos reales (anomalías detectadas + cambios de modo adaptativo)."""
+    return {
+        "events": db.get_recent_events(30),
+        "adaptations": db.get_recent_adaptations(15),
     }
 
 @app.get("/api/state")
 async def get_state(credentials: HTTPBasicCredentials = Depends(verify_auth)):
-    """Estado completo para el proxy del dashboard unificado."""
+    """Estado completo para el proxy del dashboard unificado.
+
+    Separa dispositivos en:
+      - devices_public: tienen lat/lon REAL (geolocalización de IP pública)
+      - devices_local: son LAN (is_private=1), sin coordenadas — se listan
+        en el panel de red local del frontend, nunca como pin falso en el mapa
+    """
     devices = db.get_all_devices()
-    vectors = [
-        {"source": d["lat"], "target": d["lon"], "risk": d["risk_score"]}
-        for d in devices if d["threat_level"] in ["HIGH", "CRITICAL"]
-    ]
+    devices_public = [d for d in devices if not d.get("is_private") and d.get("lat") is not None]
+    devices_local = [d for d in devices if d.get("is_private") or d.get("lat") is None]
+
     return {
-        "devices": devices,
-        "vectors": vectors,
+        "devices": devices,                # compatibilidad hacia atrás
+        "devices_public": devices_public,
+        "devices_local": devices_local,
+        "events": db.get_recent_events(15),
         "stats": await get_analytics(credentials),
     }
 
@@ -371,15 +580,14 @@ async def ws_endpoint(websocket: WebSocket):
         while True:
             await websocket.receive_text() # Ping
             devices = db.get_all_devices()
-            # Preparar datos para heatmap/vectorización
-            vectors = []
-            for d in devices:
-                if d["threat_level"] in ["HIGH", "CRITICAL"]:
-                    vectors.append({"source": d["lat"], "target": d["lon"], "risk": d["risk_score"]})
-            
+            devices_public = [d for d in devices if not d.get("is_private") and d.get("lat") is not None]
+            devices_local = [d for d in devices if d.get("is_private") or d.get("lat") is None]
+
             await websocket.send_json({
                 "devices": devices,
-                "vectors": vectors,
+                "devices_public": devices_public,
+                "devices_local": devices_local,
+                "events": db.get_recent_events(15),
                 "stats": await get_analytics(
                     HTTPBasicCredentials(
                         username=CONFIG["auth_user"],
