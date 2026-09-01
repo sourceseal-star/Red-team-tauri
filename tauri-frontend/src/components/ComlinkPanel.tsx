@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, Edit3, FileCog, Radio, RefreshCw, Send, ShieldCheck, Trash2, Wrench } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Edit3, FileCog, Key, Network, Radio, RefreshCw, Send, ShieldCheck, Trash2, Wifi, Wrench } from 'lucide-react'
 
 type Channel = {
   id: string
@@ -53,6 +53,19 @@ export default function ComlinkPanel() {
   const [actionResult, setActionResult] = useState<any>(null)
   const [queueChannel, setQueueChannel] = useState('')
   const [cleanDays, setCleanDays] = useState(30)
+  // ─── Keys criptográficas ───
+  const [keysData, setKeysData] = useState<Record<string, any>>({})
+  const [keysLoading, setKeysLoading] = useState(false)
+  const [keyGenContact, setKeyGenContact] = useState('')
+  const [keyGenLoading, setKeyGenLoading] = useState(false)
+  // ─── Mesh P2P ───
+  const [meshDiscovering, setMeshDiscovering] = useState(false)
+  const [meshResult, setMeshResult] = useState<any>(null)
+  const [meshMethod, setMeshMethod] = useState('all')
+  const [meshServerLoading, setMeshServerLoading] = useState(false)
+  const [knownDevices, setKnownDevices] = useState<any[]>([])
+  const [newDeviceIp, setNewDeviceIp] = useState('')
+  const [newDeviceName, setNewDeviceName] = useState('')
 
   const channels: Channel[] = Array.isArray(status?.channels) ? status.channels : []
   const readyChannels = useMemo(() => channels.filter(item => item.ready), [channels])
@@ -311,6 +324,124 @@ export default function ComlinkPanel() {
       setNotice({ type: 'error', text: error.message || 'La acción no pudo ejecutarse' })
     } finally {
       setActionLoading(null)
+    }
+  }
+
+  // ─── Keys criptográficas ───
+  const loadKeys = useCallback(async () => {
+    setKeysLoading(true)
+    try {
+      const response = await fetch('/api/commander/comlink/keys', { headers: headers() })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`)
+      setKeysData(payload.keys || {})
+    } catch {
+      setKeysData({})
+    } finally {
+      setKeysLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { loadKeys() }, [loadKeys])
+
+  const generateKeys = async () => {
+    const contactId = keyGenContact.trim()
+    if (!contactId) return
+    setKeyGenLoading(true); setNotice(null)
+    try {
+      const response = await fetch('/api/commander/comlink/keys/generate', {
+        method: 'POST', headers: headers(true),
+        body: JSON.stringify({ contact_id: contactId }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`)
+      setNotice({ type: 'ok', text: `Claves AES+RSA generadas para ${contactId}.` })
+      await loadKeys()
+    } catch (error: any) {
+      setNotice({ type: 'error', text: error.message || 'No se pudieron generar las claves' })
+    } finally {
+      setKeyGenLoading(false)
+    }
+  }
+
+  const deleteKeys = async (contactId: string) => {
+    if (!dataConfirm) return
+    try {
+      const response = await fetch(`/api/commander/comlink/keys/${encodeURIComponent(contactId)}`, {
+        method: 'DELETE', headers: headers(true),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`)
+      setNotice({ type: 'ok', text: `Claves de ${contactId} eliminadas (${payload.deleted} archivos).` })
+      await loadKeys()
+      setDataConfirm(false)
+    } catch (error: any) {
+      setNotice({ type: 'error', text: error.message || 'No se pudieron eliminar las claves' })
+    }
+  }
+
+  // ─── Mesh P2P ───
+  const discoverMesh = async () => {
+    setMeshDiscovering(true); setMeshResult(null); setNotice(null)
+    try {
+      const response = await fetch('/api/commander/comlink/mesh/discover', {
+        method: 'POST', headers: headers(true),
+        body: JSON.stringify({ method: meshMethod }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      setMeshResult(payload)
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`)
+      if (payload.known_devices) setKnownDevices(payload.known_devices)
+      setNotice({ type: 'ok', text: `Discovery completado (${meshMethod}).` })
+    } catch (error: any) {
+      setNotice({ type: 'error', text: error.message || 'Discovery falló' })
+    } finally {
+      setMeshDiscovering(false)
+    }
+  }
+
+  const toggleMeshServer = async (action: 'start' | 'stop') => {
+    setMeshServerLoading(true); setNotice(null)
+    try {
+      const response = await fetch('/api/commander/comlink/mesh/server', {
+        method: 'POST', headers: headers(true),
+        body: JSON.stringify({ action }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`)
+      setNotice({ type: 'ok', text: action === 'start' ? 'Servidor P2P HTTP iniciado.' : 'Servidor P2P HTTP detenido.' })
+    } catch (error: any) {
+      setNotice({ type: 'error', text: error.message || 'No se pudo controlar el servidor mesh' })
+    } finally {
+      setMeshServerLoading(false)
+    }
+  }
+
+  const loadKnownDevices = useCallback(async () => {
+    try {
+      const response = await fetch('/api/commander/comlink/mesh/known-devices', { headers: headers() })
+      const payload = await response.json().catch(() => ({}))
+      if (response.ok) setKnownDevices(payload.devices || [])
+    } catch { /* silencioso */ }
+  }, [])
+
+  useEffect(() => { loadKnownDevices() }, [loadKnownDevices])
+
+  const addKnownDevice = async () => {
+    if (!newDeviceIp.trim()) return
+    setNotice(null)
+    try {
+      const response = await fetch('/api/commander/comlink/mesh/known-devices', {
+        method: 'POST', headers: headers(true),
+        body: JSON.stringify({ ip: newDeviceIp.trim(), name: newDeviceName.trim() || newDeviceIp.trim() }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`)
+      setNewDeviceIp(''); setNewDeviceName('')
+      setNotice({ type: 'ok', text: 'Dispositivo añadido.' })
+      await loadKnownDevices()
+    } catch (error: any) {
+      setNotice({ type: 'error', text: error.message || 'No se pudo añadir el dispositivo' })
     }
   }
 
@@ -612,6 +743,112 @@ export default function ComlinkPanel() {
           </div>
         </Card>
       )}
+
+      {/* ─── Claves criptográficas ─── */}
+      <Card>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-bold text-yellow-300 flex items-center gap-2"><Key size={14} /> Claves criptográficas</h3>
+            <p className="text-[11px] text-slate-500 mt-1">Genera y gestiona pares de claves AES+RSA para cifrar mensajes con cada contacto.</p>
+          </div>
+          <button onClick={loadKeys} disabled={keysLoading} className="text-[10px] text-yellow-400 hover:text-yellow-300">
+            {keysLoading ? 'Cargando…' : 'Recargar'}
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <select value={keyGenContact} onChange={event => setKeyGenContact(event.target.value)}
+            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white">
+            <option value="">Selecciona contacto…</option>
+            {Object.keys(contacts).map(id => <option key={id} value={id}>{id} — {contacts[id].name || 'sin nombre'}</option>)}
+          </select>
+          <button onClick={generateKeys} disabled={keyGenLoading || !keyGenContact}
+            className="px-3 py-2 bg-yellow-700 hover:bg-yellow-600 disabled:opacity-50 rounded-lg text-xs font-bold text-white flex items-center gap-1.5">
+            {keyGenLoading ? <RefreshCw size={12} className="animate-spin" /> : <Key size={12} />} Generar claves
+          </button>
+        </div>
+        {Object.keys(keysData).length > 0 ? (
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {Object.entries(keysData).map(([id, info]: [string, any]) => (
+              <div key={id} className="bg-slate-950/70 border border-slate-800 rounded-lg p-2.5 flex items-center gap-2">
+                <span className="text-xs font-mono text-white">{id}</span>
+                <span className="text-[10px] text-slate-400">{info.contact_name || ''}</span>
+                <div className="ml-auto flex items-center gap-2">
+                  {info.aes && <span className="text-[9px] text-green-400 border border-green-800 rounded px-1.5 py-0.5">AES</span>}
+                  {info.rsa_public && <span className="text-[9px] text-cyan-400 border border-cyan-800 rounded px-1.5 py-0.5">RSA pub</span>}
+                  {info.rsa_private && <span className="text-[9px] text-purple-400 border border-purple-800 rounded px-1.5 py-0.5">RSA priv</span>}
+                  <button onClick={() => deleteKeys(id)} disabled={!dataConfirm}
+                    className="text-red-400 hover:text-red-300 disabled:opacity-30" title="Eliminar claves">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-600">No hay claves generadas. Selecciona un contacto y pulsa «Generar claves».</p>
+        )}
+      </Card>
+
+      {/* ─── Mesh P2P ─── */}
+      <Card>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-bold text-cyan-300 flex items-center gap-2"><Network size={14} /> Mesh P2P</h3>
+            <p className="text-[11px] text-slate-500 mt-1">Discovery de dispositivos y servidor P2P HTTP para comunicación directa en la red local.</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <select value={meshMethod} onChange={event => setMeshMethod(event.target.value)}
+            className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white">
+            <option value="all">Todos los métodos</option>
+            <option value="wifi">WiFi</option>
+            <option value="bluetooth">Bluetooth</option>
+          </select>
+          <button onClick={discoverMesh} disabled={meshDiscovering}
+            className="px-3 py-2 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 rounded-lg text-xs font-bold text-white flex items-center gap-1.5">
+            {meshDiscovering ? <RefreshCw size={12} className="animate-spin" /> : <Wifi size={12} />} Descubrir dispositivos
+          </button>
+          <div className="flex gap-1.5 ml-auto">
+            <button onClick={() => toggleMeshServer('start')} disabled={meshServerLoading}
+              className="px-3 py-2 bg-green-700 hover:bg-green-600 disabled:opacity-50 rounded-lg text-xs font-bold text-white">
+              Iniciar servidor
+            </button>
+            <button onClick={() => toggleMeshServer('stop')} disabled={meshServerLoading}
+              className="px-3 py-2 bg-red-800 hover:bg-red-700 disabled:opacity-50 rounded-lg text-xs font-bold text-white">
+              Detener servidor
+            </button>
+          </div>
+        </div>
+        {meshResult && (
+          <pre className="bg-black/50 border border-slate-800 rounded-lg p-2.5 text-[10px] text-amber-300 font-mono max-h-32 overflow-y-auto whitespace-pre-wrap mb-3">{meshResult.stdout || meshResult.stderr || JSON.stringify(meshResult, null, 2)}</pre>
+        )}
+        <div className="border-t border-slate-800 pt-3">
+          <h4 className="text-[11px] font-bold text-slate-300 mb-2">Dispositivos conocidos</h4>
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <input value={newDeviceIp} onChange={event => setNewDeviceIp(event.target.value)}
+              placeholder="IP (ej. 192.168.1.50)" className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 w-40" />
+            <input value={newDeviceName} onChange={event => setNewDeviceName(event.target.value)}
+              placeholder="Nombre (opcional)" className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 w-40" />
+            <button onClick={addKnownDevice} disabled={!newDeviceIp.trim()}
+              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-lg text-xs font-bold text-white">
+              Añadir
+            </button>
+          </div>
+          {knownDevices.length > 0 ? (
+            <div className="space-y-1 max-h-32 overflow-y-auto">
+              {knownDevices.map((dev, i) => (
+                <div key={i} className="bg-slate-950/70 border border-slate-800 rounded p-2 flex items-center gap-2">
+                  <span className="text-xs font-mono text-cyan-300">{dev.ip}</span>
+                  <span className="text-[10px] text-slate-400">{dev.name || 'sin nombre'}</span>
+                  {dev.id && <span className="text-[9px] text-slate-600 ml-auto">{dev.id}</span>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-600">No hay dispositivos conocidos. Ejecuta discovery o añade uno manualmente.</p>
+          )}
+        </div>
+      </Card>
 
       {result && <pre className="bg-black/50 border border-slate-800 rounded-lg p-3 text-[10px] text-cyan-300 font-mono max-h-56 overflow-y-auto whitespace-pre-wrap">{JSON.stringify(result, null, 2)}</pre>}
     </div>
