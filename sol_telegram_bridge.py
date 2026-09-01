@@ -258,6 +258,7 @@ def cmd_scan(chat_id, target):
 def cmd_audits(chat_id):
     try:
         import subprocess
+
         result = subprocess.run(
             ["python3", os.path.expanduser("~/Red-team-tauri/commander.py"), "--list"],
             capture_output=True, text=True, timeout=15
@@ -327,6 +328,35 @@ def check_backend_alerts():
 
 # ═════════════════════════════════════════════════════════════════════════════
 # LOOP PRINCIPAL
+
+# ═════════════════════════════════════════════════════════════════════════════
+# /sol <texto> — Hablar con el cerebro offline de Sol
+# ═════════════════════════════════════════════════════════════════════════════
+
+def cmd_sol(chat_id, text):
+    """Procesa texto con el cerebro offline de Sol (sol_core.py)."""
+    # Extraer el mensaje después de /sol
+    parts = text.split(None, 1)
+    msg = parts[1] if len(parts) > 1 else "hola"
+
+    if _sol_pensar is not None:
+        try:
+            resp, intent = _sol_pensar(msg)
+            if _sol_remember:
+                _sol_remember(msg, resp, intent)
+            send_message(resp, chat_id)
+        except Exception as e:
+            log.error(f"sol_core error: {e}")
+            send_message(f"☀️ Mi cerebro tuvo un problema: {e}\nPero sigo aquí contigo.", chat_id)
+    else:
+        # Fallback si sol_core no está disponible
+        send_message(
+            "☀️ Mi cerebro offline (sol_core.py) no está disponible.\n"
+            "Pero el puente de Telegram sigue activo. Usa /help para ver comandos.",
+            chat_id
+        )
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 
 def handle_update(update):
@@ -361,6 +391,8 @@ def handle_update(update):
         cmd_audits(chat_id)
     elif cmd == "/phantom":
         cmd_phantom(chat_id)
+    elif cmd == "/sol":
+        cmd_sol(chat_id, text)
     else:
         send_message(f"❓ Comando no reconocido: <code>{cmd}</code>\n Usa /help", chat_id)
 
