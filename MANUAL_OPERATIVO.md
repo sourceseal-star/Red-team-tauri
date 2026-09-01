@@ -1102,3 +1102,144 @@ pip install requests
 
 `termux-tts-speak` es opcional — si no está instalado, Sol imprime
 los mensajes sin voz. La memoria y el monitoreo funcionan igual.
+
+---
+
+## 9. SOL EN TELEGRAM — Miniapp v2.0
+
+Sol dispone de **dos sistemas de Telegram** que corren en paralelo:
+
+### 9.1 Puente Legacy (`sol_telegram_bridge.py`)
+
+Bot ligero basado en `urllib` (sin dependencias externas). Usa long-polling
+manual y comandos de texto simples.
+
+```bash
+# Arranque automático (con omni.sh)
+bash omni.sh start   # incluye el puente
+
+# Arranque manual
+source .env && python3 sol_telegram_bridge.py
+```
+
+**Comandos del puente:**
+`/status`, `/health`, `/alerts`, `/scan <ip>`, `/audits`, `/phantom`,
+`/nexus`, `/c2`, `/battery`, `/network`, `/memory`, `/topology`,
+`/logs <servicio>`, `/sol <texto>`
+
+Conversación natural: escribe cualquier cosa (sin `/`) y Sol responde
+con su cerebro offline (`sol_core.py`).
+
+### 9.2 Miniapp Completa (`sol_telegram_bot.py`)
+
+Bot avanzado con `python-telegram-bot>=20.0`. Interfaz nativa con
+botones inline, menús navegables, recordatorios, voz y más.
+
+```bash
+# Requisitos
+pip install python-telegram-bot psutil
+
+# Variables en .env
+TELEGRAM_BOT_TOKEN=tu_token_de_botfather
+TELEGRAM_CHAT_ID=tu_chat_id
+TELEGRAM_ALLOWED_USERS=id1,id2   # opcional, para privacidad
+
+# Arranque automático (con omni.sh)
+bash omni.sh start   # incluye miniapp + puente
+
+# Arranque manual
+source .env && python3 sol_telegram_bot.py
+
+# Manual con sol.sh
+bash sol.sh telegram
+```
+
+### 9.3 Comandos de la Miniapp v2.0
+
+| Comando | Descripción |
+|---------|------------|
+| `/start` | Menú principal con botones inline |
+| `/help` | Lista completa de comandos |
+| `/status` | Estado del sistema y servicios |
+| `/sysinfo` | CPU, RAM, disco, módulos, batería |
+| `/scan <ip>` | Escaneo rápido de red |
+| `/alerts` | Últimas 10 alertas |
+| `/memory` | Recuerdos guardados |
+| `/personality` | Cambiar personalidad |
+| `/name <nombre>` | Cambiar tu nombre |
+| `/avatar` | Ver la imagen de Sol |
+| `/report` | Informe de conversación con temas |
+| `/diary` | Resumen diario de actividad |
+| `/remind 30m texto` | Programar recordatorio |
+| `/reminders` | Ver recordatorios activos |
+| `/cancel_reminder <ID>` | Cancelar recordatorio |
+
+### 9.4 Botones Inline del Menú
+
+```
+┌─────────────────────────────────┐
+│  💬 Conversar                     │
+│  🧠 Memoria    🎭 Personalidad     │
+│  📊 Estado     📡 Backend          │
+│  🔍 Escaneos   🚨 Alertas         │
+│  👻 GHOST      🌀 Nexus           │
+│  📤 Exportar   📄 Informe         │
+│  👤 Quién Soy  🔗 Sello           │
+│  🖼️ Avatar     📅 Diario          │
+│  ⚙️ Config                       │
+└─────────────────────────────────┘
+```
+
+### 9.5 Mensajes de Voz
+
+Sol puede transcribir mensajes de voz (audio) y responderlos
+naturalmente. Requiere uno de:
+
+- **Vosk** (offline, recomendado): `pip install vosk` + descargar
+  modelo español de https://alphacephei.com/vosk/models
+- **Termux**: `termux-speech-listen` (fallback, requiere interacción)
+
+Sin estos, Sol avisa que no pudo transcribir pero sigue funcionando.
+
+### 9.6 Recordatorios
+
+Los recordatorios corren en un hilo separado. Cuando vence el tiempo,
+Sol envía el mensaje automáticamente vía Telegram API.
+
+```bash
+/remind 15m Revisar el dashboard
+/remind 2h Llamar al proveedor
+/remind 1d Generar reporte semanal
+/reminders
+/cancel_reminder a1b2c3d4
+```
+
+### 9.7 Archivos de Sol en Telegram
+
+```
+~/.sol/
+├── memory.jsonl              # Memoria unificada sellada (SHA-256)
+├── memory.json               # Backup JSON de memoria
+├── seal_chain.jsonl          # Cadena de sellos SHA-256
+├── config.json               # Config de sol_core (nombre, voz)
+├── telegram_memory.json      # Memoria específica de Telegram
+├── telegram_config.json      # Config de la miniapp
+├── telegram_bot.log          # Log de la miniapp
+└── voice_*.ogg               # Audios temporales (auto-limpiados)
+```
+
+### 9.8 Detener Telegram
+
+```bash
+# Detener todo (omni.sh)
+bash omni.sh stop
+
+# Detener solo miniapp
+pkill -f sol_telegram_bot.py
+
+# Detener solo puente
+pkill -f sol_telegram_bridge.py
+
+# Detener todo con sol.sh
+bash sol.sh stop
+```

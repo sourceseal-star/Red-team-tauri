@@ -311,6 +311,17 @@ Comandos:
   telegram        Iniciar miniapp de Telegram (botones inline)
   help            Esta ayuda
 
+Comandos de Telegram (miniapp v2.0):
+  /start          Menú principal con botones
+  /scan <ip>      Escaneo rápido de red
+  /sysinfo        CPU, RAM, disco, módulos
+  /remind 30m x   Programar recordatorio
+  /reminders      Ver recordatorios activos
+  /avatar         Ver imagen de Sol
+  /report         Informe de conversación
+  /diary          Resumen diario
+  + conversación natural y mensajes de voz
+
 Archivos clave:
   ~/Red-team-tauri/sol_core.py             — Cerebro (pensamiento offline)
   ~/Red-team-tauri/sol.sh                   — Este archivo (cuerpo + watchdog)

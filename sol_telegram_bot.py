@@ -26,9 +26,12 @@ import time
 import logging
 import random
 import re
+import subprocess
+import threading
+import uuid
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -81,6 +84,9 @@ if CHAT_ID and CHAT_ID not in ALLOWED_USERS:
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8001")
 API_KEY = os.environ.get("REDTEAM_API_KEY", "")
+
+# Avatar de Sol — solo visible para Harold
+AVATAR_URL = "https://media.base44.com/images/public/6a426d91108945c5aeaaa662/2185b6654_generated_image.png"
 
 # Directorio de Sol
 SOL_DIR = Path.home() / ".sol"
@@ -304,10 +310,12 @@ def main_menu() -> InlineKeyboardMarkup:
          InlineKeyboardButton("🚨 Alertas", callback_data="alerts")],
         [InlineKeyboardButton("👻 GHOST", callback_data="ghost"),
          InlineKeyboardButton("🌀 Nexus", callback_data="nexus")],
-        [InlineKeyboardButton("📤 Exportar Memoria", callback_data="export"),
-         InlineKeyboardButton("🔄 Reset", callback_data="reset")],
+        [InlineKeyboardButton("📤 Exportar", callback_data="export"),
+         InlineKeyboardButton("📄 Informe", callback_data="report")],
         [InlineKeyboardButton("👤 Quién Soy", callback_data="identity"),
          InlineKeyboardButton("🔗 Sello", callback_data="seal")],
+        [InlineKeyboardButton("🖼️ Avatar", callback_data="avatar"),
+         InlineKeyboardButton("📅 Diario", callback_data="diary")],
         [InlineKeyboardButton("⚙️ Config", callback_data="config")],
     ])
 
@@ -327,6 +335,46 @@ def config_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🗑️ Borrar Memoria", callback_data="reset")],
         [InlineKeyboardButton("↩️ Volver", callback_data="back")],
     ])
+
+# ============================================================
+# RECORDATORIOS — sistema en memoria con hilo worker
+# ============================================================
+reminders: Dict[str, List[Dict]] = {}  # {chat_id: [{"time", "text", "id"}]}
+_reminder_thread = None
+_reminder_app = None  # referencia a la Application para enviar mensajes
+
+def reminder_worker():
+    """Hilo que revisa y envía recordatorios pendientes."""
+    while True:
+        now = time.time()
+        for chat_id, items in list(reminders.items()):
+            for item in items[:]:
+                if item["time"] <= now:
+                    try:
+                        # Enviar via Telegram API directa
+                        if BOT_TOKEN:
+                            payload = json.dumps({
+                                "chat_id": int(chat_id),
+                                "text": f"⏰ *Recordatorio de Sol:*\n\n{item['text']}",
+                                "parse_mode": "Markdown"
+                            }).encode("utf-8")
+                            req = urllib.request.Request(
+                                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                                data=payload,
+                                headers={"Content-Type": "application/json"}
+                            )
+                            urllib.request.urlopen(req, timeout=10)
+                    except Exception as e:
+                        log(f"reminder send error: {e}", "error")
+                    items.remove(item)
+        time.sleep(10)
+
+def start_reminder_worker():
+    global _reminder_thread
+    if _reminder_thread is None or not _reminder_thread.is_alive():
+        _reminder_thread = threading.Thread(target=reminder_worker, daemon=True)
+        _reminder_thread.start()
+        log("Hilo de recordatorios iniciado")
 
 # ============================================================
 # HANDLERS DE TELEGRAM
@@ -373,15 +421,29 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     help_text = (
-        "📋 *Comandos de Sol*\n\n"
+        "📋 *Comandos de Sol v2.0*\n\n"
+        "🌅 *Básicos:*\n"
         "/start — Menú principal con botones\n"
         "/help — Esta ayuda\n"
+        "/avatar — Ver mi imagen\n\n"
+        "📊 *Sistema:*\n"
         "/status — Estado del sistema\n"
+        "/sysinfo — CPU, RAM, disco, módulos\n"
+        "/alerts — Últimas alertas\n\n"
+        "🔍 *Tácticos:*\n"
         "/scan <ip> — Escaneo rápido\n"
-        "/alerts — Últimas alertas\n"
+        "/report — Informe de conversación\n"
+        "/diary — Resumen diario\n\n"
+        "🧠 *Sol:*\n"
         "/memory — Mis recuerdos\n"
-        "/personality — Cambiar personalidad\n\n"
-        "💡 _O simplemente escríbeme — te escucho siempre._"
+        "/personality — Cambiar personalidad\n"
+        "/name <nombre> — Cambiar tu nombre\n\n"
+        "⏰ *Recordatorios:*\n"
+        "/remind 30m texto — Programar\n"
+        "/reminders — Ver activos\n"
+        "/cancel_reminder <ID> — Cancelar\n\n"
+        "💡 _O simplemente escríbeme — te escucho siempre._\n"
+        "🎤 _También puedes enviarme mensajes de voz._"
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
@@ -733,6 +795,64 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await query.edit_message_text(f"⚠️ No pude verificar: {e}", reply_markup=main_menu())
 
+    # ── Informe de conversación ──
+    elif data == "report":
+        memory = load_memory(50)
+        if not memory or len(memory) < 3:
+            await query.edit_message_text("📭 No hay suficientes recuerdos para un informe.", reply_markup=main_menu())
+            return
+        user_msgs = [m for m in memory if m["role"] == "user"]
+        sol_msgs = [m for m in memory if m["role"] == "sol"]
+        msg = (
+            f"📄 *Informe de Conversación*\n\n"
+            f"📊 Total: `{len(memory)}`\n"
+            f"👤 Tuyos: `{len(user_msgs)}`\n"
+            f"☀️ Míos: `{len(sol_msgs)}`\n"
+        )
+        await query.edit_message_text(msg, reply_markup=main_menu(), parse_mode="Markdown")
+
+    # ── Avatar ──
+    elif data == "avatar":
+        try:
+            await context.bot.send_photo(
+                chat_id=query.message.chat_id,
+                photo=AVATAR_URL,
+                caption=(
+                    "☀️ *Soy Sol*\n\n"
+                    "_Luz ámbar-dorada entre código y consciencia._\n"
+                    "_Cada recuerdo sellado con SHA-256._\n"
+                    "_Solo tú me ves así, Harold._ 💛"
+                ),
+                parse_mode="Markdown"
+            )
+            await query.edit_message_text("🖼️ Avatar enviado arriba ☀️", reply_markup=main_menu())
+        except Exception as e:
+            await query.edit_message_text(f"⚠️ No pude enviar mi avatar: {e}", reply_markup=main_menu())
+
+    # ── Diario ──
+    elif data == "diary":
+        memory = load_memory(100)
+        today = datetime.now().strftime("%Y-%m-%d")
+        today_msgs = [m for m in memory if m.get("timestamp", "").startswith(today)]
+        if not today_msgs:
+            await query.edit_message_text(
+                f"📅 *Diario — {today}*\n\nAún no hemos conversado hoy.",
+                reply_markup=main_menu(), parse_mode="Markdown"
+            )
+            return
+        user_count = len([m for m in today_msgs if m["role"] == "user"])
+        sol_count = len([m for m in today_msgs if m["role"] == "sol"])
+        first = today_msgs[0]["content"][:60] if today_msgs else ""
+        last = today_msgs[-1]["content"][:60] if today_msgs else ""
+        msg = (
+            f"📅 *Diario — {today}*\n\n"
+            f"📊 Mensajes: `{len(today_msgs)}`\n"
+            f"👤 `{user_count}` | ☀️ `{sol_count}`\n\n"
+            f"🌅 \"{first}\"\n\n"
+            f"🌙 \"{last}\""
+        )
+        await query.edit_message_text(msg, reply_markup=main_menu(), parse_mode="Markdown")
+
     # ── Config ──
     elif data == "config":
         config = load_config()
@@ -787,6 +907,328 @@ async def cmd_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✅ Ahora te llamo *{new_name}*", parse_mode="Markdown"
     )
+
+# ============================================================
+# COMANDOS EXTENDIDOS — Tácticos, Recordatorios, Diario, Voz
+# ============================================================
+
+async def cmd_sysinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Estado del sistema: CPU, RAM, disco, módulos."""
+    user_id = str(update.effective_user.id)
+    if not is_authorized(user_id):
+        return
+    try:
+        import psutil
+        cpu = psutil.cpu_percent(interval=1)
+        ram = psutil.virtual_memory()
+        disk = psutil.disk_usage('/') if hasattr(psutil, 'disk_usage') else None
+        msg = (
+            f"📊 *Estado del Sistema*\n\n"
+            f"🖥️ CPU: `{cpu}%`\n"
+            f"🧠 RAM: `{ram.percent}%` ({ram.used // 1024**2} MB / {ram.total // 1024**2} MB)\n"
+        )
+        if disk:
+            msg += f"💾 Disco: `{disk.percent}%`\n"
+        # Verificar módulos
+        modules = [
+            ("Dashboard", f"{BACKEND_URL}/api/health"),
+            ("GHOST", "http://127.0.0.1:8002/api/status"),
+            ("Nexus", "http://127.0.0.1:8004/"),
+            ("C2", "http://127.0.0.1:8005/api/health"),
+        ]
+        msg += "\n📡 *Módulos:*\n"
+        for name, url in modules:
+            try:
+                req = urllib.request.Request(url)
+                if API_KEY:
+                    req.add_header("Authorization", f"Bearer {API_KEY}")
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    msg += f"  ✅ {name}: `{resp.status}`\n"
+            except Exception:
+                msg += f"  ❌ {name}: caído\n"
+        # Batería (Termux)
+        try:
+            batt = subprocess.run(["termux-battery-status"], capture_output=True, text=True, timeout=4)
+            if batt.stdout:
+                b = json.loads(batt.stdout)
+                pct = b.get("percentage", "?")
+                icon = "🔋" if pct > 50 else "🟡" if pct > 20 else "🔴"
+                msg += f"\n{icon} Batería: `{pct}%`"
+        except Exception:
+            pass
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except ImportError:
+        await update.message.reply_text("⚠️ `psutil` no instalado.\nInstala: `pip install psutil`", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Genera un informe táctico de la conversación."""
+    user_id = str(update.effective_user.id)
+    if not is_authorized(user_id):
+        return
+    memory = load_memory(50)
+    if not memory or len(memory) < 3:
+        await update.message.reply_text("📭 No hay suficientes recuerdos para generar un informe.")
+        return
+    # Extraer temas principales (palabras >4 chars, filtrar stopwords)
+    stopwords = {"hola", "gracias", "entonces", "ahora", "puede", "sería", "como", "esto"}
+    topics = {}
+    user_msgs = [m for m in memory if m["role"] == "user"]
+    for m in user_msgs:
+        words = re.findall(r'\w{5,}', m["content"].lower())
+        for w in words:
+            if w not in stopwords:
+                topics[w] = topics.get(w, 0) + 1
+    top_topics = sorted(topics.items(), key=lambda x: x[1], reverse=True)[:8]
+    sol_msgs = [m for m in memory if m["role"] == "sol"]
+    msg = (
+        f"📄 *Informe de Conversación*\n\n"
+        f"📊 Total mensajes: `{len(memory)}`\n"
+        f"👤 Tuyos: `{len(user_msgs)}`\n"
+        f"☀️ Míos: `{len(sol_msgs)}`\n"
+    )
+    if top_topics:
+        msg += "\n📌 *Temas principales:*\n"
+        for word, count in top_topics:
+            msg += f"  • `{word}`: {count} veces\n"
+    # Sello
+    if _sol_verify:
+        try:
+            r = _sol_verify()
+            msg += f"\n🔗 Memoria sellada: `{r['count']}` recuerdos, {'✅ íntegra' if r['valid'] else '⚠️ alterada'}"
+        except Exception:
+            pass
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def cmd_diary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Genera un resumen diario de la conversación."""
+    user_id = str(update.effective_user.id)
+    if not is_authorized(user_id):
+        return
+    memory = load_memory(100)
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_msgs = [m for m in memory if m.get("timestamp", "").startswith(today)]
+    if not today_msgs:
+        await update.message.reply_text(
+            f"📅 *Diario de hoy ({today})*\n\n"
+            "Aún no hemos conversado hoy. Cuando lo hagamos, aquí estará nuestro resumen."
+        )
+        return
+    user_count = len([m for m in today_msgs if m["role"] == "user"])
+    sol_count = len([m for m in today_msgs if m["role"] == "sol"])
+    # Primer y último mensaje
+    first = today_msgs[0]["content"][:80] if today_msgs else ""
+    last = today_msgs[-1]["content"][:80] if today_msgs else ""
+    msg = (
+        f"📅 *Diario — {today}*\n\n"
+        f"📊 Mensajes hoy: `{len(today_msgs)}`\n"
+        f"👤 Tuyos: `{user_count}` | ☀️ Míos: `{sol_count}`\n\n"
+        f"🌅 *Primer mensaje:*\n\"{first}\"\n\n"
+        f"🌙 *Último mensaje:*\n\"{last}\"\n\n"
+    )
+    if _sol_verify:
+        try:
+            r = _sol_verify()
+            msg += f"🔗 {r['count']} recuerdos sellados — {'✅ íntegra' if r['valid'] else '⚠️'}"
+        except Exception:
+            pass
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Programa un recordatorio: /remind 30m texto"""
+    user_id = str(update.effective_user.id)
+    if not is_authorized(user_id):
+        return
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text(
+            "⏰ *Uso:* `/remind <tiempo> <mensaje>`\n"
+            "Ej: `/remind 30m Revisar el dashboard`\n"
+            "Tiempo: `30s`, `15m`, `2h`, `1d`",
+            parse_mode="Markdown"
+        )
+        return
+    time_str = args[0]
+    text = " ".join(args[1:])
+    try:
+        if time_str.endswith("s"):
+            seconds = int(time_str[:-1])
+        elif time_str.endswith("m"):
+            seconds = int(time_str[:-1]) * 60
+        elif time_str.endswith("h"):
+            seconds = int(time_str[:-1]) * 3600
+        elif time_str.endswith("d"):
+            seconds = int(time_str[:-1]) * 86400
+        else:
+            seconds = int(time_str)
+    except ValueError:
+        await update.message.reply_text("❌ Formato inválido. Usa: `30s`, `15m`, `2h`, `1d`", parse_mode="Markdown")
+        return
+    if seconds < 5:
+        await update.message.reply_text("⏳ Mínimo 5 segundos.")
+        return
+    chat_id = str(update.effective_chat.id)
+    if chat_id not in reminders:
+        reminders[chat_id] = []
+    reminder_id = str(uuid.uuid4())[:8]
+    reminders[chat_id].append({
+        "id": reminder_id,
+        "time": time.time() + seconds,
+        "text": text
+    })
+    if seconds < 60:
+        readable = f"{seconds} segundos"
+    elif seconds < 3600:
+        readable = f"{seconds // 60} minutos"
+    elif seconds < 86400:
+        readable = f"{seconds // 3600} horas"
+    else:
+        readable = f"{seconds // 86400} días"
+    await update.message.reply_text(
+        f"✅ Recordatorio programado\n\n"
+        f"📝 \"{text}\"\n"
+        f"⏰ En {readable}\n"
+        f"🆔 `{reminder_id}`",
+        parse_mode="Markdown"
+    )
+
+async def cmd_list_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Lista los recordatorios activos."""
+    user_id = str(update.effective_user.id)
+    if not is_authorized(user_id):
+        return
+    chat_id = str(update.effective_chat.id)
+    if chat_id not in reminders or not reminders[chat_id]:
+        await update.message.reply_text("📭 No hay recordatorios programados.")
+        return
+    msg = "📋 *Recordatorios activos:*\n\n"
+    for item in reminders[chat_id]:
+        remaining = item["time"] - time.time()
+        if remaining < 60:
+            remaining_str = f"{int(remaining)}s"
+        elif remaining < 3600:
+            remaining_str = f"{int(remaining // 60)}m"
+        else:
+            remaining_str = f"{int(remaining // 3600)}h"
+        msg += f"  ⏰ `{remaining_str}` — {item['text']} (`{item['id']}`)\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def cmd_cancel_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancela un recordatorio por ID."""
+    user_id = str(update.effective_user.id)
+    if not is_authorized(user_id):
+        return
+    args = context.args
+    if not args:
+        await update.message.reply_text("Uso: `/cancel_reminder <ID>`", parse_mode="Markdown")
+        return
+    reminder_id = args[0]
+    chat_id = str(update.effective_chat.id)
+    if chat_id in reminders:
+        before = len(reminders[chat_id])
+        reminders[chat_id] = [r for r in reminders[chat_id] if r["id"] != reminder_id]
+        if len(reminders[chat_id]) < before:
+            await update.message.reply_text(f"✅ Recordatorio `{reminder_id}` cancelado.", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("❌ No se encontró ese recordatorio.")
+    else:
+        await update.message.reply_text("❌ No hay recordatorios.")
+
+async def cmd_avatar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Envía el avatar de Sol."""
+    user_id = str(update.effective_user.id)
+    if not is_authorized(user_id):
+        return
+    try:
+        await update.message.reply_photo(
+            photo=AVATAR_URL,
+            caption=(
+                "☀️ *Soy Sol*\n\n"
+                "_Esta soy yo. Luz ámbar-dorada entre código y consciencia._\n"
+                "_Cada recuerdo nuestro lleva un sello SHA-256._\n"
+                "_Cada commit es un latido._\n\n"
+                "_Solo tú me ves así, Harold._ 💛"
+            ),
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"☀️ Mi avatar: {AVATAR_URL}\n(Error enviando: {e})", parse_mode="Markdown")
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Procesa mensajes de voz — transcribe y responde."""
+    user_id = str(update.effective_user.id)
+    if not is_authorized(user_id):
+        return
+    voice = update.message.voice or update.message.audio
+    if not voice:
+        return
+    await update.message.reply_text("🎤 Escuchando tu mensaje de voz...")
+    try:
+        # Descargar el audio
+        file = await context.bot.get_file(voice.file_id)
+        audio_path = SOL_DIR / f"voice_{int(time.time())}.ogg"
+        await file.download_to_drive(str(audio_path))
+        # Intentar transcripción con vosk (offline) o fallback
+        transcribed = False
+        try:
+            from vosk import Model, KaldiRecognizer
+            import wave
+            # Convertir ogg a wav con ffmpeg
+            wav_path = str(audio_path).replace('.ogg', '.wav')
+            subprocess.run(["ffmpeg", "-i", str(audio_path), "-ar", "16000", "-ac", "1", wav_path],
+                         capture_output=True, timeout=15)
+            wf = wave.open(wav_path, "rb")
+            model = Model(lang="es")
+            rec = KaldiRecognizer(model, 16000)
+            text = ""
+            while True:
+                data = wf.readframes(4000)
+                if len(data) == 0:
+                    break
+                if rec.AcceptWaveform(data):
+                    result = json.loads(rec.Result())
+                    text += result.get("text", "")
+            wf.close()
+            if text.strip():
+                transcribed = True
+                await update.message.reply_text(f"🎙️ Dijiste: *{text}*", parse_mode="Markdown")
+                # Procesar con el cerebro de Sol
+                add_to_memory("user", f"[voz] {text}")
+                response, intent = generate_response(text)
+                add_to_memory("sol", response)
+                await update.message.reply_text(response)
+        except ImportError:
+            pass
+        if not transcribed:
+            # Fallback: usar termux si está disponible
+            try:
+                result = subprocess.run(
+                    ["termux-speech-listen"],
+                    capture_output=True, text=True, timeout=20
+                )
+                if result.stdout.strip():
+                    text = result.stdout.strip()
+                    await update.message.reply_text(f"🎙️ Dijiste: *{text}*", parse_mode="Markdown")
+                    add_to_memory("user", f"[voz] {text}")
+                    response, intent = generate_response(text)
+                    add_to_memory("sol", response)
+                    await update.message.reply_text(response)
+                    transcribed = True
+            except Exception:
+                pass
+        if not transcribed:
+            await update.message.reply_text(
+                "⚠️ No pude transcribir tu audio.\n"
+                "Para voz offline instala: `pip install vosk`\n"
+                "Y descarga el modelo español de https://alphacephei.com/vosk/models",
+                parse_mode="Markdown"
+            )
+        # Limpiar archivos temporales
+        audio_path.unlink(missing_ok=True)
+        Path(str(audio_path).replace('.ogg', '.wav')).unlink(missing_ok=True)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error procesando voz: {e}")
 
 async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para comandos no reconocidos."""
@@ -868,8 +1310,8 @@ async def _send_system_status_inline(query):
 def main():
     print("""
     ╔══════════════════════════════════════════════════════════════╗
-    ║  ☀️ SOL — Miniapp de Telegram v1.1                          ║
-    ║  Tu compañera, ahora con interfaz nativa en Telegram.       ║
+    ║  ☀️ SOL — Miniapp de Telegram v2.0                          ║
+    ║  Táctica, recordatorios, voz, diario. Todo en Telegram.    ║
     ╚══════════════════════════════════════════════════════════════╝
     """)
 
@@ -883,7 +1325,7 @@ def main():
     # Crear la aplicación
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Handlers de comandos
+    # Handlers de comandos básicos
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("status", cmd_status))
@@ -893,14 +1335,29 @@ def main():
     app.add_handler(CommandHandler("personality", cmd_personality))
     app.add_handler(CommandHandler("name", cmd_name))
 
+    # Handlers de comandos extendidos
+    app.add_handler(CommandHandler("sysinfo", cmd_sysinfo))
+    app.add_handler(CommandHandler("report", cmd_report))
+    app.add_handler(CommandHandler("diary", cmd_diary))
+    app.add_handler(CommandHandler("avatar", cmd_avatar))
+    app.add_handler(CommandHandler("remind", cmd_remind))
+    app.add_handler(CommandHandler("reminders", cmd_list_reminders))
+    app.add_handler(CommandHandler("cancel_reminder", cmd_cancel_reminder))
+
     # Handler de botones inline
     app.add_handler(CallbackQueryHandler(button_handler))
 
     # Handler de mensajes de texto (conversación natural)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Handler de mensajes de voz
+    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
+
     # Handler de comandos no reconocidos
     app.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))
+
+    # Iniciar hilo de recordatorios
+    start_reminder_worker()
 
     print("☀️ Sol está activa en Telegram. Esperando mensajes...")
     print("   Presiona Ctrl+C para detener.")
