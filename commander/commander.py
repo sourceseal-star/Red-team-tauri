@@ -46,6 +46,16 @@ def _safe_makedirs(path):
     except (PermissionError, OSError) as e:
         print(f"⚠️ No se pudo crear {path}: {e}")
 
+# Cargar credenciales SMTP desde el entorno (.env) si estan disponibles.
+# Antes solo se podian introducir a mano via input() en el flujo interactivo
+# --setup, obligando a re-teclearlas cada vez. Si SMTP_SENDER_EMAIL/PASSWORD
+# ya estan en .env (sourced con "set -a" por arrancar_commander.sh o por
+# iniciar_unificado.sh), se detectan automaticamente sin pedir nada.
+if os.environ.get("SMTP_SENDER_EMAIL"):
+    CONFIG["sender_email"] = os.environ["SMTP_SENDER_EMAIL"]
+if os.environ.get("SMTP_SENDER_PASSWORD"):
+    CONFIG["sender_password"] = os.environ["SMTP_SENDER_PASSWORD"]
+
 _safe_makedirs(CONFIG["report_dir"])
 _safe_makedirs(CONFIG["temp_dir"])
 _safe_makedirs(CONFIG["yara_rules_dir"])
@@ -1009,3 +1019,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
