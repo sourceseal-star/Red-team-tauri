@@ -80,6 +80,10 @@ cleanup() {
     pkill -f "$ROOT/redteam/scripts/dashboard_server.py" 2>/dev/null || true
     pkill -f "$ROOT/ghost_hunter_phantom/master.py" 2>/dev/null || true
     pkill -f "$ROOT/ghost_hunter_phantom/node.py" 2>/dev/null || true
+    [ -n "$NEXUS_PID" ] && kill "$NEXUS_PID" 2>/dev/null || true
+    [ -n "$CONTROLLER_PID" ] && kill "$CONTROLLER_PID" 2>/dev/null || true
+    pkill -f "$ROOT/nexus_omni_v9.py" 2>/dev/null || true
+    pkill -f "$HOME/sourceseal_controller.py" 2>/dev/null || true
     echo "[unified] Sistema detenido"
 }
 trap 'cleanup; exit 0' SIGTERM SIGINT
@@ -238,11 +242,83 @@ echo "║  Dashboard:  http://127.0.0.1:$PORT                    ║"
 echo "║  Commander:  http://127.0.0.1:$PORT/api/commander/health║"
 echo "║  PHANTOM:    http://127.0.0.1:$MASTER_PORT/api/status  ║"
 echo "║  Caza:       POST :$MASTER_PORT/api/hunt/start          ║"
+echo "║  Nexus:      http://127.0.0.1:8004                      ║"
+echo "║  Controller: http://127.0.0.1:8005/api/status           ║"
 echo "╚══════════════════════════════════════════════════════╝"
 echo ""
 echo "[unified] Presiona Ctrl+C para detener todo."
 
-# Mantener vivos los tres procesos. Si uno cae, no dejamos servicios huérfanos.
+# ─── 5. Nexus Omni-Sentient :8004 (idempotente) ───────────
+NEXUS_PID=""
+if [ -f "$ROOT/nexus_omni_v9.py" ]; then
+    # Verificar si ya está vivo en 8004
+    NEXUS_UP=0
+    NCODE="$(curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1:8004/" 2>/dev/null || true)"
+    if [ "$NCODE" != "000" ] && [ -n "$NCODE" ]; then
+        echo "[unified] ✅ Nexus ya activo en :8004 (HTTP $NCODE) — no se duplica"
+        NEXUS_UP=1
+    fi
+    if [ "$NEXUS_UP" = "0" ]; then
+        echo "[unified] Arrancando Nexus Omni-Sentient en :8004..."
+        cd "$ROOT"
+        NEXUS_PORT=8004 nohup "$PYTHON_BIN" nexus_omni_v9.py > "$HOME/nexus.log" 2>&1 &
+        NEXUS_PID=$!
+        echo "[unified] Nexus PID: $NEXUS_PID"
+        # Esperar que responda (cualquier HTTP code significa que está arriba)
+        for i in $(seq 1 20); do
+            NCODE="$(curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1:8004/" 2>/dev/null || true)"
+            if [ "$NCODE" != "000" ] && [ -n "$NCODE" ]; then
+                echo "[unified] ✅ Nexus listo en :8004 (HTTP $NCODE)"
+                NEXUS_UP=1
+                break
+            fi
+            sleep 1
+        done
+        if [ "$NEXUS_UP" = "0" ]; then
+            echo "[unified][WARN] Nexus no respondió en 20s — continua el resto del sistema"
+        fi
+    fi
+else
+    echo "[unified][INFO] nexus_omni_v9.py no encontrado — saltando Nexus"
+fi
+
+# ─── 6. SourceSeal Controller :8005 (idempotente) ────────
+CONTROLLER_PID=""
+if [ -f "$HOME/sourceseal_controller.py" ]; then
+    # Verificar si ya está vivo en 8005
+    CTRL_UP=0
+    CCODE="$(curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1:8005/api/status" 2>/dev/null || true)"
+    if [ "$CCODE" != "000" ] && [ -n "$CCODE" ]; then
+        echo "[unified] ✅ Controller ya activo en :8005 (HTTP $CCODE) — no se duplica"
+        CTRL_UP=1
+    fi
+    if [ "$CTRL_UP" = "0" ]; then
+        echo "[unified] Arrancando SourceSeal Controller en :8005..."
+        # .env ya está cargado al inicio del script
+        cd "$HOME"
+        nohup "$PYTHON_BIN" "$HOME/sourceseal_controller.py" > "$HOME/controller.log" 2>&1 &
+        CONTROLLER_PID=$!
+        echo "[unified] Controller PID: $CONTROLLER_PID"
+        for i in $(seq 1 15); do
+            CCODE="$(curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1:8005/api/status" 2>/dev/null || true)"
+            if [ "$CCODE" != "000" ] && [ -n "$CCODE" ]; then
+                echo "[unified] ✅ Controller listo en :8005 (HTTP $CCODE)"
+                CTRL_UP=1
+                break
+            fi
+            sleep 1
+        done
+        if [ "$CTRL_UP" = "0" ]; then
+            echo "[unified][WARN] Controller no respondió en 15s — continua el resto del sistema"
+        fi
+    fi
+else
+    echo "[unified][INFO] ~/sourceseal_controller.py no encontrado — saltando Controller"
+fi
+
+cd "$ROOT"
+
+# Mantener vivos los procesos. Si uno cae, no dejamos servicios huérfanos.
 while true; do
     if ! kill -0 "$DASHBOARD_PID" 2>/dev/null; then
         echo "[unified][ERROR] Dashboard terminó inesperadamente." >&2
