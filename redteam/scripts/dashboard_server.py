@@ -1305,7 +1305,7 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 # Endpoints PÚBLICOS (no requieren API key):
 #   /api/health, /health, /healthz  → health checks
 #   /canary/callback               → intruso phone-home (debe ser accesible)
-PUBLIC_PATHS = {"/api/health", "/api/healthz", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json"}
+PUBLIC_PATHS = {"/api/health", "/api/healthz", "/health", "/healthz", "/canary/callback", "/api/phantom/alert", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json"}
 
 # ── CORS lockdown ───────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
