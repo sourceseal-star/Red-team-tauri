@@ -1,72 +1,165 @@
-#!/bin/bash
-# SourceSeal — Launcher Unificado (dev mode)
-# Usa npm run dev en vez de preview para ver errores en el navegador
+#!/data/data/com.termux/files/usr/bin/bash
+# ============================================================
+# start-all.sh — Arranque completo de todos los servicios
+# ============================================================
+#   bash start-all.sh           → Dashboard + Nexus
+#   bash start-all.sh --ai      → Dashboard + Nexus + AI Orchestrator
+#   bash start-all.sh --phantom → Dashboard + Nexus + GHOST HUNTER PHANTOM
+#   bash start-all.sh --full    → Todo
+# ============================================================
+set -Eeuo pipefail
 
-echo "========================================="
-echo "   SourceSeal Console Launcher"
-echo "========================================="
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
 
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'; R='\033[0;31m'; N='\033[0m'
 
-# 1. Variables
-export API_KEY="${API_KEY:-tu-clave-secreta-123}"
-export PORT=8001
-
-# 2. Verificar backend
-echo -e "${YELLOW}[1/3]${NC} Verificando backend..."
-if [ ! -f "redteam/scripts/dashboard_server.py" ]; then
-    echo -e "${RED}[!] dashboard_server.py no encontrado${NC}"
-    exit 1
-fi
-
-# 3. Levantar backend UNIFICADO (dashboard_server.py con todos los endpoints de escaneo/camaras/etc)
-echo -e "${YELLOW}[2/3]${NC} Levantando backend unificado en puerto $PORT..."
-cd redteam/scripts
-python3 dashboard_server.py > ../../backend.log 2>&1 &
-BACKEND_PID=$!
-cd ../..
-
-echo "    Esperando backend..."
-BACKEND_OK=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    sleep 1
-    if curl -s http://127.0.0.1:$PORT/api/health > /dev/null 2>&1; then
-        echo -e "${GREEN}[OK] Backend online en http://127.0.0.1:$PORT${NC}"
-        BACKEND_OK=1
-        break
-    fi
+# Flags
+WITH_AI=false
+WITH_PHANTOM=false
+WITH_NEXUS=true
+for arg in "$@"; do
+  case "$arg" in
+    --ai) WITH_AI=true ;;
+    --phantom) WITH_PHANTOM=true ;;
+    --full) WITH_AI=true; WITH_PHANTOM=true ;;
+    --no-nexus) WITH_NEXUS=false ;;
+    --help|-h)
+      echo "Uso: bash start-all.sh [--ai] [--phantom] [--full] [--no-nexus]"
+      echo "  --ai      Inicia AI Orchestrator"
+      echo "  --phantom Inicia GHOST HUNTER PHANTOM"
+      echo "  --full    Inicia todo"
+      echo "  --no-nexus No inicia Nexus OSINT"
+      exit 0 ;;
+  esac
 done
-if [ "$BACKEND_OK" -eq 0 ]; then
-    echo -e "${RED}[!] Backend no respondio. Revisa backend.log:${NC}"
-    tail -20 backend.log
-    exit 1
+
+echo ""
+echo -e "${C}╔═══════════════════════════════════════════════════════╗${N}"
+echo -e "${C}║  SOURCESEAL — ARRANQUE COMPLETO                        ║${N}"
+echo -e "${C}║  Dashboard :8001 | Nexus :8004 | PHANTOM :8002       ║${N}"
+echo -e "${C}╚═══════════════════════════════════════════════════════╝${N}"
+echo ""
+
+# Deps
+for pkg in fastapi uvicorn httpx websockets; do
+  python3 -c "import $pkg" 2>/dev/null || pip install "$pkg" 2>&1 | tail -1
+done
+
+# .env
+if [ -f "$ROOT/.env" ]; then
+  set -a; . "$ROOT/.env"; set +a
 fi
 
-# 4. Levantar frontend en modo dev (muestra errores en el navegador)
-echo -e "${YELLOW}[3/3]${NC} Levantando frontend (dev mode)..."
-cd tauri-frontend
-npm run dev > ../frontend.log 2>&1 &
-FRONTEND_PID=$!
-cd ..
+export PYTHONUNBUFFERED=1
+export COMMANDER_DIR="${COMMANDER_DIR:-$ROOT/commander}"
+if [ ! -f "$COMMANDER_DIR/ai_orchestrator.py" ] && [ -f "$ROOT/commander/ai_orchestrator.py" ]; then
+  export COMMANDER_DIR="$ROOT/commander"
+fi
 
-sleep 3
+PIDS=()
+
+# 1. Dashboard (:8001)
+echo -e "${G}[1] Dashboard en :8001...${N}"
+pkill -f "dashboard_server.py" 2>/dev/null || true
+sleep 1
+nohup python3 "$ROOT/backend/dashboard_server.py" > "$HOME/dashboard.log" 2>&1 &
+DASH_PID=$!
+PIDS+=("$DASH_PID")
+
+for i in $(seq 1 15); do
+  curl -s http://127.0.0.1:8001/api/health >/dev/null 2>&1 && break
+  sleep 1
+done
+
+if curl -s http://127.0.0.1:8001/api/health >/dev/null 2>&1; then
+  echo -e "  ${G}✅ Dashboard online${N}"
+  # Verificar AI Orchestrator
+  if curl -s -H "X-Api-Key: ${REDTEAM_API_KEY}" http://127.0.0.1:8001/api/commander/ai/status 2>/dev/null | grep -q '"available": true'; then
+    echo -e "  ${G}✅ AI Orchestrator disponible en /api/commander/ai/*${N}"
+  else
+    echo -e "  ${Y}⚠️  AI Orchestrator no disponible${N}"
+  fi
+else
+  echo -e "  ${R}❌ Dashboard no respondió. Ver $HOME/dashboard.log${N}"
+  tail -5 "$HOME/dashboard.log" 2>/dev/null
+fi
+
+# 2. Nexus OSINT (:8004)
+if [ "$WITH_NEXUS" = true ] && [ -f "$ROOT/nexus_omni_v9.py" ]; then
+  echo -e "${G}[2] Nexus OSINT en :8004...${N}"
+  pkill -f "nexus_omni_v9.py" 2>/dev/null || true
+  nohup python3 "$ROOT/nexus_omni_v9.py" > "$HOME/nexus.log" 2>&1 &
+  NEXUS_PID=$!
+  PIDS+=("$NEXUS_PID")
+  sleep 2
+  if curl -s http://127.0.0.1:8004/ >/dev/null 2>&1; then
+    echo -e "  ${G}✅ Nexus online${N}"
+  else
+    echo -e "  ${Y}⚠️  Nexus iniciando (ver $HOME/nexus.log)${N}"
+  fi
+fi
+
+# 3. GHOST HUNTER PHANTOM (:8002)
+if [ "$WITH_PHANTOM" = true ] && [ -f "$ROOT/ghost_hunter_phantom/start.sh" ]; then
+  echo -e "${G}[3] GHOST HUNTER PHANTOM en :8002...${N}"
+  pkill -f "ghost_hunter_phantom/master.py" 2>/dev/null || true
+  pkill -f "ghost_hunter_phantom/node.py" 2>/dev/null || true
+  cd "$ROOT/ghost_hunter_phantom"
+  nohup python3 master.py > "$HOME/phantom.log" 2>&1 &
+  PHANTOM_PID=$!
+  PIDS+=("$PHANTOM_PID")
+  sleep 1
+  nohup env NODE_ID="phantom_01" MASTER_URL="http://localhost:8002" \
+    BACKEND_API="http://localhost:8001" python3 node.py >> "$HOME/phantom.log" 2>&1 &
+  PIDS+=("$!")
+  cd "$ROOT"
+  echo -e "  ${G}✅ PHANTOM iniciado${N}"
+fi
+
+# 4. AI Orchestrator (modo --once o continuo)
+if [ "$WITH_AI" = true ] && [ -f "$COMMANDER_DIR/ai_orchestrator.py" ]; then
+  echo -e "${G}[4] AI Orchestrator...${N}"
+  if [ -n "${LLM_API_KEY:-}" ]; then
+    echo -e "  ${G}IA activa (LLM_API_KEY configurada)${N}"
+    nohup python3 "$COMMANDER_DIR/ai_orchestrator.py" \
+      --network "${TARGET_NETWORK:-192.168.1.0/24}" \
+      > "$HOME/ai_orch.log" 2>&1 &
+  else
+    echo -e "  ${Y}Modo offline (sin LLM_API_KEY)${N}"
+    nohup python3 "$COMMANDER_DIR/ai_orchestrator.py" \
+      --no-ai --once \
+      --network "${TARGET_NETWORK:-192.168.1.0/24}" \
+      > "$HOME/ai_orch.log" 2>&1 &
+  fi
+  PIDS+=("$!")
+  echo -e "  ${G}✅ AI Orchestrator iniciado${N}"
+fi
+
+# 5. Telegram (si está configurado)
+if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+  SVC="Dashboard✅"
+  [ "$WITH_NEXUS" = true ] && SVC="${SVC} Nexus✅"
+  [ "$WITH_PHANTOM" = true ] && SVC="${SVC} PHANTOM✅"
+  [ "$WITH_AI" = true ] && SVC="${SVC} AI✅"
+  MSG=$(printf "SourceSeal iniciado\n%s\nDashboard: http://localhost:8001" "$SVC")
+  curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    -d chat_id="${TELEGRAM_CHAT_ID}" -d text="$MSG" >/dev/null 2>&1
+  echo -e "${G}Telegram notificado${N}"
+fi
 
 echo ""
-echo -e "${GREEN}[OK] TODO LEVANTADO${NC}"
-echo "   Backend:   http://127.0.0.1:$PORT"
-echo "   Frontend:  http://localhost:5173"
-echo "   Logs:      backend.log | frontend.log"
+echo -e "${G}╔═══════════════════════════════════════════════════════╗${N}"
+echo -e "${G}║  SERVICIOS ACTIVOS                                     ║${N}"
+echo -e "${G}║  Dashboard:  http://localhost:8001                      ║${N}"
+[ "$WITH_NEXUS" = true ] && echo -e "${G}║  Nexus:     http://localhost:8004                      ║${N}"
+[ "$WITH_PHANTOM" = true ] && echo -e "${G}║  PHANTOM:   http://localhost:8002/api/status          ║${N}"
+echo -e "${G}║  Logs:      ~/dashboard.log | ~/nexus.log              ║${N}"
+[ "$WITH_PHANTOM" = true ] && echo -e "${G}║             ~/phantom.log                              ║${N}"
+[ "$WITH_AI" = true ] && echo -e "${G}║  AI Orch:   ~/ai_orch.log                             ║${N}"
+echo -e "${G}╚═══════════════════════════════════════════════════════╝${N}"
 echo ""
-echo "   PIDs: Backend=$BACKEND_PID Frontend=$FRONTEND_PID"
-echo ""
-echo "   Si ves pantalla blanca, abre F12 en el navegador"
-echo "   y mira la consola — dev mode muestra los errores."
-echo ""
-echo "Presiona Ctrl+C para detener todo"
+echo -e "${Y}Ctrl+C para detener todo${N}"
 
-trap "echo ''; echo '[!] Deteniendo...'; kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit" INT TERM
-
+trap "echo ''; echo '[stop] Deteniendo...'; kill ${PIDS[*]} 2>/dev/null; exit" INT TERM
 wait

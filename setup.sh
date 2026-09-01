@@ -107,6 +107,20 @@ fi
 python3 -m pip install --disable-pip-version-check "${PYTHON_PACKAGES[@]}"
 ok "Dependencias Python listas"
 
+info "Verificando AI Orchestrator en Commander..."
+if [ -f "$COMMANDER_DIR/ai_orchestrator.py" ]; then
+  ok "AI Orchestrator encontrado en $COMMANDER_DIR"
+  if [ -f "$COMMANDER_DIR/seal_ia_knowledge.py" ]; then
+    ok "Seal IA Knowledge encontrado"
+  else
+    warn "seal_ia_knowledge.py no encontrado en Commander — intel de IA limitada"
+  fi
+else
+  warn "AI Orchestrator no encontrado en $COMMANDER_DIR"
+  warn "Endpoints /api/commander/ai/* quedaran desactivados"
+fi
+
+
 info "Instalando dependencias y compilando el frontend..."
 (
   cd "$REPO_DIR/tauri-frontend"
