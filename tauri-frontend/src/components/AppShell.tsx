@@ -1,7 +1,7 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import {
   LayoutDashboard, Shield, Camera, Radio, Globe, Wifi, Activity,
-  Terminal, Settings, Bell, Search, Menu, X, ChevronRight, Download,
+  Terminal, Settings, Bell, Search, Menu, X, ChevronRight, ChevronDown, Download,
   Zap, Lock, Eye, Fingerprint, Bug, FileText, Network,
   Sun, Moon, LogOut, Cpu, MapPin, Smartphone, Crosshair
 } from 'lucide-react'
@@ -60,6 +60,16 @@ const MODULES = [
   { id: 'arto', label: 'ARTO AI', icon: Cpu, color: 'text-orange-400', badge: 'AI' },
   { id: 'seal', label: 'SEAL Pack', icon: Fingerprint, color: 'text-cyan-400', badge: 'NEW' },
   { id: 'leviathan', label: 'LEVIATHAN', icon: Shield, color: 'text-purple-400', badge: 'v3.0' },
+];
+
+// Secciones agrupadas para sidebar colapsable
+const SIDEBAR_SECTIONS = [
+  { id: 'mando', title: '🏠 Mando', moduleIds: ['warroom', 'tower', 'operations', 'services', 'terminal'] },
+  { id: 'red', title: '🗺️ Red', moduleIds: ['netmap', 'topology', 'wifi', 'iot'] },
+  { id: 'inteligencia', title: '🧠 Inteligencia', moduleIds: ['nexus', 'osint_adv', 'threat', 'arto', 'blackmirror'] },
+  { id: 'laboratorio', title: '⚔️ Laboratorio', moduleIds: ['osint', 'leviathan', 'interceptor', 'tactical'] },
+  { id: 'campo', title: '📡 Campo', moduleIds: ['comlink', 'commander', 'android'] },
+  { id: 'sistema', title: '⚙️ Sistema', moduleIds: ['alerts', 'export', 'settings', 'seal', 'cameras', 'ultra'] },
 ];
 
 const MODULE_DESCRIPTIONS: Record<string, string> = {
@@ -259,7 +269,18 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
   const [commandOpen, setCommandOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('sidebar_sections');
+      return saved ? JSON.parse(saved) : { mando: true, red: true, inteligencia: true, laboratorio: false, campo: false, sistema: false };
+    } catch { return { mando: true, red: true, inteligencia: true, laboratorio: false, campo: false, sistema: false }; }
+  });
+  const [searchTerm, setSearchTerm] = useState('');
   const { addToast } = useToast();
+
+  useEffect(() => {
+    localStorage.setItem('sidebar_sections', JSON.stringify(openSections));
+  }, [openSections]);
 
   // Atajo Ctrl+K
   useEffect(() => {
@@ -345,39 +366,88 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
 
         <div className="flex flex-1 overflow-hidden">
           {/* Sidebar Desktop */}
-          <aside className={`hidden lg:flex flex-col w-56 bg-slate-900 border-r border-slate-800 transition-all ${sidebarOpen ? '' : 'w-14'}`}>
-            <div className="flex-1 overflow-y-auto py-2 space-y-0.5">
-              {MODULES.map(m => {
-                const Icon = m.icon;
-                const isActive = activeModule === m.id;
+          <aside className={`hidden lg:flex flex-col w-60 bg-slate-900 border-r border-slate-800 transition-all ${sidebarOpen ? '' : 'w-14'}`}>
+            {/* Buscador */}
+            {sidebarOpen && (
+              <div className="p-2 border-b border-slate-800/60">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Buscar..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className="w-full bg-slate-800 text-xs text-white pl-8 pr-3 py-2 rounded border border-slate-700/50 focus:outline-none focus:border-amber-500/50 min-h-[36px]"
+                  />
+                </div>
+              </div>
+            )}
+            <div className="flex-1 overflow-y-auto py-1 space-y-0.5">
+              {SIDEBAR_SECTIONS.map(section => {
+                const sectionModules = section.moduleIds
+                  .map(id => MODULES.find(m => m.id === id))
+                  .filter(m => m && (!searchTerm || m!.label.toLowerCase().includes(searchTerm.toLowerCase())));
+                if (searchTerm && sectionModules.length === 0) return null;
+                const isSectionOpen = searchTerm ? true : (openSections[section.id] ?? true);
                 return (
-                  <button
-                    key={m.id}
-                    onClick={() => onNavigate(m.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 mx-2 rounded-lg transition-all text-left ${
-                      isActive 
-                        ? 'bg-slate-800 border border-slate-700' 
-                        : 'hover:bg-slate-800/50 border border-transparent'
-                    }`}
-                  >
-                    <Icon size={16} className={isActive ? m.color : 'text-slate-500'} />
+                  <div key={section.id} className="mb-0.5">
                     {sidebarOpen && (
-                      <>
-                        <span className={`text-xs font-medium ${isActive ? 'text-white' : 'text-slate-400'}`}>
-                          {m.label}
-                        </span>
-                        {m.badge === 'live' && (
-                          <span className="ml-auto w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />
-                        )}
-                      </>
+                      <button
+                        onClick={() => setOpenSections(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
+                        className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-300"
+                      >
+                        <span>{section.title}</span>
+                        {isSectionOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      </button>
                     )}
-                  </button>
+                    {isSectionOpen && sectionModules.map(m => {
+                      const Icon = m!.icon;
+                      const isActive = activeModule === m!.id;
+                      return (
+                        <button
+                          key={m!.id}
+                          onClick={() => onNavigate(m!.id)}
+                          className={`w-full flex items-center gap-3 px-3 py-2 mx-1 rounded-lg transition-all text-left min-h-[44px] ${
+                            isActive 
+                              ? 'bg-slate-800 border border-slate-700' 
+                              : 'hover:bg-slate-800/50 border border-transparent'
+                          }`}
+                        >
+                          <Icon size={16} className={isActive ? m!.color : 'text-slate-500'} />
+                          {sidebarOpen && (
+                            <>
+                              <span className={`text-xs font-medium ${isActive ? 'text-white' : 'text-slate-400'}`}>
+                                {m!.label}
+                              </span>
+                              {m!.badge === 'live' && (
+                                <span className="ml-auto w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />
+                              )}
+                              {m!.badge && m!.badge !== 'live' && (
+                                <span className="ml-auto text-[8px] font-bold px-1 py-0.5 rounded bg-slate-800 text-slate-500">{m!.badge}</span>
+                              )}
+                            </>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 );
               })}
             </div>
+            {/* Sol acceso directo fijo */}
+            {sidebarOpen && (
+              <a href="/sol.html" target="_blank" rel="noopener noreferrer"
+                className="mx-2 mb-1 flex items-center justify-between px-3 py-2.5 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 text-amber-300 hover:from-amber-500/30 hover:to-orange-500/30 min-h-[44px]">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">☀️</span>
+                  <span className="text-xs font-semibold">Abrir Sol</span>
+                </div>
+                <span className="text-[8px] bg-amber-500 text-slate-950 font-bold px-1.5 py-0.5 rounded">SIEMPRE</span>
+              </a>
+            )}
             <button 
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 border-t border-slate-800 text-slate-500 hover:text-slate-300 flex justify-center"
+              className="p-2 border-t border-slate-800 text-slate-500 hover:text-slate-300 flex justify-center min-h-[44px]"
             >
               {sidebarOpen ? <X size={14} /> : <Menu size={14} />}
             </button>
@@ -387,33 +457,74 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
           {mobileOpen && (
             <div className="fixed inset-0 z-50 lg:hidden">
               <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-              <aside className="absolute left-0 top-0 bottom-0 w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
-                <div className="px-4 py-3 border-b border-slate-800 shrink-0">
+              <aside className="absolute left-0 top-0 bottom-0 w-72 bg-slate-900 border-r border-slate-800 flex flex-col">
+                <div className="px-4 py-3 border-b border-slate-800 shrink-0 flex items-center justify-between">
                   <span className="text-sm font-bold text-white">SourceSeal Console</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">v6.0</span>
                 </div>
-                <div className="flex-1 overflow-y-auto py-2 space-y-0.5">
-                  {MODULES.map(m => {
-                    const Icon = m.icon;
-                    const isActive = activeModule === m.id;
+                {/* Buscador móvil */}
+                <div className="p-2 border-b border-slate-800/60">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="Buscar módulo..."
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="w-full bg-slate-800 text-sm text-white pl-8 pr-3 py-2 rounded border border-slate-700/50 focus:outline-none focus:border-amber-500/50 min-h-[44px]"
+                    />
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto py-1 space-y-0.5">
+                  {SIDEBAR_SECTIONS.map(section => {
+                    const sectionModules = section.moduleIds
+                      .map(id => MODULES.find(m => m.id === id))
+                      .filter(m => m && (!searchTerm || m!.label.toLowerCase().includes(searchTerm.toLowerCase())));
+                    if (searchTerm && sectionModules.length === 0) return null;
+                    const isSectionOpen = searchTerm ? true : (openSections[section.id] ?? true);
                     return (
-                      <button
-                        key={m.id}
-                        onClick={() => { onNavigate(m.id); setMobileOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left ${
-                          isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50'
-                        }`}
-                      >
-                        <Icon size={18} className={isActive ? m.color : ''} />
-                        <span className="text-sm">{m.label}</span>
-                        {m.badge && (
-                          <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">
-                            {m.badge}
-                          </span>
-                        )}
-                      </button>
+                      <div key={section.id} className="mb-0.5">
+                        <button
+                          onClick={() => setOpenSections(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
+                          className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-300 min-h-[44px]"
+                        >
+                          <span>{section.title}</span>
+                          {isSectionOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                        </button>
+                        {isSectionOpen && sectionModules.map(m => {
+                          const Icon = m!.icon;
+                          const isActive = activeModule === m!.id;
+                          return (
+                            <button
+                              key={m!.id}
+                              onClick={() => { onNavigate(m!.id); setMobileOpen(false); }}
+                              className={`w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left min-h-[44px] ${
+                                isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50'
+                              }`}
+                            >
+                              <Icon size={18} className={isActive ? m!.color : ''} />
+                              <span className="text-sm">{m!.label}</span>
+                              {m!.badge && (
+                                <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">
+                                  {m!.badge}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     );
                   })}
                 </div>
+                {/* Sol acceso directo fijo */}
+                <a href="/sol.html" target="_blank" rel="noopener noreferrer"
+                  className="mx-2 mb-2 flex items-center justify-between px-3 py-3 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 text-amber-300 hover:from-amber-500/30 hover:to-orange-500/30 min-h-[48px]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">☀️</span>
+                    <span className="font-semibold text-sm">Abrir Sol</span>
+                  </div>
+                  <span className="text-[10px] bg-amber-500 text-slate-950 font-bold px-1.5 py-0.5 rounded">SIEMPRE</span>
+                </a>
               </aside>
             </div>
           )}

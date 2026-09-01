@@ -36,6 +36,7 @@ import ComlinkPanel from './components/ComlinkPanel';
 import OperationsPanel from './components/OperationsPanel';
 import IntegratedPanel from './components/IntegratedPanel';
 import TacticalPanel from './components/TacticalPanel';
+import { FloatingSol } from './components/FloatingSol';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -82,6 +83,7 @@ function App() {
       {module === 'android' && <AndroidFieldPanel />}
       {module === 'tactical' && <TacticalPanel />}
     </AppShell>
+    <FloatingSol />
     </ARTOProvider>
     </LanguageProvider>
   );

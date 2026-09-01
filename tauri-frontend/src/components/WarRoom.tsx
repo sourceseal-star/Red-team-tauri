@@ -10,6 +10,7 @@ import BlackMirrorPanel from './BlackMirrorPanel';
 import ServiceControlPanel from './ServiceControlPanel';
 import LeviathanWidget from './LeviathanWidget';
 import UnifiedCommandHub from './UnifiedCommandHub';
+import { SolWidget } from './SolWidget';
 
 // Paneles disponibles para el War Room
 const PANELS = [
@@ -36,6 +37,7 @@ export default function WarRoom({ onNavigate }: { onNavigate?: (module: string) 
 
   return (
     <div className="space-y-4">
+      <SolWidget />
       <UnifiedCommandHub onNavigate={onNavigate} />
 
       {/* Barra de control de paneles */}
