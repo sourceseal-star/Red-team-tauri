@@ -71,8 +71,10 @@ log(){ echo "[$(date '+%m-%d %H:%M')] $*" | tee -a "$LOG"; }
 if [ -f "$RT/.env" ]; then
   while IFS='=' read -r k v; do
     case "$k" in ''|\#*) continue;; esac
-    # Limpiar comillas
-    v="${v%\"}"; v="${v%\'}"
+    # Limpiar comillas de AMBOS lados (fix: antes solo quitaba el final)
+    v="${v#\"}"; v="${v%\"}"      # dobles
+    v="${v#\'}"; v="${v%\'}"      # simples
+    v="${v%"$(printf '\r')"}"     # quitar CR final (Windows line endings)
     export "$k=$v" 2>/dev/null || true
   done < "$RT/.env" 2>/dev/null
 fi
@@ -432,7 +434,12 @@ tg_check() {
     echo "   Verifica que exista en .env: grep TELEGRAM_BOT_TOKEN $RT/.env"
     return 1
   fi
-  echo "1) Token cargado: ${TELEGRAM_BOT_TOKEN:0:10}...(${#TELEGRAM_BOT_TOKEN} chars)"
+  echo "1) Token cargado: ${TELEGRAM_BOT_TOKEN:0:15}...(${#TELEGRAM_BOT_TOKEN} chars)"
+  # Detectar comilla al inicio (bug comun al editar con nano)
+  case "${TELEGRAM_BOT_TOKEN:0:1}" in
+    '"'|"'"  ) echo "   ⚠️  El token empieza con comilla — el .env tiene comillas de mas" ;;
+    *         ) echo "   ✅ Token sin comillas al inicio" ;;
+  esac
   echo ""
   echo "2) Probando conectividad directa a Telegram (getMe)..."
   RESP="$(curl -s -m 8 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe")"
