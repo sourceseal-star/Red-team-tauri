@@ -23,6 +23,7 @@
 #    :8002  GHOST PHANTOM Master + Node worker
 #    :8004  Nexus Omni-Sentient
 #    :8005  C2 UNIFIED PRO (si existe)
+#    ☀️    Sol Autónoma (daemon que vigila y habla proactivamente)
 #    ☀️    Puente Telegram (@sol_amg_bot)
 #    🐕    Watchdog (vigila y reinicia caídos)
 #    🦭    Seal IA Orquestador (si SEAL_ENABLED=1)
@@ -481,6 +482,41 @@ start() {
     ok "Watchdog ya corriendo"
   fi
 
+  # ── 8. Sol Autónoma (daemon) ──
+  if [ -f "$ROOT/sol_daemon.py" ] && [ -f "$ROOT/sol_core.py" ]; then
+    if [ -f "$SOL_DIR/sol.pid" ]; then
+      SOL_DAEMON_PID=$(cat "$SOL_DIR/sol.pid" 2>/dev/null)
+      if [ -n "$SOL_DAEMON_PID" ] && kill -0 "$SOL_DAEMON_PID" 2>/dev/null; then
+        ok "Sol autónoma ☀️ ya corriendo (PID $SOL_DAEMON_PID)"
+      else
+        rm -f "$SOL_DIR/sol.pid"
+        info "Sol autónoma ☀️ — arrancando daemon..."
+        cd "$ROOT"
+        nohup python3 sol_daemon.py >> "$LOG_DIR/sol_daemon.log" 2>&1 &
+        echo $! > "$SOL_DIR/sol.pid"
+        sleep 2
+        if kill -0 "$(cat "$SOL_DIR/sol.pid" 2>/dev/null)" 2>/dev/null; then
+          ok "Sol autónoma ☀️ activa (PID $(cat "$SOL_DIR/sol.pid"))"
+        else
+          warn "Sol autónoma ☀️ no arrancó — ver $LOG_DIR/sol_daemon.log"
+        fi
+      fi
+    else
+      info "Sol autónoma ☀️ — arrancando daemon..."
+      cd "$ROOT"
+      nohup python3 sol_daemon.py >> "$LOG_DIR/sol_daemon.log" 2>&1 &
+      echo $! > "$SOL_DIR/sol.pid"
+      sleep 2
+      if kill -0 "$(cat "$SOL_DIR/sol.pid" 2>/dev/null)" 2>/dev/null; then
+        ok "Sol autónoma ☀️ activa (PID $(cat "$SOL_DIR/sol.pid"))"
+      else
+        warn "Sol autónoma ☀️ no arrancó — ver $LOG_DIR/sol_daemon.log"
+      fi
+    fi
+  else
+    info "Sol daemon no encontrado — saltando (usa 'bash ~/sol.sh start' manualmente)"
+  fi
+
   cd "$ROOT"
   echo ""
   echo -e "${G}╔═══════════════════════════════════════════════════════╗${N}"
@@ -509,6 +545,8 @@ stop() {
   pkill -f "ghost_hunter_phantom/node" 2>/dev/null && ok "GHOST Node detenido" || true
   pkill -f "ghost_hunter_phantom/master" 2>/dev/null && ok "GHOST Master detenido" || true
   pkill -f "redteam/scripts/dashboard_server" 2>/dev/null && ok "Dashboard detenido" || true
+  pkill -f "sol_daemon.py" 2>/dev/null && ok "Sol autónoma detenida" || true
+  rm -f "$SOL_DIR/sol.pid" 2>/dev/null || true
 
   sleep 1
   echo ""
@@ -599,6 +637,18 @@ status_short() {
     else
       info "Seal IA 🦭         ⚪ DESACTIVADO"
     fi
+  fi
+
+  # Sol Autónoma
+  if [ -f "$SOL_DIR/sol.pid" ]; then
+    SOL_DAEMON_PID=$(cat "$SOL_DIR/sol.pid" 2>/dev/null)
+    if [ -n "$SOL_DAEMON_PID" ] && kill -0 "$SOL_DAEMON_PID" 2>/dev/null; then
+      ok "Sol Autónoma ☀️    🟢 ACTIVA (PID $SOL_DAEMON_PID)"
+    else
+      warn "Sol Autónoma ☀️    🟡 INACTIVA (PID stale)"
+    fi
+  else
+    warn "Sol Autónoma ☀️    🟡 DETENIDA"
   fi
 
   # Watchdog
