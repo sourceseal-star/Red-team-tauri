@@ -1,94 +1,274 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>NEXUS OMNI v9.0</title>
+    <title>NEXUS OMNI v9.1</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <style>
-        body { margin:0; background:#000; color:#0f0; font-family:'Courier New'; overflow:hidden; }
-        #map { height:100vh; width:100%; z-index:1; }
-        #overlay { position:absolute; top:10px; left:10px; z-index:1000; background:rgba(0,20,0,0.8); padding:15px; border:1px solid #0f0; width:300px; }
-        .stat { margin-bottom:5px; font-size:0.9rem; }
+        * { box-sizing: border-box; }
+        body { margin:0; background:#000; color:#0f0; font-family:'Courier New', monospace; overflow:hidden; }
+
+        /* Mapa OSM real (sin API key) con filtro oscuro CSS.
+           CartoDB dark_all quedó deprecado y ahora exige API key
+           (de ahí el watermark "API KEY REQUIRED" en la versión anterior).
+           OpenStreetMap es gratuito, sin key, y con el filtro se ve dark. */
+        #map { height:100vh; width:100%; z-index:1; filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%); }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip { filter: invert(100%) hue-rotate(180deg); }
+        .leaflet-control-zoom { filter: invert(100%) hue-rotate(180deg); }
+
+        #overlay {
+            position:absolute; top:10px; left:10px; z-index:1000;
+            background:rgba(0,20,0,0.9); padding:12px; border:1px solid #0f0;
+            width:280px; max-height: 90vh; overflow-y:auto; font-size:0.85rem;
+        }
+        .stat { margin-bottom:5px; font-size:0.85rem; }
         .critical { color:#f00; font-weight:bold; }
-        button { background:#0f0; color:#000; border:none; padding:5px 10px; cursor:pointer; width:100%; margin-top:5px; font-weight:bold; }
+        .ok-badge { color:#0f0; }
+        .warn-badge { color:#fa0; }
+        button {
+            background:#0f0; color:#000; border:none; padding:6px 10px;
+            cursor:pointer; width:100%; margin-top:6px; font-weight:bold; font-size:0.8rem;
+        }
+        button:disabled { background:#555; cursor:not-allowed; }
+        button.secondary { background: transparent; border: 1px solid #0f0; color: #0f0; }
+
+        input.target-input {
+            width:100%; background:#001a00; border:1px solid #0f0; color:#0f0;
+            padding:5px; margin-top:6px; font-family:monospace; font-size:0.8rem;
+        }
+
+        .tabs { display:flex; gap:2px; margin-top:8px; border-top: 1px solid #0f0; padding-top: 6px; }
+        .tab-btn {
+            flex:1; background:transparent; border:1px solid #0f0; color:#0f0;
+            padding:4px; font-size:0.65rem; margin:0;
+        }
+        .tab-btn.active { background:#0f0; color:#000; }
+
+        #side-panel {
+            position:absolute; top:10px; right:10px; z-index:1000;
+            background:rgba(0,20,0,0.92); border:1px solid #0f0;
+            width:300px; max-height:90vh; overflow-y:auto; font-size:0.75rem;
+            display:none;
+        }
+        #side-panel.visible { display:block; }
+        #side-panel h4 { margin:8px 10px 4px; color:#0f0; border-bottom:1px solid #0f0; padding-bottom:4px; }
+
+        .device-row {
+            padding:6px 10px; border-bottom:1px solid rgba(0,255,0,0.15);
+            cursor:pointer;
+        }
+        .device-row:hover { background:rgba(0,255,0,0.08); }
+        .device-ip { font-weight:bold; }
+        .risk-critical { color:#f00; }
+        .risk-high { color:#fa0; }
+        .risk-medium { color:#ff0; }
+        .risk-low { color:#0f0; }
+        .device-meta { color:#6a6; font-size:0.68rem; margin-top:2px; }
+
+        .event-row {
+            padding:5px 10px; border-bottom:1px solid rgba(0,255,0,0.1); font-size:0.68rem;
+        }
+        .event-sev-HIGH { color:#fa0; }
+        .event-sev-CRITICAL { color:#f00; }
+
+        .empty-msg { padding:12px 10px; color:#4a4; font-size:0.7rem; text-align:center; }
+
+        #legend {
+            position:absolute; bottom:10px; left:10px; z-index:1000;
+            background:rgba(0,20,0,0.85); border:1px solid #0f0; padding:8px;
+            font-size:0.65rem;
+        }
+        .legend-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
+
         canvas { position:absolute; top:0; left:0; pointer-events:none; z-index:500; }
     </style>
 </head>
 <body>
 <div id="overlay">
-    <h3>NEXUS OMNI v9.0</h3>
+    <h3 style="margin:0 0 8px;">NEXUS OMNI v9.1</h3>
     <div class="stat">Estado: <span id="status">IDLE</span></div>
     <div class="stat">Modo: <span id="mode">STEALTH</span></div>
     <div class="stat critical">Amenazas: <span id="crit-count">0</span></div>
-    <button onclick="startScan()">INICIAR ESCANEO COGNITIVO</button>
+    <div class="stat">Total dispositivos: <span id="total-count">0</span></div>
+    <div class="stat">Eventos reales: <span id="event-count">0</span></div>
+
+    <input type="text" id="target-input" class="target-input" value="192.168.1.0/24" placeholder="192.168.1.0/24" />
+    <button onclick="startScan()" id="scan-btn">INICIAR ESCANEO COGNITIVO</button>
+    <button onclick="togglePanel()" class="secondary">VER RED LOCAL / EVENTOS</button>
+
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="local" onclick="switchTab('local')">LAN</button>
+        <button class="tab-btn" data-tab="events" onclick="switchTab('events')">EVENTOS</button>
+    </div>
 </div>
+
+<div id="side-panel">
+    <div id="panel-local">
+        <h4>📡 RED LOCAL — datos reales (sin GPS)</h4>
+        <div id="local-list"><div class="empty-msg">Sin dispositivos LAN detectados aún. Inicia un escaneo.</div></div>
+    </div>
+    <div id="panel-events" style="display:none;">
+        <h4>⚡ EVENTOS Y ADAPTACIONES REALES</h4>
+        <div id="events-list"><div class="empty-msg">Sin eventos registrados.</div></div>
+    </div>
+</div>
+
+<div id="legend">
+    <div><span class="legend-dot" style="background:#f00;"></span>Crítico</div>
+    <div><span class="legend-dot" style="background:#fa0;"></span>Alto</div>
+    <div><span class="legend-dot" style="background:#ff0;"></span>Medio</div>
+    <div><span class="legend-dot" style="background:#0f0;"></span>Bajo</div>
+    <div style="margin-top:4px; color:#6a6;">Solo IPs públicas con<br>geo real aparecen en el mapa</div>
+</div>
+
 <div id="map"></div>
 <canvas id="vector-canvas"></canvas>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    const map = L.map('map', {zoomControl:false}).setView([4.7110, -74.0721], 13);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {subdomains:'abcd'}).addTo(map);
-    
+    // ── Mapa: OpenStreetMap real, gratis, sin API key ──
+    const map = L.map('map', {zoomControl:true}).setView([4.7110, -74.0721], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        subdomains: 'abc',
+        maxZoom: 19,
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
     let markers = {};
+    let currentTab = 'local';
     const NEXUS_API_BASE = window.NEXUS_API_BASE || '/api';
+
+    function riskClass(level) {
+        return { CRITICAL: 'risk-critical', HIGH: 'risk-high', MEDIUM: 'risk-medium', LOW: 'risk-low' }[level] || 'risk-low';
+    }
+
+    function markerColor(level) {
+        return { CRITICAL: '#f00', HIGH: '#fa0', MEDIUM: '#ff0', LOW: '#0f0' }[level] || '#0f0';
+    }
 
     async function refreshState() {
       try {
         const response = await fetch(`${NEXUS_API_BASE}/state`);
         if (!response.ok) return;
         const data = await response.json();
+
         document.getElementById('status').innerText = data.stats.scanning ? "SCANNING..." : "MONITORING";
         document.getElementById('mode').innerText = data.stats.mode.toUpperCase();
         document.getElementById('crit-count').innerText = data.stats.critical;
-        
-        // Actualizar marcadores
-        data.devices.forEach(d => {
-            if(!markers[d.id]) {
-                let color = d.threat_level === 'CRITICAL' ? '#f00' : (d.threat_level === 'HIGH' ? '#fa0' : '#0f0');
-                let icon = L.divIcon({html:`<div style='background:${color};width:10px;height:10px;border-radius:50%;box-shadow:0 0 5px ${color};'></div>`, className:'custom', iconSize:[10,10]});
-                markers[d.id] = L.marker([d.lat, d.lon], {icon:icon}).addTo(map).bindPopup(`<b>${d.ip}</b><br>Riesgo: ${d.risk_score}%<br>${d.threat_level}`);
-            }
+        document.getElementById('total-count').innerText = data.stats.total;
+        document.getElementById('event-count').innerText = data.stats.anomalies || 0;
+
+        document.getElementById('scan-btn').disabled = data.stats.scanning;
+        document.getElementById('scan-btn').innerText = data.stats.scanning ? 'ESCANEANDO...' : 'INICIAR ESCANEO COGNITIVO';
+
+        // ── SOLO pines con geolocalización REAL (IP pública) ──
+        const publicDevices = data.devices_public || [];
+        const seenIds = new Set(publicDevices.map(d => d.id));
+
+        // Limpiar marcadores de dispositivos que ya no están
+        Object.keys(markers).forEach(id => {
+            if (!seenIds.has(id)) { map.removeLayer(markers[id]); delete markers[id]; }
         });
-        
-        drawVectors(data.vectors);
+
+        publicDevices.forEach(d => {
+            if (!markers[d.id]) {
+                const color = markerColor(d.threat_level);
+                const icon = L.divIcon({
+                    html: `<div style='background:${color};width:12px;height:12px;border-radius:50%;box-shadow:0 0 6px ${color};border:1px solid #fff;'></div>`,
+                    className: 'custom', iconSize: [12, 12]
+                });
+                markers[d.id] = L.marker([d.lat, d.lon], { icon }).addTo(map);
+            }
+            markers[d.id].setLatLng([d.lat, d.lon]).bindPopup(
+                `<b>${d.ip}</b> ${d.hostname ? '(' + d.hostname + ')' : ''}<br>` +
+                `Riesgo: ${d.risk_score}% — ${d.threat_level}<br>` +
+                `${d.geo_city || ''} ${d.geo_country || ''}<br>` +
+                `ISP: ${d.geo_isp || 'N/D'}<br>` +
+                `Puertos: ${JSON.parse(d.ports || '[]').join(', ') || 'ninguno'}`
+            );
+        });
+
+        // ── Panel LAN (dispositivos privados, datos reales pero sin GPS) ──
+        renderLocalPanel(data.devices_local || []);
+
+        // ── Panel eventos reales ──
+        renderEventsPanel(data.events || []);
+
       } catch (_) {
         document.getElementById('status').innerText = "CONNECTION LOST";
       }
     }
 
-    refreshState();
-    setInterval(refreshState, 1500);
+    function renderLocalPanel(devices) {
+        const el = document.getElementById('local-list');
+        if (!devices.length) {
+            el.innerHTML = '<div class="empty-msg">Sin dispositivos LAN detectados aún. Inicia un escaneo.</div>';
+            return;
+        }
+        // Ordenar por riesgo descendente
+        devices.sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0));
+        el.innerHTML = devices.map(d => {
+            let ports = [];
+            try { ports = JSON.parse(d.ports || '[]'); } catch (_) {}
+            return `
+                <div class="device-row" onclick="focusDevice('${d.ip}')">
+                    <div class="device-ip ${riskClass(d.threat_level)}">${d.ip} — ${d.risk_score}%</div>
+                    <div class="device-meta">
+                        ${d.hostname ? '🏷 ' + d.hostname + '<br>' : ''}
+                        ${d.mac ? '📟 ' + d.mac + (d.vendor ? ' (' + d.vendor + ')' : '') + '<br>' : '📟 MAC no detectada (fuera de subred local)<br>'}
+                        🔌 ${ports.length ? ports.join(', ') : 'sin puertos'}
+                        &nbsp;|&nbsp; ${d.os_guess || 'OS desconocido'}
+                    </div>
+                </div>`;
+        }).join('');
+    }
 
-    function drawVectors(vectors) {
-        const canvas = document.getElementById('vector-canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-        ctx.clearRect(0,0,canvas.width, canvas.height);
-        
-        vectors.forEach(v => {
-            const p1 = map.latLngToContainerPoint([v.source, v.target]); // Simplificado para demo
-            // En producción usar proyección real Mercator
-            ctx.beginPath();
-            ctx.strokeStyle = `rgba(255, 0, 0, ${v.risk/100})`;
-            ctx.lineWidth = 2;
-            // Dibujar línea desde centro del mapa hacia el punto (simulación visual)
-            const center = map.latLngToContainerPoint(map.getCenter());
-            const point = map.latLngToContainerPoint([v.source, v.target]); // Ajustar coords reales
-            // Nota: Para vectores reales se necesita proyector complejo, aquí simulamos efecto
-            ctx.moveTo(center.x, center.y);
-            ctx.lineTo(point.x, point.y);
-            ctx.stroke();
-        });
+    function renderEventsPanel(events) {
+        const el = document.getElementById('events-list');
+        if (!events.length) {
+            el.innerHTML = '<div class="empty-msg">Sin eventos registrados.</div>';
+            return;
+        }
+        el.innerHTML = events.map(e => `
+            <div class="event-row event-sev-${e.severity}">
+                [${new Date(e.timestamp).toLocaleTimeString()}] ${e.event_type}: ${e.description}
+            </div>
+        `).join('');
+    }
+
+    function focusDevice(ip) {
+        // Los dispositivos LAN no tienen coordenadas — solo resaltamos en la lista.
+        alert(`Dispositivo LAN: ${ip}\n(sin geolocalización — es una IP de red local)`);
+    }
+
+    function togglePanel() {
+        document.getElementById('side-panel').classList.toggle('visible');
+    }
+
+    function switchTab(tab) {
+        currentTab = tab;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        document.getElementById('panel-local').style.display = tab === 'local' ? 'block' : 'none';
+        document.getElementById('panel-events').style.display = tab === 'events' ? 'block' : 'none';
+        document.getElementById('side-panel').classList.add('visible');
     }
 
     function startScan() {
-        fetch(`${NEXUS_API_BASE}/scan`, {method:'POST'})
+        const target = document.getElementById('target-input').value.trim() || '192.168.1.0/24';
+        document.getElementById('scan-btn').disabled = true;
+        fetch(`${NEXUS_API_BASE}/scan?network=${encodeURIComponent(target)}`, { method: 'POST' })
             .then((response) => {
                 if (!response.ok) throw new Error("scan failed");
-                alert("Escaneo Cognitivo Iniciado");
+                document.getElementById('status').innerText = 'SCANNING...';
             })
-            .catch(() => alert("No se pudo iniciar el escaneo"));
+            .catch(() => {
+                alert("No se pudo iniciar el escaneo");
+                document.getElementById('scan-btn').disabled = false;
+            });
     }
+
+    refreshState();
+    setInterval(refreshState, 1500);
 </script>
 </body>
 </html>
