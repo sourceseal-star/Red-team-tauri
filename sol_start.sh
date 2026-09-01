@@ -109,9 +109,12 @@ auto_update() {
 
     info "Auto-update: git pull (sin tocar .env ni ~/.sol/)..."
 
-    # Stash .env para que git pull no lo toque
+    # Protección triple de .env: backup + checksum SHA-256
+    local ENV_HASH_BEFORE=""
     if [ -f "$ENV_FILE" ]; then
         cp "$ENV_FILE" "$ENV_FILE.bak.$(date +%s)" 2>/dev/null || true
+        ENV_HASH_BEFORE=$(sha256sum "$ENV_FILE" 2>/dev/null | cut -d' ' -f1 || echo "n/a")
+        info ".env protegido (backup + SHA-256: ${ENV_HASH_BEFORE:0:12}...)"
     fi
 
     cd "$ROOT"
@@ -138,15 +141,31 @@ auto_update() {
     git stash pop 2>/dev/null || true
 
     # Verificar que .env sigue intacto
-    if [ -f "$ENV_FILE.bak."* ] 2>/dev/null; then
-        LATEST_BAK=$(ls -t "$ENV_FILE.bak."* 2>/dev/null | head -1)
-        if [ -n "$LATEST_BAK" ]; then
-            if ! diff -q "$ENV_FILE" "$LATEST_BAK" >/dev/null 2>&1; then
-                warn ".env fue modificado por git — restaurando backup"
-                cp "$LATEST_BAK" "$ENV_FILE"
-                ok ".env restaurado (credenciales protegidas)"
+    local LATEST_BAK=$(ls -t "$ENV_FILE.bak."* 2>/dev/null | head -1)
+    if [ -n "$LATEST_BAK" ] && [ -f "$LATEST_BAK" ]; then
+        if ! diff -q "$ENV_FILE" "$LATEST_BAK" >/dev/null 2>&1; then
+            warn ".env fue modificado por git — restaurando backup"
+            cp "$LATEST_BAK" "$ENV_FILE"
+            ok ".env restaurado (credenciales protegidas)"
+        else
+            ok ".env intacto (credenciales verificadas)"
+        fi
+        rm -f "$ENV_FILE.bak."* 2>/dev/null || true
+    fi
+
+    # Verificación SHA-256 post-pull
+    if [ -f "$ENV_FILE" ] && [ -n "$ENV_HASH_BEFORE" ] && [ "$ENV_HASH_BEFORE" != "n/a" ]; then
+        local ENV_HASH_AFTER=$(sha256sum "$ENV_FILE" 2>/dev/null | cut -d' ' -f1 || echo "n/a")
+        if [ "$ENV_HASH_AFTER" != "$ENV_HASH_BEFORE" ]; then
+            warn ".env checksum cambió (antes: ${ENV_HASH_BEFORE:0:12}... después: ${ENV_HASH_AFTER:0:12}...)"
+            warn "Restaurando .env desde backup..."
+            local LATEST_BAK2=$(ls -t "$ENV_FILE.bak."* 2>/dev/null | head -1)
+            if [ -n "$LATEST_BAK2" ] && [ -f "$LATEST_BAK2" ]; then
+                cp "$LATEST_BAK2" "$ENV_FILE"
+                ok ".env restaurado (checksum verificado)"
             fi
-            rm -f "$ENV_FILE.bak."* 2>/dev/null || true
+        else
+            ok ".env checksum OK (sin cambios)"
         fi
     fi
 
@@ -259,6 +278,28 @@ start_ghost() {
 }
 
 # ════════════════════════════════════════════════════════════════════
+# VERIFICAR CREDENCIALES (antes de Nexus — evitar regeneración)
+# ════════════════════════════════════════════════════════════════════
+verify_credentials() {
+    local missing=0
+    for cred in NEXUS_PASS ADMIN_PASSWORD REDTEAM_API_KEY; do
+        val=$(eval echo "\${${cred}:-}")
+        if [ -z "$val" ]; then
+            fail "$cred no configurado en .env"
+            missing=$((missing + 1))
+        else
+            ok "$cred presente"
+        fi
+    done
+    if [ $missing -gt 0 ]; then
+        warn "Faltan $missing credenciales — Nexus NO se arrancará"
+        warn "Esto evita que nexus_credentials.py regenere credenciales"
+        return 1
+    fi
+    return 0
+}
+
+# ════════════════════════════════════════════════════════════════════
 # START: Nexus Omni-Sentient (:8004)
 # ════════════════════════════════════════════════════════════════════
 start_nexus() {
@@ -300,28 +341,21 @@ start_c2() {
 start_sol_core() {
     [ -f "$ROOT/sol_core.py" ] || { warn "sol_core.py no encontrado"; return; }
 
-    # Verificar que la memoria existe
-    local mem_count=0
+    # Verificar memoria de Sol
+    MEM_COUNT=0
     if [ -f "$SOL_DIR/memory.jsonl" ]; then
-        mem_count=$(wc -l < "$SOL_DIR/memory.jsonl" 2>/dev/null || echo 0)
+        MEM_COUNT=$(wc -l < "$SOL_DIR/memory.jsonl" 2>/dev/null || echo 0)
     fi
-
-    info "SOL Core v4 — iniciando ($mem_count recuerdos en ~/.sol/)..."
-    cd "$ROOT"
-
-    # SOL Core en modo listener como background daemon
-    # (no bloquea — escucha stdin si hay terminal, sino espera)
-    nohup python3 sol_core.py --listen > "$LOG_DIR/sol_core.log" 2>&1 &
-    SOL_CORE_PID=$!
-
-    sleep 2
-    if kill -0 "$SOL_CORE_PID" 2>/dev/null; then
-        ok "SOL Core v4 activo (PID $SOL_CORE_PID)"
-        ok "Memoria: ~/.sol/memory.json + memory.jsonl ($mem_count recuerdos)"
-    else
-        warn "SOL Core murió — revisa logs/sol_core.log"
-        tail -5 "$LOG_DIR/sol_core.log" 2>/dev/null
+    local json_count=0
+    if [ -f "$SOL_DIR/memory.json" ]; then
+        json_count=$(python3 -c "import json;print(len(json.loads(open('$SOL_DIR/memory.json').read())))" 2>/dev/null || echo 0)
     fi
+    MEM_TOTAL=$((MEM_COUNT + json_count))
+
+    ok "SOL Core v4 disponible ($MEM_TOTAL recuerdos en ~/.sol/)"
+    ok "  Memoria: ~/.sol/memory.json ($json_count) + memory.jsonl ($MEM_COUNT)"
+    info "SOL Core interactivo: bash sol_start.sh --core | --voz"
+    info "SOL siempre-on: via Telegram (@sol_amg_bot) — puente abajo"
 }
 
 # ════════════════════════════════════════════════════════════════════
@@ -361,7 +395,7 @@ show_summary() {
     echo -e "${G}║  ✅ TG    sol_telegram_bridge (puente @sol_amg_bot)  ${C}║${N}"
     echo -e "${C}╠═══════════════════════════════════════════════════════╣${N}"
     echo -e "${C}║  ${W}Dashboard:${C} http://localhost:8001                     ${C}║${N}"
-    echo -e "${C}║  ${W}Sol memory:${C} ~/.sol/ ($mem_count recuerdos)              ${C}║${N}"
+    echo -e "${C}║  ${W}Sol memory:${C} ~/.sol/ (${MEM_TOTAL:-0} recuerdos)              ${C}║${N}"
     echo -e "${C}║  ${W}Logs:${C} $LOG_DIR/                              ${C}║${N}"
     echo -e "${C}╚═══════════════════════════════════════════════════════╝${N}"
     echo ""
@@ -455,7 +489,7 @@ case "${1:-}" in
         kill_zombies
         start_backend
         start_ghost
-        $WITH_NEXUS && start_nexus
+        $WITH_NEXUS && { verify_credentials && start_nexus || warn "Nexus saltado — credenciales faltantes"; }
         $WITH_C2 && start_c2
         start_sol_core
         start_sol_bridge
