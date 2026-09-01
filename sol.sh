@@ -422,6 +422,61 @@ telegram_bot_status() {
 }
 
 # ════════════════════════════════════════════════════════════════════
+# TG-CHECK — Diagnóstico directo: valida token y conectividad real
+# ════════════════════════════════════════════════════════════════════
+tg_check() {
+  echo "🔎 Diagnóstico de Telegram"
+  echo ""
+  if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
+    echo "❌ TELEGRAM_BOT_TOKEN no está en el entorno."
+    echo "   Verifica que exista en .env: grep TELEGRAM_BOT_TOKEN $RT/.env"
+    return 1
+  fi
+  echo "1) Token cargado: ${TELEGRAM_BOT_TOKEN:0:10}...(${#TELEGRAM_BOT_TOKEN} chars)"
+  echo ""
+  echo "2) Probando conectividad directa a Telegram (getMe)..."
+  RESP="$(curl -s -m 8 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe")"
+  echo "   $RESP"
+  if echo "$RESP" | grep -q '"ok":true'; then
+    echo "   ✅ Token válido y Telegram responde."
+  else
+    echo "   ❌ Telegram rechazó el token o no respondió — revisa arriba."
+    return 1
+  fi
+  echo ""
+  echo "3) ¿Hay otro proceso escuchando este bot ahora mismo?"
+  if pgrep -f sol_telegram_bridge >/dev/null 2>&1; then
+    echo "   ⚠️  sol_telegram_bridge YA está corriendo (PID $(pgrep -f sol_telegram_bridge | head -1))"
+  fi
+  if pgrep -f sol_telegram_bot.py >/dev/null 2>&1; then
+    echo "   ⚠️  sol_telegram_bot.py YA está corriendo (PID $(pgrep -f sol_telegram_bot.py | head -1))"
+  fi
+  if ! pgrep -f sol_telegram_bridge >/dev/null 2>&1 && ! pgrep -f sol_telegram_bot.py >/dev/null 2>&1; then
+    echo "   ✅ Ningún proceso corriendo — libre para arrancar."
+  fi
+  echo ""
+  echo "4) python-telegram-bot instalado?"
+  if python3 -c "import telegram" 2>/dev/null; then
+    echo "   ✅ Sí — versión $(python3 -c 'import telegram; print(telegram.__version__)' 2>/dev/null)"
+  else
+    echo "   ❌ No — instala con: pip install python-telegram-bot"
+  fi
+  echo ""
+  echo "5) ¿c2_unified_pro.py está bloqueando el puerto 8005 en foreground?"
+  if pgrep -f c2_unified_pro.py >/dev/null 2>&1; then
+    echo "   ℹ️  C2 corriendo (PID $(pgrep -f c2_unified_pro.py | head -1)) — normal si está en background."
+  fi
+  echo ""
+  echo "6) Últimas 10 líneas de logs (si existen):"
+  for f in "$SOL/telegram_bot.log" "$SOL/logs/tg_bot.log" "$SOL/logs/tg.log"; do
+    if [ -f "$f" ]; then
+      echo "   --- $f ---"
+      tail -10 "$f" | sed 's/^/   /'
+    fi
+  done
+}
+
+# ════════════════════════════════════════════════════════════════════
 # PUNTO DE ENTRADA
 # ════════════════════════════════════════════════════════════════════
 case "${1:-help}" in
@@ -430,10 +485,11 @@ case "${1:-help}" in
   status)  status; telegram_bot_status ;;
   talk)    shift; talk "$@" ;;
   telegram|tg) telegram_bot ;;
+  tg-check) tg_check ;;
   watchdog) watchdog ;;
   survival) survival ;;
   backup)  backup ;;
   logs)    show_logs ;;
   help|--help|-h) help ;;
-  *) echo "Usa: start|stop|status|talk|telegram|survival|backup|logs|help" ;;
+  *) echo "Usa: start|stop|status|talk|telegram|tg-check|survival|backup|logs|help" ;;
 esac

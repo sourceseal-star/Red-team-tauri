@@ -417,8 +417,7 @@ start() {
   if [ -f "$ROOT/c2_unified_pro.py" ]; then
     info "C2 :8005 — arrancando..."
     cd "$ROOT"
-    C2_PORT="${C2_PORT:-8005}" nohup python3 c2_unified_pro.py 
-        >> "$LOG_DIR/c2.log" 2>&1 &
+    C2_PORT="${C2_PORT:-8005}" nohup python3 c2_unified_pro.py >> "$LOG_DIR/c2.log" 2>&1 &
     C2_PID=$!
     for i in $(seq 1 15); do
       curl -s -m 2 http://127.0.0.1:8005/api/health >/dev/null 2>&1 && break
@@ -438,6 +437,9 @@ start() {
   #    Preferimos la Miniapp (botones, recordatorios, voz, avatar); el Puente legacy
   #    queda como fallback automático si python-telegram-bot no está disponible.
   if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+    # Limpiar procesos zombie/huérfanos antes de intentar arrancar
+    pkill -9 -f "sol_telegram_bridge" >/dev/null 2>&1 || true
+    pkill -9 -f "sol_telegram_bot.py" >/dev/null 2>&1 || true
     if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
       ok "Puente Telegram ya corriendo (legacy)"
     elif pgrep -f "sol_telegram_bot.py" >/dev/null 2>&1; then
@@ -445,26 +447,42 @@ start() {
     elif [ -f "$ROOT/sol_telegram_bot.py" ] && { python3 -c "import telegram" 2>/dev/null || pip install python-telegram-bot >> "$LOG_DIR/tg_bot.log" 2>&1 && python3 -c "import telegram" 2>/dev/null; }; then
       info "Miniapp Telegram — arrancando..."
       cd "$ROOT"
+      : > "$LOG_DIR/tg_bot.log"
       nohup python3 sol_telegram_bot.py >> "$LOG_DIR/tg_bot.log" 2>&1 &
       echo $! > "$SOL_DIR/tg_bot.pid"
-      sleep 3
+      sleep 4
       if kill -0 "$(cat "$SOL_DIR/tg_bot.pid" 2>/dev/null)" 2>/dev/null; then
         ok "Miniapp Telegram activa ☀️ (PID $(cat "$SOL_DIR/tg_bot.pid"))"
       else
-        warn "Miniapp Telegram no arrancó — ver $LOG_DIR/tg_bot.log — probando puente legacy..."
+        warn "Miniapp Telegram no arrancó — probando puente legacy..."
+        echo -e "${R}  ── Error real (tg_bot.log) ──${N}"
+        tail -n 15 "$LOG_DIR/tg_bot.log" 2>/dev/null | sed 's/^/    /'
+        echo -e "${R}  ───────────────────────────${N}"
+        : > "$LOG_DIR/tg.log"
         nohup python3 sol_telegram_bridge.py >> "$LOG_DIR/tg.log" 2>&1 &
-        sleep 3
-        pgrep -f "sol_telegram_bridge" >/dev/null 2>&1 && ok "Puente Telegram activo ☀️ (fallback)" || fail "Ningún bot de Telegram arrancó — ver $LOG_DIR/tg*.log"
+        sleep 4
+        if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
+          ok "Puente Telegram activo ☀️ (fallback)"
+        else
+          fail "Ningún bot de Telegram arrancó"
+          echo -e "${R}  ── Error real (tg.log) ──${N}"
+          tail -n 15 "$LOG_DIR/tg.log" 2>/dev/null | sed 's/^/    /'
+          echo -e "${R}  ─────────────────────────${N}"
+        fi
       fi
     else
       info "python-telegram-bot no disponible — usando puente legacy"
       cd "$ROOT"
+      : > "$LOG_DIR/tg.log"
       nohup python3 sol_telegram_bridge.py >> "$LOG_DIR/tg.log" 2>&1 &
-      sleep 3
+      sleep 4
       if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
         ok "Puente Telegram activo ☀️"
       else
-        fail "Puente Telegram no arrancó — ver $LOG_DIR/tg.log"
+        fail "Puente Telegram no arrancó"
+        echo -e "${R}  ── Error real (tg.log) ──${N}"
+        tail -n 15 "$LOG_DIR/tg.log" 2>/dev/null | sed 's/^/    /'
+        echo -e "${R}  ─────────────────────────${N}"
       fi
     fi
   else
