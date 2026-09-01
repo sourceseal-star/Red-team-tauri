@@ -83,6 +83,18 @@ curl -X POST http://localhost:8002/api/hunt/start \
 
 Ver hallazgos: `GET /api/phantom/alerts` en el Dashboard.
 
+## Sol — Cerebro accesible desde el dashboard
+
+Sol tiene 3 endpoints en el backend para que el SolWidget (War Room) y FloatingSol funcionen:
+
+| Método | Path | Descripción |
+|---|---|---|
+| POST | `/api/sol/think` | Procesar mensaje con Sol (body: `{"message": "..."}`) |
+| GET | `/api/sol/last-message` | Último mensaje de Sol |
+| GET | `/api/sol/status` | Estado del cerebro (online/offline) |
+
+El cerebro de Sol (`sol_core.py`) funciona offline sin internet y responde en español.
+
 ## Telegram
 
 ```bash

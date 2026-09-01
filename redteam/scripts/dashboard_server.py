@@ -1383,6 +1383,14 @@ try:
 except Exception as e:
     print(f"[OPERATIONS] No cargado: {e}", flush=True)
 
+# ── SOL Router — Cerebro de Sol accesible desde el dashboard ─────────────────
+try:
+    from sol_router import router as sol_router_mod
+    app.include_router(sol_router_mod)
+    print("[SOL] Router montado en /api/sol/* (cerebro de Sol)", flush=True)
+except Exception as e:
+    print(f"[SOL] No cargado: {e}", flush=True)
+
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
                    allow_methods=["GET", "POST", "DELETE", "PATCH", "OPTIONS"], 
                    allow_headers=["X-API-Key", "Content-Type", "Authorization"],
