@@ -1,68 +1,66 @@
-"""Carga controlada de módulos locales de redteam.
-
-Solo permite módulos Python ubicados directamente en ``redteam/modules`` y
-cuyos nombres sean identificadores simples. No expone una API de red ni
-instala, ejecuta o evalúa texto recibido remotamente.
+# -*- coding: utf-8 -*-
 """
-
-from __future__ import annotations
-
-import hashlib
-import re
-import sys
+HOT LOADER — Carga y recarga módulos de redteam/modules/ bajo demanda.
+Permite al dashboard usar versiones actualizadas sin reiniciar.
+"""
+import importlib, importlib.util, sys, signal
 from pathlib import Path
-from types import ModuleType
+from typing import Optional, Dict, Any
+
+MODULES_DIR = Path(__file__).parent.parent / "modules"
+_loaded: Dict[str, Any] = {}
+_mtimes: Dict[str, float] = {}
 
 
-MODULES_DIR = Path(__file__).resolve().parents[1] / "modules"
-_loaded: dict[str, ModuleType] = {}
-_hashes: dict[str, str] = {}
-_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+def _reload_on_signal(signum, frame):
+    """Handler SIGUSR1: recarga todos los módulos."""
+    print("[HOT-LOADER] Recargando módulos...")
+    reload_all()
 
 
-def _module_path(module_name: str) -> Path:
-    if not _NAME_PATTERN.fullmatch(module_name) or module_name.startswith("_"):
-        raise ImportError("nombre de módulo no permitido")
-    path = (MODULES_DIR / f"{module_name}.py").resolve()
-    if path.parent != MODULES_DIR.resolve() or not path.is_file():
+# Registrar handler
+try:
+    signal.signal(signal.SIGUSR1, _reload_on_signal)
+except AttributeError:
+    pass  # Windows no tiene SIGUSR1
+
+
+def load(module_name: str, force: bool = False):
+    """Carga un módulo. Si ya estaba cargado y cambió, lo recarga."""
+    path = MODULES_DIR / f"{module_name}.py"
+    if not path.exists():
         raise ImportError(f"Módulo no encontrado: {module_name}")
-    return path
+
+    mtime = path.stat().st_mtime
+
+    if module_name in _loaded and not force:
+        if _mtimes.get(module_name) == mtime:
+            return _loaded[module_name]
+
+    spec = importlib.util.spec_from_file_location(
+        f"redteam.modules.{module_name}", str(path)
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    _loaded[module_name] = mod
+    _mtimes[module_name] = mtime
+    print(f"[HOT-LOADER] Cargado: {module_name}.py (mtime={mtime})")
+    return mod
 
 
-def _hash(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def reload_all():
+    """Recarga todos los módulos conocidos."""
+    for name in list(_loaded.keys()):
+        try:
+            load(name, force=True)
+        except Exception as e:
+            print(f"[HOT-LOADER] Error recargando {name}: {e}")
 
 
-def load(module_name: str, force: bool = False) -> ModuleType:
-    path = _module_path(module_name)
-    digest = _hash(path)
-    if not force and module_name in _loaded and _hashes.get(module_name) == digest:
-        return _loaded[module_name]
-
-    qualified_name = f"redteam.modules.{module_name}"
-    # Leer y compilar la fuente evita que el loader reutilice un .pyc cuyo
-    # timestamp tenga la misma resolución que dos guardados consecutivos de
-    # nano. El hash ya determinó que el contenido cambió.
-    source = path.read_text(encoding="utf-8")
-    module = ModuleType(qualified_name)
-    module.__file__ = str(path)
-    module.__package__ = "redteam.modules"
-    sys.modules[qualified_name] = module
-    exec(compile(source, str(path), "exec"), module.__dict__)
-    _loaded[module_name] = module
-    _hashes[module_name] = digest
-    return module
-
-
-def reload_all() -> dict[str, ModuleType]:
-    return {name: load(name, force=True) for name in list(_loaded)}
-
-
-def available() -> list[str]:
+def available() -> list:
+    """Lista módulos disponibles."""
     if not MODULES_DIR.exists():
         return []
-    return sorted(
-        path.stem
-        for path in MODULES_DIR.glob("*.py")
-        if path.is_file() and not path.name.startswith("_")
-    )
+    return [f.stem for f in MODULES_DIR.glob("*.py")
+            if not f.name.startswith("_")]

@@ -1,0 +1,19 @@
+{
+  "engagements": [
+    {
+      "id": "ENG-EXAMPLE-001",
+      "client": "Example Security Review",
+      "start_date": "2026-01-01T00:00:00Z",
+      "end_date": "2026-12-31T23:59:59Z",
+      "authorization_signed": false,
+      "scope": [
+        "203.0.113.0/24",
+        "*.example.com"
+      ],
+      "excluded": [
+        "203.0.113.1",
+        "production.example.com"
+      ]
+    }
+  ]
+}

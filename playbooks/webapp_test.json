@@ -1,0 +1,28 @@
+{
+  "name": "Web App Test",
+  "version": "1.0",
+  "description": "Test de aplicaci\u00f3n web: subdominios \u2192 nikto \u2192 nuclei \u2192 reporte",
+  "steps": [
+    {
+      "module": "recon",
+      "mode": "fast",
+      "timeout": 300
+    },
+    {
+      "module": "vulnerability",
+      "scanners": [
+        "nikto",
+        "nuclei"
+      ],
+      "ssl": true,
+      "timeout": 1800
+    },
+    {
+      "module": "reporting",
+      "format": "html",
+      "timeout": 60
+    }
+  ],
+  "requires_engagement": true,
+  "requires_admin": false
+}

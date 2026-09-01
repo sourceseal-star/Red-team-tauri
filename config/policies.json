@@ -1,0 +1,54 @@
+{
+  "policies": [
+    {
+      "id": "POL-RECON",
+      "name": "Reconocimiento pasivo autorizado",
+      "allowed_modules": [
+        "recon",
+        "enumeration"
+      ],
+      "max_rate": 1000,
+      "requires_engagement": true
+    },
+    {
+      "id": "POL-VULNSCAN",
+      "name": "Escaneo de vulnerabilidades",
+      "allowed_modules": [
+        "vulnerability",
+        "reporting"
+      ],
+      "max_rate": 500,
+      "requires_engagement": true
+    },
+    {
+      "id": "POL-TACTICAL",
+      "name": "Ejecuci\u00f3n t\u00e1ctica completa",
+      "allowed_modules": [
+        "recon",
+        "enumeration",
+        "vulnerability",
+        "tactical_executor",
+        "reporting"
+      ],
+      "max_rate": 100,
+      "requires_engagement": true,
+      "requires_admin": true
+    },
+    {
+      "id": "POL-EXPLOIT",
+      "name": "Validaci\u00f3n de explotaci\u00f3n",
+      "allowed_modules": [
+        "exploitation",
+        "reporting"
+      ],
+      "max_rate": 10,
+      "requires_engagement": true,
+      "requires_admin": true
+    }
+  ],
+  "defaults": {
+    "timeout_per_target": 300,
+    "max_concurrent_targets": 8,
+    "evidence_required": true
+  }
+}

@@ -1,135 +1,154 @@
-#!/usr/bin/env python3
-"""Observa cambios locales del código y los registra en SourceSeal.
-
-El watcher no ejecuta archivos modificados, no recibe comandos de red y no
-envía señales a procesos. El endpoint /api/scan ya crea un proceso nuevo por
-escaneo, por lo que el siguiente escaneo cargará automáticamente el código
-actualizado.
+#!/data/data/com.termux/files/usr/bin/python
+# -*- coding: utf-8 -*-
 """
-
-from __future__ import annotations
-
-import argparse
-import hashlib
-import json
-import os
-import time
+WATCHER — Recarga automática de módulos cuando cambian.
+Monitorea redteam/modules/ y registra cambios en ledger SourceSeal.
+Uso: python3 watcher.py [--dashboard-pid PID]
+"""
+import os, sys, time, json, hashlib, subprocess, signal
 from pathlib import Path
+from datetime import datetime
 
-from redteam.monitor.operations_monitor import ledger
+MODULES_DIR = Path(__file__).parent / "redteam" / "modules"
+LEDGER = Path.home() / ".c2" / "evidence_ledger.json"
+STATE_FILE = Path.home() / ".c2" / "module_state.json"
+LOG = Path.home() / ".c2" / "logs" / "watcher.log"
 
-
-PROJECT_ROOT = Path(__file__).resolve().parent
-WATCH_PATHS = (
-    PROJECT_ROOT / "redteam" / "runner",
-    PROJECT_ROOT / "redteam" / "modules",
-)
-DEFAULT_STATE_DIR = Path.home() / ".sourceseal"
+LOG.parent.mkdir(parents=True, exist_ok=True)
 
 
-def state_path() -> Path:
-    """Return the state file location configured for this process."""
-    configured_dir = os.environ.get("SOURCESEAL_STATE_DIR")
-    return Path(configured_dir).expanduser() / "watcher_state.json" if configured_dir else DEFAULT_STATE_DIR / "watcher_state.json"
+def log(msg):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{ts}] {msg}"
+    print(line)
+    with open(LOG, "a") as f:
+        f.write(line + "\n")
 
 
 def file_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    if not path.exists():
+        return ""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def scan_files() -> dict[str, dict[str, int | str]]:
-    state: dict[str, dict[str, int | str]] = {}
-    for directory in WATCH_PATHS:
-        if not directory.exists():
+def load_state() -> dict:
+    if STATE_FILE.exists():
+        return json.loads(STATE_FILE.read_text())
+    return {}
+
+
+def save_state(state: dict):
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.write_text(json.dumps(state, indent=2))
+
+
+def seal_module_change(module_name: str, new_hash: str, change_type: str):
+    """Registra el cambio en el ledger SourceSeal."""
+    if not LEDGER.exists():
+        LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        ledger = {"chain_hash": "genesis", "events": []}
+    else:
+        try:
+            ledger = json.loads(LEDGER.read_text())
+        except Exception:
+            ledger = {"chain_hash": "genesis", "events": []}
+
+    prev = ledger.get("chain_hash", "genesis")
+    payload = f"{prev}|module:{module_name}|{change_type}|{new_hash}|{int(time.time())}"
+    new_chain = hashlib.sha256(payload.encode()).hexdigest()
+    ledger["events"].append({
+        "type": "MODULE_CHANGE",
+        "module": module_name,
+        "change": change_type,
+        "sha256": new_hash,
+        "chain_hash": new_chain,
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    })
+    ledger["chain_hash"] = new_chain
+    if len(ledger["events"]) > 1000:
+        ledger["events"] = ledger["events"][-1000:]
+    LEDGER.write_text(json.dumps(ledger, indent=2))
+    log(f"🔗 Sellado: {module_name} ({change_type})")
+
+
+def signal_dashboard(action: str = "reload"):
+    """Envía señal al dashboard para que recargue módulos."""
+    pid_file = Path.home() / ".c2" / "pids" / "dashboard.pid"
+    if pid_file.exists():
+        try:
+            pid = int(pid_file.read_text().strip())
+            sig = signal.SIGUSR1 if action == "reload" else signal.SIGTERM
+            os.kill(pid, sig)
+            log(f"📡 Señal {action} enviada a dashboard (PID {pid})")
+        except Exception as e:
+            log(f"⚠️ No se pudo señalizar dashboard: {e}")
+
+
+def scan_modules() -> dict:
+    """Escanea todos los .py en modules/."""
+    state = {}
+    if not MODULES_DIR.exists():
+        return state
+    for f in MODULES_DIR.glob("*.py"):
+        if f.name.startswith("_"):
             continue
-        for path in sorted(directory.glob("*.py")):
-            if path.name.startswith("_") or not path.is_file():
-                continue
-            relative = str(path.relative_to(PROJECT_ROOT))
-            state[relative] = {
-                "sha256": file_hash(path),
-                "size": path.stat().st_size,
-                "mtime_ns": path.stat().st_mtime_ns,
-            }
+        state[f.stem] = {
+            "hash": file_hash(f),
+            "size": f.stat().st_size,
+            "mtime": f.stat().st_mtime
+        }
     return state
 
 
-def load_state() -> dict[str, dict[str, int | str]]:
-    path = state_path()
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return {}
-
-
-def save_state(state: dict[str, dict[str, int | str]]) -> None:
-    path = state_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
-    temporary.replace(path)
-
-
-def detect_changes(previous: dict, current: dict) -> list[tuple[str, str, str]]:
-    changes: list[tuple[str, str, str]] = []
-    for name, metadata in current.items():
-        if name not in previous:
-            changes.append(("ADDED", name, str(metadata["sha256"])))
-        elif metadata["sha256"] != previous[name].get("sha256"):
-            changes.append(("MODIFIED", name, str(metadata["sha256"])))
-    for name in previous:
-        if name not in current:
-            changes.append(("REMOVED", name, ""))
-    return changes
-
-
-def record_changes(changes: list[tuple[str, str, str]]) -> None:
-    for change_type, name, digest in changes:
-        ledger.append(
-            "module_change",
-            "termux-watcher",
-            {"change": change_type, "module": name, "sha256": digest},
-        )
-        print(f"[watcher] {change_type}: {name} {digest[:12]}", flush=True)
-
-
-def run_once(previous: dict | None = None) -> dict:
-    previous = load_state() if previous is None else previous
-    current = scan_files()
-    changes = detect_changes(previous, current)
-    if changes:
-        record_changes(changes)
-    save_state(current)
-    return current
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Registra cambios locales de módulos SourceSeal")
-    parser.add_argument("--interval", type=float, default=2.0, help="segundos entre comprobaciones")
-    parser.add_argument("--once", action="store_true", help="comprobar una vez y salir")
-    args = parser.parse_args()
-    if args.interval <= 0:
-        parser.error("--interval debe ser mayor que cero")
+def main():
+    log("=" * 60)
+    log("👁️ WATCHER iniciado — monitoreando módulos Red Team")
+    log(f"  Directorio: {MODULES_DIR}")
+    log(f"  Ledger: {LEDGER}")
+    log("=" * 60)
 
     previous = load_state()
     if not previous:
-        previous = run_once({})
-        print(f"[watcher] baseline registrado: {len(previous)} archivos", flush=True)
-    if args.once:
-        return
+        previous = scan_modules()
+        save_state(previous)
+        log(f"📦 Estado inicial: {len(previous)} módulos catalogados")
+        for name in previous:
+            seal_module_change(name, previous[name]["hash"], "BASELINE")
 
-    print("[watcher] activo; sin señales ni ejecución de archivos modificados", flush=True)
     try:
         while True:
-            time.sleep(args.interval)
-            previous = run_once(previous)
+            current = scan_modules()
+            changes = []
+
+            # Módulos nuevos
+            for name in current:
+                if name not in previous:
+                    changes.append(("ADDED", name, current[name]["hash"]))
+
+            # Módulos eliminados
+            for name in previous:
+                if name not in current:
+                    changes.append(("REMOVED", name, ""))
+
+            # Módulos modificados
+            for name in current:
+                if name in previous and current[name]["hash"] != previous[name]["hash"]:
+                    changes.append(("MODIFIED", name, current[name]["hash"]))
+
+            if changes:
+                for change_type, name, h in changes:
+                    icon = {"ADDED": "➕", "REMOVED": "➖", "MODIFIED": "🔄"}[change_type]
+                    log(f"{icon} {change_type}: {name}.py ({h[:12]})")
+                    seal_module_change(name, h, change_type)
+
+                save_state(current)
+                signal_dashboard("reload")
+                previous = current
+
+            time.sleep(2)
+
     except KeyboardInterrupt:
-        print("[watcher] detenido", flush=True)
+        log("🛑 Watcher detenido")
 
 
 if __name__ == "__main__":
