@@ -8049,6 +8049,17 @@ async def monitor_stop():
     return {"ok": True, "message": "Detenido"}
 
 # ═════════════════════════════════════════════════════════════════════════════
+#  SOL — Página standalone de Sol (antes del catch-all SPA)
+# ═════════════════════════════════════════════════════════════════════════════
+_SOL_HTML = BASE.parent / "backend" / "static" / "sol.html"
+if _SOL_HTML.exists():
+    from fastapi.responses import HTMLResponse
+    @app.get("/sol.html")
+    async def sol_standalone():
+        return HTMLResponse(_SOL_HTML.read_text(encoding="utf-8"))
+    print(f"[SOL] /sol.html servido desde {_SOL_HTML}", flush=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
 #  FRONTEND ESTÁTICO — SPA
 # ═════════════════════════════════════════════════════════════════════════════
 # Este catch-all debe registrarse después de TODAS las rutas API. Si se registra
