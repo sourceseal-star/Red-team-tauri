@@ -125,7 +125,7 @@ free_port() {
     fi
     if [ -z "$pids" ] && command -v ss >/dev/null 2>&1; then
         pids="$(ss -H -ltnp "sport = :$port" 2>/dev/null \
-            | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u)"
+            | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
     fi
     if [ -n "$pids" ]; then
         echo "[unified][preflight] Liberando puerto $port (PIDs: $pids)"
@@ -195,7 +195,7 @@ fi
 # Verificar que las 3 variables críticas tienen valor
 _ENV_MISSING=""
 for v in ADMIN_PASSWORD NEXUS_PASS REDTEAM_API_KEY; do
-    _val="$(grep "^${v}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | head -1 | tr -d "\047\042")"
+    _val="$(grep "^${v}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | head -1 | tr -d "\047\042" || true)"
     if [ -z "$_val" ]; then
         _ENV_MISSING="$_ENV_MISSING $v"
     fi
