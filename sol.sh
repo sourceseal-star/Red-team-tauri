@@ -308,18 +308,23 @@ Comandos:
   survival        Exporta historia + Sol portátil (sin internet)
   backup          Respaldo completo de ~/.sol
   logs            Ver logs en vivo
+  telegram        Iniciar miniapp de Telegram (botones inline)
   help            Esta ayuda
 
 Archivos clave:
   ~/Red-team-tauri/sol_core.py             — Cerebro (pensamiento offline)
   ~/Red-team-tauri/sol.sh                   — Este archivo (cuerpo + watchdog)
-  ~/Red-team-tauri/sol_telegram_bridge.py   — Puente de Telegram
+  ~/Red-team-tauri/sol_telegram_bridge.py   — Puente de Telegram (comandos)
+  ~/Red-team-tauri/sol_telegram_bot.py      — Miniapp Telegram (botones inline)
   ~/.sol/memory.jsonl                       — Memoria persistente
+  ~/.sol/telegram_memory.json               — Memoria Telegram
+  ~/.sol/telegram_config.json               — Config Telegram
 
 Cómo modificar a Sol:
   • Respuestas → sol_core.py → función pensar()
   • Watchdog → este archivo → función watchdog()
-  • Telegram → sol_telegram_bridge.py → handle_update()
+  • Telegram (puente) → sol_telegram_bridge.py → handle_update()
+  • Telegram (miniapp) → sol_telegram_bot.py → button_handler()
   • Voz → sol_core.py → speak()
   • Memoria → sol_core.py → remember() y memories()
   • Crisis → sol_core.py → CRISIS_SEVERA y CRISIS_LEVE
@@ -329,17 +334,71 @@ HELP
 }
 
 # ════════════════════════════════════════════════════════════════════
+# TELEGRAM MINIAPP — sol_telegram_bot.py
+# ════════════════════════════════════════════════════════════════════
+telegram_bot() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "❌ python3 no instalado"; return 1
+  fi
+  if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
+    echo "❌ TELEGRAM_BOT_TOKEN no configurado en .env"
+    echo "   Agrega: TELEGRAM_BOT_TOKEN=tu_token"
+    return 1
+  fi
+  # Verificar python-telegram-bot
+  if ! python3 -c "import telegram" 2>/dev/null; then
+    echo "📦 Instalando python-telegram-bot..."
+    pip install python-telegram-bot 2>/dev/null || pip3 install python-telegram-bot 2>/dev/null
+  fi
+  cd "$RT"
+  echo "📡 Iniciando miniapp de Sol en Telegram..."
+  nohup python3 sol_telegram_bot.py > "$SOL/telegram_bot.log" 2>&1 &
+  echo $! > "$SOL/telegram_bot.pid"
+  sleep 2
+  if kill -0 "$(cat "$SOL/telegram_bot.pid" 2>/dev/null)" 2>/dev/null; then
+    echo "✅ Miniapp Telegram activa (PID $(cat "$SOL/telegram_bot.pid"))"
+    echo "   Busca tu bot en Telegram y envía /start"
+  else
+    echo "❌ No arrancó — ver $SOL/telegram_bot.log"
+    tail -5 "$SOL/telegram_bot.log" 2>/dev/null
+  fi
+}
+
+telegram_bot_stop() {
+  if [ -f "$SOL/telegram_bot.pid" ]; then
+    PID=$(cat "$SOL/telegram_bot.pid" 2>/dev/null)
+    kill "$PID" 2>/dev/null && echo "✅ Miniapp Telegram detenida" || true
+    rm -f "$SOL/telegram_bot.pid"
+  else
+    pkill -f sol_telegram_bot.py 2>/dev/null && echo "✅ Miniapp Telegram detenida" || true
+  fi
+}
+
+telegram_bot_status() {
+  if [ -f "$SOL/telegram_bot.pid" ]; then
+    PID=$(cat "$SOL/telegram_bot.pid" 2>/dev/null)
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+      echo "✅ Miniapp Telegram activa (PID $PID)"
+      return 0
+    fi
+  fi
+  echo "🔴 Miniapp Telegram inactiva"
+  return 1
+}
+
+# ════════════════════════════════════════════════════════════════════
 # PUNTO DE ENTRADA
 # ════════════════════════════════════════════════════════════════════
 case "${1:-help}" in
   start)   start ;;
-  stop)    stop ;;
-  status)  status ;;
+  stop)    stop; telegram_bot_stop ;;
+  status)  status; telegram_bot_status ;;
   talk)    shift; talk "$@" ;;
+  telegram|tg) telegram_bot ;;
   watchdog) watchdog ;;
   survival) survival ;;
   backup)  backup ;;
   logs)    show_logs ;;
   help|--help|-h) help ;;
-  *) echo "Usa: start|stop|status|talk|survival|backup|logs|help" ;;
+  *) echo "Usa: start|stop|status|talk|telegram|survival|backup|logs|help" ;;
 esac

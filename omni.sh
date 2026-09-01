@@ -435,6 +435,7 @@ start() {
 
   # ── 5. Puente Telegram (Sol) ── (Sol) ──
   if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+    # 5a. Puente legacy (comandos simples)
     if ! pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
       info "Puente Telegram — arrancando..."
       cd "$ROOT"
@@ -448,8 +449,33 @@ start() {
     else
       ok "Puente Telegram ya corriendo"
     fi
+
+    # 5b. Miniapp de Telegram (botones inline, menús, personalidades)
+    if [ -f "$ROOT/sol_telegram_bot.py" ]; then
+      if ! pgrep -f "sol_telegram_bot" >/dev/null 2>&1; then
+        info "Miniapp Telegram — arrancando..."
+        cd "$ROOT"
+        # Verificar python-telegram-bot
+        if ! python3 -c "import telegram" 2>/dev/null; then
+          warn "python-telegram-bot no instalado — instalando..."
+          pip install python-telegram-bot >> "$LOG_DIR/tg.log" 2>&1
+        fi
+        nohup python3 sol_telegram_bot.py >> "$LOG_DIR/tg_bot.log" 2>&1 &
+        echo $! > "$SOL_DIR/tg_bot.pid"
+        sleep 3
+        if kill -0 "$(cat "$SOL_DIR/tg_bot.pid" 2>/dev/null)" 2>/dev/null; then
+          ok "Miniapp Telegram activa ☀️ (PID $(cat "$SOL_DIR/tg_bot.pid"))"
+        else
+          warn "Miniapp Telegram no arrancó — ver $LOG_DIR/tg_bot.log"
+        fi
+      else
+        ok "Miniapp Telegram ya corriendo"
+      fi
+    else
+      info "sol_telegram_bot.py no encontrado — miniapp no disponible"
+    fi
   else
-    warn "TELEGRAM_BOT_TOKEN no configurado — puente desactivado"
+    warn "TELEGRAM_BOT_TOKEN no configurado — Telegram desactivado"
   fi
 
   # ── 6. Seal IA Orquestador ──
@@ -540,6 +566,8 @@ stop() {
 
   pkill -f "omni.sh watchdog" 2>/dev/null && ok "Watchdog detenido" || true
   pkill -f "sol_telegram_bridge" 2>/dev/null && ok "Puente Telegram detenido" || true
+  pkill -f "sol_telegram_bot.py" 2>/dev/null && ok "Miniapp Telegram detenida" || true
+  rm -f "$SOL_DIR/tg_bot.pid" 2>/dev/null || true
   pkill -f "nexus_omni_v9" 2>/dev/null && ok "Nexus detenido" || true
   pkill -f "c2_unified_pro" 2>/dev/null && ok "C2 detenido" || true
   pkill -f "seal_orchestrator" 2>/dev/null && ok "Seal IA detenido" || true
@@ -624,11 +652,23 @@ status_short() {
   fi
   fi
 
-  # Telegram
+  # Telegram (puente legacy)
   if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
-    ok "Telegram ☀️        🟢 ACTIVO"
+    ok "TG Puente ☀️       🟢 ACTIVO"
   else
-    warn "Telegram ☀️        🟡 INACTIVO"
+    warn "TG Puente ☀️       🟡 INACTIVO"
+  fi
+
+  # Telegram (miniapp con botones)
+  if [ -f "$SOL_DIR/tg_bot.pid" ]; then
+    TG_BOT_PID=$(cat "$SOL_DIR/tg_bot.pid" 2>/dev/null)
+    if [ -n "$TG_BOT_PID" ] && kill -0 "$TG_BOT_PID" 2>/dev/null; then
+      ok "TG Miniapp ☀️      🟢 ACTIVA (PID $TG_BOT_PID)"
+    else
+      warn "TG Miniapp ☀️      🟡 INACTIVA"
+    fi
+  else
+    warn "TG Miniapp ☀️      🟡 DETENIDA"
   fi
 
   # Seal IA
