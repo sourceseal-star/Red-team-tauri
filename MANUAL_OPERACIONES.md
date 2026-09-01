@@ -230,6 +230,80 @@ Seal IA **no usa puerto propio** — su API está montada en el dashboard (8001)
 Si en el futuro se necesita una instancia standalone, usar puerto **8006**
 (nunca 8000, 8001, 8002, 8004, 8005 que ya están asignados).
 
+## 10. Telegram = Interfaz de Seal IA
+
+Seal IA vive en Telegram via `sol_telegram_bridge.py` — un poller que recibe
+comandos y texto libre, ejecuta escaneos asíncronos y entrega reportes sellados.
+
+### Arranque
+
+```bash
+cd ~/Red-team-tauri
+set -a; . ./.env; set +a
+nohup python3 sol_telegram_bridge.py > ~/tg.log 2>&1 &
+```
+
+### Variables de entorno (.env)
+
+| Variable | Descripción |
+|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Token del bot (@BotFather) |
+| `TELEGRAM_CHAT_ID` | Chat ID por defecto |
+| `TELEGRAM_ALLOWED_USERS` | IDs autorizadas (coma). Si vacío, solo chat_id default |
+| `SEAL_NETWORK` | Red autorizada para escaneos |
+| `SEAL_ENABLED` | 1 = arranca con iniciar_unificado.sh |
+| `LLM_API_KEY` | Clave Anthropic (opcional — sin ella = offline) |
+
+### Tabla de comandos
+
+| Comando | Descripción | Tiempo |
+|---------|-------------|--------|
+| `/seal` | Ayuda del bloque seal | <1s |
+| `/seal status` | Estado del orquestador | <5s |
+| `/seal scan` | Escaneo ASÍNCRONO + reporte + envío HTML | 2-5 min |
+| `/seal ultimo` | Resumen del último sello TG_SCAN | <1s |
+| `/reporte` | sendDocument del último reporte HTML | <5s |
+| `/engagement` | Muestra alcance actual | <1s |
+| `/engagement set X` | Cambia alcance con confirmación "si" en 30s | 30s max |
+| `/chain` | Hash de cadena + nº de sellos | <1s |
+| `/cliente` | Texto profesional para reenviar al cliente | <1s |
+| texto libre | Conversación con Seal IA (offline o LLM) | <5s |
+
+### Flujo de /seal scan
+
+1. Bot recibe `/seal scan` → adquiere `SCAN_LOCK` (candado global)
+2. Si ya hay escaneo en curso → responde "ya hay un escaneo"
+3. Lanza thread → `network_sweep_ultimate.py --network SEAL_NETWORK`
+4. Genera reporte HTML → calcula SHA-256 → `sendDocument` con caption
+5. Sella `TG_SCAN` al ledger (cadena de custodia)
+6. Libera candado
+
+### Confirmación de /engagement set
+
+1. `/engagement set 10.0.0.0/24` → guarda pendiente, pide "responde si en 30s"
+2. Usuario responde `si` dentro de 30s → escribe `.env`, sella `ENGAGEMENT_CHANGE`
+3. Sin confirmación → expira sin cambios
+
+### Memoria conversacional
+
+- Archivo: `~/.sourceseal/seal_chat.json` (últimos 16 mensajes)
+- NUNCA guarda secretos, tokens, o credenciales
+- Solo texto de conversación para contexto
+
+### Ledger (cadena de custodia)
+
+- Archivo: `~/.sourceseal/seal_ledger.json`
+- Cada sello encadena con el hash anterior (cadena SHA-256)
+- Tipos: `TG_SCAN`, `ENGAGEMENT_CHANGE`
+- `/chain` muestra el resumen
+
+### Sin LLM_API_KEY
+
+El bot funciona completo en modo offline — escanea, reporta, sella.
+La conversación usa respuestas pre-estructuradas con personalidad Seal IA.
+Con `LLM_API_KEY` activada, el texto libre usa Anthropic con el system prompt
+de `seal_ia_knowledge.py` (ética, seguridad anti-extracción, integridad de producto).
+
 ### Reglas de oro
 
 1. **.env es la única fuente de verdad** — el código nunca lo sobrescribe si los valores ya existen
