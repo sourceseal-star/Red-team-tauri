@@ -521,6 +521,7 @@ start() {
   echo ""
   echo -e "${G}╔═══════════════════════════════════════════════════════╗${N}"
   echo -e "${G}║  ${W}⚡ SISTEMA ARRANCADO${G}                              ║${N}"
+  echo -e "${G}║  ${W}Sol ☀️ autónoma vigilando${G}                       ║${N}"
   echo -e "${G}╚═══════════════════════════════════════════════════════╝${N}"
   echo ""
   status_short
