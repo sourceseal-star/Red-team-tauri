@@ -1,152 +1,261 @@
-# ============================================================================
-# Red-Team-Tauri v6.1 — Dashboard + IoT + OSINT + LEVIATHAN
-# ACTUALIZADO: 2026-08-30
-# ============================================================================
+# SourceSeal Red-team-tauri — Instrucciones Operativas
 
-> **Backend unico:** `redteam/scripts/dashboard_server.py` (:8001)
-> **Arranque:** `COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` (Termux) / `bash replit_start.sh` (Replit)
-
-## Instalacion
-
-```bash
-# 1. Clonar (si no existe)
-git clone https://github.com/sourceseal-star/Red-team-tauri.git
-cd Red-team-tauri
-
-# 2. Preparar y sincronizar de forma segura
-bash termux_recover.sh
-```
-
-> `termux_recover.sh` se detiene si detecta cambios locales sin guardar. No
-> ejecuta `git reset --hard` ni borra trabajo local.
-
-## Comandos principales
-
-```bash
-# Ejecutar la copia local sin pull, reset, stash ni instalación
-COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
-
-# Alias compatible: prepara/sincroniza y luego arranca
-bash arrancar.sh
-
-# Solo Replit
-bash replit_start.sh
-```
-
-Commander queda integrado bajo `/api/commander/*`; no arranques
-`commander_server.py` ni un servidor adicional en `8003`.
-
-## Configurar API Keys de OSINT (opcional)
-
-Editar `.env` en la raiz del repo:
-
-```bash
-nano .env
-```
-
-```bash
-ABUSEIPDB_KEY=tu-key       # https://www.abuseipdb.com/account/api (1000 checks/dia gratis)
-SHODAN_API_KEY=tu-key      # https://www.shodan.io/dashboard (cuenta gratis)
-HUNTER_API_KEY=tu-key      # https://hunter.io/api-keys (opcional, emails OSINT)
-```
-
-> La variable es `ABUSEIPDB_KEY` (sin `_API`).
-
-Las claves de OSINT son opcionales. COM-LINK no funciona automáticamente sin
-configuración: cada canal requiere sus propias APIs, credenciales, cobertura o
-hardware. Consulta [`COMLINK_OPERATIVO.md`](COMLINK_OPERATIVO.md) y comprueba
-el estado sin enviar mensajes:
-
-```bash
-bash commander/comlink/comlink.sh status-json | jq
-```
-
-En Replit no están disponibles Termux:API ni los periféricos del teléfono.
-Para SMS, GPS, WiFi/Bluetooth del dispositivo y pruebas locales de COM-LINK,
-inicia el dashboard en Termux con el comando indicado arriba.
-
-## Endpoints OSINT (`/api/osint/*`)
-
-| Metodo | Ruta | Descripcion |
-|--------|------|-------------|
-| GET | `/api/osint/whois/{domain}` | WHOIS lookup |
-| GET | `/api/osint/subdomains/{domain}` | Enumeracion de subdominios |
-| GET | `/api/osint/emails/{domain}` | Email OSINT |
-| GET | `/api/osint/full/{target}` | OSINT completo (WHOIS + DNS + geo + threat) |
-| GET | `/api/osint/social/{username}` | Social media username search |
-| GET | `/api/osint/cert/{domain}` | Certificado SSL |
-| GET | `/api/osint/history/{target}` | Historial |
-| GET | `/api/osint/shodan?ip=X` | Shodan host lookup |
-| GET | `/api/osint/export/{target}` | Exportar resultados |
-
-## Endpoints IoT y Camaras (`/api/iot/*`)
-
-| Metodo | Ruta | Descripcion |
-|--------|------|-------------|
-| GET | `/api/iot/vulns?ip=X&port=Y` | Vendor + CVEs + creds + URLs |
-| GET | `/api/iot/auto-access?ip=X&port=Y` | Orquestacion completa en 1 llamado |
-| POST | `/api/iot/auto-access-batch` | Escanea red CIDR, procesa todas las camaras |
-| GET | `/api/iot/snapshot?ip=X&port=Y&user=U&pwd=P` | Snapshot con 11 paths + auth |
-| GET | `/api/iot/stream?ip=X&port=Y&path=P` | Proxy MJPEG en vivo |
-| GET | `/api/iot/video-urls?ip=X&port=Y` | Detectar URLs de video |
-| POST | `/api/iot/scan-network` | Escaneo de red CIDR |
-
-## Endpoints LEVIATHAN (`/api/v1/*`)
-
-| Metodo | Ruta | Descripcion |
-|--------|------|-------------|
-| GET | `/api/v1/status` | Estado del sistema LEVIATHAN |
-| GET | `/api/v1/health` | Health check |
-| GET | `/api/v1/profiles` | Perfiles de escaneo |
-| POST | `/api/v1/scan/network` | Escaneo de red |
-| POST | `/api/v1/scan/cameras` | Deteccion de camaras IP |
-| POST | `/api/v1/scan/rtsp` | Deteccion RTSP |
-| POST | `/api/v1/exploit/camera` | Explotacion de camara |
-| POST | `/api/v1/ai/threat-scoring` | Puntuacion de amenazas |
-| POST | `/api/v1/report/json` | Informe JSON |
-
-## Endpoints Interceptor (`/api/interceptor/*`)
-
-| Metodo | Ruta | Descripcion |
-|--------|------|-------------|
-| POST | `/api/interceptor/analyze/request` | Analizar request HTTP |
-| POST | `/api/interceptor/analyze/response` | Analizar response HTTP |
-| GET | `/api/interceptor/flows` | Flujos interceptados |
-| GET | `/api/interceptor/alerts` | Alertas de inyeccion |
-| GET | `/api/interceptor/stats` | Estadisticas SIEM |
-
-## Uso de camaras
-
-```bash
-# Escanear toda la red y ver todas las camaras
-curl -X POST http://localhost:8001/api/iot/auto-access-batch \
-  -H "Content-Type: application/json" \
-  -d '{"cidr": "192.168.1.0/24"}' | python3 -m json.tool
-
-# Ver una camara especifica
-curl "http://localhost:8001/api/iot/auto-access?ip=192.168.1.7&port=80" | python3 -m json.tool
-
-# Ver snapshot en el navegador
-# http://localhost:8001/api/iot/snapshot?ip=192.168.1.7&port=80&user=admin&pwd=12345
-
-# Ver stream MJPEG en el navegador
-# http://localhost:8001/api/iot/stream?ip=192.168.1.7&port=80&path=/Streaming/Channels/101&user=admin&pwd=12345
-```
-
-## Vendors de camaras detectados
-
-Hikvision, Dahua, Xiongmai, D-Link, Netgear, GoAhead, Ubiquiti, ONVIF (generico)
-
-## CVEs conocidos por vendor
-
-- **Hikvision**: CVE-2021-36260 (RCE), CVE-2021-33044 (auth bypass), CVE-2017-7921 (backdoor)
-- **Dahua**: CVE-2021-33045 (RCE), CVE-2020-25078 (auth bypass), CVE-2022-30560
-- **Xiongmai**: CVE-2017-17215 (RCE sin auth), CVE-2017-8225 (auth bypass)
-- **D-Link**: CVE-2019-16920 (RCE), CVE-2020-25078
-- **Netgear**: CVE-2016-6277 (RCE)
-- **GoAhead**: CVE-2017-8225 (auth bypass)
-- **Ubiquiti**: CVE-2021-35064
+**Versión:** 7.0-TACTICAL-HOTRELOAD
+**Última actualización:** 2026-09-01
 
 ---
 
-*Ver tambien: `MANUAL_OPERATIVO.md`, `GUIA_ARRANQUE.md`, `CONTINUAR_AQUI.md`*
+## 📋 TABLA DE COMANDOS RÁPIDOS
+
+### Actualizar y sincronizar
+```bash
+# Traer cambios del remote
+cd ~/Red-team-tauri
+git stash
+git pull origin main
+git stash pop
+```
+
+### Levantar el sistema completo
+```bash
+# Termux
+bash arrancar.sh
+
+# Replit
+bash replit_start.sh
+```
+
+### Hot-reload (nuevo)
+```bash
+# Iniciar watcher en background
+python3 watcher.py &
+
+# El watcher monitorea redteam/modules/ cada 2s
+# Al editar un módulo, recarga automáticamente sin reiniciar
+```
+
+### Parar todo
+```bash
+# Parar dashboard
+pkill -f dashboard_server
+
+# Parar watcher
+pkill -f watcher.py
+```
+
+---
+
+## 🔧 INSTALACIÓN INICIAL (Termux)
+
+```bash
+# 1. Clonar repo
+git clone https://github.com/sourceseal-star/Red-team-tauri.git ~/Red-team-tauri
+cd ~/Red-team-tauri
+
+# 2. Instalar dependencias Python
+pkg install python nmap
+pip install fastapi uvicorn pydantic httpx requests psutil
+
+# 3. Instalar dependencias Node
+cd tauri-frontend
+npm install
+npm run build
+cp -r dist/. ../public/
+cd ..
+
+# 4. (Opcional) Herramientas de escaneo
+pkg install masscan subfinder nikto
+pip install nuclei sslscan
+
+# 5. Arrancar
+bash arrancar.sh
+```
+
+---
+
+## 🎯 EJECUTAR AUDITORÍA TÁCTICA
+
+### Desde el dashboard
+1. Abrir `http://localhost:8001`
+2. Sidebar → **Auditoría Táctica** (icono de mira roja)
+3. Ingresar subnet (o dejar vacío para auto-detectar)
+4. Clic en **Ejecutar Auditoría**
+5. Ver log en vivo, hallazgos y reporte sellado
+
+### Desde la API
+```bash
+# Auto-detectar red
+curl -X POST http://localhost:8001/api/tactical/scan
+
+# Especificar subnet
+curl -X POST http://localhost:8001/api/tactical/scan \
+  -H "Content-Type: application/json" \
+  -d '{"subnet": "192.168.1.0/24"}'
+
+# Ver credenciales del diccionario
+curl http://localhost:8001/api/tactical/credentials
+
+# Ver puertos escaneados
+curl http://localhost:8001/api/tactical/ports
+
+# Descargar reporte
+curl -O http://localhost:8001/api/tactical/report/RPT-1234567890-a1b2c3d4.html
+```
+
+---
+
+## 🛠️ DESARROLLO DE MÓDULOS
+
+### Crear un módulo nuevo
+```bash
+nano redteam/modules/mi_modulo.py
+```
+
+```python
+from redteam.modules.base import BaseModule
+
+class MiModulo(BaseModule):
+    name = "mi_modulo"
+    description = "Descripción del módulo"
+    version = "1.0"
+
+    def _execute(self, target: str, **kwargs):
+        # Validar engagement (automático en run())
+        # Tu lógica aquí
+        return {"resultado": "..."}
+```
+
+### Recargar en caliente
+Con el watcher corriendo, editar el archivo y guardar. El watcher detecta el cambio automáticamente:
+```
+🔄 MODIFIED: mi_modulo.py
+🔗 Sellado en ledger SourceSeal
+📡 Señal reload enviada al dashboard
+```
+
+---
+
+## 🔐 CONFIGURACIÓN DE ENGAGEMENTS
+
+Editar `config/engagements.json`:
+```json
+{
+  "engagements": [
+    {
+      "id": "ENG-CLIENTE-001",
+      "client": "Nombre del Cliente",
+      "start_date": "2026-09-01T00:00:00Z",
+      "end_date": "2026-12-31T23:59:59Z",
+      "authorization_signed": true,
+      "scope": ["192.168.1.0/24", "*.cliente.com"],
+      "excluded": ["192.168.1.1"]
+    }
+  ]
+}
+```
+
+⚠️ `authorization_signed: false` bloquea toda acción. Debe ser `true` para operar.
+
+---
+
+## 📂 ESTRUCTURA DE EVIDENCIA
+
+```
+evidence/
+├── findings/         # JSON de hallazgos sellados con SHA-256
+└── sealed/           # Informes sellados finalizados
+
+reports/
+└── templates/        # Plantillas HTML de reportes
+
+~/.c2/
+├── evidence_ledger.json    # Ledger SourceSeal con chain hash
+├── module_state.json       # Estado del watcher
+├── pids/dashboard.pid      # PID del dashboard
+└── logs/
+    ├── watcher.log         # Log del watcher
+    └── engagement_audit.log  # Audit de autorizaciones
+```
+
+---
+
+## 🚨 SOLUCIÓN DE PROBLEMAS
+
+### El frontend no compila en Termux
+```bash
+# El build es no-fatal: si falla, usa dist/ existente
+bash arrancar.sh
+# Si necesitas recompilar manual:
+cd tauri-frontend && npm run build && cp -r dist/. ../public/
+```
+
+### El watcher no detecta cambios
+```bash
+# Verificar que esté corriendo
+ps aux | grep watcher
+
+# Ver log
+cat ~/.c2/logs/watcher.log
+
+# Reiniciar
+pkill -f watcher.py
+python3 watcher.py &
+```
+
+### El dashboard no recibe señales del watcher
+```bash
+# Verificar PID del dashboard
+cat ~/.c2/pids/dashboard.pid
+
+# Verificar que el proceso existe
+ps aux | grep dashboard_server
+
+# Forzar recarga manual
+kill -USR1 $(cat ~/.c2/pids/dashboard.pid)
+```
+
+### Puerto 8001 ocupado
+```bash
+# Ver qué lo usa
+lsof -i :8001
+
+# Matar proceso
+pkill -f dashboard_server
+
+# Reinciar
+bash arrancar.sh
+```
+
+### Git pull con conflictos
+```bash
+git stash
+git pull origin main
+git stash pop
+# Si sigue fallando:
+git checkout .
+git pull origin main
+```
+
+---
+
+## ✅ CHECKLIST DE VERIFICACIÓN
+
+```bash
+# 1. Dashboard arriba
+curl http://localhost:8001/api/health | jq .
+
+# 2. Módulos disponibles
+curl http://localhost:8001/api/tactical/ports | jq .
+
+# 3. Diccionario de credenciales
+curl http://localhost:8001/api/tactical/credentials | jq .
+
+# 4. Watcher activo
+ps aux | grep "watcher.py" | grep -v grep
+
+# 5. Ledger SourceSeal
+cat ~/.c2/evidence_ledger.json | jq .chain_hash
+
+# 6. Frontend sirve
+curl -s http://localhost:8001/ | head -5
+```

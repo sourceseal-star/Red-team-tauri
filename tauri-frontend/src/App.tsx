@@ -35,6 +35,7 @@ import NexusPanel from './components/NexusPanel';
 import ComlinkPanel from './components/ComlinkPanel';
 import OperationsPanel from './components/OperationsPanel';
 import IntegratedPanel from './components/IntegratedPanel';
+import TacticalPanel from './components/TacticalPanel';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -79,6 +80,7 @@ function App() {
       {module === 'integrated' && <IntegratedPanel />}
       {module === 'operations' && <OperationsPanel />}
       {module === 'android' && <AndroidFieldPanel />}
+      {module === 'tactical' && <TacticalPanel />}
     </AppShell>
     </ARTOProvider>
     </LanguageProvider>

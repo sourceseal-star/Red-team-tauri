@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Shield, Camera, Radio, Globe, Wifi, Activity,
   Terminal, Settings, Bell, Search, Menu, X, ChevronRight, Download,
   Zap, Lock, Eye, Fingerprint, Bug, FileText, Network,
-  Sun, Moon, LogOut, Cpu, MapPin, Smartphone
+  Sun, Moon, LogOut, Cpu, MapPin, Smartphone, Crosshair
 } from 'lucide-react'
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 import CommanderPanel from './CommanderPanel';
@@ -49,6 +49,7 @@ const MODULES = [
   { id: 'integrated', label: 'Integración', icon: Network, color: 'text-violet-400', badge: 'LIVE' },
   { id: 'operations', label: 'Operaciones', icon: Activity, color: 'text-emerald-400', badge: 'SAFE' },
   { id: 'android', label: 'Android / Campo', icon: Smartphone, color: 'text-cyan-400', badge: 'NEW' },
+{ id: 'tactical', label: 'Auditoría Táctica', icon: Crosshair, color: 'text-red-400', badge: 'LIVE' },
   { id: 'topology', label: 'Topología', icon: Network, color: 'text-cyan-400', badge: null },
   { id: 'iot', label: 'IoT Cámaras', icon: Camera, color: 'text-red-400', badge: 'new' },
   { id: 'alerts', label: 'Alertas', icon: Bell, color: 'text-yellow-400', badge: 'live' },
