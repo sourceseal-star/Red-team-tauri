@@ -43,6 +43,9 @@ echo ""
 # 1. Dashboard :8001 /api/health
 check_http "Dashboard  :8001 /api/health" "http://127.0.0.1:8001/api/health" "200"
 
+# 1b. Commander in-process :8001 /api/commander/health
+check_http "Commander  :8001 /api/commander/health" "http://127.0.0.1:8001/api/commander/health" "200"
+
 # 2. GHOST PHANTOM :8002 /api/status
 check_http "PHANTOM    :8002 /api/status" "http://127.0.0.1:8002/api/status" "200"
 
@@ -51,6 +54,9 @@ check_http "Nexus      :8004" "http://127.0.0.1:8004/" "any"
 
 # 4. Controller :8005 /api/status
 check_http "Controller :8005 /api/status" "http://127.0.0.1:8005/api/status" "200"
+
+# 4b. Commander Dashboard standalone :8003 (si se ejecuta por separado)
+check_http "Cmdr Dash :8003 (standalone)" "http://127.0.0.1:8003/" "any"
 
 # 5. .env permisos (600)
 echo "  Archivos de configuración:"
