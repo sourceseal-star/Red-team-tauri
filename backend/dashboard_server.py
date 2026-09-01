@@ -30,6 +30,7 @@ from fastapi import (
     WebSocket, WebSocketDisconnect, Depends, Request, BackgroundTasks
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse
 from pydantic import BaseModel, Field
 import uvicorn
@@ -313,8 +314,7 @@ async def integrated_attack_b(ip: str):
 # HEALTH (sin auth)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@app.get("/")
-async def health():
+async def _health_payload():
     return {
         "status": "online",
         "version": "3.2-termux",
@@ -331,7 +331,29 @@ async def health():
 
 @app.get("/api/health")
 async def api_health():
-    return await health()
+    return await _health_payload()
+
+# ── Frontend compilado (tauri-frontend/dist) ──
+# vite build usa emptyOutDir:true — NUNCA guardar archivos propios ahí (sol.html vive en backend/static/)
+_FRONTEND_DIST = os.path.join(PROJECT_ROOT, "tauri-frontend", "dist")
+_FRONTEND_INDEX = os.path.join(_FRONTEND_DIST, "index.html")
+_FRONTEND_BUILT = os.path.isdir(_FRONTEND_DIST) and os.path.isfile(_FRONTEND_INDEX)
+
+if _FRONTEND_BUILT:
+    _assets_dir = os.path.join(_FRONTEND_DIST, "assets")
+    if os.path.isdir(_assets_dir):
+        app.mount("/assets", StaticFiles(directory=_assets_dir), name="frontend-assets")
+    print(f"[sealctl] Frontend compilado detectado en {_FRONTEND_DIST}")
+else:
+    print(f"[sealctl][WARN] Frontend no compilado ({_FRONTEND_DIST} sin index.html). "
+          f"Ejecuta: cd tauri-frontend && npm install && npm run build")
+
+@app.get("/")
+async def root():
+    """Sirve el dashboard visual (React compilado). Si no está compilado, cae al JSON de salud."""
+    if _FRONTEND_BUILT:
+        return FileResponse(_FRONTEND_INDEX, media_type="text/html")
+    return await _health_payload()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TOPOLOGY — sockets reales, no random
@@ -3239,29 +3261,31 @@ async def ai_history(limit: int = 20):
 # SOL — Testigo personal (HTML estático local, sin dependencias)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+_SOL_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol.html")
+
 @app.get("/sol")
 async def sol_page():
-    """Página de Sol — sirve el HTML estático desde tauri-frontend/dist/."""
-    import os
-    sol_path = os.path.join(PROJECT_ROOT, "..", "tauri-frontend", "dist", "sol.html")
-    if not os.path.isfile(sol_path):
-        # Fallback: buscar en otras ubicaciones comunes
-        for candidate in [
-            os.path.join(PROJECT_ROOT, "tauri-frontend", "dist", "sol.html"),
-            os.path.join(os.getcwd(), "tauri-frontend", "dist", "sol.html"),
-            os.path.join(os.getcwd(), "dist", "sol.html"),
-        ]:
-            if os.path.isfile(candidate):
-                sol_path = candidate
-                break
-    if os.path.isfile(sol_path):
-        return FileResponse(sol_path, media_type="text/html")
-    raise HTTPException(404, "Sol no encuentra su página. Ejecuta: bash setup.sh")
+    """Página de Sol — HTML estático en backend/static/ (fuera de tauri-frontend/dist,
+    que vite build vacía por completo con emptyOutDir:true)."""
+    if os.path.isfile(_SOL_PATH):
+        return FileResponse(_SOL_PATH, media_type="text/html")
+    raise HTTPException(404, "Sol no encuentra su página en backend/static/sol.html")
 
 @app.get("/sol.html")
 async def sol_page_alt():
     """Alias directo."""
     return await sol_page()
+
+# ── SPA fallback — rutas del React Router (ej. /dashboard, /osint) que no son archivos ni API ──
+_SPA_EXCLUDED_PREFIXES = ("api/", "docs", "openapi.json", "redoc", "ws", "assets/", "sol")
+
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    if full_path.startswith(_SPA_EXCLUDED_PREFIXES):
+        raise HTTPException(404, "Not found")
+    if _FRONTEND_BUILT:
+        return FileResponse(_FRONTEND_INDEX, media_type="text/html")
+    raise HTTPException(404, "Frontend no compilado. Ejecuta: cd tauri-frontend && npm install && npm run build")
 
 
 # STARTUP

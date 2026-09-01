@@ -74,11 +74,18 @@ done
 
 if curl -s http://127.0.0.1:8001/api/health >/dev/null 2>&1; then
   echo -e "  ${G}✅ Dashboard online${N}"
-  # Verificar AI Orchestrator
-  if curl -s -H "X-Api-Key: ${REDTEAM_API_KEY}" http://127.0.0.1:8001/api/commander/ai/status 2>/dev/null | grep -q '"available": true'; then
+  # Verificar AI Orchestrator (FastAPI serializa sin espacios: "available":true)
+  if curl -s -H "X-Api-Key: ${REDTEAM_API_KEY:-}" http://127.0.0.1:8001/api/commander/ai/status 2>/dev/null | grep -qE '"available"[[:space:]]*:[[:space:]]*true'; then
     echo -e "  ${G}✅ AI Orchestrator disponible en /api/commander/ai/*${N}"
   else
     echo -e "  ${Y}⚠️  AI Orchestrator no disponible${N}"
+  fi
+  # Verificar frontend visual compilado
+  if curl -s http://127.0.0.1:8001/ 2>/dev/null | grep -qi '<div id="root">'; then
+    echo -e "  ${G}✅ Dashboard visual compilado y servido${N}"
+  else
+    echo -e "  ${Y}⚠️  Frontend no compilado — verás JSON en vez del dashboard visual${N}"
+    echo -e "  ${Y}     Ejecuta: cd tauri-frontend && npm install --legacy-peer-deps && npm run build${N}"
   fi
 else
   echo -e "  ${R}❌ Dashboard no respondió. Ver $HOME/dashboard.log${N}"
