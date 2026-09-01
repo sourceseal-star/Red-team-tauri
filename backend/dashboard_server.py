@@ -25,6 +25,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+# PROJECT_ROOT definido temprano — usado por el bloque de frontend estático mas abajo
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 from fastapi import (
     FastAPI, File, Form, HTTPException, Query, UploadFile, Body,
     WebSocket, WebSocketDisconnect, Depends, Request, BackgroundTasks
