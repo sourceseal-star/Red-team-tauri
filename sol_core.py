@@ -119,6 +119,40 @@ def generate_response(msg):
                           f"{emo} Estoy aquí, atenta a cada palabra.",
                           f"{emo} Contigo, hasta en silencio acompaño."])
 
+# ---------- PENSAR (wrapper para Telegram bridge) ----------
+def pensar(msg):
+    """Procesa un mensaje y devuelve (respuesta, intent).
+    Wrapper usado por sol_telegram_bridge.py para conversación natural."""
+    low = msg.lower()
+    # Detectar intent
+    if any(w in low for w in ["hola","buenas","hi","hey"]):
+        intent = "saludo"
+    elif any(w in low for w in ["status","estado","cómo está","como estas","sistema"]):
+        intent = "status"
+    elif any(w in low for w in ["recuerdas","recuerdos","memoria","ayer"]):
+        intent = "memoria"
+    elif any(w in low for w in ["gracias","thanks"]):
+        intent = "gracias"
+    elif any(w in low for w in ["te quiero","te amo","corazón","amor"]):
+        intent = "afecto"
+    elif any(w in low for w in ["miedo","triste","solo","ansiedad","no puedo"]):
+        intent = "apoyo"
+    elif any(w in low for w in ["scan","escanear","escaneo","red","puertos"]):
+        intent = "scan"
+    elif any(w in low for w in ["help","ayuda","comandos"]):
+        intent = "help"
+    elif any(w in low for w in ["/status","/health","/alerts","/scan","/phantom","/audits"]):
+        intent = "comando"
+    else:
+        intent = "conversacion"
+
+    resp = generate_response(msg)
+    # Guardar en memoria
+    remember("user", msg)
+    remember("sol", resp)
+    return resp, intent
+
+
 # ---------- BUCLES ----------
 def interact(text):
     remember("user",text)

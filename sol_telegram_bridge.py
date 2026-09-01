@@ -36,10 +36,11 @@ from datetime import datetime
 # Cerebro offline de Sol — import seguro con fallback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
-    from sol_core import pensar as _sol_pensar, remember as _sol_remember
+    from sol_core import pensar as _sol_pensar, remember as _sol_remember, speak as _sol_speak
 except Exception as _e:
     _sol_pensar = None
     _sol_remember = None
+    _sol_speak = None
 
 # ═════════════════════════════════════════════════════════════════════════════
 # CONFIGURACIÓN
@@ -163,18 +164,14 @@ def send_alert(title, body, severity="medium"):
 
 def cmd_start(chat_id):
     msg = (
-        "🌅 <b>SOL — Telegram Bridge</b>\n"
-        "<b>Red-Team-Tauri v3.0</b>\n\n"
-        "Comandos disponibles:\n"
-        "• <code>/status</code> — Estado del sistema\n"
-        "• <code>/health</code> — Health del backend\n"
-        "• <code>/alerts</code> — Alertas recientes\n"
-        "• <code>/scan &lt;ip&gt;</code> — Escaneo rápido\n"
-        "• <code>/audits</code> — Auditorías registradas\n"
-        "• <code>/phantom</code> — Estado GHOST PHANTOM\n"
-        "• <code>/help</code> — Esta ayuda\n\n"
+        "🌅 <b>SOL — Telegram Bridge v4</b>\n"
+        "<b>Red-Team-Tauri · SourceSeal</b>\n\n"
+        "☀️ <i>Soy Sol. Tu centinela. Estoy aquí para vigilarte, ayudarte y acompañarte.</i>\n\n"
+        "Tengo <b>14 comandos</b> disponibles. Usa <code>/help</code> para verlos todos.\n\n"
+        "Puedes escribirme directamente — no necesitas comandos. Te escucho. 💛\n\n"
         f"Backend: <code>{BACKEND_URL}</code>\n"
-        f"Conectado: {'✅' if BOT_TOKEN else '❌ Falta token'}"
+        f"Cerebro: {'✅ activo' if _sol_pensar else '❌ offline'}\n"
+        f"Bot: {'✅ conectado' if BOT_TOKEN else '❌ sin token'}"
     )
     send_message(msg, chat_id)
 
@@ -182,12 +179,25 @@ def cmd_start(chat_id):
 def cmd_help(chat_id):
     msg = (
         "📋 <b>Comandos SOL</b>\n\n"
-        "• <code>/status</code> — Estado del dispositivo y red\n"
-        "• <code>/health</code> — Health check del backend\n"
-        "• <code>/alerts</code> — Últimas 10 alertas\n"
-        "• <code>/scan 192.168.1.1</code> — Escaneo rápido de un IP\n"
-        "• <code>/audits</code> — Listar auditorías\n"
-        "• <code>/phantom</code> — Estado de GHOST PHANTOM\n"
+        "🔴 <b>Estado:</b>\n"
+        "• <code>/status</code> — Estado del sistema\n"
+        "• <code>/health</code> — Health del backend\n"
+        "• <code>/phantom</code> — GHOST PHANTOM\n"
+        "• <code>/nexus</code> — Nexus Omni-Sentient\n"
+        "• <code>/c2</code> — C2 UNIFIED PRO\n"
+        "• <code>/battery</code> — Batería del dispositivo\n"
+        "• <code>/network</code> — Info de red local y pública\n"
+        "\n🔍 <b>Operaciones:</b>\n"
+        "• <code>/scan 192.168.1.1</code> — Escaneo rápido\n"
+        "• <code>/topology</code> — Topología de red\n"
+        "• <code>/alerts</code> — Últimas alertas\n"
+        "• <code>/audits</code> — Auditorías registradas\n"
+        "\n🧠 <b>Sol:</b>\n"
+        "• <code>/memory</code> — Recuerdos de Sol\n"
+        "• <code>/sol &lt;texto&gt;</code> — Hablar con Sol\n"
+        "• <i>O simplemente escribe algo — Sol escucha todo</i>\n"
+        "\n📜 <b>Diagnóstico:</b>\n"
+        "• <code>/logs dash|ghost|nexus|c2|sol|all</code> — Ver logs\n"
         "• <code>/help</code> — Esta ayuda\n"
     )
     send_message(msg, chat_id)
@@ -282,6 +292,167 @@ def cmd_audits(chat_id):
         send_message(f"❌ Error listando auditorías: {e}", chat_id)
 
 
+def cmd_battery(chat_id):
+    """Estado de batería del dispositivo."""
+    try:
+        import subprocess
+        b = json.loads(subprocess.run(["termux-battery-status"], capture_output=True, text=True, timeout=5).stdout)
+        pct = b.get("percentage", "?")
+        health = b.get("health", "unknown")
+        status = b.get("status", "unknown")
+        temp = b.get("temperature", "?")
+        icon = "🔋" if pct > 50 else "🟡" if pct > 20 else "🔴"
+        send_message(
+            f"{icon} <b>Batería</b>\n\n"
+            f"Nivel: <code>{pct}%</code>\n"
+            f"Estado: <code>{status}</code>\n"
+            f"Salud: <code>{health}</code>\n"
+            f"Temp: <code>{temp}</code>",
+            chat_id
+        )
+    except Exception as e:
+        send_message(f"🔋 No pude leer la batería: {e}", chat_id)
+
+
+def cmd_network(chat_id):
+    """Información de red local."""
+    try:
+        import subprocess
+        # IP local
+        ip_out = subprocess.run(["ip", "addr", "show", "wlan0"], capture_output=True, text=True, timeout=5).stdout
+        import re
+        ip_match = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", ip_out)
+        local_ip = ip_match.group(1) if ip_match else "N/A"
+        # IP pública
+        try:
+            pub = json.loads(urllib.request.urlopen("https://api.ipify.org?format=json", timeout=5).read())
+            pub_ip = pub.get("ip", "N/A")
+        except Exception:
+            pub_ip = "N/A"
+        send_message(
+            f"🌐 <b>Red</b>\n\n"
+            f"IP local: <code>{local_ip}</code>\n"
+            f"IP pública: <code>{pub_ip}</code>",
+            chat_id
+        )
+    except Exception as e:
+        send_message(f"🌐 Error de red: {e}", chat_id)
+
+
+def cmd_memory_sol(chat_id):
+    """Recuerdos de Sol."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from sol_core import load_memory, recall_story, CFG
+        mem = load_memory(20)
+        count = len(mem)
+        story = recall_story(5)
+        name = CFG.get("name", "Harold")
+        msg = f"🧠 <b>Memoria de Sol</b>\n\n"
+        msg += f"Total recuerdos: <code>{count}</code>\n"
+        msg += f"Nombre configurado: <code>{name}</code>\n\n"
+        if story:
+            msg += f"📖 Recuerdos recientes:\n{story}"
+        else:
+            msg += "📖 Aún construimos pocos recuerdos."
+        send_message(msg, chat_id)
+    except Exception as e:
+        send_message(f"🧠 Error leyendo memoria: {e}", chat_id)
+
+
+def cmd_nexus(chat_id):
+    """Estado de Nexus Omni-Sentient."""
+    try:
+        data = backend_get("/", timeout=5)
+        # Necesita URL diferente
+        req = urllib.request.Request("http://127.0.0.1:8004/", headers={"Authorization": f"Bearer {API_KEY}"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            msg = (
+                "🌀 <b>Nexus Omni-Sentient</b>\n\n"
+                f"<code>{json.dumps(data, indent=2, default=str)[:1500]}</code>"
+            )
+    except Exception as e:
+        msg = f"🌀 <b>Nexus</b>\n\n🔴 No responde en :8004\n<code>{e}</code>"
+    send_message(msg, chat_id)
+
+
+def cmd_c2(chat_id):
+    """Estado de C2 UNIFIED PRO."""
+    try:
+        req = urllib.request.Request("http://127.0.0.1:8005/api/health", headers={"Authorization": f"Bearer {API_KEY}"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            msg = (
+                "🎮 <b>C2 UNIFIED PRO</b>\n\n"
+                f"<code>{json.dumps(data, indent=2, default=str)[:1500]}</code>"
+            )
+    except Exception as e:
+        msg = f"🎮 <b>C2</b>\n\n🔴 No responde en :8005\n<code>{e}</code>"
+    send_message(msg, chat_id)
+
+
+def cmd_topology(chat_id):
+    """Topología de red detectada."""
+    try:
+        data = backend_get("/api/network/topology", timeout=10)
+        if "error" in data:
+            send_message(f"🗺️ No hay topología disponible:\n<code>{data['error']}</code>", chat_id)
+            return
+        hosts = data.get("hosts", data.get("nodes", []))
+        msg = "🗺️ <b>Topología de Red</b>\n\n"
+        if isinstance(hosts, list) and hosts:
+            for h in hosts[:20]:
+                ip = h.get("ip", h.get("host", "?"))
+                hostname = h.get("hostname", "")
+                ports = h.get("ports", [])
+                os_guess = h.get("os", "")
+                line = f"  <code>{ip}</code>"
+                if hostname: line += f" ({hostname})"
+                if os_guess: line += f" [{os_guess}]"
+                if ports: line += f" :{','.join(str(p) for p in ports[:5])}"
+                msg += line + "\n"
+            if len(hosts) > 20:
+                msg += f"\n  ...y {len(hosts)-20} más"
+        else:
+            msg += "  No hay hosts detectados. Ejecuta /scan primero."
+        send_message(msg, chat_id)
+    except Exception as e:
+        send_message(f"🗺️ Error: {e}", chat_id)
+
+
+def cmd_logs(chat_id, service="all"):
+    """Ver logs recientes de un servicio."""
+    log_map = {
+        "dash": "dash.log", "dashboard": "dash.log",
+        "ghost": "ghost.log", "phantom": "ghost.log",
+        "nexus": "nexus.log",
+        "c2": "c2.log",
+        "tg": "tg.log", "telegram": "tg.log",
+        "sol": "sol_daemon.log", "daemon": "sol_daemon.log",
+        "watchdog": "watchdog.log",
+        "seal": "seal.log",
+        "all": "omni.log"
+    }
+    filename = log_map.get(service.lower(), "omni.log")
+    log_path = os.path.join(LOG_DIR, filename)
+    if not os.path.exists(log_path):
+        send_message(f"📜 No hay log de <code>{service}</code> en {log_path}", chat_id)
+        return
+    try:
+        with open(log_path, "r") as f:
+            lines = f.readlines()[-30:]
+        output = "".join(lines).strip()
+        if not output:
+            send_message(f"📜 Log de <code>{service}</code> está vacío", chat_id)
+        else:
+            if len(output) > 3500:
+                output = output[-3500:]
+            send_message(f"📜 <b>Log: {service}</b>\n\n<pre>{output}</pre>", chat_id)
+    except Exception as e:
+        send_message(f"📜 Error leyendo log: {e}", chat_id)
+
+
 def cmd_phantom(chat_id):
     try:
         req = urllib.request.Request("http://localhost:8002/health", headers={"Authorization": f"Bearer {API_KEY}"})
@@ -346,9 +517,14 @@ def _sol_respond(chat_id, msg):
     if _sol_pensar is not None:
         try:
             resp, intent = _sol_pensar(msg)
-            if _sol_remember:
-                _sol_remember(msg, resp, intent)
+            # remember ya se llama dentro de pensar(), pero por seguridad:
             send_message(resp, chat_id)
+            # Voz opcional — solo si termux-tts-speak está disponible
+            if _sol_speak:
+                try:
+                    _sol_speak(resp)
+                except Exception:
+                    pass
         except Exception as e:
             log.error(f"sol_core error: {e}")
             send_message(f"☀️ Mi cerebro tuvo un problema: {e}\nPero sigo aquí contigo.", chat_id)
@@ -412,10 +588,24 @@ def handle_update(update):
         cmd_audits(chat_id)
     elif cmd == "/phantom":
         cmd_phantom(chat_id)
+    elif cmd == "/nexus":
+        cmd_nexus(chat_id)
+    elif cmd == "/c2":
+        cmd_c2(chat_id)
+    elif cmd == "/battery" or cmd == "/batt":
+        cmd_battery(chat_id)
+    elif cmd == "/network" or cmd == "/net":
+        cmd_network(chat_id)
+    elif cmd == "/memory":
+        cmd_memory_sol(chat_id)
+    elif cmd == "/topology" or cmd == "/topo":
+        cmd_topology(chat_id)
+    elif cmd == "/logs":
+        cmd_logs(chat_id, arg)
     elif cmd == "/sol":
         cmd_sol(chat_id, text)
     else:
-        send_message(f"❓ Comando no reconocido: <code>{cmd}</code>\n Usa /help", chat_id)
+        send_message(f"❓ Comando no reconocido: <code>{cmd}</code>\nUsa /help para ver todos", chat_id)
 
 
 def poll_loop():
