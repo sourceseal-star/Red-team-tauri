@@ -36,7 +36,12 @@ from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import threading
 from nexus_credentials import ensure_nexus_credentials
+try:
+    import nexus_autoscan as nas
+except ImportError:
+    nas = None
 try:
     import aiohttp
 except ImportError:
@@ -729,6 +734,10 @@ scanner = AdaptiveScanner()
 @app.on_event("startup")
 async def start_scanner_watchdog():
     scanner.start_watchdog()
+    # Arrancar loop de autoscan si nexus_autoscan está disponible
+    if nas is not None:
+        threading.Thread(target=nas.autoscan_loop, args=(NEXUS_SCAN_TARGET, 600), daemon=True).start()
+        print(f"[NEXUS] Autoscan loop iniciado — target={NEXUS_SCAN_TARGET}, interval=600s", flush=True)
 
 @app.on_event("shutdown")
 async def stop_scanner_watchdog():
@@ -793,6 +802,28 @@ async def get_state(credentials: HTTPBasicCredentials = Depends(verify_auth)):
         "events": db.get_recent_events(15),
         "stats": await get_analytics(credentials),
     }
+
+# ============================================================
+# 3b. NEXUS AUTOSCAN — escaneo automático + mapeo + lista detallada
+# ============================================================
+NEXUS_SCAN_TARGET = os.environ.get("NEXUS_SCAN_TARGET", "192.168.1.0/24")
+
+@app.get("/api/nexus/hosts")
+async def nexus_hosts(credentials: HTTPBasicCredentials = Depends(verify_auth)):
+    """Devuelve el estado del mapeo de hosts (lista detallada)."""
+    if nas is None:
+        raise HTTPException(status_code=503, detail="nexus_autoscan no disponible")
+    return nas.get_state()
+
+@app.post("/api/nexus/scan/now")
+async def nexus_scan_now(credentials: HTTPBasicCredentials = Depends(verify_auth)):
+    """Lanza un escaneo inmediato del target configurado."""
+    if nas is None:
+        raise HTTPException(status_code=503, detail="nexus_autoscan no disponible")
+    if nas.STATE.get("running"):
+        return {"status": "already_running", "target": NEXUS_SCAN_TARGET}
+    threading.Thread(target=nas.scan, args=(NEXUS_SCAN_TARGET,), daemon=True).start()
+    return {"status": "scan_started", "target": NEXUS_SCAN_TARGET}
 
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):
