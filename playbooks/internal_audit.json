@@ -1,0 +1,41 @@
+{
+  "name": "Internal Audit",
+  "version": "1.0",
+  "description": "Auditor\u00eda interna: descubrimiento \u2192 enumeraci\u00f3n \u2192 credenciales \u2192 reporte",
+  "steps": [
+    {
+      "module": "recon",
+      "mode": "fast",
+      "timeout": 300
+    },
+    {
+      "module": "enumeration",
+      "services": [
+        "smb",
+        "rpc",
+        "ldap",
+        "netbios"
+      ],
+      "timeout": 900
+    },
+    {
+      "module": "tactical_executor",
+      "timeout": 600
+    },
+    {
+      "module": "vulnerability",
+      "scanners": [
+        "nuclei",
+        "sslscan"
+      ],
+      "timeout": 1200
+    },
+    {
+      "module": "reporting",
+      "format": "both",
+      "timeout": 60
+    }
+  ],
+  "requires_engagement": true,
+  "requires_admin": true
+}

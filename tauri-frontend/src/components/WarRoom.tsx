@@ -9,6 +9,7 @@ import WiFiPanel from './WiFiPanel';
 import BlackMirrorPanel from './BlackMirrorPanel';
 import ServiceControlPanel from './ServiceControlPanel';
 import LeviathanWidget from './LeviathanWidget';
+import UnifiedCommandHub from './UnifiedCommandHub';
 
 // Paneles disponibles para el War Room
 const PANELS = [
@@ -23,7 +24,7 @@ const PANELS = [
   { id: 'leviathan', label: 'LEVIATHAN', component: LeviathanWidget, default: true, span: 'lg:col-span-2 lg:row-span-2' },
 ];
 
-export default function WarRoom() {
+export default function WarRoom({ onNavigate }: { onNavigate?: (module: string) => void }) {
   const [activePanels, setActivePanels] = useState<string[]>(
     PANELS.filter(p => p.default).map(p => p.id)
   );
@@ -35,6 +36,8 @@ export default function WarRoom() {
 
   return (
     <div className="space-y-4">
+      <UnifiedCommandHub onNavigate={onNavigate} />
+
       {/* Barra de control de paneles */}
       <div className="flex flex-wrap gap-2">
         {PANELS.map(p => {

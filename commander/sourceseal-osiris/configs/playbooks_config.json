@@ -1,0 +1,47 @@
+{
+  "playbooks": [
+    {
+      "id": "scan_vulnerabilities",
+      "name": "Escanear Vulnerabilidades",
+      "description": "Ejecuta escaneo de vulnerabilidades con Nuclei",
+      "command": "nuclei",
+      "args": ["-u", "{{target}}", "-t", "~/nuclei-templates/", "-o", "/tmp/nuclei_output.txt"],
+      "timeout": 600,
+      "working_directory": "/tmp",
+      "env": {
+        "TARGET": "{{target}}"
+      },
+      "triggers": ["scan", "vulnerability_detected"]
+    },
+    {
+      "id": "port_scan",
+      "name": "Escanear Puertos",
+      "description": "Ejecuta escaneo de puertos con Nmap",
+      "command": "nmap",
+      "args": ["-sS", "-p-", "-T4", "{{target}}", "-oX", "/tmp/nmap_output.xml"],
+      "timeout": 300,
+      "working_directory": "/tmp",
+      "triggers": ["scan", "new_target"]
+    },
+    {
+      "id": "recon_full",
+      "name": "Reconocimiento Completo",
+      "description": "Ejecuta reconocimiento completo con multiple herramientas",
+      "command": "/home/user/scripts/full_recon.sh",
+      "args": ["{{target}}"],
+      "timeout": 1200,
+      "working_directory": "/home/user/scripts",
+      "triggers": ["new_target", "high_priority_alert"]
+    },
+    {
+      "id": "capture_evidence",
+      "name": "Capturar Evidencia",
+      "description": "Captura screenshots y logs de la alerta",
+      "command": "python3",
+      "args": ["/home/user/scripts/capture_evidence.py", "{{target}}", "{{alert_id}}"],
+      "timeout": 60,
+      "working_directory": "/home/user/scripts",
+      "triggers": ["alert", "high_severity_alert"]
+    }
+  ]
+}

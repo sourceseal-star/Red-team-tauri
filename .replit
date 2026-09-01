@@ -1,5 +1,5 @@
 run = "bash replit_start.sh"
-modules = ["python-3.12", "nodejs-20", "bash"]
+modules = ["python-3.12", "nodejs-18", "bash"]
 
 [nix]
 channel = "stable-25_05"
@@ -24,6 +24,14 @@ externalPort = 8080
 [[ports]]
 localPort = 8001
 externalPort = 80
+
+[[ports]]
+localPort = 8002
+externalPort = 3002
+
+[[ports]]
+localPort = 8004
+externalPort = 3003
 
 [workflows]
 runButton = "Project"

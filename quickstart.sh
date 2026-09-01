@@ -74,14 +74,26 @@ if [ "$TEST_ONLY" -eq 0 ]; then
 
   # 2. Dependencias Python
   echo -e "${C}[2/6] Verificando dependencias Python...${N}"
-  python3 -c "import fastapi, uvicorn, httpx, pydantic, psutil, aiohttp" 2>/dev/null && {
+  TERMUX_ANDROID=0
+  if [ -d "/data/data/com.termux" ]; then
+    TERMUX_ANDROID=1
+  fi
+  PYTHON_IMPORTS="import fastapi, uvicorn, httpx, pydantic, aiohttp"
+  PYTHON_PACKAGES=(fastapi uvicorn httpx pydantic aiohttp dnspython beautifulsoup4 python-whois)
+  if [ "$TERMUX_ANDROID" -eq 0 ]; then
+    PYTHON_IMPORTS="$PYTHON_IMPORTS, psutil"
+    PYTHON_PACKAGES+=(psutil)
+  else
+    warn "Android/Termux detectado: psutil se omite (no compila con Python 3.14)."
+  fi
+  python3 -c "$PYTHON_IMPORTS" 2>/dev/null && {
     ok "Dependencias Python OK"
   } || {
     warn "Instalando dependencias Python faltantes..."
-    if [ -f "$ROOT/backend/requirements.txt" ]; then
+    if [ "$TERMUX_ANDROID" -eq 0 ] && [ -f "$ROOT/backend/requirements.txt" ]; then
       pip install -r "$ROOT/backend/requirements.txt" 2>&1 | tail -3
     else
-      pip install -q fastapi uvicorn httpx pydantic psutil aiohttp dnspython beautifulsoup4 python-whois 2>&1 | tail -3
+      pip install -q "${PYTHON_PACKAGES[@]}" 2>&1 | tail -3
     fi
     ok "Dependencias Python instaladas"
   }

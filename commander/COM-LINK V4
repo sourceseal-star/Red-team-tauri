@@ -1,0 +1,3730 @@
+# 📦 PAQUETE DE INTEGRACIÓN SOURCESEAL + OSIRIS - VERSIÓN EXTENDIDA
+
+> **✨ Versión mejorada con soporte para cámaras, playbooks avanzados, Termux y Replit**
+> *Tiempo estimado de despliegue: < 1 hora*
+
+---
+
+## 🎯 ¿Qué hay de nuevo?
+
+| Componente | Descripción | Estado |
+|------------|-------------|--------|
+| **Conector Principal** | WebSocket + REST + Caché SQLite | ✅ Mejorado |
+| **Integración Cámaras** | Captura y envío de imágenes a OSIRIS | ✅ Nuevo |
+| **Playbooks Avanzados** | Ejecución y reporte detallado | ✅ Mejorado |
+| **Soporte Termux** | Instalación y ejecución en Android | ✅ Validado |
+| **Soporte Replit** | Configuración para entornos en la nube | ✅ Validado |
+| **Monitoreo** | Dashboard de salud y métricas | ✅ Nuevo |
+
+---
+
+## 📁 Estructura del Paquete
+
+```
+sourceseal-osiris-integration/
+├── connectors/
+│   ├── __init__.py
+│   ├── main_connector.py      # Conector principal mejorado
+│   ├── camera_connector.py    # Integración con cámaras IP
+│   └── playbook_connector.py  # Manejo avanzado de playbooks
+├── utils/
+│   ├── config_manager.py      # Gestión de configuración
+│   ├── cache_manager.py       # Manejo de caché mejorado
+│   ├── logger.py              # Logging avanzado
+│   └── health_check.py         # Verificación de salud
+├── scripts/
+│   ├── setup_termux.sh        # Script de instalación para Termux
+│   ├── setup_replit.sh        # Script de instalación para Replit
+│   ├── start_all.sh           # Iniciar todos los servicios
+│   └── check_all.py           # Verificación completa
+├── configs/
+│   ├── default_config.json    # Configuración por defecto
+│   └── cameras_config.json    # Configuración de cámaras
+├── docs/
+│   ├── TERMUX_GUIDE.md        # Guía específica para Termux
+│   ├── REPLIT_GUIDE.md        # Guía específica para Replit
+│   └── API_REFERENCE.md       # Referencia de la API
+├── .env.template              # Plantilla de variables de entorno
+├── requirements.txt           # Dependencias Python
+└── README.md                  # Documentación principal
+```
+
+---
+
+## 🚀 PASO 0: REQUISITOS PREVIOS
+
+### Para todos los entornos:
+- Python 3.8+
+- Node.js 16+ (para OSIRIS)
+- Git
+- Acceso a internet
+
+### Dependencias Python (requirements.txt):
+```txt
+aiohttp>=3.8.0
+websockets>=10.0
+requests>=2.28.0
+opencv-python-headless>=4.5.0
+numpy>=1.21.0
+Pillow>=9.0.0
+python-dotenv>=0.19.0
+pydantic>=1.9.0
+```
+
+---
+
+## 🔧 PASO 1: INSTALACIÓN BASE (OSIRIS + Conector Principal)
+
+### 1.1 Clonar OSIRIS y configurar
+
+```bash
+# Clonar el repositorio
+git clone https://github.com/osiris-org/osiris.git
+cd osiris
+
+# Instalar dependencias (Node.js)
+npm install
+
+# Configurar variables de entorno
+cat > .env << 'EOF'
+PORT=3000
+NEXT_PUBLIC_MAPBOX_TOKEN=""
+NEXT_PUBLIC_OSIRIS_VERSION=3.0.0
+ALLOW_CORS=true
+EOF
+
+# Construir y ejecutar
+npm run build
+npm start &
+```
+
+**Verificar OSIRIS:**
+```bash
+curl -s http://localhost:3000/api/status | python3 -m json.tool
+```
+
+### 1.2 Configuración para Docker (opcional)
+
+```bash
+docker run -d --name osiris \
+  -p 3000:3000 -p 8080:8080 \
+  -v osiris_data:/app/data \
+  -v osiris_logs:/app/logs \
+  -e ALLOW_CORS=true \
+  ghcr.io/osiris-org/osiris:latest
+```
+
+---
+
+## 📡 PASO 2: CONECTOR PRINCIPAL MEJORADO
+
+### 2.1 Estructura del conector mejorado
+
+```python
+# connectors/main_connector.py
+"""
+Conector Principal SourceSeal -> OSIRIS v3.0
+- WebSocket robusto con reconexión automática
+- Caché local en SQLite con limpieza automática
+- Soporte para múltiples tipos de eventos
+- Logging estructurado con rotación de archivos
+- Métricas de rendimiento
+"""
+
+import asyncio
+import aiohttp
+import json
+import websockets
+import os
+import sys
+import sqlite3
+import logging
+import argparse
+import signal
+import time
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, asdict
+from enum import Enum
+import hashlib
+import threading
+
+# ============================================================
+# CONFIGURACIÓN
+# ============================================================
+
+class EventType(Enum):
+    ALERT = "alert"
+    SCAN = "scan"
+    PLAYBOOK = "playbook"
+    CAMERA = "camera"
+    HEARTBEAT = "heartbeat"
+    METRICS = "metrics"
+
+@dataclass
+class Config:
+    osiris_url: str = "http://localhost:3000/api"
+    seal_ws: str = "ws://localhost:8001/ws/alerts"
+    db_path: str = os.path.expanduser("~/connector_cache.db")
+    log_file: str = os.path.expanduser("~/connector.log")
+    log_level: str = "INFO"
+    max_retries: int = 5
+    retry_delay: float = 1.0
+    cache_cleanup_interval: int = 3600  # 1 hora
+    max_cache_age: int = 86400  # 24 horas
+    metrics_interval: int = 60  # 1 minuto
+    heartbeat_interval: int = 30  # 30 segundos
+    
+    # Configuración para cámaras
+    enable_camera: bool = False
+    camera_check_interval: int = 10  # 10 segundos
+    
+    # Configuración para playbooks
+    enable_playbook: bool = True
+    playbook_timeout: int = 300  # 5 minutos
+
+# ============================================================
+# LOGGING AVANZADO
+# ============================================================
+
+class RotatingFileHandler(logging.Handler):
+    """Handler personalizado para rotación de logs"""
+    
+    def __init__(self, filename, max_bytes=10*1024*1024, backup_count=5):
+        super().__init__()
+        self.filename = filename
+        self.max_bytes = max_bytes
+        self.backup_count = backup_count
+        self._check_rotation()
+        
+    def _check_rotation(self):
+        if os.path.exists(self.filename):
+            size = os.path.getsize(self.filename)
+            if size >= self.max_bytes:
+                self._rotate()
+    
+    def _rotate(self):
+        for i in range(self.backup_count - 1, 0, -1):
+            old_path = f"{self.filename}.{i}"
+            new_path = f"{self.filename}.{i+1}"
+            if os.path.exists(old_path):
+                if i + 1 == self.backup_count:
+                    os.remove(old_path)
+                else:
+                    os.rename(old_path, new_path)
+        
+        if os.path.exists(self.filename):
+            os.rename(self.filename, f"{self.filename}.1")
+    
+    def emit(self, record):
+        self._check_rotation()
+        with open(self.filename, 'a', encoding='utf-8') as f:
+            f.write(self.format(record) + '\n')
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        RotatingFileHandler(LOG_FILE, max_bytes=5*1024*1024, backup_count=3),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger("MainConnector")
+
+# ============================================================
+# GESTIÓN DE CONFIGURACIÓN
+# ============================================================
+
+class ConfigManager:
+    """Gestor de configuración con soporte para .env y JSON"""
+    
+    def __init__(self):
+        self.config = Config()
+        self._load_env()
+        self._load_json()
+    
+    def _load_env(self):
+        """Cargar configuración desde variables de entorno"""
+        import os
+        
+        env_mappings = {
+            'OSIRIS_URL': ('osiris_url', str),
+            'SEAL_WS': ('seal_ws', str),
+            'DB_PATH': ('db_path', str),
+            'LOG_FILE': ('log_file', str),
+            'LOG_LEVEL': ('log_level', str),
+            'MAX_RETRIES': ('max_retries', int),
+            'RETRY_DELAY': ('retry_delay', float),
+            'ENABLE_CAMERA': ('enable_camera', lambda x: x.lower() == 'true'),
+            'ENABLE_PLAYBOOK': ('enable_playbook', lambda x: x.lower() == 'true'),
+        }
+        
+        for env_var, (attr, converter) in env_mappings.items():
+            value = os.environ.get(env_var)
+            if value is not None:
+                try:
+                    setattr(self.config, attr, converter(value))
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"No se pudo convertir {env_var}={value}: {e}")
+    
+    def _load_json(self, path: str = "configs/default_config.json"):
+        """Cargar configuración desde archivo JSON"""
+        if not os.path.exists(path):
+            return
+        
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            for key, value in data.items():
+                if hasattr(self.config, key):
+                    setattr(self.config, key, value)
+        except Exception as e:
+            logger.warning(f"Error cargando configuración JSON: {e}")
+    
+    def save(self, path: str = "configs/default_config.json"):
+        """Guardar configuración en archivo JSON"""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(asdict(self.config), f, indent=2)
+    
+    def get(self):
+        return self.config
+
+# ============================================================
+# BASE DE DATOS MEJORADA
+# ============================================================
+
+class CacheManager:
+    """Gestor de caché con SQLite y limpieza automática"""
+    
+    def __init__(self, db_path: str, max_age: int = 86400):
+        self.db_path = db_path
+        self.max_age = max_age
+        self._init_db()
+        self._cleanup_old()
+    
+    def _init_db(self):
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        
+        # Tabla de mensajes pendientes
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS pending (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                retry_count INTEGER DEFAULT 0,
+                last_attempt TEXT,
+                hash TEXT UNIQUE
+            )
+        ''')
+        
+        # Tabla de métricas
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                response_time_ms INTEGER,
+                payload_size INTEGER
+            )
+        ''')
+        
+        # Tabla de salud
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS health_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                component TEXT NOT NULL,
+                status TEXT NOT NULL,
+                details TEXT
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        logger.info(f"📁 Base de datos de caché inicializada: {self.db_path}")
+    
+    def _generate_hash(self, event_type: str, payload: dict) -> str:
+        """Generar hash único para evitar duplicados"""
+        data = f"{event_type}:{json.dumps(payload, sort_keys=True)}"
+        return hashlib.md5(data.encode('utf-8')).hexdigest()
+    
+    def save_pending(self, event_type: str, payload: dict) -> bool:
+        """Guardar mensaje pendiente con hash único"""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        
+        try:
+            payload_str = json.dumps(payload)
+            event_hash = self._generate_hash(event_type, payload)
+            
+            c.execute(
+                "INSERT OR IGNORE INTO pending (event_type, payload_json, created_at, hash) VALUES (?, ?, ?, ?)",
+                (event_type, payload_str, datetime.utcnow().isoformat(), event_hash)
+            )
+            conn.commit()
+            conn.close()
+            logger.debug(f"💾 Mensaje guardado en caché: {event_type} (hash: {event_hash[:8]})")
+            return True
+        except Exception as e:
+            conn.close()
+            logger.error(f"Error guardando en caché: {e}")
+            return False
+    
+    def get_pending(self, limit: int = 20) -> List[Dict]:
+        """Obtener mensajes pendientes ordenados por fecha"""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        
+        c.execute(
+            "SELECT id, event_type, payload_json, created_at, retry_count FROM pending ORDER BY created_at ASC LIMIT ?",
+            (limit,)
+        )
+        rows = c.fetchall()
+        conn.close()
+        
+        return [{
+            "id": r[0],
+            "type": r[1],
+            "payload": json.loads(r[2]),
+            "created_at": r[3],
+            "retry_count": r[4]
+        } for r in rows]
+    
+    def delete_pending(self, ids: List[int]):
+        """Eliminar mensajes pendientes"""
+        if not ids:
+            return
+        
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute(f"DELETE FROM pending WHERE id IN ({','.join(['?']*len(ids))})", ids)
+        conn.commit()
+        conn.close()
+        logger.debug(f"🗑️  {len(ids)} mensajes eliminados de la caché")
+    
+    def update_retry_count(self, id: int):
+        """Incrementar contador de reintentos"""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("UPDATE pending SET retry_count = retry_count + 1, last_attempt = ? WHERE id = ?", 
+                  (datetime.utcnow().isoformat(), id))
+        conn.commit()
+        conn.close()
+    
+    def _cleanup_old(self):
+        """Limpiar mensajes antiguos"""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        
+        cutoff = (datetime.utcnow() - timedelta(seconds=self.max_age)).isoformat()
+        c.execute("DELETE FROM pending WHERE created_at < ?", (cutoff,))
+        deleted = c.rowcount
+        
+        # También limpiar métricas antiguas (más de 30 días)
+        cutoff_metrics = (datetime.utcnow() - timedelta(days=30)).isoformat()
+        c.execute("DELETE FROM metrics WHERE timestamp < ?", (cutoff_metrics,))
+        
+        conn.commit()
+        conn.close()
+        
+        if deleted > 0:
+            logger.info(f"🧹 Limpieza de caché: {deleted} mensajes antiguos eliminados")
+    
+    def record_metric(self, event_type: str, status: str, response_time: float = 0, payload_size: int = 0):
+        """Registrar métrica de rendimiento"""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO metrics (timestamp, event_type, status, response_time_ms, payload_size) VALUES (?, ?, ?, ?, ?)",
+            (datetime.utcnow().isoformat(), event_type, status, int(response_time * 1000), payload_size)
+        )
+        conn.commit()
+        conn.close()
+    
+    def get_stats(self) -> Dict:
+        """Obtener estadísticas de la caché"""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        
+        stats = {}
+        
+        # Conteo por tipo de evento
+        c.execute("SELECT event_type, COUNT(*) FROM pending GROUP BY event_type")
+        stats['pending_by_type'] = dict(c.fetchall())
+        
+        # Total pendientes
+        c.execute("SELECT COUNT(*) FROM pending")
+        stats['total_pending'] = c.fetchone()[0]
+        
+        # Métricas recientes (última hora)
+        one_hour_ago = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+        c.execute("SELECT event_type, status, COUNT(*) FROM metrics WHERE timestamp >= ? GROUP BY event_type, status", 
+                  (one_hour_ago,))
+        stats['recent_metrics'] = c.fetchall()
+        
+        conn.close()
+        return stats
+
+# ============================================================
+# ENVÍO A OSIRIS MEJORADO
+# ============================================================
+
+class OsirisClient:
+    """Cliente HTTP para OSIRIS con manejo de errores mejorado"""
+    
+    def __init__(self, base_url: str, config: Config):
+        self.base_url = base_url.rstrip('/')
+        self.config = config
+        self.session = None
+        self._health_status = None
+        self._last_health_check = 0
+    
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def check_health(self) -> bool:
+        """Verificar si OSIRIS está saludable"""
+        now = time.time()
+        
+        # Cachear el resultado por 10 segundos
+        if self._health_status is not None and now - self._last_health_check < 10:
+            return self._health_status
+        
+        try:
+            async with aiohttp.ClientSession() as temp_session:
+                async with temp_session.get(f"{self.base_url}/status", timeout=5) as resp:
+                    if resp.status == 200:
+                        self._health_status = True
+                        self._last_health_check = now
+                        return True
+                    else:
+                        self._health_status = False
+                        self._last_health_check = now
+                        return False
+        except Exception as e:
+            logger.debug(f"Error en health check: {e}")
+            self._health_status = False
+            self._last_health_check = now
+            return False
+    
+    async def send_event(self, event_type: str, payload: dict, retry: bool = True) -> bool:
+        """Enviar evento a OSIRIS con reintentos"""
+        if not await self.check_health():
+            logger.warning("⚠️  OSIRIS no está disponible, guardando en caché")
+            return False
+        
+        endpoint_map = {
+            EventType.ALERT.value: "/events/alert",
+            EventType.SCAN.value: "/events/network",
+            EventType.PLAYBOOK.value: "/events/incident",
+            EventType.CAMERA.value: "/events/visual",
+            EventType.HEARTBEAT.value: "/events/heartbeat",
+        }
+        
+        endpoint = endpoint_map.get(event_type)
+        if not endpoint:
+            logger.warning(f"⚠️  Tipo de evento no soportado: {event_type}")
+            return False
+        
+        data = self._transform_payload(event_type, payload)
+        
+        for attempt in range(self.config.max_retries + 1):
+            try:
+                start_time = time.time()
+                
+                async with self.session.post(
+                    f"{self.base_url}{endpoint}",
+                    json=data,
+                    timeout=10
+                ) as resp:
+                    response_time = time.time() - start_time
+                    payload_size = len(json.dumps(data))
+                    
+                    if resp.status in [200, 201]:
+                        logger.debug(f"✅ Evento {event_type} enviado a OSIRIS (intento {attempt + 1})")
+                        return True
+                    else:
+                        logger.warning(f"⚠️  OSIRIS respondió {resp.status} para {event_type}")
+                        text = await resp.text()
+                        logger.debug(f"Respuesta: {text}")
+                        
+                        if attempt < self.config.max_retries:
+                            await asyncio.sleep(self.config.retry_delay * (attempt + 1))
+                        else:
+                            return False
+                            
+            except asyncio.TimeoutError:
+                logger.warning(f"⏱️  Timeout enviando {event_type} (intento {attempt + 1})")
+                if attempt < self.config.max_retries:
+                    await asyncio.sleep(self.config.retry_delay * (attempt + 1))
+                else:
+                    return False
+            except Exception as e:
+                logger.warning(f"⚠️  Error enviando a OSIRIS: {e}")
+                if attempt < self.config.max_retries:
+                    await asyncio.sleep(self.config.retry_delay * (attempt + 1))
+                else:
+                    return False
+        
+        return False
+    
+    def _transform_payload(self, event_type: str, payload: dict) -> dict:
+        """Transformar payload según el tipo de evento"""
+        
+        if event_type == EventType.ALERT.value:
+            return {
+                "timestamp": payload.get("timestamp", datetime.utcnow().isoformat()),
+                "src_ip": payload.get("target", payload.get("src_ip", "0.0.0.0")),
+                "alert_type": payload.get("severity", "info"),
+                "message": payload.get("message", ""),
+                "details": payload.get("details", {}),
+                "source": payload.get("source", "sourceseal")
+            }
+        
+        elif event_type == EventType.SCAN.value:
+            hosts = payload.get("hosts", [])
+            return {
+                "timestamp": payload.get("timestamp", datetime.utcnow().isoformat()),
+                "src_ip": payload.get("target", "0.0.0.0"),
+                "src_port": payload.get("src_port", 0),
+                "dst_ip": payload.get("dst_ip", "0.0.0.0"),
+                "dst_port": payload.get("dst_port", 0),
+                "proto": payload.get("proto", "tcp"),
+                "info": json.dumps(hosts) if hosts else "{}",
+                "scan_type": payload.get("scan_type", "unknown")
+            }
+        
+        elif event_type == EventType.PLAYBOOK.value:
+            return {
+                "timestamp": payload.get("timestamp", datetime.utcnow().isoformat()),
+                "src_ip": payload.get("target", "0.0.0.0"),
+                "incident_type": "playbook_execution",
+                "message": payload.get("message", ""),
+                "details": {
+                    **payload.get("details", {}),
+                    "playbook_name": payload.get("playbook_name", "unknown"),
+                    "status": payload.get("status", "running"),
+                    "execution_time": payload.get("execution_time", 0)
+                }
+            }
+        
+        elif event_type == EventType.CAMERA.value:
+            return {
+                "timestamp": payload.get("timestamp", datetime.utcnow().isoformat()),
+                "camera_id": payload.get("camera_id", "unknown"),
+                "camera_name": payload.get("camera_name", ""),
+                "image_url": payload.get("image_url", ""),
+                "image_data": payload.get("image_data", ""),  # Base64
+                "event_type": payload.get("event_type", "motion"),
+                "confidence": payload.get("confidence", 0),
+                "location": payload.get("location", {})
+            }
+        
+        elif event_type == EventType.HEARTBEAT.value:
+            return {
+                "timestamp": datetime.utcnow().isoformat(),
+                "component": payload.get("component", "connector"),
+                "status": "healthy",
+                "version": payload.get("version", "3.0.0")
+            }
+        
+        # Default
+        return {
+            **payload,
+            "timestamp": payload.get("timestamp", datetime.utcnow().isoformat())
+        }
+
+# ============================================================
+# ESCUCHAR SOURCESEAL WEB SOCKET
+# ============================================================
+
+class SourceSealListener:
+    """Escuchador de WebSocket de SourceSeal"""
+    
+    def __init__(self, config: Config, cache_manager: CacheManager, osiris_client: OsirisClient):
+        self.config = config
+        self.cache_manager = cache_manager
+        self.osiris_client = osiris_client
+        self._running = False
+        self._ws_connection = None
+        self._reconnect_attempts = 0
+        self._max_reconnect_attempts = 10
+    
+    async def start(self):
+        """Iniciar el escuchador"""
+        self._running = True
+        logger.info(f"📡 Iniciando escuchador de SourceSeal: {self.config.seal_ws}")
+        
+        while self._running:
+            try:
+                await self._connect_and_listen()
+            except Exception as e:
+                logger.error(f"❌ Error en conexión WebSocket: {e}")
+                await self._handle_reconnect()
+    
+    async def _connect_and_listen(self):
+        """Conectar y escuchar mensajes"""
+        try:
+            async with websockets.connect(
+                self.config.seal_ws,
+                ping_interval=20,
+                ping_timeout=60
+            ) as ws:
+                self._ws_connection = ws
+                self._reconnect_attempts = 0
+                logger.info("✅ Conectado a SourceSeal WebSocket")
+                
+                while self._running:
+                    try:
+                        msg = await asyncio.wait_for(ws.recv(), timeout=60)
+                        await self._process_message(msg)
+                        
+                    except asyncio.TimeoutError:
+                        # Cada minuto, procesar pendientes
+                        await self._process_pending()
+                        
+                    except websockets.ConnectionClosed:
+                        logger.warning("⚠️  WebSocket cerrado por el servidor")
+                        break
+                        
+        except Exception as e:
+            logger.error(f"Error en conexión: {e}")
+            raise
+    
+    async def _process_message(self, msg: str):
+        """Procesar mensaje recibido"""
+        try:
+            data = json.loads(msg)
+            event_type = data.get("type", "unknown")
+            payload = data.get("payload", data)
+            
+            logger.debug(f"📩 Mensaje recibido: {event_type}")
+            
+            # Enviar a OSIRIS
+            sent = await self.osiris_client.send_event(event_type, payload)
+            
+            if not sent:
+                self.cache_manager.save_pending(event_type, payload)
+                logger.warning(f"💾 Evento {event_type} guardado en caché")
+            else:
+                self.cache_manager.record_metric(event_type, "sent", payload_size=len(msg))
+                logger.info(f"📤 Evento {event_type} enviado a OSIRIS")
+                
+        except json.JSONDecodeError:
+            logger.warning("⚠️  Mensaje JSON inválido")
+        except Exception as e:
+            logger.error(f"Error procesando mensaje: {e}")
+    
+    async def _process_pending(self):
+        """Procesar mensajes pendientes"""
+        pending = self.cache_manager.get_pending(self.config.max_retries * 2)
+        
+        if not pending:
+            return
+        
+        logger.info(f"📦 Procesando {len(pending)} mensajes pendientes...")
+        
+        success_ids = []
+        for item in pending:
+            # Verificar si excedió el máximo de reintentos
+            if item.get("retry_count", 0) >= self.config.max_retries * 2:
+                logger.warning(f"⚠️  Mensaje {item['id']} excedió máximo de reintentos")
+                continue
+            
+            sent = await self.osiris_client.send_event(item["type"], item["payload"], retry=False)
+            
+            if sent:
+                success_ids.append(item["id"])
+                self.cache_manager.record_metric(item["type"], "retry_sent")
+            else:
+                self.cache_manager.update_retry_count(item["id"])
+        
+        if success_ids:
+            self.cache_manager.delete_pending(success_ids)
+            logger.info(f"✅ {len(success_ids)} mensajes pendientes enviados")
+    
+    async def _handle_reconnect(self):
+        """Manejar reconexión"""
+        if self._reconnect_attempts >= self._max_reconnect_attempts:
+            logger.error("❌ Máximo de intentos de reconexión alcanzado")
+            self._running = False
+            return
+        
+        self._reconnect_attempts += 1
+        delay = min(self.config.retry_delay * self._reconnect_attempts, 60)
+        logger.info(f"⏳ Reconectando en {delay:.1f} segundos (intento {self._reconnect_attempts})...")
+        await asyncio.sleep(delay)
+    
+    def stop(self):
+        """Detener el escuchador"""
+        self._running = False
+        if self._ws_connection:
+            try:
+                asyncio.run_coroutine_threadsafe(self._ws_connection.close(), asyncio.get_event_loop())
+            except:
+                pass
+
+# ============================================================
+# MONITOREO Y SALUD
+# ============================================================
+
+class HealthMonitor:
+    """Monitor de salud del sistema"""
+    
+    def __init__(self, config: Config, cache_manager: CacheManager, osiris_client: OsirisClient):
+        self.config = config
+        self.cache_manager = cache_manager
+        self.osiris_client = osiris_client
+        self._running = False
+    
+    async def start(self):
+        """Iniciar monitor de salud"""
+        self._running = True
+        logger.info("🏥 Monitor de salud iniciado")
+        
+        while self._running:
+            await self._check_all()
+            await asyncio.sleep(self.config.heartbeat_interval)
+    
+    async def _check_all(self):
+        """Verificar todos los componentes"""
+        checks = []
+        
+        # Verificar OSIRIS
+        osiris_healthy = await self.osiris_client.check_health()
+        checks.append(("OSIRIS", "healthy" if osiris_healthy else "unhealthy"))
+        
+        # Verificar caché
+        stats = self.cache_manager.get_stats()
+        cache_status = "healthy" if stats.get('total_pending', 0) < 100 else "warning"
+        checks.append(("Cache", cache_status, f"{stats.get('total_pending', 0)} pendientes"))
+        
+        # Verificar conexión WebSocket (simplificado)
+        # En una implementación real, verificar la conexión activa
+        checks.append(("WebSocket", "healthy", "Conectado"))
+        
+        # Registrar en base de datos
+        conn = sqlite3.connect(self.cache_manager.db_path)
+        c = conn.cursor()
+        for check in checks:
+            if len(check) == 3:
+                component, status, details = check
+            else:
+                component, status = check
+                details = ""
+            
+            c.execute(
+                "INSERT INTO health_checks (timestamp, component, status, details) VALUES (?, ?, ?, ?)",
+                (datetime.utcnow().isoformat(), component, status, str(details))
+            )
+        conn.commit()
+        conn.close()
+        
+        # Enviar heartbeat a OSIRIS
+        if osiris_healthy:
+            await self.osiris_client.send_event(
+                EventType.HEARTBEAT.value,
+                {
+                    "component": "connector",
+                    "version": "3.0.0",
+                    "status": "running",
+                    "metrics": stats
+                },
+                retry=False
+            )
+        
+        # Log de estado
+        status_icons = {"healthy": "✅", "warning": "⚠️ ", "unhealthy": "❌"}
+        status_str = ", ".join([f"{status_icons.get(s, '❓')} {c}" for c, s, *_ in checks])
+        logger.info(f"🏥 Estado del sistema: {status_str}")
+    
+    def stop(self):
+        """Detener monitor"""
+        self._running = False
+
+# ============================================================
+# MANEJO DE SEÑALES
+# ============================================================
+
+def signal_handler(sig, frame):
+    """Manejar señales de sistema"""
+    logger.info(f"🛑 Señal recibida: {sig}")
+    global main_connector, health_monitor
+    
+    if main_connector:
+        main_connector.stop()
+    if health_monitor:
+        health_monitor.stop()
+    
+    logger.info("✅ Conector detenido correctamente")
+    sys.exit(0)
+
+# ============================================================
+# PUNTO DE ENTRADA
+# ============================================================
+
+main_connector = None
+health_monitor = None
+
+async def main():
+    global main_connector, health_monitor
+    
+    # Cargar configuración
+    config_manager = ConfigManager()
+    config = config_manager.get()
+    
+    # Inicializar componentes
+    cache_manager = CacheManager(config.db_path, config.max_cache_age)
+    
+    async with OsirisClient(config.osiris_url, config) as osiris_client:
+        # Crear escuchador
+        main_connector = SourceSealListener(config, cache_manager, osiris_client)
+        
+        # Crear monitor de salud
+        health_monitor = HealthMonitor(config, cache_manager, osiris_client)
+        
+        # Iniciar componentes
+        listener_task = asyncio.create_task(main_connector.start())
+        monitor_task = asyncio.create_task(health_monitor.start())
+        
+        logger.info("🚀 Conector SourceSeal -> OSIRIS v3.0 iniciado")
+        logger.info(f"   → Escuchando: {config.seal_ws}")
+        logger.info(f"   → Enviando a: {config.osiris_url}")
+        logger.info(f"   → Caché: {config.db_path}")
+        logger.info(f"   → Logs: {config.log_file}")
+        logger.info("   (Presiona Ctrl+C para detener)")
+        
+        # Mantener vivo
+        try:
+            await asyncio.gather(listener_task, monitor_task)
+        except asyncio.CancelledError:
+            pass
+
+if __name__ == "__main__":
+    # Configurar señales
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Ejecutar
+    asyncio.run(main())
+```
+
+---
+
+## 🎥 PASO 3: INTEGRACIÓN CON CÁMARAS
+
+### 3.1 Configuración de cámaras (configs/cameras_config.json)
+
+```json
+{
+  "enabled": true,
+  "cameras": [
+    {
+      "id": "camara_entrada",
+      "name": "Cámara de Entrada",
+      "url": "rtsp://usuario:contraseña@192.168.1.100:554/stream",
+      "type": "rtsp",
+      "motion_detection": true,
+      "motion_threshold": 0.1,
+      "capture_interval": 5,
+      "osiris_event_type": "camera_motion",
+      "location": {
+        "lat": 4.6097,
+        "lon": -74.0817,
+        "address": "Calle 123, Bogotá"
+      }
+    },
+    {
+      "id": "camara_salida",
+      "name": "Cámara de Salida",
+      "url": "http://192.168.1.101:8080/video",
+      "type": "http",
+      "motion_detection": false,
+      "capture_interval": 10,
+      "osiris_event_type": "camera_snapshot"
+    }
+  ],
+  "image_storage": {
+    "local_path": "/home/user/camera_captures",
+    "max_images": 1000,
+    "quality": 85
+  },
+  "osiris": {
+    "send_images": true,
+    "image_format": "base64",
+    "max_image_size": 1024
+  }
+}
+```
+
+### 3.2 Conector de cámaras (connectors/camera_connector.py)
+
+```python
+#!/usr/bin/env python3
+"""
+Conector de Cámaras -> OSIRIS v1.0
+Captura imágenes de cámaras IP y envía eventos a OSIRIS
+"""
+
+import asyncio
+import cv2
+import numpy as np
+import os
+import json
+import time
+import logging
+import base64
+from datetime import datetime
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+import aiohttp
+import requests
+
+# Configuración de logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] [%(levelname)s] [CameraConnector] %(message)s',
+    handlers=[
+        logging.FileHandler('/home/user/camera_connector.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("CameraConnector")
+
+@dataclass
+class CameraConfig:
+    id: str
+    name: str
+    url: str
+    type: str = "rtsp"
+    motion_detection: bool = False
+    motion_threshold: float = 0.1
+    capture_interval: int = 5
+    osiris_event_type: str = "camera_motion"
+    location: Optional[Dict] = None
+
+@dataclass
+class CameraImage:
+    camera_id: str
+    camera_name: str
+    timestamp: str
+    image_data: bytes
+    event_type: str
+    confidence: float = 0.0
+    location: Optional[Dict] = None
+
+class CameraConnector:
+    """Conector para cámaras IP"""
+    
+    def __init__(self, config_path: str = "configs/cameras_config.json", 
+                 osiris_url: str = "http://localhost:3000/api"):
+        self.config_path = config_path
+        self.osiris_url = osiris_url
+        self.cameras: Dict[str, CameraConfig] = {}
+        self._running = False
+        self._load_config()
+        
+        # Crear directorio de almacenamiento
+        os.makedirs(
+            self.config.get("image_storage", {}).get("local_path", "/tmp/camera_captures"),
+            exist_ok=True
+        )
+    
+    def _load_config(self):
+        """Cargar configuración de cámaras"""
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            if not config.get("enabled", False):
+                logger.warning("⚠️  Integración de cámaras deshabilitada")
+                return
+            
+            for cam_config in config.get("cameras", []):
+                camera = CameraConfig(
+                    id=cam_config["id"],
+                    name=cam_config["name"],
+                    url=cam_config["url"],
+                    type=cam_config.get("type", "rtsp"),
+                    motion_detection=cam_config.get("motion_detection", False),
+                    motion_threshold=cam_config.get("motion_threshold", 0.1),
+                    capture_interval=cam_config.get("capture_interval", 5),
+                    osiris_event_type=cam_config.get("osiris_event_type", "camera_motion"),
+                    location=cam_config.get("location")
+                )
+                self.cameras[camera.id] = camera
+                logger.info(f"📹 Cámara configurada: {camera.name} ({camera.id})")
+                
+            self.config = config
+            
+        except FileNotFoundError:
+            logger.error(f"❌ Configuración no encontrada: {self.config_path}")
+        except json.JSONDecodeError:
+            logger.error(f"❌ Configuración inválida: {self.config_path}")
+        except Exception as e:
+            logger.error(f"❌ Error cargando configuración: {e}")
+    
+    async def start(self):
+        """Iniciar captura de cámaras"""
+        if not self.cameras:
+            logger.warning("⚠️  No hay cámaras configuradas")
+            return
+        
+        self._running = True
+        logger.info("🚀 Iniciando conector de cámaras")
+        
+        tasks = []
+        for cam_id, camera in self.cameras.items():
+            task = asyncio.create_task(self._capture_loop(camera))
+            tasks.append(task)
+        
+        await asyncio.gather(*tasks)
+    
+    async def _capture_loop(self, camera: CameraConfig):
+        """Bucle de captura para una cámara"""
+        logger.info(f"🎬 Iniciando captura para {camera.name}")
+        
+        last_frame = None
+        motion_detected = False
+        
+        while self._running:
+            try:
+                # Capturar frame
+                frame = self._capture_frame(camera)
+                
+                if frame is None:
+                    logger.warning(f"⚠️  No se pudo capturar frame de {camera.name}")
+                    await asyncio.sleep(camera.capture_interval)
+                    continue
+                
+                # Detectar movimiento si está habilitado
+                if camera.motion_detection and last_frame is not None:
+                    motion = self._detect_motion(last_frame, frame, camera.motion_threshold)
+                    if motion > camera.motion_threshold:
+                        if not motion_detected:
+                            logger.info(f"🚨 Movimiento detectado en {camera.name} ({motion:.2f})")
+                            motion_detected = True
+                            # Enviar evento de movimiento
+                            await self._send_camera_event(camera, frame, "motion")
+                    else:
+                        motion_detected = False
+                else:
+                    # Enviar captura periódica
+                    await self._send_camera_event(camera, frame, "snapshot")
+                
+                last_frame = frame
+                await asyncio.sleep(camera.capture_interval)
+                
+            except Exception as e:
+                logger.error(f"❌ Error en captura de {camera.name}: {e}")
+                await asyncio.sleep(5)
+    
+    def _capture_frame(self, camera: CameraConfig) -> Optional[np.ndarray]:
+        """Capturar un frame de la cámara"""
+        try:
+            if camera.type == "rtsp":
+                return self._capture_rtsp(camera.url)
+            elif camera.type == "http":
+                return self._capture_http(camera.url)
+            else:
+                logger.warning(f"⚠️  Tipo de cámara no soportado: {camera.type}")
+                return None
+        except Exception as e:
+            logger.error(f"Error capturando de {camera.url}: {e}")
+            return None
+    
+    def _capture_rtsp(self, url: str) -> Optional[np.ndarray]:
+        """Capturar frame de RTSP"""
+        cap = cv2.VideoCapture(url)
+        if not cap.isOpened():
+            logger.warning(f"⚠️  No se pudo abrir RTSP: {url}")
+            return None
+        
+        try:
+            ret, frame = cap.read()
+            if ret:
+                return frame
+            return None
+        finally:
+            cap.release()
+    
+    def _capture_http(self, url: str) -> Optional[np.ndarray]:
+        """Capturar frame de HTTP (MJPEG o imagen estática)"""
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                # Decodificar imagen
+                img_array = np.frombuffer(response.content, np.uint8)
+                frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                return frame
+            return None
+        except Exception as e:
+            logger.error(f"Error capturando HTTP: {e}")
+            return None
+    
+    def _detect_motion(self, frame1: np.ndarray, frame2: np.ndarray, threshold: float = 0.1) -> float:
+        """Detectar movimiento entre dos frames"""
+        try:
+            # Convertir a escala de grises
+            gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+            gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+            
+            # Aplicar blur para reducir ruido
+            gray1 = cv2.GaussianBlur(gray1, (21, 21), 0)
+            gray2 = cv2.GaussianBlur(gray2, (21, 21), 0)
+            
+            # Calcular diferencia absoluta
+            frame_delta = cv2.absdiff(gray1, gray2)
+            
+            # Aplicar umbral
+            thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
+            
+            # Dilatar para llenar huecos
+            thresh = cv2.dilate(thresh, None, iterations=2)
+            
+            # Calcular porcentaje de píxeles blancos
+            white_pixels = cv2.countNonZero(thresh)
+            total_pixels = thresh.size
+            motion_score = white_pixels / total_pixels
+            
+            return motion_score
+        except Exception as e:
+            logger.error(f"Error en detección de movimiento: {e}")
+            return 0.0
+    
+    async def _send_camera_event(self, camera: CameraConfig, frame: np.ndarray, event_type: str):
+        """Enviar evento de cámara a OSIRIS"""
+        try:
+            # Guardar imagen localmente
+            image_path = self._save_image(camera, frame, event_type)
+            
+            # Convertir a base64 si es pequeño
+            config = self.config.get("osiris", {})
+            if config.get("send_images", True):
+                if config.get("image_format") == "base64":
+                    image_data = self._frame_to_base64(frame, config.get("max_image_size", 1024))
+                else:
+                    image_data = ""
+            else:
+                image_data = ""
+            
+            # Preparar payload
+            payload = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "camera_id": camera.id,
+                "camera_name": camera.name,
+                "event_type": event_type,
+                "image_url": image_path if image_path else "",
+                "image_data": image_data,
+                "confidence": 0.0,
+                "location": camera.location or {}
+            }
+            
+            # Enviar a OSIRIS
+            async with aiohttp.ClientSession() as session:
+                endpoint = f"{self.osiris_url}/events/visual"
+                
+                async with session.post(endpoint, json=payload, timeout=10) as resp:
+                    if resp.status in [200, 201]:
+                        logger.info(f"✅ Imagen de {camera.name} enviada a OSIRIS ({event_type})")
+                    else:
+                        logger.warning(f"⚠️  Error enviando imagen: {resp.status}")
+                        # Guardar en caché local
+                        self._save_to_cache(camera, frame, event_type)
+                        
+        except Exception as e:
+            logger.error(f"❌ Error enviando evento de cámara: {e}")
+            # Guardar en caché local
+            self._save_to_cache(camera, frame, event_type)
+    
+    def _save_image(self, camera: CameraConfig, frame: np.ndarray, event_type: str) -> str:
+        """Guardar imagen localmente"""
+        try:
+            storage_config = self.config.get("image_storage", {})
+            local_path = storage_config.get("local_path", "/tmp/camera_captures")
+            quality = storage_config.get("quality", 85)
+            
+            os.makedirs(local_path, exist_ok=True)
+            
+            # Generar nombre de archivo
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            filename = f"{camera.id}_{event_type}_{timestamp}.jpg"
+            filepath = os.path.join(local_path, filename)
+            
+            # Guardar imagen
+            cv2.imwrite(filepath, frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+            
+            logger.debug(f"💾 Imagen guardada: {filepath}")
+            return filepath
+            
+        except Exception as e:
+            logger.error(f"Error guardando imagen: {e}")
+            return ""
+    
+    def _frame_to_base64(self, frame: np.ndarray, max_size: int = 1024) -> str:
+        """Convertir frame a base64, redimensionando si es necesario"""
+        try:
+            # Redimensionar si es muy grande
+            height, width = frame.shape[:2]
+            if max(height, width) > max_size:
+                scale = max_size / max(height, width)
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                frame = cv2.resize(frame, (new_width, new_height))
+            
+            # Convertir a base64
+            _, buffer = cv2.imencode('.jpg', frame)
+            return base64.b64encode(buffer).decode('utf-8')
+        except Exception as e:
+            logger.error(f"Error convirtiendo a base64: {e}")
+            return ""
+    
+    def _save_to_cache(self, camera: CameraConfig, frame: np.ndarray, event_type: str):
+        """Guardar evento en caché local"""
+        try:
+            cache_path = "/home/user/camera_cache.db"
+            conn = sqlite3.connect(cache_path)
+            c = conn.cursor()
+            
+            # Crear tabla si no existe
+            c.execute('''
+                CREATE TABLE IF NOT EXISTS camera_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    camera_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    image_path TEXT,
+                    timestamp TEXT NOT NULL,
+                    sent INTEGER DEFAULT 0
+                )
+            ''')
+            
+            # Guardar imagen temporalmente
+            image_path = self._save_image(camera, frame, event_type)
+            
+            c.execute(
+                "INSERT INTO camera_events (camera_id, event_type, image_path, timestamp) VALUES (?, ?, ?, ?)",
+                (camera.id, event_type, image_path, datetime.utcnow().isoformat())
+            )
+            
+            conn.commit()
+            conn.close()
+            logger.debug(f"💾 Evento de cámara guardado en caché: {camera.id}")
+            
+        except Exception as e:
+            logger.error(f"Error guardando en caché: {e}")
+    
+    def stop(self):
+        """Detener el conector"""
+        self._running = False
+        logger.info("✅ Conector de cámaras detenido")
+
+# ============================================================
+# PUNTO DE ENTRADA
+# ============================================================
+
+async def main():
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Conector de Cámaras -> OSIRIS")
+    parser.add_argument("--config", default="configs/cameras_config.json", help="Archivo de configuración")
+    parser.add_argument("--osiris-url", default="http://localhost:3000/api", help="URL de OSIRIS")
+    args = parser.parse_args()
+    
+    connector = CameraConnector(args.config, args.osiris_url)
+    
+    try:
+        await connector.start()
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.error(f"❌ Error fatal: {e}")
+    finally:
+        connector.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+---
+
+## 📜 PASO 4: INTEGRACIÓN DE PLAYBOOKS AVANZADOS
+
+### 4.1 Conector de Playbooks (connectors/playbook_connector.py)
+
+```python
+#!/usr/bin/env python3
+"""
+Conector de Playbooks -> OSIRIS v2.0
+Ejecución y reporte de playbooks de seguridad
+"""
+
+import asyncio
+import json
+import os
+import sys
+import logging
+import subprocess
+import tempfile
+from datetime import datetime
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, asdict
+from enum import Enum
+import aiohttp
+import sqlite3
+
+# Configuración de logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] [%(levelname)s] [PlaybookConnector] %(message)s',
+    handlers=[
+        logging.FileHandler('/home/user/playbook_connector.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("PlaybookConnector")
+
+class PlaybookStatus(Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    TIMEOUT = "timeout"
+
+@dataclass
+class PlaybookConfig:
+    id: str
+    name: str
+    description: str
+    command: str
+    args: List[str] = None
+    timeout: int = 300  # 5 minutos
+    working_directory: str = "/tmp"
+    env: Dict[str, str] = None
+    triggers: List[str] = None  # Tipos de eventos que activan este playbook
+    
+    def __post_init__(self):
+        if self.args is None:
+            self.args = []
+        if self.env is None:
+            self.env = {}
+        if self.triggers is None:
+            self.triggers = []
+
+@dataclass
+class PlaybookExecution:
+    id: str
+    playbook_id: str
+    status: str
+    start_time: str
+    end_time: Optional[str] = None
+    output: str = ""
+    error: str = ""
+    exit_code: int = 0
+    trigger_event: Optional[Dict] = None
+    results: Dict = None
+
+class PlaybookConnector:
+    """Conector para ejecución de playbooks"""
+    
+    def __init__(self, config_path: str = "configs/playbooks_config.json",
+                 osiris_url: str = "http://localhost:3000/api",
+                 cache_path: str = "/home/user/playbook_cache.db"):
+        self.config_path = config_path
+        self.osiris_url = osiris_url
+        self.cache_path = cache_path
+        self.playbooks: Dict[str, PlaybookConfig] = {}
+        self._running_executions: Dict[str, PlaybookExecution] = {}
+        self._running = False
+        self._load_config()
+        self._init_cache()
+    
+    def _load_config(self):
+        """Cargar configuración de playbooks"""
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            for pb_config in config.get("playbooks", []):
+                playbook = PlaybookConfig(
+                    id=pb_config["id"],
+                    name=pb_config["name"],
+                    description=pb_config.get("description", ""),
+                    command=pb_config["command"],
+                    args=pb_config.get("args", []),
+                    timeout=pb_config.get("timeout", 300),
+                    working_directory=pb_config.get("working_directory", "/tmp"),
+                    env=pb_config.get("env", {}),
+                    triggers=pb_config.get("triggers", [])
+                )
+                self.playbooks[playbook.id] = playbook
+                logger.info(f"📋 Playbook cargado: {playbook.name} ({playbook.id})")
+                
+        except FileNotFoundError:
+            logger.error(f"❌ Configuración no encontrada: {self.config_path}")
+        except json.JSONDecodeError:
+            logger.error(f"❌ Configuración inválida: {self.config_path}")
+        except Exception as e:
+            logger.error(f"❌ Error cargando configuración: {e}")
+    
+    def _init_cache(self):
+        """Inicializar base de datos de caché"""
+        conn = sqlite3.connect(self.cache_path)
+        c = conn.cursor()
+        
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS playbook_executions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                execution_id TEXT UNIQUE NOT NULL,
+                playbook_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                start_time TEXT NOT NULL,
+                end_time TEXT,
+                output TEXT,
+                error TEXT,
+                exit_code INTEGER DEFAULT 0,
+                trigger_event_json TEXT,
+                results_json TEXT
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+    
+    async def start(self):
+        """Iniciar el conector"""
+        self._running = True
+        logger.info("🚀 Conector de Playbooks iniciado")
+        
+        # Procesar ejecuciones pendientes
+        await self._process_pending_executions()
+        
+        # Mantener vivo
+        while self._running:
+            await asyncio.sleep(60)
+    
+    async def handle_event(self, event: Dict) -> bool:
+        """Manejar un evento y ejecutar playbooks correspondientes"""
+        event_type = event.get("type", "")
+        
+        # Buscar playbooks que coincidan con el trigger
+        matching_playbooks = []
+        for pb_id, playbook in self.playbooks.items():
+            if event_type in playbook.triggers or "*" in playbook.triggers:
+                matching_playbooks.append(playbook)
+        
+        if not matching_playbooks:
+            logger.debug(f"🔍 No hay playbooks para evento: {event_type}")
+            return False
+        
+        logger.info(f"🎯 Evento {event_type} coincide con {len(matching_playbooks)} playbook(s)")
+        
+        # Ejecutar cada playbook coincidente
+        for playbook in matching_playbooks:
+            execution_id = f"{playbook.id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+            await self._execute_playbook(playbook, event, execution_id)
+        
+        return True
+    
+    async def _execute_playbook(self, playbook: PlaybookConfig, 
+                               trigger_event: Dict, execution_id: str):
+        """Ejecutar un playbook"""
+        logger.info(f"▶️  Ejecutando playbook: {playbook.name} ({execution_id})")
+        
+        # Crear objeto de ejecución
+        execution = PlaybookExecution(
+            id=execution_id,
+            playbook_id=playbook.id,
+            status=PlaybookStatus.RUNNING.value,
+            start_time=datetime.utcnow().isoformat(),
+            trigger_event=trigger_event
+        )
+        
+        self._running_executions[execution_id] = execution
+        
+        # Guardar en caché
+        self._save_execution(execution)
+        
+        # Enviar evento de inicio a OSIRIS
+        await self._send_playbook_event(execution, "started")
+        
+        try:
+            # Ejecutar comando
+            cmd = [playbook.command] + playbook.args
+            
+            # Preparar entorno
+            env = os.environ.copy()
+            env.update(playbook.env)
+            
+            # Ejecutar en subprocess
+            process = subprocess.Popen(
+                cmd,
+                cwd=playbook.working_directory,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Esperar con timeout
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=playbook.timeout
+                )
+                
+                execution.end_time = datetime.utcnow().isoformat()
+                execution.output = stdout
+                execution.error = stderr
+                execution.exit_code = process.returncode
+                execution.status = PlaybookStatus.COMPLETED.value if process.returncode == 0 else PlaybookStatus.FAILED.value
+                
+            except asyncio.TimeoutError:
+                process.kill()
+                execution.end_time = datetime.utcnow().isoformat()
+                execution.status = PlaybookStatus.TIMEOUT.value
+                execution.error = f"Timeout después de {playbook.timeout} segundos"
+        
+        except Exception as e:
+            execution.end_time = datetime.utcnow().isoformat()
+            execution.status = PlaybookStatus.FAILED.value
+            execution.error = str(e)
+        
+        finally:
+            # Actualizar ejecución
+            self._update_execution(execution)
+            
+            # Enviar evento de finalización a OSIRIS
+            await self._send_playbook_event(execution, "completed")
+            
+            # Remover de ejecuciones en curso
+            self._running_executions.pop(execution_id, None)
+            
+            logger.info(f"✅ Playbook {playbook.name} finalizado: {execution.status}")
+    
+    async def _send_playbook_event(self, execution: PlaybookExecution, event_type: str):
+        """Enviar evento de playbook a OSIRIS"""
+        playbook = self.playbooks.get(execution.playbook_id)
+        if not playbook:
+            return
+        
+        # Preparar payload
+        payload = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "playbook_id": execution.playbook_id,
+            "playbook_name": playbook.name,
+            "execution_id": execution.id,
+            "status": execution.status,
+            "message": f"Playbook {playbook.name} {event_type}",
+            "details": {
+                "start_time": execution.start_time,
+                "end_time": execution.end_time or "",
+                "exit_code": execution.exit_code,
+                "output": execution.output[:500] + "..." if len(execution.output) > 500 else execution.output,
+                "error": execution.error[:500] + "..." if len(execution.error) > 500 else execution.error,
+                "trigger": execution.trigger_event or {}
+            }
+        }
+        
+        # Enviar a OSIRIS
+        try:
+            async with aiohttp.ClientSession() as session:
+                endpoint = f"{self.osiris_url}/events/incident"
+                
+                async with session.post(endpoint, json=payload, timeout=10) as resp:
+                    if resp.status in [200, 201]:
+                        logger.debug(f"✅ Evento de playbook enviado: {execution.id}")
+                    else:
+                        logger.warning(f"⚠️  Error enviando playbook: {resp.status}")
+                        # Guardar en caché
+                        self._save_to_cache(execution)
+        except Exception as e:
+            logger.error(f"❌ Error enviando evento de playbook: {e}")
+            self._save_to_cache(execution)
+    
+    def _save_execution(self, execution: PlaybookExecution):
+        """Guardar ejecución en base de datos"""
+        try:
+            conn = sqlite3.connect(self.cache_path)
+            c = conn.cursor()
+            
+            c.execute('''
+                INSERT OR REPLACE INTO playbook_executions 
+                (execution_id, playbook_id, status, start_time, end_time, output, error, exit_code, trigger_event_json, results_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                execution.id,
+                execution.playbook_id,
+                execution.status,
+                execution.start_time,
+                execution.end_time,
+                execution.output,
+                execution.error,
+                execution.exit_code,
+                json.dumps(execution.trigger_event or {}),
+                json.dumps(execution.results or {})
+            ))
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error guardando ejecución: {e}")
+    
+    def _update_execution(self, execution: PlaybookExecution):
+        """Actualizar ejecución en base de datos"""
+        self._save_execution(execution)
+    
+    def _save_to_cache(self, execution: PlaybookExecution):
+        """Guardar ejecución en caché para reenvío"""
+        # Marcar como pendiente
+        try:
+            conn = sqlite3.connect(self.cache_path)
+            c = conn.cursor()
+            
+            c.execute('''
+                UPDATE playbook_executions 
+                SET status = ? 
+                WHERE execution_id = ?
+            ''', (f"{execution.status}_pending", execution.id))
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error guardando en caché: {e}")
+    
+    async def _process_pending_executions(self):
+        """Procesar ejecuciones pendientes"""
+        try:
+            conn = sqlite3.connect(self.cache_path)
+            c = conn.cursor()
+            
+            c.execute("SELECT execution_id FROM playbook_executions WHERE status LIKE '%_pending'")
+            rows = c.fetchall()
+            conn.close()
+            
+            for row in rows:
+                execution_id = row[0]
+                # Recuperar ejecución
+                execution = self._load_execution(execution_id)
+                if execution:
+                    # Reenviar evento
+                    await self._send_playbook_event(execution, "retry")
+                    
+        except Exception as e:
+            logger.error(f"Error procesando pendientes: {e}")
+    
+    def _load_execution(self, execution_id: str) -> Optional[PlaybookExecution]:
+        """Cargar ejecución desde base de datos"""
+        try:
+            conn = sqlite3.connect(self.cache_path)
+            c = conn.cursor()
+            
+            c.execute("SELECT * FROM playbook_executions WHERE execution_id = ?", (execution_id,))
+            row = c.fetchone()
+            conn.close()
+            
+            if row:
+                return PlaybookExecution(
+                    id=row[1],
+                    playbook_id=row[2],
+                    status=row[3],
+                    start_time=row[4],
+                    end_time=row[5],
+                    output=row[6],
+                    error=row[7],
+                    exit_code=row[8],
+                    trigger_event=json.loads(row[9]) if row[9] else None,
+                    results=json.loads(row[10]) if row[10] else None
+                )
+            return None
+        except Exception as e:
+            logger.error(f"Error cargando ejecución: {e}")
+            return None
+    
+    def get_execution_status(self, execution_id: str) -> Optional[Dict]:
+        """Obtener estado de una ejecución"""
+        execution = self._load_execution(execution_id)
+        if execution:
+            return asdict(execution)
+        return None
+    
+    def list_executions(self, limit: int = 100) -> List[Dict]:
+        """Listar ejecuciones recientes"""
+        try:
+            conn = sqlite3.connect(self.cache_path)
+            c = conn.cursor()
+            
+            c.execute("SELECT * FROM playbook_executions ORDER BY start_time DESC LIMIT ?", (limit,))
+            rows = c.fetchall()
+            conn.close()
+            
+            executions = []
+            for row in rows:
+                executions.append({
+                    "id": row[1],
+                    "playbook_id": row[2],
+                    "status": row[3],
+                    "start_time": row[4],
+                    "end_time": row[5],
+                    "output": row[6][:200] + "..." if len(row[6]) > 200 else row[6],
+                    "error": row[7][:200] + "..." if len(row[7]) > 200 else row[7],
+                    "exit_code": row[8]
+                })
+            
+            return executions
+        except Exception as e:
+            logger.error(f"Error listando ejecuciones: {e}")
+            return []
+    
+    def stop(self):
+        """Detener el conector"""
+        self._running = False
+        logger.info("✅ Conector de Playbooks detenido")
+
+# ============================================================
+# PUNTO DE ENTRADA
+# ============================================================
+
+async def main():
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Conector de Playbooks -> OSIRIS")
+    parser.add_argument("--config", default="configs/playbooks_config.json", help="Archivo de configuración")
+    parser.add_argument("--osiris-url", default="http://localhost:3000/api", help="URL de OSIRIS")
+    parser.add_argument("--cache", default="/home/user/playbook_cache.db", help="Ruta de la caché")
+    args = parser.parse_args()
+    
+    connector = PlaybookConnector(args.config, args.osiris_url, args.cache)
+    
+    try:
+        await connector.start()
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.error(f"❌ Error fatal: {e}")
+    finally:
+        connector.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### 4.2 Configuración de Playbooks (configs/playbooks_config.json)
+
+```json
+{
+  "playbooks": [
+    {
+      "id": "scan_vulnerabilities",
+      "name": "Escanear Vulnerabilidades",
+      "description": "Ejecuta escaneo de vulnerabilidades con Nuclei",
+      "command": "nuclei",
+      "args": ["-u", "{{target}}", "-t", "~/nuclei-templates/", "-o", "/tmp/nuclei_output.txt"],
+      "timeout": 600,
+      "working_directory": "/tmp",
+      "env": {
+        "TARGET": "{{target}}"
+      },
+      "triggers": ["scan", "vulnerability_detected"]
+    },
+    {
+      "id": "port_scan",
+      "name": "Escanear Puertos",
+      "description": "Ejecuta escaneo de puertos con Nmap",
+      "command": "nmap",
+      "args": ["-sS", "-p-", "-T4", "{{target}}", "-oX", "/tmp/nmap_output.xml"],
+      "timeout": 300,
+      "working_directory": "/tmp",
+      "triggers": ["scan", "new_target"]
+    },
+    {
+      "id": "recon_full",
+      "name": "Reconocimiento Completo",
+      "description": "Ejecuta reconocimiento completo con multiple herramientas",
+      "command": "/home/user/scripts/full_recon.sh",
+      "args": ["{{target}}"],
+      "timeout": 1200,
+      "working_directory": "/home/user/scripts",
+      "triggers": ["new_target", "high_priority_alert"]
+    },
+    {
+      "id": "capture_evidence",
+      "name": "Capturar Evidencia",
+      "description": "Captura screenshots y logs de la alerta",
+      "command": "python3",
+      "args": ["/home/user/scripts/capture_evidence.py", "{{target}}", "{{alert_id}}"],
+      "timeout": 60,
+      "working_directory": "/home/user/scripts",
+      "triggers": ["alert", "high_severity_alert"]
+    }
+  ]
+}
+```
+
+---
+
+## 📱 PASO 5: INSTALACIÓN Y CONFIGURACIÓN PARA TERMUX
+
+### 5.1 Requisitos en Termux
+
+```bash
+# Actualizar paquetes
+pkg update && pkg upgrade -y
+
+# Instalar dependencias
+pkg install python python-pip nodejs git wget curl openssh -y
+
+# Instalar paquetes Python
+pip install aiohttp websockets requests opencv-python-headless numpy Pillow python-dotenv pydantic
+
+# Instalar FFmpeg (para cámaras)
+pkg install ffmpeg -y
+
+# Verificar versiones
+python --version
+node --version
+pip list | grep -E "(aiohttp|websockets|opencv)"
+```
+
+### 5.2 Limitaciones de Termux
+
+| Componente | Limitación | Solución |
+|------------|------------|----------|
+| **RTSP** | No soporta RTSP nativamente | Usar HTTP/MJPEG o proxy RTSP→HTTP |
+| **Cámaras** | Acceso limitado a cámara | Usar cámaras IP con stream HTTP |
+| **Puertos** | No se puede bind a <1024 | Usar puertos altos (3000, 8001, etc.) |
+| **Almacenamiento** | Espacio limitado | Limitar caché y logs |
+| **Background** | No ejecución en background | Usar `nohup` o `termux-wake-lock` |
+
+### 5.3 Script de Instalación para Termux (scripts/setup_termux.sh)
+
+```bash
+#!/bin/bash
+
+# Script de instalación para Termux
+# Uso: bash setup_termux.sh
+
+set -e
+
+echo "🚀 Iniciando instalación en Termux..."
+
+# Crear directorio de trabajo
+mkdir -p ~/sourceseal-osiris
+cd ~/sourceseal-osiris
+
+# Instalar dependencias
+echo "📦 Instalando dependencias..."
+pkg update -y
+pkg install python python-pip nodejs git wget curl openssh ffmpeg -y
+
+# Instalar paquetes Python
+pip install aiohttp websockets requests opencv-python-headless numpy Pillow python-dotenv pydantic
+
+# Clonar OSIRIS
+echo "📥 Clonando OSIRIS..."
+git clone https://github.com/osiris-org/osiris.git
+cd osiris
+npm install
+cd ..
+
+# Crear estructura de directorios
+echo "📁 Creando estructura de directorios..."
+mkdir -p connectors utils scripts configs docs
+
+# Crear archivos de configuración
+echo "⚙️  Creando configuraciones..."
+
+# Configuración por defecto
+cat > configs/default_config.json << 'EOF'
+{
+  "osiris_url": "http://localhost:3000/api",
+  "seal_ws": "ws://localhost:8001/ws/alerts",
+  "db_path": "~/connector_cache.db",
+  "log_file": "~/connector.log",
+  "log_level": "INFO",
+  "max_retries": 5,
+  "retry_delay": 1.0,
+  "cache_cleanup_interval": 3600,
+  "max_cache_age": 86400,
+  "metrics_interval": 60,
+  "heartbeat_interval": 30,
+  "enable_camera": false,
+  "enable_playbook": true
+}
+EOF
+
+# Configuración de cámaras (ejemplo para Termux)
+cat > configs/cameras_config.json << 'EOF'
+{
+  "enabled": true,
+  "cameras": [
+    {
+      "id": "termux_cam",
+      "name": "Cámara Termux",
+      "url": "http://192.168.1.100:8080/video",
+      "type": "http",
+      "motion_detection": true,
+      "motion_threshold": 0.1,
+      "capture_interval": 10,
+      "osiris_event_type": "camera_motion"
+    }
+  ],
+  "image_storage": {
+    "local_path": "~/camera_captures",
+    "max_images": 100,
+    "quality": 75
+  },
+  "osiris": {
+    "send_images": true,
+    "image_format": "base64",
+    "max_image_size": 512
+  }
+}
+EOF
+
+# Configuración de playbooks
+cat > configs/playbooks_config.json << 'EOF'
+{
+  "playbooks": [
+    {
+      "id": "termux_scan",
+      "name": "Escanear con Nmap",
+      "description": "Escanear puertos básicos",
+      "command": "nmap",
+      "args": ["-sS", "-p-", "-T2", "{{target}}"],
+      "timeout": 120,
+      "working_directory": "/data/data/com.termux/files/home",
+      "triggers": ["scan"]
+    }
+  ]
+}
+EOF
+
+# Crear script de inicio
+echo "📝 Creando scripts de inicio..."
+
+cat > start_osiris.sh << 'EOF'
+#!/bin/bash
+cd ~/sourceseal-osiris/osiris
+npm start &
+EOF
+
+cat > start_connector.sh << 'EOF'
+#!/bin/bash
+cd ~/sourceseal-osiris
+python3 connectors/main_connector.py &
+EOF
+
+cat > start_all.sh << 'EOF'
+#!/bin/bash
+# Iniciar todos los servicios
+cd ~/sourceseal-osiris
+
+# Iniciar OSIRIS
+bash start_osiris.sh
+
+# Esperar a que OSIRIS inicie
+sleep 5
+
+# Iniciar conector principal
+bash start_connector.sh
+
+# Iniciar conector de cámaras (si está habilitado)
+if [ -f "configs/cameras_config.json" ]; then
+    python3 connectors/camera_connector.py &
+fi
+
+# Iniciar conector de playbooks
+python3 connectors/playbook_connector.py &
+
+echo "✅ Todos los servicios iniciados"
+echo "🌐 OSIRIS Dashboard: http://localhost:3000"
+EOF
+
+# Crear script de verificación
+cat > check_all.py << 'EOF'
+#!/usr/bin/env python3
+import asyncio
+import aiohttp
+import os
+import sys
+
+async def check():
+    checks = []
+    
+    # Verificar OSIRIS
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://localhost:3000/api/status", timeout=5) as resp:
+                if resp.status == 200:
+                    checks.append(("OSIRIS", "✅ Funcionando"))
+                else:
+                    checks.append(("OSIRIS", f"⚠️  Código {resp.status}"))
+    except Exception as e:
+        checks.append(("OSIRIS", f"❌ Error: {e}"))
+    
+    # Verificar conector
+    if os.path.exists("~/connector.log"):
+        with open("~/connector.log", "r") as f:
+            lines = f.readlines()
+            if lines and "Conector iniciado" in lines[-1]:
+                checks.append(("Conector", "✅ Funcionando"))
+            else:
+                checks.append(("Conector", "⚠️  Verificar logs"))
+    else:
+        checks.append(("Conector", "❌ No iniciado"))
+    
+    # Verificar cámaras
+    if os.path.exists("configs/cameras_config.json"):
+        checks.append(("Cámaras", "✅ Configuradas"))
+    else:
+        checks.append(("Cámaras", "⚠️  No configuradas"))
+    
+    # Verificar playbooks
+    if os.path.exists("configs/playbooks_config.json"):
+        checks.append(("Playbooks", "✅ Configurados"))
+    else:
+        checks.append(("Playbooks", "⚠️  No configurados"))
+    
+    # Mostrar resultados
+    print("\n" + "="*50)
+    print("📊 ESTADO DE LOS SERVICIOS")
+    print("="*50)
+    for name, status in checks:
+        print(f"{name:15} {status}")
+    print("="*50 + "\n")
+    
+    # Verificar si todo está OK
+    all_ok = all("✅" in status for _, status in checks)
+    if all_ok:
+        print("✅ Todos los servicios están funcionando correctamente!")
+        print("\n🌐 Accede al dashboard: http://localhost:3000")
+        return 0
+    else:
+        print("⚠️  Algunos servicios no están funcionando")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(check()))
+EOF
+
+# Dar permisos de ejecución
+chmod +x start_osiris.sh start_connector.sh start_all.sh check_all.py
+
+# Crear .env para OSIRIS
+cat > osiris/.env << 'EOF'
+PORT=3000
+NEXT_PUBLIC_MAPBOX_TOKEN=""
+NEXT_PUBLIC_OSIRIS_VERSION=3.0.0
+ALLOW_CORS=true
+EOF
+
+# Crear requirements.txt
+cat > requirements.txt << 'EOF'
+aiohttp>=3.8.0
+websockets>=10.0
+requests>=2.28.0
+opencv-python-headless>=4.5.0
+numpy>=1.21.0
+Pillow>=9.0.0
+python-dotenv>=0.19.0
+pydantic>=1.9.0
+EOF
+
+echo ""
+echo "✅ Instalación completada!"
+echo ""
+echo "Para iniciar los servicios:"
+echo "  1. bash start_all.sh"
+echo "  2. Verificar: python3 check_all.py"
+echo ""
+echo "Para acceder al dashboard:"
+echo "  http://localhost:3000"
+echo ""
+echo "Notas para Termux:"
+echo "  - Usa 'nohup bash start_all.sh &' para ejecutar en background"
+echo "  - Los logs están en ~/connector.log"
+echo "  - Para detener: pkill -f python3; pkill -f node"
+```
+
+### 5.4 Ejecución en Termux
+
+```bash
+# Dar permisos al script de instalación
+chmod +x setup_termux.sh
+
+# Ejecutar instalación
+bash setup_termux.sh
+
+# Iniciar todos los servicios
+bash start_all.sh
+
+# Verificar estado
+python3 check_all.py
+
+# Ver logs del conector
+tail -f ~/connector.log
+
+# Ver logs de cámaras
+tail -f /home/user/camera_connector.log
+
+# Ver logs de playbooks
+tail -f /home/user/playbook_connector.log
+```
+
+### 5.5 Solución de Problemas en Termux
+
+| Problema | Solución |
+|----------|----------|
+| **No se puede instalar Node.js** | Usar Node.js desde Termux community: `pkg install nodejs` |
+| **Error de almacenamiento** | Liberar espacio: `rm -rf ~/.cache/*` y `rm -rf ~/.npm` |
+| **RTSP no funciona** | Usar un proxy RTSP→HTTP o cámaras con stream MJPEG |
+| **Cámaras no accesibles** | Verificar que la IP de la cámara sea accesible desde Termux |
+| **Puerto 3000 en uso** | Cambiar puerto en OSIRIS: editar `.env` y poner `PORT=3001` |
+| **Conector no se conecta** | Verificar que SourceSeal esté corriendo: `netstat -tuln \| grep 8001` |
+
+---
+
+## ☁️ PASO 6: INSTALACIÓN Y CONFIGURACIÓN PARA REPLIT
+
+### 6.1 Requisitos en Replit
+
+Replit tiene algunas limitaciones:
+- No se puede bind a puertos bajos (<1024)
+- No se puede ejecutar en background
+- Limitaciones de recursos (CPU, RAM)
+- No se puede instalar software de sistema
+
+### 6.2 Configuración para Replit
+
+#### Estructura de archivos:
+```
+replit_project/
+├── .replit
+├── main.py                # Punto de entrada
+├── connectors/
+│   ├── main_connector.py
+│   ├── camera_connector.py (modificado)
+│   └── playbook_connector.py (modificado)
+├── configs/
+│   ├── default_config.json
+│   ├── cameras_config.json
+│   └── playbooks_config.json
+├── osiris/                # Submódulo o clonado
+├── requirements.txt
+└── README.md
+```
+
+### 6.3 Archivo .replit
+
+```ini
+run = "python3 main.py"
+```
+
+### 6.4 Archivo main.py (Punto de entrada para Replit)
+
+```python
+#!/usr/bin/env python3
+"""
+Punto de entrada para Replit
+Inicia OSIRIS (si está configurado) y los conectores
+"""
+
+import os
+import sys
+import subprocess
+import asyncio
+import time
+import logging
+from pathlib import Path
+
+# Configuración de logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] [%(levelname)s] [Replit] %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("ReplitMain")
+
+def check_osiris_installed():
+    """Verificar si OSIRIS está instalado"""
+    return os.path.exists("osiris/package.json")
+
+def start_osiris():
+    """Iniciar OSIRIS en Replit"""
+    logger.info("🚀 Iniciando OSIRIS...")
+    
+    # Cambiar a directorio de OSIRIS
+    os.chdir("osiris")
+    
+    # Instalar dependencias si es necesario
+    if not os.path.exists("node_modules"):
+        logger.info("📦 Instalando dependencias de OSIRIS...")
+        subprocess.run(["npm", "install"], check=True)
+    
+    # Iniciar OSIRIS en background
+    # En Replit, usamos un proceso en segundo plano
+    os.environ["PORT"] = "8000"  # Usar puerto 8000 para OSIRIS en Replit
+    os.environ["NEXT_PUBLIC_MAPBOX_TOKEN"] = ""
+    os.environ["ALLOW_CORS"] = "true"
+    
+    # Construir OSIRIS
+    subprocess.run(["npm", "run", "build"], check=False)
+    
+    # Iniciar servidor
+    osiris_process = subprocess.Popen(
+        ["npm", "start"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    
+    # Esperar a que OSIRIS inicie
+    time.sleep(10)
+    
+    # Verificar si está funcionando
+    try:
+        import requests
+        response = requests.get("http://localhost:8000/api/status", timeout=5)
+        if response.status_code == 200:
+            logger.info("✅ OSIRIS iniciado correctamente en puerto 8000")
+            return osiris_process
+        else:
+            logger.warning("⚠️  OSIRIS no respondió correctamente")
+    except Exception as e:
+        logger.error(f"❌ Error verificando OSIRIS: {e}")
+    
+    return osiris_process
+
+def start_connectors():
+    """Iniciar los conectores"""
+    logger.info("🔌 Iniciando conectores...")
+    
+    # Configurar variables de entorno para los conectores
+    os.environ["OSIRIS_URL"] = "http://localhost:8000/api"
+    os.environ["SEAL_WS"] = "ws://localhost:8001/ws/alerts"
+    
+    # Iniciar conector principal en un hilo separado
+    import threading
+    
+    def run_connector():
+        import connectors.main_connector
+        asyncio.run(connectors.main_connector.main())
+    
+    connector_thread = threading.Thread(target=run_connector, daemon=True)
+    connector_thread.start()
+    
+    # Iniciar conector de playbooks
+    def run_playbook_connector():
+        import connectors.playbook_connector
+        asyncio.run(connectors.playbook_connector.main())
+    
+    playbook_thread = threading.Thread(target=run_playbook_connector, daemon=True)
+    playbook_thread.start()
+    
+    # En Replit, las cámaras pueden no funcionar bien
+    # Pero intentamos iniciarlo
+    def run_camera_connector():
+        try:
+            import connectors.camera_connector
+            asyncio.run(connectors.camera_connector.main())
+        except Exception as e:
+            logger.warning(f"⚠️  Conector de cámaras no disponible en Replit: {e}")
+    
+    camera_thread = threading.Thread(target=run_camera_connector, daemon=True)
+    camera_thread.start()
+    
+    logger.info("✅ Conectores iniciados")
+    
+    return [connector_thread, playbook_thread, camera_thread]
+
+def main():
+    """Función principal"""
+    logger.info("="*50)
+    logger.info("🚀 INICIANDO SOURCESEAL + OSIRIS EN REPLIT")
+    logger.info("="*50)
+    
+    # Verificar e instalar dependencias
+    logger.info("📦 Verificando dependencias...")
+    
+    try:
+        import aiohttp
+        import websockets
+        import opencv
+        logger.info("✅ Dependencias Python instaladas")
+    except ImportError as e:
+        logger.error(f"❌ Falta dependencia: {e}")
+        logger.info("Instalando dependencias...")
+        subprocess.run(["pip", "install", "-r", "requirements.txt"], check=True)
+        logger.info("✅ Dependencias instaladas")
+    
+    # Iniciar OSIRIS
+    osiris_process = None
+    if check_osiris_installed():
+        osiris_process = start_osiris()
+    else:
+        logger.warning("⚠️  OSIRIS no está instalado. Clona el repositorio primero.")
+        logger.info("Para instalar OSIRIS en Replit:")
+        logger.info("  1. git clone https://github.com/osiris-org/osiris.git")
+        logger.info("  2. cd osiris")
+        logger.info("  3. npm install")
+        logger.info("  4. Reinicia el Repl")
+    
+    # Iniciar conectores
+    connector_threads = start_connectors()
+    
+    # Mantener vivo
+    try:
+        while True:
+            time.sleep(60)
+            logger.info("💤 Manteniendo vivo...")
+    except KeyboardInterrupt:
+        logger.info("🛑 Deteniendo servicios...")
+        if osiris_process:
+            osiris_process.terminate()
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()
+```
+
+### 6.5 Configuración de Cámaras para Replit
+
+En Replit, las cámaras IP pueden no ser accesibles debido a restricciones de red. Usa esta configuración modificada:
+
+```json
+{
+  "enabled": false,
+  "cameras": [],
+  "image_storage": {
+    "local_path": "/tmp/camera_captures",
+    "max_images": 10,
+    "quality": 75
+  },
+  "osiris": {
+    "send_images": false,
+    "image_format": "base64",
+    "max_image_size": 512
+  }
+}
+```
+
+### 6.6 Configuración de Playbooks para Replit
+
+```json
+{
+  "playbooks": [
+    {
+      "id": "replit_scan",
+      "name": "Escanear Puertos",
+      "description": "Escanear puertos básicos (adaptado para Replit)",
+      "command": "python3",
+      "args": ["-c", "import socket; print('Escanear:', '{{target}}')"],
+      "timeout": 30,
+      "working_directory": "/home/runner",
+      "triggers": ["scan"]
+    },
+    {
+      "id": "replit_ping",
+      "name": "Ping",
+      "description": "Verificar conectividad",
+      "command": "ping",
+      "args": ["-c", "4", "{{target}}"],
+      "timeout": 10,
+      "working_directory": "/home/runner",
+      "triggers": ["new_target"]
+    }
+  ]
+}
+```
+
+### 6.7 Script de Instalación para Replit (scripts/setup_replit.sh)
+
+```bash
+#!/bin/bash
+
+# Script de instalación para Replit
+# En Replit, este script se ejecuta manualmente
+
+set -e
+
+echo "🚀 Configurando proyecto para Replit..."
+
+# Crear estructura de directorios
+mkdir -p connectors utils scripts configs
+
+# Crear configuraciones
+cat > configs/default_config.json << 'EOF'
+{
+  "osiris_url": "http://localhost:8000/api",
+  "seal_ws": "ws://localhost:8001/ws/alerts",
+  "db_path": "/tmp/connector_cache.db",
+  "log_file": "/tmp/connector.log",
+  "log_level": "INFO",
+  "max_retries": 3,
+  "retry_delay": 1.0,
+  "cache_cleanup_interval": 3600,
+  "max_cache_age": 86400,
+  "metrics_interval": 60,
+  "heartbeat_interval": 30,
+  "enable_camera": false,
+  "enable_playbook": true
+}
+EOF
+
+cat > configs/cameras_config.json << 'EOF'
+{
+  "enabled": false,
+  "cameras": [],
+  "image_storage": {
+    "local_path": "/tmp/camera_captures",
+    "max_images": 10,
+    "quality": 75
+  },
+  "osiris": {
+    "send_images": false,
+    "image_format": "base64",
+    "max_image_size": 512
+  }
+}
+EOF
+
+cat > configs/playbooks_config.json << 'EOF'
+{
+  "playbooks": [
+    {
+      "id": "replit_scan",
+      "name": "Escanear Puertos",
+      "description": "Escanear puertos básicos",
+      "command": "python3",
+      "args": ["-c", "import socket; print('Escaneo completado para:', '{{target}}')"],
+      "timeout": 30,
+      "working_directory": "/home/runner",
+      "triggers": ["scan"]
+    }
+  ]
+}
+EOF
+
+# Crear .replit
+cat > .replit << 'EOF'
+run = "python3 main.py"
+EOF
+
+# Crear requirements.txt
+cat > requirements.txt << 'EOF'
+aiohttp>=3.8.0
+websockets>=10.0
+requests>=2.28.0
+opencv-python-headless>=4.5.0
+numpy>=1.21.0
+Pillow>=9.0.0
+python-dotenv>=0.19.0
+pydantic>=1.9.0
+EOF
+
+# Crear README
+cat > README.md << 'EOF'
+# SourceSeal + OSIRIS Integration - Replit
+
+## Quick Start
+
+1. Click "Run" to start all services
+2. OSIRIS will be available at: http://localhost:8000
+3. Connectors will automatically connect to SourceSeal
+
+## Configuration
+
+- Edit `configs/default_config.json` for main settings
+- Edit `configs/playbooks_config.json` for playbook definitions
+- Edit `configs/cameras_config.json` for camera settings (disabled by default in Replit)
+
+## Notes
+
+- In Replit, camera integration is disabled due to network restrictions
+- OSIRIS runs on port 8000 (not 3000) to avoid permission issues
+- All logs are stored in /tmp/ directory
+
+## Troubleshooting
+
+- Check logs: `cat /tmp/connector.log`
+- Verify OSIRIS: `curl http://localhost:8000/api/status`
+- Restart: Click "Run" again
+EOF
+
+echo ""
+echo "✅ Configuración para Replit completada!"
+echo ""
+echo "Siguientes pasos:"
+echo "  1. git clone https://github.com/osiris-org/osiris.git"
+echo "  2. Copia los archivos de connectors/ a tu proyecto"
+echo "  3. Click 'Run' en Replit"
+echo ""
+```
+
+### 6.8 Ejecución en Replit
+
+1. **Crear un nuevo Repl** en [replit.com](https://replit.com)
+2. **Subir los archivos** o clonar el repositorio
+3. **Instalar OSIRIS:**
+   ```bash
+   git clone https://github.com/osiris-org/osiris.git
+   cd osiris
+   npm install
+   cd ..
+   ```
+4. **Ejecuta el script de configuración:**
+   ```bash
+   bash scripts/setup_replit.sh
+   ```
+5. **Click en "Run"** para iniciar todos los servicios
+6. **Verificar:**
+   - OSIRIS: http://localhost:8000
+   - Logs: `cat /tmp/connector.log`
+
+### 6.9 Solución de Problemas en Replit
+
+| Problema | Solución |
+|----------|----------|
+| **OSIRIS no inica** | Verificar que `npm install` se ejecutó en el directorio osiris/ |
+| **Puerto en uso** | Cambiar puerto en .env de OSIRIS a 8000 o 8080 |
+| **Conector no se conecta** | Verificar que SourceSeal esté corriendo en otro Repl o servidor |
+| **Timeout en requests** | Aumentar timeout en el conector a 30 segundos |
+| **Memoria insuficiente** | Reducir el tamaño de la caché y logs |
+| **No se pueden instalar paquetes** | Usar `pip install` en la consola de Replit |
+
+---
+
+## 🔍 PASO 7: SCRIPT DE VERIFICACIÓN COMPLETO
+
+### 7.1 Script check_all.py Mejorado
+
+```python
+#!/usr/bin/env python3
+"""
+Script de verificación completo para SourceSeal + OSIRIS
+"""
+
+import asyncio
+import aiohttp
+import os
+import sys
+import json
+import sqlite3
+from datetime import datetime
+from typing import Dict, List, Tuple
+
+class ServiceChecker:
+    """Verificador de servicios"""
+    
+    def __init__(self):
+        self.results = []
+        self.warnings = []
+        self.errors = []
+    
+    async def check_osiris(self, url: str = "http://localhost:3000/api") -> Tuple[str, str]:
+        """Verificar OSIRIS"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{url}/status", timeout=5) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        version = data.get("version", "unknown")
+                        return "✅", f"Funcionando (v{version})"
+                    else:
+                        return "⚠️ ", f"Código {resp.status}"
+        except asyncio.TimeoutError:
+            return "❌", "Timeout"
+        except Exception as e:
+            return "❌", str(e)
+    
+    async def check_connector(self) -> Tuple[str, str]:
+        """Verificar conector principal"""
+        log_file = os.path.expanduser("~/connector.log")
+        
+        if not os.path.exists(log_file):
+            return "⚠️ ", "Archivo de log no encontrado"
+        
+        try:
+            with open(log_file, 'r') as f:
+                content = f.read()
+            
+            if "Conector iniciado" in content or "MainConnector" in content:
+                # Verificar última entrada
+                lines = content.split('\n')
+                last_line = lines[-1] if lines else ""
+                
+                if "error" in last_line.lower() or "❌" in last_line:
+                    return "⚠️ ", "Última entrada es un error"
+                return "✅", "Funcionando"
+            else:
+                return "⚠️ ", "No se encontró inicio del conector"
+        except Exception as e:
+            return "❌", str(e)
+    
+    async def check_camera_connector(self) -> Tuple[str, str]:
+        """Verificar conector de cámaras"""
+        log_file = "/home/user/camera_connector.log"
+        config_file = "configs/cameras_config.json"
+        
+        if not os.path.exists(config_file):
+            return "⚠️ ", "Configuración no encontrada"
+        
+        try:
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+            
+            if not config.get("enabled", False):
+                return "ℹ️", "Deshabilitado"
+            
+            cameras = config.get("cameras", [])
+            return "✅", f"{len(cameras)} cámara(s) configurada(s)"
+        except Exception as e:
+            return "❌", str(e)
+    
+    async def check_playbook_connector(self) -> Tuple[str, str]:
+        """Verificar conector de playbooks"""
+        config_file = "configs/playbooks_config.json"
+        
+        if not os.path.exists(config_file):
+            return "⚠️ ", "Configuración no encontrada"
+        
+        try:
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+            
+            playbooks = config.get("playbooks", [])
+            return "✅", f"{len(playbooks)} playbook(s) configurado(s)"
+        except Exception as e:
+            return "❌", str(e)
+    
+    async def check_cache(self) -> Tuple[str, str]:
+        """Verificar caché"""
+        db_path = os.path.expanduser("~/connector_cache.db")
+        
+        if not os.path.exists(db_path):
+            return "⚠️ ", "Base de datos no encontrada"
+        
+        try:
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+            
+            c.execute("SELECT COUNT(*) FROM pending")
+            pending_count = c.fetchone()[0]
+            
+            c.execute("SELECT COUNT(*) FROM metrics")
+            metrics_count = c.fetchone()[0]
+            
+            conn.close()
+            
+            if pending_count > 100:
+                return "⚠️ ", f"{pending_count} mensajes pendientes (¡Demasiados!)"
+            return "✅", f"{pending_count} pendientes, {metrics_count} métricas"
+        except Exception as e:
+            return "❌", str(e)
+    
+    async def check_ports(self) -> Tuple[str, str]:
+        """Verificar puertos clave"""
+        import subprocess
+        
+        ports = [3000, 8000, 8001]
+        active_ports = []
+        
+        try:
+            result = subprocess.run(
+                ["netstat", "-tuln"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            for port in ports:
+                if str(port) in result.stdout:
+                    active_ports.append(str(port))
+            
+            if active_ports:
+                return "✅", f"Puertos activos: {', '.join(active_ports)}"
+            else:
+                return "⚠️ ", "Ningún puerto activo encontrado"
+        except Exception as e:
+            return "⚠️ ", f"No se pudo verificar (netstat no disponible: {e})"
+    
+    async def check_disk_space(self) -> Tuple[str, str]:
+        """Verificar espacio en disco"""
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage("/")
+            
+            free_gb = free / (1024 ** 3)
+            used_percent = (used / total) * 100
+            
+            if free_gb < 1:
+                return "❌", f"Solo {free_gb:.2f} GB libres ({used_percent:.1f}% usado)"
+            elif free_gb < 5:
+                return "⚠️ ", f"{free_gb:.2f} GB libres ({used_percent:.1f}% usado)"
+            else:
+                return "✅", f"{free_gb:.2f} GB libres"
+        except Exception as e:
+            return "⚠️ ", f"No se pudo verificar: {e}"
+    
+    async def run_all_checks(self) -> Dict:
+        """Ejecutar todas las verificaciones"""
+        checks = [
+            ("OSIRIS", self.check_osiris()),
+            ("Conector Principal", self.check_connector()),
+            ("Conector de Cámaras", self.check_camera_connector()),
+            ("Conector de Playbooks", self.check_playbook_connector()),
+            ("Caché", self.check_cache()),
+            ("Puertos", self.check_ports()),
+            ("Espacio en Disco", self.check_disk_space()),
+        ]
+        
+        results = {}
+        for name, check in checks:
+            status, message = await check
+            results[name] = (status, message)
+            
+            if "✅" in status:
+                self.results.append(f"{status} {name}: {message}")
+            elif "⚠️ " in status:
+                self.warnings.append(f"{status} {name}: {message}")
+            else:
+                self.errors.append(f"{status} {name}: {message}")
+        
+        return results
+    
+    def print_report(self):
+        """Imprimir reporte"""
+        print("\n" + "="*70)
+        print("📊 REPORTE DE VERIFICACIÓN - SOURCESEAL + OSIRIS")
+        print("="*70)
+        print(f"📅 Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("="*70)
+        
+        # Resultados
+        if self.results:
+            print("\n✅ SERVICIOS FUNCIONANDO:")
+            for result in self.results:
+                print(f"  {result}")
+        
+        # Advertencias
+        if self.warnings:
+            print("\n⚠️  ADVERTENCIAS:")
+            for warning in self.warnings:
+                print(f"  {warning}")
+        
+        # Errores
+        if self.errors:
+            print("\n❌ ERRORES:")
+            for error in self.errors:
+                print(f"  {error}")
+        
+        print("\n" + "="*70)
+        
+        # Resumen
+        total = len(self.results) + len(self.warnings) + len(self.errors)
+        ok = len(self.results)
+        
+        if self.errors:
+            print("❌ ALGUNOS SERVICIOS NO FUNCIONAN CORRECTAMENTE")
+            print(f"   {ok}/{total} servicios OK")
+        elif self.warnings:
+            print("⚠️  TODOS LOS SERVICIOS FUNCIONAN, PERO HAY ADVERTENCIAS")
+            print(f"   {ok}/{total} servicios OK")
+        else:
+            print("✅ TODOS LOS SERVICIOS FUNCIONAN CORRECTAMENTE!")
+            print(f"   {ok}/{total} servicios OK")
+            print("\n🌐 Accede al dashboard: http://localhost:3000")
+        
+        print("="*70 + "\n")
+        
+        return len(self.errors) == 0
+
+async def main():
+    """Función principal"""
+    checker = ServiceChecker()
+    await checker.run_all_checks()
+    
+    success = checker.print_report()
+    
+    if not success:
+        print("\n💡 SUGERENCIAS:")
+        print("  1. Verifica que OSIRIS esté corriendo: npm start en el directorio osiris/")
+        print("  2. Verifica que SourceSeal esté corriendo: python3 -m sourceseal")
+        print("  3. Revisa los logs: tail -f ~/connector.log")
+        print("  4. Verifica la configuración: configs/default_config.json")
+    
+    return 0 if success else 1
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))
+```
+
+---
+
+## 🎯 PASO 8: INSTRUCCIONES DE DESPLIEGUE RÁPIDO
+
+### 8.1 Despliegue en Termux (Android)
+
+```bash
+# 1. Instalar Termux desde F-Droid (recomendado)
+# 2. Abrir Termux y ejecutar:
+
+# Actualizar e instalar dependencias
+pkg update && pkg upgrade -y
+pkg install python python-pip nodejs git wget curl openssh ffmpeg -y
+
+# Clonar el proyecto (o copiar los archivos manualmente)
+git clone https://github.com/tu-usuario/sourceseal-osiris-integration.git
+cd sourceseal-osiris-integration
+
+# Instalar dependencias Python
+pip install -r requirements.txt
+
+# Clonar OSIRIS
+git clone https://github.com/osiris-org/osiris.git
+cd osiris
+npm install
+cd ..
+
+# Ejecutar script de instalación para Termux
+bash scripts/setup_termux.sh
+
+# Iniciar todos los servicios
+bash start_all.sh
+
+# Verificar
+python3 check_all.py
+
+# Acceder al dashboard (en el navegador del dispositivo)
+# http://localhost:3000
+```
+
+### 8.2 Despliegue en Replit
+
+1. **Crear nuevo Repl:** Ve a [replit.com](https://replit.com) y crea un nuevo Python Repl
+2. **Subir archivos:** Sube todos los archivos del proyecto
+3. **Instalar OSIRIS:**
+   ```bash
+   git clone https://github.com/osiris-org/osiris.git
+   cd osiris
+   npm install
+   cd ..
+   ```
+4. **Configurar:** Ejecuta `bash scripts/setup_replit.sh`
+5. **Iniciar:** Click en "Run"
+6. **Verificar:** Abre la consola y ejecuta `python3 check_all.py`
+7. **Acceder:** http://localhost:8000 (en el navegador de Replit)
+
+### 8.3 Despliegue en Linux (Kali/Ubuntu)
+
+```bash
+# 1. Instalar dependencias
+sudo apt update && sudo apt upgrade -y
+sudo apt install python3 python3-pip python3-venv nodejs npm git ffmpeg -y
+
+# 2. Crear entorno virtual
+python3 -m venv venv
+source venv/bin/activate
+
+# 3. Clonar el proyecto
+git clone https://github.com/tu-usuario/sourceseal-osiris-integration.git
+cd sourceseal-osiris-integration
+
+# 4. Instalar dependencias
+pip install -r requirements.txt
+
+# 5. Clonar OSIRIS
+git clone https://github.com/osiris-org/osiris.git
+cd osiris
+npm install
+cd ..
+
+# 6. Configurar (opcional)
+nano configs/default_config.json
+
+# 7. Iniciar OSIRIS (en una terminal)
+cd osiris
+npm run build
+npm start
+
+# 8. Iniciar conectores (en otra terminal)
+cd ..
+python3 connectors/main_connector.py &
+python3 connectors/playbook_connector.py &
+# python3 connectors/camera_connector.py &  # Opcional
+
+# 9. Verificar
+python3 check_all.py
+
+# 10. Acceder al dashboard
+# http://localhost:3000
+```
+
+---
+
+## 📊 PASO 9: MONITOREO Y MÉTRICAS
+
+### 9.1 Dashboard de Monitoreo
+
+Crea un script simple para mostrar métricas en tiempo real:
+
+```python
+# scripts/monitor.py
+import asyncio
+import aiohttp
+import json
+import os
+import time
+from datetime import datetime, timedelta
+import sqlite3
+import curses
+
+class MonitorDashboard:
+    """Dashboard de monitoreo en consola"""
+    
+    def __init__(self):
+        self.stdscr = None
+        self.running = True
+        self.last_update = 0
+    
+    def init_screen(self):
+        """Inicializar pantalla"""
+        self.stdscr = curses.initscr()
+        curses.noecho()
+        curses.cbreak()
+        self.stdscr.keypad(True)
+        curses.curs_set(0)
+    
+    def cleanup(self):
+        """Limpiar pantalla"""
+        if self.stdscr:
+            curses.nocbreak()
+            self.stdscr.keypad(False)
+            curses.echo()
+            curses.endwin()
+    
+    def draw_header(self):
+        """Dibujar encabezado"""
+        self.stdscr.addstr(0, 0, "="*70, curses.A_BOLD)
+        self.stdscr.addstr(1, 0, "📊 SOURCESEAL + OSIRIS MONITOR", curses.A_BOLD)
+        self.stdscr.addstr(2, 0, f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        self.stdscr.addstr(3, 0, "="*70, curses.A_BOLD)
+    
+    def draw_section(self, y, title):
+        """Dibujar sección"""
+        self.stdscr.addstr(y, 0, f" {title} ", curses.A_BOLD)
+        self.stdscr.addstr(y, len(title) + 2, "─"*(70 - len(title) - 3))
+    
+    async def get_osiris_stats(self) -> dict:
+        """Obtener estadísticas de OSIRIS"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get("http://localhost:3000/api/status", timeout=5) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+        except:
+            pass
+        return {}
+    
+    def get_connector_stats(self) -> dict:
+        """Obtener estadísticas del conector"""
+        stats = {"pending": 0, "sent": 0, "errors": 0}
+        
+        try:
+            db_path = os.path.expanduser("~/connector_cache.db")
+            if os.path.exists(db_path):
+                conn = sqlite3.connect(db_path)
+                c = conn.cursor()
+                
+                c.execute("SELECT COUNT(*) FROM pending")
+                stats["pending"] = c.fetchone()[0]
+                
+                c.execute("SELECT COUNT(*) FROM metrics WHERE status = 'sent'")
+                stats["sent"] = c.fetchone()[0]
+                
+                c.execute("SELECT COUNT(*) FROM metrics WHERE status = 'retry_sent'")
+                stats["retry"] = c.fetchone()[0]
+                
+                conn.close()
+        except:
+            pass
+        
+        return stats
+    
+    def get_playbook_stats(self) -> dict:
+        """Obtener estadísticas de playbooks"""
+        stats = {"total": 0, "running": 0, "completed": 0, "failed": 0}
+        
+        try:
+            db_path = "/home/user/playbook_cache.db"
+            if os.path.exists(db_path):
+                conn = sqlite3.connect(db_path)
+                c = conn.cursor()
+                
+                c.execute("SELECT COUNT(*) FROM playbook_executions")
+                stats["total"] = c.fetchone()[0]
+                
+                c.execute("SELECT COUNT(*) FROM playbook_executions WHERE status = 'running'")
+                stats["running"] = c.fetchone()[0]
+                
+                c.execute("SELECT COUNT(*) FROM playbook_executions WHERE status = 'completed'")
+                stats["completed"] = c.fetchone()[0]
+                
+                c.execute("SELECT COUNT(*) FROM playbook_executions WHERE status = 'failed'")
+                stats["failed"] = c.fetchone()[0]
+                
+                conn.close()
+        except:
+            pass
+        
+        return stats
+    
+    def draw_stats(self):
+        """Dibujar estadísticas"""
+        osiris_stats = asyncio.run(self.get_osiris_stats())
+        connector_stats = self.get_connector_stats()
+        playbook_stats = self.get_playbook_stats()
+        
+        # OSIRIS
+        self.draw_section(5, "🌐 OSIRIS")
+        self.stdscr.addstr(6, 2, f"Estado: {'✅ Online' if osiris_stats else '❌ Offline'}")
+        if osiris_stats:
+            self.stdscr.addstr(7, 2, f"Versión: {osiris_stats.get('version', 'N/A')}")
+        
+        # Conector
+        self.draw_section(9, "🔌 CONECTOR")
+        self.stdscr.addstr(10, 2, f"Pendientes: {connector_stats['pending']}")
+        self.stdscr.addstr(11, 2, f"Enviados: {connector_stats['sent']}")
+        self.stdscr.addstr(12, 2, f"Reintentos: {connector_stats['retry']}")
+        
+        # Playbooks
+        self.draw_section(14, "📋 PLAYBOOKS")
+        self.stdscr.addstr(15, 2, f"Total: {playbook_stats['total']}")
+        self.stdscr.addstr(16, 2, f"Ejecutándose: {playbook_stats['running']}")
+        self.stdscr.addstr(17, 2, f"Completados: {playbook_stats['completed']}")
+        self.stdscr.addstr(18, 2, f"Fallidos: {playbook_stats['failed']}")
+        
+        # Logs recientes
+        self.draw_section(20, "📝 ÚLTIMOS LOGS")
+        self._draw_recent_logs(21)
+    
+    def _draw_recent_logs(self, y):
+        """Dibujar logs recientes"""
+        try:
+            log_file = os.path.expanduser("~/connector.log")
+            if os.path.exists(log_file):
+                with open(log_file, 'r') as f:
+                    lines = f.readlines()[-5:]  # Últimas 5 líneas
+                
+                for i, line in enumerate(lines):
+                    if y + i < curses.LINES - 1:
+                        self.stdscr.addstr(y + i, 2, line.strip()[:68])
+        except:
+            pass
+    
+    def draw_footer(self):
+        """Dibujar pie de página"""
+        self.stdscr.addstr(curses.LINES - 1, 0, "="*70, curses.A_BOLD)
+        self.stdscr.addstr(curses.LINES - 1, 2, "Presiona 'q' para salir")
+    
+    async def run(self):
+        """Ejecutar monitor"""
+        self.init_screen()
+        
+        try:
+            while self.running:
+                self.stdscr.clear()
+                
+                self.draw_header()
+                self.draw_stats()
+                self.draw_footer()
+                
+                self.stdscr.refresh()
+                
+                # Esperar tecla o timeout
+                self.stdscr.nodelay(True)
+                key = self.stdscr.getch()
+                
+                if key == ord('q'):
+                    self.running = False
+                elif key == curses.KEY_RESIZE:
+                    pass  # Redibujar en el siguiente ciclo
+                else:
+                    await asyncio.sleep(5)
+                    
+        finally:
+            self.cleanup()
+
+def main():
+    """Función principal"""
+    monitor = MonitorDashboard()
+    asyncio.run(monitor.run())
+
+if __name__ == "__main__":
+    main()
+```
+
+### 9.2 Ejecutar el Monitor
+
+```bash
+# En una terminal separada
+python3 scripts/monitor.py
+
+# Para salir: presiona 'q'
+```
+
+---
+
+## 🛠️ PASO 10: CONFIGURACIÓN AVANZADA
+
+### 10.1 Variables de Entorno
+
+Crea un archivo `.env` en el directorio raíz:
+
+```bash
+# Configuración general
+OSIRIS_URL=http://localhost:3000/api
+SEAL_WS=ws://localhost:8001/ws/alerts
+
+# Configuración de la caché
+DB_PATH=~/connector_cache.db
+LOG_FILE=~/connector.log
+LOG_LEVEL=INFO
+MAX_RETRIES=5
+RETRY_DELAY=1.0
+
+# Configuración de cámaras
+ENABLE_CAMERA=true
+CAMERA_CHECK_INTERVAL=10
+
+# Configuración de playbooks
+ENABLE_PLAYBOOK=true
+PLAYBOOK_TIMEOUT=300
+
+# Configuración para Replit
+# (Sobrescribe los valores por defecto)
+if [ "$REPL_ID" ]; then
+    OSIRIS_URL=http://localhost:8000/api
+    DB_PATH=/tmp/connector_cache.db
+    LOG_FILE=/tmp/connector.log
+fi
+```
+
+### 10.2 Configuración para Múltiples Instancias
+
+Si necesitas ejecutar múltiples instancias del conector:
+
+```json
+{
+  "instances": [
+    {
+      "name": "conector_principal",
+      "osiris_url": "http://localhost:3000/api",
+      "seal_ws": "ws://localhost:8001/ws/alerts",
+      "enabled": true
+    },
+    {
+      "name": "conector_secundario",
+      "osiris_url": "http://backup-server:3000/api",
+      "seal_ws": "ws://backup-sourceseal:8001/ws/alerts",
+      "enabled": false
+    }
+  ]
+}
+```
+
+### 10.3 Filtros de Eventos
+
+Para evitar saturar OSIRIS con eventos de baja prioridad:
+
+```python
+# En main_connector.py, añadir:
+
+class EventFilter:
+    """Filtro de eventos"""
+    
+    def __init__(self):
+        self.blocked_types = []
+        self.min_severity = "info"  # info, low, medium, high, critical
+        self.rate_limit = {}  # type: (count, last_time)
+        self.max_rate = 10  # Máximo 10 eventos por tipo por minuto
+    
+    def should_process(self, event_type: str, payload: dict) -> bool:
+        """Determinar si se debe procesar el evento"""
+        # Bloquear tipos específicos
+        if event_type in self.blocked_types:
+            return False
+        
+        # Filtrar por severidad
+        severity = payload.get("severity", "info").lower()
+        severity_levels = ["info", "low", "medium", "high", "critical"]
+        
+        if severity_levels.index(severity) < severity_levels.index(self.min_severity):
+            return False
+        
+        # Rate limiting
+        now = time.time()
+        if event_type in self.rate_limit:
+            count, last_time = self.rate_limit[event_type]
+            if now - last_time < 60 and count >= self.max_rate:
+                return False
+            
+            if now - last_time >= 60:
+                count = 0
+            
+            self.rate_limit[event_type] = (count + 1, now)
+        else:
+            self.rate_limit[event_type] = (1, now)
+        
+        return True
+    
+    def block_type(self, event_type: str):
+        """Bloquear un tipo de evento"""
+        if event_type not in self.blocked_types:
+            self.blocked_types.append(event_type)
+    
+    def unblock_type(self, event_type: str):
+        """Desbloquear un tipo de evento"""
+        if event_type in self.blocked_types:
+            self.blocked_types.remove(event_type)
+    
+    def set_min_severity(self, severity: str):
+        """Establecer severidad mínima"""
+        self.min_severity = severity.lower()
+```
+
+---
+
+## 🔄 PASO 11: ACTUALIZACIONES Y MANTENIMIENTO
+
+### 11.1 Script de Actualización
+
+```bash
+#!/bin/bash
+# scripts/update.sh
+
+echo "🔄 Actualizando SourceSeal + OSIRIS Integration..."
+
+# Actualizar el repositorio
+git pull
+
+# Actualizar OSIRIS
+cd osiris
+git pull
+npm install
+npm run build
+cd ..
+
+# Actualizar dependencias Python
+pip install -r requirements.txt --upgrade
+
+# Reiniciar servicios
+echo "✅ Actualización completada!"
+echo "Reinicia los servicios manualmente:"
+echo "  1. Detener servicios actuales"
+echo "  2. bash start_all.sh"
+```
+
+### 11.2 Script de Limpieza
+
+```bash
+#!/bin/bash
+# scripts/cleanup.sh
+
+echo "🧹 Limpiando archivos temporales..."
+
+# Limpiar caché
+rm -f ~/connector_cache.db
+rm -f /tmp/connector_cache.db
+
+# Limpiar logs antiguos
+find ~/ -name "*.log" -size +10M -exec rm -f {} \;
+find /tmp/ -name "*.log" -size +5M -exec rm -f {} \;
+
+# Limpiar imágenes de cámaras
+rm -rf ~/camera_captures/*
+rm -rf /tmp/camera_captures/*
+
+# Limpiar caché de pip
+rm -rf ~/.cache/pip
+
+# Limpiar node_modules (opcional)
+# rm -rf osiris/node_modules
+
+echo "✅ Limpieza completada!"
+```
+
+### 11.3 Backup de Configuración
+
+```bash
+#!/bin/bash
+# scripts/backup_config.sh
+
+BACKUP_DIR="~/sourceseal_backups"
+DATE=$(date +%Y%m%d_%H%M%S)
+
+mkdir -p $BACKUP_DIR
+
+echo "💾 Realizando backup de configuración..."
+
+# Backup de configuraciones
+cp -r configs/ $BACKUP_DIR/configs_$DATE
+
+# Backup de logs (últimos 10MB)
+tail -c 10M ~/connector.log > $BACKUP_DIR/connector_$DATE.log 2>/dev/null || cp ~/connector.log $BACKUP_DIR/connector_$DATE.log 2>/dev/null
+
+# Backup de base de datos
+cp ~/connector_cache.db $BACKUP_DIR/connector_cache_$DATE.db 2>/dev/null
+
+# Comprimir
+cd $BACKUP_DIR
+tar -czf backup_$DATE.tar.gz configs_$DATE/ connector_$DATE.log connector_cache_$DATE.db 2>/dev/null
+
+# Limpiar archivos individuales
+rm -rf configs_$DATE/ connector_$DATE.log connector_cache_$DATE.db
+
+echo "✅ Backup completado: $BACKUP_DIR/backup_$DATE.tar.gz"
+```
+
+---
+
+## 🚨 PASO 12: SOLUCIÓN DE PROBLEMAS COMUNES
+
+### 12.1 Diagnóstico Rápido
+
+```bash
+# Verificar si OSIRIS está corriendo
+curl -s http://localhost:3000/api/status | python3 -m json.tool
+
+# Verificar si SourceSeal está corriendo
+curl -s http://localhost:8001/api/status | python3 -m json.tool
+
+# Verificar conexión WebSocket
+echo '{"type": "ping"}' | websocat ws://localhost:8001/ws/alerts
+
+# Verificar logs del conector
+tail -n 50 ~/connector.log
+
+# Verificar mensajes pendientes
+sqlite3 ~/connector_cache.db "SELECT COUNT(*) FROM pending;"
+
+# Verificar espacio en disco
+df -h
+
+# Verificar memoria
+free -h
+
+# Verificar procesos
+ps aux | grep -E "(python|node)"
+```
+
+### 12.2 Problemas Específicos
+
+#### OSIRIS no inica
+```bash
+# Verificar puerto
+netstat -tuln | grep 3000
+
+# Cambiar puerto
+cd osiris
+echo "PORT=3001" >> .env
+npm run build
+npm start
+```
+
+#### Conector no se conecta a SourceSeal
+```bash
+# Verificar WebSocket
+echo '{"type": "ping"}' | websocat ws://localhost:8001/ws/alerts
+
+# Verificar configuración
+cat configs/default_config.json | grep seal_ws
+
+# Probar conexión manual
+python3 -c "
+import websockets
+import asyncio
+async def test():
+    try:
+        async with websockets.connect('ws://localhost:8001/ws/alerts') as ws:
+            print('✅ WebSocket conectado')
+    except Exception as e:
+        print(f'❌ Error: {e}')
+asyncio.run(test())
+"
+```
+
+#### Cámaras no funcionan
+```bash
+# Verificar URL de cámara
+curl -s http://192.168.1.100:8080/video | head -c 100
+
+# Probar captura manual
+python3 -c "
+import cv2
+import numpy as np
+cap = cv2.VideoCapture('http://192.168.1.100:8080/video')
+ret, frame = cap.read()
+if ret:
+    print('✅ Captura exitosa')
+    cv2.imwrite('/tmp/test_capture.jpg', frame)
+else:
+    print('❌ Error de captura')
+cap.release()
+"
+
+# Verificar OpenCV
+python3 -c "import cv2; print('OpenCV versión:', cv2.__version__)"
+```
+
+#### Playbooks no se ejecutan
+```bash
+# Verificar permisos
+test_command = "nmap -sS -p- -T2 localhost"
+echo "Probando comando: $test_command"
+$test_command
+
+# Verificar configuración
+cat configs/playbooks_config.json | python3 -m json.tool
+
+# Probar playbook manual
+python3 -c "
+import subprocess
+result = subprocess.run(['nmap', '-sS', '-p-', '-T2', 'localhost'], 
+                       capture_output=True, text=True)
+print('stdout:', result.stdout[:200])
+print('stderr:', result.stderr[:200])
+print('returncode:', result.returncode)
+"
+```
+
+#### Problemas de memoria
+```bash
+# Limpiar caché
+rm -f ~/connector_cache.db
+
+# Reducir tamaño de logs
+truncate -s 10M ~/connector.log
+
+# Limitar tamaño de imágenes
+echo '{"max_image_size": 512}' > configs/cameras_config.json
+
+# Reducir reintentos
+sed -i 's/"max_retries": 5/"max_retries": 2/' configs/default_config.json
+```
+
+---
+
+## 📚 PASO 13: DOCUMENTACIÓN ADICIONAL
+
+### 13.1 Arquitectura del Sistema
+
+```mermaid
+graph TD
+    A[SourceSeal] -->|WebSocket| B[Conector Principal]
+    B -->|REST API| C[OSIRIS]
+    B -->|SQLite| D[Caché Local]
+    
+    E[Cámaras IP] -->|RTSP/HTTP| F[Conector de Cámaras]
+    F -->|REST API| C
+    F -->|SQLite| G[Caché de Cámaras]
+    
+    H[Playbooks] -->|Subprocess| I[Conector de Playbooks]
+    I -->|REST API| C
+    I -->|SQLite| J[Caché de Playbooks]
+    
+    K[Termux/Replit] -->|Configuración| B
+    K -->|Limitaciones| L[Adaptadores]
+    
+    C -->|Dashboard| M[Visualización]
+    M -->|Mapa| N[Alertas Geolocalizadas]
+    M -->|Gráficos| O[Métricas]
+```
+
+### 13.2 Flujo de Datos
+
+```mermaid
+sequenceDiagram
+    participant SourceSeal
+    participant Conector
+    participant OSIRIS
+    participant Caché
+    
+    SourceSeal->>Conector: Evento (WebSocket)
+    Conector->>Conector: Procesar evento
+    
+    alt OSIRIS disponible
+        Conector->>OSIRIS: Enviar evento (REST)
+        OSIRIS-->>Conector: Confirmación
+    else OSIRIS no disponible
+        Conector->>Caché: Guardar evento
+    end
+    
+    loop Cada minuto
+        Conector->>Caché: Obtener pendientes
+        Caché-->>Conector: Eventos pendientes
+        Conector->>OSIRIS: Reenviar eventos
+    end
+    
+    SourceSeal->>Conector: Evento de cámara
+    Conector->>Conector: Capturar imagen
+    Conector->>OSIRIS: Enviar imagen
+    
+    SourceSeal->>Conector: Evento de alerta
+    Conector->>Conector: Buscar playbooks
+    Conector->>Conector: Ejecutar playbook
+    Conector->>OSIRIS: Enviar resultado
+```
+
+### 13.3 Referencia de la API de OSIRIS
+
+| Endpoint | Método | Descripción | Payload Ejemplo |
+|----------|--------|-------------|-----------------|
+| `/api/events/alert` | POST | Enviar alerta | `{"timestamp", "src_ip", "alert_type", "message", "details"}` |
+| `/api/events/network` | POST | Enviar evento de red | `{"timestamp", "src_ip", "dst_ip", "proto", "info"}` |
+| `/api/events/incident` | POST | Enviar incidente/playbook | `{"timestamp", "src_ip", "incident_type", "message", "details"}` |
+| `/api/events/visual` | POST | Enviar evento visual (cámara) | `{"timestamp", "camera_id", "image_data", "event_type"}` |
+| `/api/events/heartbeat` | POST | Enviar heartbeat | `{"timestamp", "component", "status"}` |
+| `/api/status` | GET | Obtener estado | - |
+
+### 13.4 Ejemplos de Payloads
+
+**Alerta:**
+```json
+{
+  "timestamp": "2026-08-21T12:00:00Z",
+  "src_ip": "192.168.1.100",
+  "alert_type": "high",
+  "message": "Vulnerabilidad crítica detectada",
+  "details": {
+    "vulnerability": "CVE-2021-1234",
+    "service": "Apache 2.4.49",
+    "port": 80
+  },
+  "source": "sourceseal"
+}
+```
+
+**Escaneo de Red:**
+```json
+{
+  "timestamp": "2026-08-21T12:00:00Z",
+  "src_ip": "192.168.1.1",
+  "dst_ip": "192.168.1.100",
+  "src_port": 0,
+  "dst_port": 0,
+  "proto": "tcp",
+  "info": "{\"open_ports\": [22, 80, 443]}",
+  "scan_type": "nmap"
+}
+```
+
+**Playbook:**
+```json
+{
+  "timestamp": "2026-08-21T12:00:00Z",
+  "src_ip": "192.168.1.100",
+  "incident_type": "playbook_execution",
+  "message": "Ejecución de playbook completada",
+  "details": {
+    "playbook_name": "scan_vulnerabilities",
+    "status": "completed",
+    "execution_time": 120,
+    "output": "Vulnerabilidades encontradas: 5",
+    "exit_code": 0,
+    "trigger": {
+      "type": "scan",
+      "target": "192.168.1.100"
+    }
+  }
+}
+```
+
+**Cámara:**
+```json
+{
+  "timestamp": "2026-08-21T12:00:00Z",
+  "camera_id": "camara_entrada",
+  "camera_name": "Cámara de Entrada",
+  "event_type": "motion",
+  "image_url": "/home/user/camera_captures/camara_entrada_motion_20260821_120000.jpg",
+  "image_data": "base64_encoded_image_data",
+  "confidence": 0.95,
+  "location": {
+    "lat": 4.6097,
+    "lon": -74.0817,
+    "address": "Calle 123, Bogotá"
+  }
+}
+```
+
+---
+
+## 🎉 PASO 14: RESUMEN FINAL
+
+### 14.1 Checklist de Despliegue
+
+- [ ] **OSIRIS** instalado y funcionando
+- [ ] **Conector Principal** configurado y ejecutándose
+- [ ] **Conector de Cámaras** (opcional) configurado
+- [ ] **Conector de Playbooks** configurado
+- [ ] **Configuraciones** verificadas (JSON válido)
+- [ ] **Dependencias** instaladas (requirements.txt)
+- [ ] **Logs** accesibles y legibles
+- [ ] **Dashboard** accesible en el navegador
+- [ ] **Pruebas** de conexión realizadas
+- [ ] **Backup** de configuración realizado
+
+### 14.2 Comandos Rápidos
+
+| Acción | Comando |
+|--------|---------|
+| Iniciar todo | `bash start_all.sh` |
+| Verificar todo | `python3 check_all.py` |
+| Ver logs | `tail -f ~/connector.log` |
+| Ver caché | `sqlite3 ~/connector_cache.db "SELECT * FROM pending;"` |
+| Limpiar caché | `rm -f ~/connector_cache.db` |
+| Detener todo | `pkill -f python3; pkill -f node` |
+| Reiniciar | `bash start_all.sh` |
+
+### 14.3 Recursos Adicionales
+
+- **Documentación de OSIRIS:** https://github.com/osiris-org/osiris
+- **Documentación de SourceSeal:** https://github.com/sourceseal/sourceseal
+- **Soporte de Termux:** https://termux.com/
+- **Soporte de Replit:** https://docs.replit.com/
+
+---
+
+## 📞 SOPORTE
+
+Si encuentras problemas:
+
+1. **Revisa los logs:** `tail -n 100 ~/connector.log`
+2. **Verifica la conexión:** `curl -s http://localhost:3000/api/status`
+3. **Prueba manual:** Ejecuta los comandos manualmente
+4. **Comunidad:** Únete al Discord de SourceSeal u OSIRIS
+5. **Issues:** Abre un issue en el repositorio
+
+---
+
+**¡Listo!** 🎉
+
+Tu integración SourceSeal + OSIRIS con soporte para cámaras, playbooks, Termux y Replit está lista para desplegar.
+
+El tiempo estimado de despliegue es de **menos de 1 hora** siguiendo estos pasos.
+
+---

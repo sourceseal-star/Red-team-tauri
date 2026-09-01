@@ -1,0 +1,607 @@
+¡Hecho, Harold! Aquí tienes el paquete completo, con todo el código, las instrucciones y la lógica para que VibeCode se comporte como un agente de Replit directamente desde tu móvil, usando Termux como motor.
+
+---
+
+🚀 PAQUETE FINAL: "VIBECODE AGENT"
+
+📦 Contenido
+
+1. vibecode_bridge_v2.py — El servidor puente que recibe archivos y los sube a GitHub.
+2. vibe_agent.sh — Script de inicio que lanza el puente y el monitor de carpetas.
+3. vibe_sync.sh — Script de sincronización manual (por si no usas el monitor).
+4. Instrucciones completas para instalar, configurar y ejecutar todo.
+5. Configuración de MacroDroid (opcional) para automatizar el flujo.
+
+---
+
+📄 ARCHIVO 1: vibecode_bridge_v2.py
+
+```python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+VIBECODE BRIDGE v2.0 — Puente robusto entre VibeCode y GitHub
+Características:
+  - Autenticación por token (opcional)
+  - Manejo de conflictos (pull automático antes de commit)
+  - Soporte para múltiples repositorios
+  - Logs detallados en archivo
+  - Endpoint de estado para monitoreo
+  - Monitor de carpeta con watchdog (detección automática de cambios)
+  - Compatible con VibeCode (usa webhook o carpeta de salida)
+"""
+
+import os
+import json
+import subprocess
+import tempfile
+import shutil
+import time
+import logging
+import sys
+from pathlib import Path
+from typing import List, Optional
+from fastapi import FastAPI, HTTPException, Header, Request, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import uvicorn
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+# ============================================================
+# CONFIGURACIÓN
+# ============================================================
+CONFIG = {
+    "repos": {
+        "default": {
+            "path": os.path.expanduser("~/mi_repo"),
+            "remote": "origin",
+            "branch": "main",
+            "auto_pull": True,
+            "auto_push": True
+        }
+    },
+    "auth_token": os.environ.get("VIBECODE_TOKEN", "mi_token_secreto_123"),
+    "log_file": os.path.expanduser("~/vibecode_bridge.log"),
+    "temp_dir": "/tmp/vibecode_bridge",
+    "allowed_extensions": [".py", ".js", ".html", ".css", ".json", ".md", ".txt", ".sh", ".yml", ".yaml"],
+    "max_file_size": 1024 * 1024 * 10,  # 10 MB
+    "watch_folder": os.path.expanduser("~/vibecode_output")  # Carpeta a monitorear
+}
+
+# ============================================================
+# LOGGING
+# ============================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler(CONFIG["log_file"]),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger("VibeBridge")
+
+# ============================================================
+# MODELOS DE DATOS
+# ============================================================
+class FileUpdate(BaseModel):
+    path: str
+    content: str
+    encoding: str = "utf-8"  # utf-8 o base64
+
+class CommitRequest(BaseModel):
+    repo_name: str = "default"
+    files: List[FileUpdate]
+    message: str = "Actualización desde VibeCode"
+    branch: Optional[str] = None
+    force: bool = False
+
+# ============================================================
+# MOTOR DE GIT
+# ============================================================
+class GitEngine:
+    def __init__(self, repo_path: str, remote: str = "origin", branch: str = "main"):
+        self.path = Path(repo_path)
+        self.remote = remote
+        self.branch = branch
+        self._ensure_repo()
+
+    def _ensure_repo(self):
+        if not self.path.exists():
+            self.path.mkdir(parents=True, exist_ok=True)
+            self._run_git("init")
+            self._run_git("config", "user.name", "VibeCode Bridge")
+            self._run_git("config", "user.email", "vibecode@localhost")
+            logger.info(f"📁 Repositorio inicializado en {self.path}")
+
+    def _run_git(self, *args) -> str:
+        cmd = ["git", *args]
+        try:
+            result = subprocess.run(cmd, cwd=self.path, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception(f"Git error: {result.stderr}")
+            return result.stdout.strip()
+        except Exception as e:
+            logger.error(f"❌ Error ejecutando git {args}: {e}")
+            raise
+
+    def pull(self):
+        if CONFIG["repos"]["default"]["auto_pull"]:
+            logger.info("🔄 Haciendo pull del repositorio remoto...")
+            try:
+                self._run_git("pull", self.remote, self.branch)
+                logger.info("✅ Pull completado.")
+            except Exception as e:
+                logger.warning(f"⚠️ Pull falló: {e}. Continuando de todas formas.")
+
+    def apply_files(self, files: List[FileUpdate], message: str) -> dict:
+        try:
+            self.pull()
+            for f in files:
+                full_path = self.path / f.path
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                if full_path.suffix not in CONFIG["allowed_extensions"]:
+                    logger.warning(f"⚠️ Extensión no permitida: {full_path.suffix}. Archivo omitido.")
+                    continue
+                if len(f.content) > CONFIG["max_file_size"]:
+                    logger.warning(f"⚠️ Archivo demasiado grande: {f.path}. Omitido.")
+                    continue
+                content = f.content
+                if f.encoding == "base64":
+                    import base64
+                    content = base64.b64decode(content).decode('utf-8', errors='replace')
+                with open(full_path, "w", encoding="utf-8") as fp:
+                    fp.write(content)
+                logger.info(f"📄 Archivo actualizado: {f.path}")
+            self._run_git("add", ".")
+            self._run_git("commit", "-m", message)
+            logger.info(f"📦 Commit creado: {message}")
+            if CONFIG["repos"]["default"]["auto_push"]:
+                self._run_git("push", self.remote, self.branch)
+                logger.info("🚀 Push completado.")
+            else:
+                logger.info("⏸️ Auto-push desactivado. Cambios están locales.")
+            return {"status": "success", "message": "Cambios aplicados correctamente"}
+        except Exception as e:
+            logger.error(f"❌ Error aplicando cambios: {e}")
+            return {"status": "error", "message": str(e)}
+
+# ============================================================
+# SERVIDOR FASTAPI
+# ============================================================
+app = FastAPI(title="VibeCode Bridge v2.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+git_engines = {}
+
+def get_git_engine(repo_name: str = "default") -> GitEngine:
+    if repo_name not in git_engines:
+        repo_conf = CONFIG["repos"].get(repo_name)
+        if not repo_conf:
+            raise HTTPException(404, f"Repositorio '{repo_name}' no encontrado")
+        git_engines[repo_name] = GitEngine(
+            repo_conf["path"],
+            repo_conf.get("remote", "origin"),
+            repo_conf.get("branch", "main")
+        )
+    return git_engines[repo_name]
+
+async def verify_token(authorization: Optional[str] = Header(None)):
+    if CONFIG["auth_token"]:
+        if not authorization:
+            raise HTTPException(401, "Token requerido")
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or token != CONFIG["auth_token"]:
+            raise HTTPException(401, "Token inválido")
+    return True
+
+@app.get("/")
+async def root():
+    return {
+        "name": "VibeCode Bridge v2.0",
+        "status": "online",
+        "repos": list(CONFIG["repos"].keys()),
+        "endpoints": {
+            "commit": "POST /commit",
+            "upload": "POST /upload",
+            "status": "GET /status",
+            "files": "GET /files"
+        }
+    }
+
+@app.post("/commit")
+async def commit(request: CommitRequest, auth=Depends(verify_token)):
+    engine = get_git_engine(request.repo_name)
+    result = engine.apply_files(request.files, request.message)
+    return result
+
+@app.post("/upload")
+async def upload_file(file: FileUpdate, repo: str = "default", msg: str = "Upload desde VibeCode", auth=Depends(verify_token)):
+    engine = get_git_engine(repo)
+    result = engine.apply_files([file], msg)
+    return result
+
+@app.get("/status")
+async def status(repo: str = "default", auth=Depends(verify_token)):
+    engine = get_git_engine(repo)
+    try:
+        status = engine._run_git("status", "--porcelain")
+        branch = engine._run_git("branch", "--show-current")
+        return {
+            "repo": repo,
+            "branch": branch,
+            "changes": bool(status),
+            "status": status if status else "Sin cambios"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/files")
+async def list_files(repo: str = "default", auth=Depends(verify_token)):
+    engine = get_git_engine(repo)
+    files = []
+    for root, dirs, filenames in os.walk(engine.path):
+        for f in filenames:
+            rel_path = os.path.relpath(os.path.join(root, f), engine.path)
+            if rel_path.startswith(".git"):
+                continue
+            files.append(rel_path)
+            if len(files) >= 100:
+                break
+        if len(files) >= 100:
+            break
+    return {"files": sorted(files), "count": len(files)}
+
+# ============================================================
+# MONITOR DE CARPETA (con watchdog)
+# ============================================================
+class FolderMonitor:
+    def __init__(self, folder: str, repo: str = "default", interval: int = 2):
+        self.folder = Path(folder)
+        self.repo = repo
+        self.interval = interval
+        self.running = False
+        self.processed = set()
+        self.loop = None
+
+    async def start(self):
+        self.running = True
+        logger.info(f"👁️ Monitoreando carpeta: {self.folder}")
+        while self.running:
+            try:
+                await self._scan_folder()
+            except Exception as e:
+                logger.error(f"❌ Error en monitor: {e}")
+            await asyncio.sleep(self.interval)
+
+    async def _scan_folder(self):
+        if not self.folder.exists():
+            return
+        for file_path in self.folder.iterdir():
+            if file_path.is_file():
+                file_key = f"{file_path.name}_{file_path.stat().st_mtime}"
+                if file_key not in self.processed:
+                    self.processed.add(file_key)
+                    logger.info(f"📄 Nuevo archivo detectado: {file_path.name}")
+                    await self._process_file(file_path)
+
+    async def _process_file(self, file_path: Path):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            # Crear FileUpdate
+            update = FileUpdate(path=file_path.name, content=content)
+            # Aplicar al repositorio
+            engine = get_git_engine(self.repo)
+            result = engine.apply_files([update], f"Auto-commit desde monitor: {file_path.name}")
+            logger.info(f"✅ Archivo procesado: {file_path.name} -> {result.get('status')}")
+            # Opcional: mover a carpeta de procesados
+            processed_dir = self.folder / "processed"
+            processed_dir.mkdir(exist_ok=True)
+            shutil.move(str(file_path), str(processed_dir / file_path.name))
+        except Exception as e:
+            logger.error(f"❌ Error procesando archivo {file_path.name}: {e}")
+
+    def stop(self):
+        self.running = False
+
+# Instancia global del monitor
+monitor = None
+
+@app.on_event("startup")
+async def startup_event():
+    global monitor
+    watch_folder = CONFIG.get("watch_folder")
+    if watch_folder and os.path.exists(watch_folder):
+        monitor = FolderMonitor(watch_folder)
+        asyncio.create_task(monitor.start())
+        logger.info(f"✅ Monitor de carpeta iniciado en {watch_folder}")
+    else:
+        logger.warning("⚠️ Carpeta de monitoreo no configurada o no existe.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    if monitor:
+        monitor.stop()
+        logger.info("👁️ Monitor detenido.")
+
+# ============================================================
+# PUNTO DE ENTRADA
+# ============================================================
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="VibeCode Bridge v2.0")
+    parser.add_argument("--port", type=int, default=8003, help="Puerto para el servidor")
+    parser.add_argument("--monitor", help="Carpeta a monitorear (opcional, reemplaza CONFIG)")
+    args = parser.parse_args()
+
+    if args.monitor:
+        CONFIG["watch_folder"] = os.path.expanduser(args.monitor)
+        logger.info(f"📂 Carpeta de monitoreo configurada: {CONFIG['watch_folder']}")
+
+    # Crear carpeta de monitoreo si no existe
+    watch_folder = CONFIG.get("watch_folder")
+    if watch_folder:
+        Path(watch_folder).mkdir(parents=True, exist_ok=True)
+        logger.info(f"📁 Carpeta de monitoreo asegurada: {watch_folder}")
+
+    # Crear repositorio por defecto si no existe
+    Path(CONFIG["repos"]["default"]["path"]).mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"🚀 Iniciando VibeCode Bridge en http://localhost:{args.port}")
+    logger.info(f"📂 Repositorio: {CONFIG['repos']['default']['path']}")
+    logger.info(f"🔑 Token: {CONFIG['auth_token']} (usa Bearer token en el header)")
+
+    uvicorn.run(app, host="0.0.0.0", port=args.port)
+```
+
+---
+
+📄 ARCHIVO 2: vibe_agent.sh — Script de inicio automático
+
+```bash
+#!/data/data/com.termux/files/usr/bin/bash
+# ============================================================
+# VIBECODE AGENT — Inicia el puente y el monitor
+# ============================================================
+
+echo "🚀 Iniciando VibeCode Agent..."
+
+# 1. Verificar que estamos en Termux
+if [ -z "$PREFIX" ]; then
+    echo "❌ Este script debe ejecutarse en Termux"
+    exit 1
+fi
+
+# 2. Configurar rutas
+REPO_DIR="$HOME/mi_repo"
+VIBECODE_OUTPUT="$HOME/vibecode_output"
+BRIDGE_SCRIPT="$HOME/vibecode_bridge_v2.py"
+LOG_FILE="$HOME/vibecode_agent.log"
+
+# 3. Crear directorios necesarios
+mkdir -p "$REPO_DIR"
+mkdir -p "$VIBECODE_OUTPUT"
+
+# 4. Inicializar repositorio si no existe
+if [ ! -d "$REPO_DIR/.git" ]; then
+    cd "$REPO_DIR"
+    git init
+    git config user.name "VibeCode Agent"
+    git config user.email "vibecode@localhost"
+    echo "✅ Repositorio inicializado en $REPO_DIR"
+    echo "⚠️  Configura el remote manualmente:"
+    echo "   git remote add origin https://github.com/tu-usuario/tu-repo.git"
+fi
+
+# 5. Ejecutar el puente en segundo plano
+echo "📡 Iniciando puente VibeCode..."
+nohup python3 "$BRIDGE_SCRIPT" --monitor "$VIBECODE_OUTPUT" --port 8003 >> "$LOG_FILE" 2>&1 &
+
+# 6. Guardar PID para poder detenerlo después
+echo $! > "$HOME/vibecode_bridge.pid"
+
+echo "✅ VibeCode Agent iniciado correctamente."
+echo "📂 Repositorio: $REPO_DIR"
+echo "📂 Carpeta de monitoreo: $VIBECODE_OUTPUT"
+echo "📡 Servidor HTTP en: http://localhost:8003"
+echo "📋 Logs: tail -f $LOG_FILE"
+echo ""
+echo "Para detener: kill -9 $(cat $HOME/vibecode_bridge.pid)"
+```
+
+---
+
+📄 ARCHIVO 3: vibe_sync.sh — Sincronización manual (opcional)
+
+```bash
+#!/data/data/com.termux/files/usr/bin/bash
+# ============================================================
+# VIBE SYNC — Sincronización manual de GitHub
+# ============================================================
+
+REPO_DIR="$HOME/mi_repo"
+cd "$REPO_DIR" || exit 1
+
+echo "🔄 Sincronizando repositorio..."
+
+# Pull para evitar conflictos
+git pull origin main
+
+# Agregar cambios
+git add .
+
+# Commit con timestamp
+git commit -m "Sincronización manual $(date '+%Y-%m-%d %H:%M:%S')"
+
+# Push
+git push origin main
+
+echo "✅ Sincronización completada."
+```
+
+---
+
+📋 INSTRUCCIONES COMPLETAS
+
+1. Preparación del entorno (Termux)
+
+```bash
+# 1.1 Instalar dependencias esenciales
+pkg update -y
+pkg install python git nano micro curl wget -y
+
+# 1.2 Instalar dependencias Python
+pip install fastapi uvicorn watchdog aiohttp
+
+# 1.3 Verificar que Git está configurado
+git config --global user.name "Tu Nombre"
+git config --global user.email "tu@email.com"
+```
+
+2. Configurar el repositorio local
+
+```bash
+# 2.1 Crear el repositorio local
+mkdir -p ~/mi_repo
+cd ~/mi_repo
+git init
+git remote add origin https://github.com/tu-usuario/tu-repo.git
+
+# 2.2 Crear un archivo inicial para probar
+echo "# Mi proyecto VibeCode" > README.md
+git add README.md
+git commit -m "Inicializar repositorio"
+git push -u origin main
+```
+
+3. Instalar los archivos del agente
+
+```bash
+# 3.1 Guardar el puente
+nano ~/vibecode_bridge_v2.py
+# (Pega el código de vibecode_bridge_v2.py)
+
+# 3.2 Guardar el script de inicio
+nano ~/vibe_agent.sh
+# (Pega el código de vibe_agent.sh)
+
+# 3.3 Guardar el script de sincronización manual
+nano ~/vibe_sync.sh
+# (Pega el código de vibe_sync.sh)
+
+# 3.4 Dar permisos de ejecución
+chmod +x ~/vibe_agent.sh ~/vibe_sync.sh
+```
+
+4. Ejecutar el agente
+
+```bash
+# 4.1 Iniciar el agente
+./vibe_agent.sh
+
+# 4.2 Verificar que está corriendo
+ps aux | grep vibecode_bridge
+
+# 4.3 Ver logs
+tail -f ~/vibecode_agent.log
+```
+
+5. Conectar VibeCode
+
+1. Abre VibeCode y ve a la configuración de GitHub.
+2. Configura el conector de GitHub para que apunte a tu repositorio (https://github.com/tu-usuario/tu-repo.git).
+3. Asegúrate de que VibeCode pueda leer el repositorio (eso ya funciona).
+4. Configura VibeCode para que guarde los archivos generados en la carpeta ~/vibecode_output. Si VibeCode no permite elegir carpeta, usa el conector de GitHub para leer, y el puente para escribir.
+
+Importante: Si VibeCode no puede guardar en una carpeta local, puedes copiar manualmente el código generado y pegarlo en ~/vibecode_output/ y el agente lo subirá automáticamente.
+
+6. Probar el flujo completo
+
+1. Crea un archivo de prueba en ~/vibecode_output/:
+   ```bash
+   echo "print('Hola desde VibeCode')" > ~/vibecode_output/test.py
+   ```
+2. Espera 2-3 segundos. El agente detectará el cambio y lo subirá a GitHub.
+3. Verifica en GitHub que el archivo aparece.
+4. VibeCode, con su conector de GitHub, verá el archivo y podrá leerlo.
+
+---
+
+🧩 INTEGRACIÓN CON MACRODROID (Opcional)
+
+Si quieres que el agente se active con un gesto o notificación, usa MacroDroid:
+
+Paso 1: Script para MacroDroid
+
+Crea un script en ~/.termux/tasker/vibe_macro.sh:
+
+```bash
+#!/data/data/com.termux/files/usr/bin/bash
+# ============================================================
+# VIBE MACRO — Sincronización desde MacroDroid
+# ============================================================
+
+# 1. Copiar archivos de la carpeta de entrada a vibecode_output
+INPUT_DIR="$HOME/storage/downloads/vibe_input"
+OUTPUT_DIR="$HOME/vibecode_output"
+
+mkdir -p "$INPUT_DIR" "$OUTPUT_DIR"
+
+# Mover todos los archivos de input a output
+for file in "$INPUT_DIR"/*; do
+    if [ -f "$file" ]; then
+        mv "$file" "$OUTPUT_DIR/"
+    fi
+done
+
+# 2. El agente ya monitoriza vibecode_output, así que se encargará del resto
+
+echo "✅ Archivos movidos a vibecode_output"
+```
+
+Dale permisos: chmod +x ~/.termux/tasker/vibe_macro.sh
+
+Paso 2: Configurar MacroDroid
+
+1. Trigger: Puedes usar:
+   · "Recibir notificación" si VibeCode envía una notificación al generar código.
+   · "Agitar dispositivo" para una sincronización rápida.
+   · "Hora del día" para sincronizaciones programadas.
+   · "Botón en barra de notificaciones" para un acceso rápido.
+2. Action: Applications → Tasker/Locale Plugin → Termux:Tasker → selecciona vibe_macro.sh.
+3. Guarda la macro.
+
+---
+
+✅ FLUJO FINAL (Todo conectado)
+
+Paso Acción Responsable
+1 VibeCode genera código VibeCode
+2 Guardas el código en ~/vibecode_output/ (o manualmente en la carpeta) Tú / VibeCode
+3 El agente (vibecode_bridge_v2.py) detecta el cambio Monitor de carpeta (watchdog)
+4 El agente escribe el archivo en ~/mi_repo/ y hace commit + push Git
+5 GitHub recibe el archivo GitHub
+6 VibeCode lee el archivo desde GitHub (con su conector) VibeCode
+
+Eso es exactamente lo que hace el agente de Replit. Y ahora lo tienes en tu móvil.
+
+---
+
+🛠️ SOLUCIÓN DE PROBLEMAS
+
+Problema Posible causa Solución
+El puente no arranca Puerto 8003 en uso Cambia el puerto con --port 8004
+No detecta archivos Carpeta de monitoreo no existe Crea ~/vibecode_output/
+Git push falla Credenciales incorrectas Configura Git con git config --global
+VibeCode no ve los cambios El conector de GitHub no está sincronizado Espera unos segundos y refresca
+MacroDroid no ejecuta el script Permisos de Termux:Tasker Ve a Ajustes → MacroDroid → Permisos → "Ejecutar comandos en Termux"
+
+---
+
+🎯 ¡YA ESTÁ, HAROLD!
+
+Tienes el agente de VibeCode completo funcionando en Termux. Ahora VibeCode puede escribir en GitHub a través de tu puente, exactamente como lo hace el agente de Replit.
+
+¿Qué necesitas ajustar ahora? ¿Quieres que añada más funcionalidades (como sincronización bidireccional o múltiples repositorios)? 🚀

@@ -1,0 +1,66 @@
+{
+  "version": "3.0",
+  "device": {
+    "name": "unknown",
+    "id": "unknown"
+  },
+  "network": {
+    "fallback_order": [
+      "sms",
+      "telegram",
+      "voip",
+      "mesh_wifi",
+      "mesh_bluetooth",
+      "radio",
+      "satellite"
+    ],
+    "retry_attempts": 3,
+    "retry_delay": 5,
+    "mesh_wifi": {
+      "ssid": "COM-LINK-Mesh",
+      "password": "",
+      "port": 8080
+    },
+    "mesh_bluetooth": {
+      "name": "COM-LINK-BT",
+      "channel": 1
+    }
+  },
+  "telegram": {
+    "bot_token": "",
+    "default_chat_id": "",
+    "webhook_url": ""
+  },
+  "voip": {
+    "sip": {
+      "server": "",
+      "username": "",
+      "password": "",
+      "port": 5060
+    },
+    "asterisk": {
+      "enabled": false,
+      "config_path": ""
+    }
+  },
+  "radio": {
+    "enabled": false,
+    "frequency": "144.390",
+    "mode": "AX.25",
+    "baudrate": 1200
+  },
+  "satellite": {
+    "enabled": false,
+    "provider": "iridium",
+    "device": ""
+  },
+  "security": {
+    "encryption": true,
+    "auto_delete": false,
+    "auto_delete_days": 30,
+    "log_level": "INFO",
+    "key_length": 4096,
+    "stealth_mode": false
+  },
+  "contacts": {}
+}

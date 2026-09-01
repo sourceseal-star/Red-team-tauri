@@ -15,9 +15,10 @@ def main():
 
     # 1. Existe el archivo?
     if not os.path.exists(ENC_FILE):
-        print(f"ERROR: {ENC_FILE} NO EXISTE")
-        print("Necesitas hacer: git pull origin main")
-        sys.exit(1)
+        print(f"ADVERTENCIA: {ENC_FILE} NO EXISTE")
+        print("El manual cifrado no forma parte de esta copia; se puede consultar MANUAL_OPERATIVO.md.")
+        print("Diagnóstico del manual cifrado omitido.")
+        return 0
 
     # 2. Tamano
     size = os.path.getsize(ENC_FILE)

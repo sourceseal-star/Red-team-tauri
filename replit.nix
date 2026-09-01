@@ -1,5 +1,6 @@
 { pkgs }: {
   deps = [
+    pkgs.sqlite
     pkgs.graalvmPackages.graalnodejs
     pkgs.nmap
     pkgs.python312Packages.pip

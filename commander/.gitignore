@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+data/keys/
+data/queue/
+data/logs/*.log
+*.db-journal
+*.db-shm
+*.db-wal

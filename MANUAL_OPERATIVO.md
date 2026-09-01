@@ -1,9 +1,13 @@
 # 🛡️ MANUAL OPERATIVO — Red-Team-Tauri / SourceSeal
 ## SourceSeal Console v6.0 — ARTO + LEVIATHAN UNIFIED
 
+> **Última actualización:** 2026-08-30
 > **Backend Python/FastAPI + frontend React/Vite.**
 > El arranque unificado sirve API y frontend real en el puerto 8001.
 > Los escaneos deben ejecutarse únicamente dentro de un alcance autorizado.
+> COM-LINK tiene una matriz de preparación independiente; consulta
+> [`COMLINK_OPERATIVO.md`](COMLINK_OPERATIVO.md) antes de intentar una
+> comunicación externa.
 
 ---
 
@@ -87,20 +91,30 @@ La primera ejecución puede instalar dependencias Python y compilar el frontend.
 
 ## 3. ARRANQUE
 
-### Comando único — recomendado
+### Ejecutar la copia local — recomendado
 
 ```bash
-bash arrancar.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
-`arrancar.sh` hace todo en 7 pasos:
-1. Activa wake-lock (Android no mata el proceso)
-2. `git pull` para sincronizar código
-3. Verifica e instala dependencias del sistema (python, nodejs, nmap, tcpdump, etc.)
-4. Verifica dependencias Python (fastapi, uvicorn, httpx, pydantic, psutil)
-5. Crea `.env` con API key local + espacios para API keys OSINT (preserva .env existente)
-6. Compila `tauri-frontend` si falta `dist/`
-7. Mata procesos anteriores y arranca el backend en `:8001`
+Este comando ejecuta la copia local sin `git pull`, `reset`, `stash` ni
+instalación de paquetes. Levanta el dashboard, el Commander incluido y PHANTOM.
+Debe ejecutarse desde la raíz de `Red-team-tauri`, después de haber instalado las
+dependencias y generado `tauri-frontend/dist`.
+
+### Preparar o actualizar todo
+
+```bash
+bash termux_recover.sh
+```
+
+Este recuperador sincroniza ambos repositorios solo después de comprobar que no
+hay cambios locales sin guardar; después instala dependencias, compila el
+frontend y arranca el sistema unificado. `arrancar.sh` queda como alias
+compatible de este recuperador.
+
+Si el Commander incluido no está disponible, se puede indicar un checkout
+independiente mediante `COMMANDER_REPO_URL=...`.
 
 ### Alternativa: start-termux.sh
 
@@ -117,19 +131,22 @@ Para omitir el gateway:
 START_GATEWAY=0 bash start-termux.sh
 ```
 
-### Actualizar desde GitHub
+### Actualizar desde GitHub sin perder cambios
 
 ```bash
-# Opción 1: arrancar.sh ya hace git pull automáticamente
-bash arrancar.sh
+# 1. Detener con Ctrl+C y revisar cambios
+git status --short
 
-# Opción 2: sync.sh (más agresivo — reset --hard)
-bash sync.sh
+# 2. Guardar cambios explícitamente (commit o stash)
+git add -A && git commit -m "Cambios locales de Termux"
 
-# Opción 3: manual
-git pull origin main
-bash arrancar.sh
+# 3. Sincronizar y volver a arrancar
+bash termux_recover.sh
 ```
+
+Si no quieres guardar todavía los cambios, ejecuta
+`COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh`.
+No uses `git reset --hard` para resolver un arranque fallido.
 
 ### Abrir el dashboard
 

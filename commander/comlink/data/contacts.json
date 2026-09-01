@@ -1,0 +1,20 @@
+{
+  "emergency": {
+    "name": "Contacto de Emergencia Principal",
+    "phone": "",
+    "telegram_chat_id": "",
+    "sip_address": "",
+    "public_key": "",
+    "priority": 1,
+    "trusted": true
+  },
+  "backup": {
+    "name": "Contacto Secundario",
+    "phone": "",
+    "telegram_chat_id": "",
+    "sip_address": "",
+    "public_key": "",
+    "priority": 2,
+    "trusted": true
+  }
+}

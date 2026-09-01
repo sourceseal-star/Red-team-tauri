@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, Shield, Bug, Workflow,
   Globe, Smartphone, Terminal, Settings, Info, MapPin, Camera, Network, TrendingUp,
-  Server, BarChart3
+  Server, Sun
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -21,7 +21,6 @@ const items = [
   { to: '/topology', label: 'Topology',    icon: Network },
   { to: '/about',    label: 'About',       icon: Info },
   { to: '/services',      label: 'Servicios',    icon: Server },
-  { to: '/motor-metrics', label: 'Motor Métricas', icon: BarChart3 },
   { to: '/ventas',  label: 'Ventas',      icon: TrendingUp },
 ]
 
@@ -70,6 +69,17 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               <span>{label}</span>
             </NavLink>
           ))}
+          {/* Sol vive en backend/static/sol.html — pagina estatica fuera del SPA,
+              por eso es un <a> normal (recarga completa) y no un NavLink de react-router. */}
+          <a
+            href="/sol"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center space-x-2 px-3 py-2 rounded-md text-sm transition-colors text-amber-400/90 hover:bg-accent hover:text-amber-300 border-t mt-1 pt-3"
+          >
+            <Sun className="h-4 w-4 shrink-0" />
+            <span>Sol</span>
+          </a>
         </nav>
       </aside>
     </>

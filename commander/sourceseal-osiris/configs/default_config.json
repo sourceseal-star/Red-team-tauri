@@ -1,0 +1,17 @@
+{
+  "osiris_url": "http://localhost:3000/api",
+  "seal_ws": "ws://localhost:8001/ws/alerts",
+  "db_path": "~/connector_cache.db",
+  "log_file": "~/connector.log",
+  "log_level": "INFO",
+  "max_retries": 5,
+  "retry_delay": 1.0,
+  "cache_cleanup_interval": 3600,
+  "max_cache_age": 86400,
+  "metrics_interval": 60,
+  "heartbeat_interval": 30,
+  "enable_camera": false,
+  "camera_check_interval": 10,
+  "enable_playbook": true,
+  "playbook_timeout": 300
+}

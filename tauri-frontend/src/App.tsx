@@ -28,6 +28,14 @@ import { ARTOProvider } from './components/ARTOProvider';
 import ARTOPanel from './components/ARTOPanel';
 import SealPanel from './components/SealPanel';
 import LeviathanPanel from './components/LeviathanPanel';
+import CommanderPanel from './components/CommanderPanel';
+import NetworkMapPanel from './components/NetworkMapPanel';
+import AndroidFieldPanel from './components/AndroidFieldPanel';
+import NexusPanel from './components/NexusPanel';
+import ComlinkPanel from './components/ComlinkPanel';
+import OperationsPanel from './components/OperationsPanel';
+import IntegratedPanel from './components/IntegratedPanel';
+import TacticalPanel from './components/TacticalPanel';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -39,7 +47,7 @@ function App() {
     <LanguageProvider>
     <ARTOProvider>
     <AppShell activeModule={module} onNavigate={setModule}>
-      {module === 'warroom' && <WarRoom />}
+      {module === 'warroom' && <WarRoom onNavigate={setModule} />}
       {module === 'cameras' && <CameraCommandCenter />}
       {module === 'threat' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -65,6 +73,14 @@ function App() {
       {module === 'arto' && <ARTOPanel />}
       {module === 'seal' && <SealPanel />}
       {module === 'leviathan' && <LeviathanPanel />}
+      {module === 'commander' && <CommanderPanel />}
+      {module === 'comlink' && <ComlinkPanel />}
+      {module === 'netmap' && <NetworkMapPanel />}
+      {module === 'nexus' && <NexusPanel />}
+      {module === 'integrated' && <IntegratedPanel />}
+      {module === 'operations' && <OperationsPanel />}
+      {module === 'android' && <AndroidFieldPanel />}
+      {module === 'tactical' && <TacticalPanel />}
     </AppShell>
     </ARTOProvider>
     </LanguageProvider>

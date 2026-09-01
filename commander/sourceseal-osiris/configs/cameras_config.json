@@ -1,0 +1,39 @@
+{
+  "enabled": true,
+  "cameras": [
+    {
+      "id": "camara_entrada",
+      "name": "Cámara de Entrada",
+      "url": "rtsp://usuario:contraseña@192.168.1.100:554/stream",
+      "type": "rtsp",
+      "motion_detection": true,
+      "motion_threshold": 0.1,
+      "capture_interval": 5,
+      "osiris_event_type": "camera_motion",
+      "location": {
+        "lat": 4.6097,
+        "lon": -74.0817,
+        "address": "Calle 123, Bogotá"
+      }
+    },
+    {
+      "id": "camara_salida",
+      "name": "Cámara de Salida",
+      "url": "http://192.168.1.101:8080/video",
+      "type": "http",
+      "motion_detection": false,
+      "capture_interval": 10,
+      "osiris_event_type": "camera_snapshot"
+    }
+  ],
+  "image_storage": {
+    "local_path": "/home/user/camera_captures",
+    "max_images": 1000,
+    "quality": 85
+  },
+  "osiris": {
+    "send_images": true,
+    "image_format": "base64",
+    "max_image_size": 1024
+  }
+}

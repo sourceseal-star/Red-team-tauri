@@ -3,9 +3,12 @@ import {
   LayoutDashboard, Shield, Camera, Radio, Globe, Wifi, Activity,
   Terminal, Settings, Bell, Search, Menu, X, ChevronRight, Download,
   Zap, Lock, Eye, Fingerprint, Bug, FileText, Network,
-  Sun, Moon, LogOut, Cpu
+  Sun, Moon, LogOut, Cpu, MapPin, Smartphone, Crosshair
 } from 'lucide-react'
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
+import CommanderPanel from './CommanderPanel';
+import NetworkMapPanel from './NetworkMapPanel';
+import NexusPanel from './NexusPanel';
 
 // ==========================================
 // CONTEXTOS GLOBALES
@@ -38,7 +41,15 @@ const MODULES = [
   { id: 'blackmirror', label: 'Black Mirror', icon: Eye, color: 'text-rose-400', badge: null },
   { id: 'services', label: 'Servicios', icon: Activity, color: 'text-blue-400', badge: null },
   { id: 'terminal', label: 'Terminal', icon: Terminal, color: 'text-slate-400', badge: null },
-    { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
+  { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
+  { id: 'commander', label: 'COMMANDER', icon: Terminal, color: 'text-green-400', badge: 'NEW' },
+  { id: 'comlink', label: 'COM-LINK', icon: Radio, color: 'text-cyan-300', badge: 'NEW' },
+  { id: 'netmap', label: 'Mapa de Red', icon: MapPin, color: 'text-cyan-400', badge: 'LIVE' },
+  { id: 'nexus', label: 'NEXUS v9', icon: Cpu, color: 'text-purple-400', badge: 'AI' },
+  { id: 'integrated', label: 'Integración', icon: Network, color: 'text-violet-400', badge: 'LIVE' },
+  { id: 'operations', label: 'Operaciones', icon: Activity, color: 'text-emerald-400', badge: 'SAFE' },
+  { id: 'android', label: 'Android / Campo', icon: Smartphone, color: 'text-cyan-400', badge: 'NEW' },
+{ id: 'tactical', label: 'Auditoría Táctica', icon: Crosshair, color: 'text-red-400', badge: 'LIVE' },
   { id: 'topology', label: 'Topología', icon: Network, color: 'text-cyan-400', badge: null },
   { id: 'iot', label: 'IoT Cámaras', icon: Camera, color: 'text-red-400', badge: 'new' },
   { id: 'alerts', label: 'Alertas', icon: Bell, color: 'text-yellow-400', badge: 'live' },
@@ -50,6 +61,36 @@ const MODULES = [
   { id: 'seal', label: 'SEAL Pack', icon: Fingerprint, color: 'text-cyan-400', badge: 'NEW' },
   { id: 'leviathan', label: 'LEVIATHAN', icon: Shield, color: 'text-purple-400', badge: 'v3.0' },
 ];
+
+const MODULE_DESCRIPTIONS: Record<string, string> = {
+  warroom: 'Vista unificada de todos los sistemas',
+  cameras: 'Descubrimiento y control de cámaras IP',
+  threat: 'Inteligencia de amenazas y reputación',
+  osint: 'Motor de explotación con scripts NSE de nmap',
+  wifi: 'Descubrimiento de redes Wi‑Fi cercanas',
+  ultra: 'Comunicaciones ultrasónicas bajo demanda',
+  blackmirror: 'Análisis visual y espejo de tráfico',
+  services: 'Estado y control de servicios locales',
+  terminal: 'Terminal de operaciones del dashboard',
+  tower: 'Salud del backend y recursos del sistema',
+  commander: 'Reconocimiento autorizado, OSINT, IoT y PHANTOM',
+  comlink: 'Canales de comunicación explícitos y auditables',
+  netmap: 'Mapa de red y descubrimiento de interfaces',
+  nexus: 'NEXUS OMNI v9 · análisis asistido',
+  integrated: 'Estado unificado de ARTO, SEAL y LEVIATHAN',
+  operations: 'Métricas, Git de solo lectura y auditoría local',
+  android: 'GPS, Wi‑Fi, NetGuard y escaneo controlado de campo',
+  topology: 'Topología de red y rutas observadas',
+  iot: 'Cámaras IoT, vulnerabilidades y evidencias',
+  alerts: 'Alertas y eventos del sistema',
+  export: 'Exportación de resultados y evidencias',
+  settings: 'Configuración local del dashboard',
+  osint_adv: 'Investigación OSINT avanzada',
+  interceptor: 'Interceptor avanzado y análisis de flujos',
+  arto: 'ARTO AI · análisis y priorización',
+  seal: 'SEAL Pack · dispositivos y orquestación',
+  leviathan: 'LEVIATHAN · escáneres y módulos de seguridad',
+};
 
 // ==========================================
 // COMPONENTE: TOAST PROVIDER
@@ -144,40 +185,58 @@ function CommandPalette({ open, onClose, onNavigate }: { open: boolean; onClose:
 // COMPONENTE: STATUS BAR (Footer real)
 // ==========================================
 function StatusBar() {
-  const [stats, setStats] = useState({ cpu: 0, ram: 0, disk: 0, services: 0, backend: false });
+  const [stats, setStats] = useState({ cpu: 0, ram: 0, disk: null as number | null, services: 0, backend: false });
   useEffect(() => {
-    const interval = setInterval(async () => {
+    const refresh = async () => {
       try {
-        const res = await fetch('/api/health', { cache: 'no-store' });
-        const data = await res.json();
+        const token = localStorage.getItem('api_token');
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+        const healthResponse = await fetch('/api/health', { cache: 'no-store', headers });
+        if (!healthResponse.ok) throw new Error(`health ${healthResponse.status}`);
+        const data = await healthResponse.json();
+
+        const [resourcesResponse, servicesResponse] = await Promise.allSettled([
+          fetch('/api/resources', { cache: 'no-store', headers }),
+          fetch('/api/services', { cache: 'no-store', headers }),
+        ]);
+        const resources = resourcesResponse.status === 'fulfilled' && resourcesResponse.value.ok
+          ? await resourcesResponse.value.json()
+          : {};
+        const services = servicesResponse.status === 'fulfilled' && servicesResponse.value.ok
+          ? await servicesResponse.value.json()
+          : [];
+
         setStats({
-          cpu: Math.floor(Math.random() * 30 + 5), // Reemplazar por endpoint real
-          ram: Math.floor(Math.random() * 40 + 20),
-          disk: 62,
-          services: 4,
-          backend: data.status === 'ok',
+          cpu: Number(resources.cpu_usage ?? 0),
+          ram: Number(resources.memory_percent ?? data.memory?.systemUsedPercent ?? 0),
+          disk: resources.disk_percent == null ? null : Number(resources.disk_percent),
+          services: Array.isArray(services) ? services.filter((s: any) => s.status === 'running').length : 0,
+          backend: data.status === 'ok' || data.status === 'operational',
         });
       } catch {
         setStats(s => ({ ...s, backend: false, services: 0 }));
       }
-    }, 10000);
+    };
+
+    refresh();
+    const interval = setInterval(refresh, 10000);
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <footer className="h-8 bg-slate-950 border-t border-slate-800 flex items-center px-3 gap-4 text-[10px] font-mono">
-      <div className="flex items-center gap-1.5">
+    <footer className="min-h-8 h-auto bg-slate-950 border-t border-slate-800 flex items-center px-3 py-1 gap-x-4 gap-y-1 text-[10px] font-mono flex-wrap">
+      <div className="flex items-center gap-1.5 whitespace-nowrap">
         <div className={`w-1.5 h-1.5 rounded-full ${stats.backend ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
         <span className={stats.backend ? 'text-green-400' : 'text-red-400'}>
           {stats.backend ? 'Backend Online' : 'Backend Offline'}
         </span>
       </div>
       <div className="w-px h-3 bg-slate-800" />
-      <span className="text-slate-500">Svcs: <span className="text-slate-300">{stats.services}</span></span>
-      <span className="text-slate-500">CPU: <span className="text-cyan-400">{stats.cpu}%</span></span>
-      <span className="text-slate-500">RAM: <span className="text-purple-400">{stats.ram}%</span></span>
-      <span className="text-slate-500">Disk: <span className="text-amber-400">{stats.disk}%</span></span>
-      <div className="ml-auto flex items-center gap-2">
+      <span className="text-slate-500 whitespace-nowrap">Svcs: <span className="text-slate-300">{stats.services}</span></span>
+      <span className="text-slate-500 whitespace-nowrap">CPU: <span className="text-cyan-400">{stats.cpu.toFixed(1)}%</span></span>
+      <span className="text-slate-500 whitespace-nowrap">RAM: <span className="text-purple-400">{stats.ram.toFixed(1)}%</span></span>
+      <span className="text-slate-500 whitespace-nowrap">Disk: <span className="text-amber-400">{stats.disk == null ? '—' : `${stats.disk}%`}</span></span>
+      <div className="ml-auto flex items-center gap-2 whitespace-nowrap">
         <span className="text-slate-600">v2.1.0</span>
         <span className="px-1.5 py-0.5 bg-red-900/30 border border-red-800 rounded text-red-400 text-[9px] font-bold">DEFENSIVE USE ONLY</span>
       </div>
@@ -220,7 +279,7 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
     <ToastProvider>
       <div className={`h-screen flex flex-col ${darkMode ? 'dark' : ''}`}>
         {/* TopBar */}
-        <header className="h-12 bg-slate-900 border-b border-slate-800 flex items-center px-3 gap-3 shrink-0">
+        <header className="h-12 bg-slate-900 border-b border-slate-800 flex items-center px-3 gap-3 shrink-0 min-w-0">
           <button 
             onClick={() => setMobileOpen(!mobileOpen)}
             className="lg:hidden p-1.5 hover:bg-slate-800 rounded-lg text-slate-400"
@@ -248,7 +307,7 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
             )}
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2 shrink-0">
             {/* Búsqueda global */}
             <button 
               onClick={() => setCommandOpen(true)}
@@ -360,17 +419,14 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
           )}
 
           {/* Main Content */}
-          <main className="flex-1 overflow-y-auto bg-slate-950">
-            <div className="p-4 lg:p-6 max-w-[1600px] mx-auto">
+          <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-slate-950">
+            <div className="p-4 lg:p-6 max-w-[1600px] mx-auto min-w-0 w-full">
               {/* Header de página */}
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h1 className="text-xl font-bold text-white">{activeLabel}</h1>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {activeModule === 'warroom' && 'Vista unificada de todos los sistemas'}
-                    {activeModule === 'cameras' && 'Descubrimiento y control de cámaras IP'}
-                    {activeModule === 'threat' && 'Inteligencia de amenazas y reputación'}
-                    {activeModule === 'osint' && 'Motor de explotacion con scripts NSE de nmap'}
+                    {MODULE_DESCRIPTIONS[activeModule] || 'Módulo de SourceSeal Console'}
                   </p>
                 </div>
                 <div className="flex gap-2">

@@ -18,7 +18,7 @@ scikit-learn>=1.2.2
 python-dotenv>=1.0.0
 pyyaml>=6.0
 passlib>=1.7.4
-cryptography>=41.0.2
+pycryptodome>=3.19  # antes cryptography (sin uso real de Fernet en kraken)
 
 # Dev
 pytest>=7.3.1

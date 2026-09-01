@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# DEPRECATED: No ejecutar directamente.
+# El backend activo es redteam/scripts/dashboard_server.py (231 rutas).
+# Este archivo queda solo como referencia histórica.
+# start_all.sh y iniciar_unificado.sh usan la versión completa.
 """
 SourceSeal Red Team Dashboard — Backend FastAPI v3.2
 Puerto: 8001 | Protocolo: SSP-ZKP-2048-L4
@@ -25,11 +29,15 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+# PROJECT_ROOT definido temprano — usado por el bloque de frontend estático mas abajo
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 from fastapi import (
     FastAPI, File, Form, HTTPException, Query, UploadFile, Body,
-    WebSocket, WebSocketDisconnect, Depends, Request
+    WebSocket, WebSocketDisconnect, Depends, Request, BackgroundTasks
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse
 from pydantic import BaseModel, Field
 import uvicorn
@@ -313,8 +321,7 @@ async def integrated_attack_b(ip: str):
 # HEALTH (sin auth)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@app.get("/")
-async def health():
+async def _health_payload():
     return {
         "status": "online",
         "version": "3.2-termux",
@@ -331,7 +338,29 @@ async def health():
 
 @app.get("/api/health")
 async def api_health():
-    return await health()
+    return await _health_payload()
+
+# ── Frontend compilado (tauri-frontend/dist) ──
+# vite build usa emptyOutDir:true — NUNCA guardar archivos propios ahí (sol.html vive en backend/static/)
+_FRONTEND_DIST = os.path.join(PROJECT_ROOT, "tauri-frontend", "dist")
+_FRONTEND_INDEX = os.path.join(_FRONTEND_DIST, "index.html")
+_FRONTEND_BUILT = os.path.isdir(_FRONTEND_DIST) and os.path.isfile(_FRONTEND_INDEX)
+
+if _FRONTEND_BUILT:
+    _assets_dir = os.path.join(_FRONTEND_DIST, "assets")
+    if os.path.isdir(_assets_dir):
+        app.mount("/assets", StaticFiles(directory=_assets_dir), name="frontend-assets")
+    print(f"[sealctl] Frontend compilado detectado en {_FRONTEND_DIST}")
+else:
+    print(f"[sealctl][WARN] Frontend no compilado ({_FRONTEND_DIST} sin index.html). "
+          f"Ejecuta: cd tauri-frontend && npm install && npm run build")
+
+@app.get("/")
+async def root():
+    """Sirve el dashboard visual (React compilado). Si no está compilado, cae al JSON de salud."""
+    if _FRONTEND_BUILT:
+        return FileResponse(_FRONTEND_INDEX, media_type="text/html")
+    return await _health_payload()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TOPOLOGY — sockets reales, no random
@@ -3084,7 +3113,188 @@ async def phantom_alerts_list(limit: int = 50):
             continue
     return {"alerts": alerts, "total": len(alerts)}
 
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
+# AI ORCHESTRATOR — Integración con Commander
+# Expone AutonomousExecutor.cycle() y AIClient.generate_exploit() via HTTP
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Imports con degradación graceful — si Commander no está, el dashboard sigue funcionando
+AI_ORCH_AVAILABLE = False
+AI_SYSTEM = None
+AI_CLIENT = None
+AI_EXECUTOR = None
+
+try:
+    import sys as _sys
+    _commander_dir = os.environ.get("COMMANDER_DIR", os.path.join(os.getcwd(), "commander"))
+    if _commander_dir not in _sys.path:
+        _sys.path.insert(0, _commander_dir)
+
+    from ai_orchestrator import AISystem, AIClient, AutonomousExecutor, OfflineExecutor, CONFIG as AI_CONFIG, is_extraction_attempt
+    AI_SYSTEM = AISystem()
+    AI_CLIENT = AIClient(AI_SYSTEM)
+    AI_EXECUTOR = AutonomousExecutor(AI_SYSTEM, AI_CLIENT)
+    AI_ORCH_AVAILABLE = True
+    print(f"[AI-ORCH] Módulo cargado desde {_commander_dir}")
+except ImportError as e:
+    print(f"[AI-ORCH] No disponible: {e}. Endpoints /api/commander/ai/* desactivados.")
+except Exception as e:
+    print(f"[AI-ORCH] Error al inicializar: {e}")
+
+
+@app.get("/api/commander/ai/status")
+async def ai_status():
+    """Estado actual del AI Orchestrator: memoria, conocimiento, historial."""
+    if not AI_ORCH_AVAILABLE:
+        return {"available": False, "reason": "Commander AI Orchestrator no instalado"}
+    history = AI_SYSTEM.get_history(limit=20)
+    return {
+        "available": True,
+        "memory_events": len(AI_SYSTEM.memory.get("history", [])),
+        "knowledge_categories": list(AI_SYSTEM.knowledge.keys()),
+        "services_known": len(AI_SYSTEM.knowledge.get("services", {})),
+        "exploits_known": len(AI_SYSTEM.knowledge.get("exploits", {})),
+        "recent_events": history,
+        "config": {
+            "target_network": AI_CONFIG.get("target_network", "192.168.1.0/24"),
+            "cycle_interval": AI_CONFIG.get("cycle_interval", 60),
+            "min_confidence": AI_CONFIG.get("min_confidence", 50),
+            "require_confirm": AI_CONFIG.get("require_confirm_exploit", True),
+            "llm_model": AI_CONFIG.get("llm_api", {}).get("model", "unknown"),
+            "llm_configured": bool(AI_CONFIG.get("llm_api", {}).get("key", "")),
+        },
+    }
+
+
+@app.post("/api/commander/ai/cycle")
+async def ai_cycle(background_tasks: BackgroundTasks):
+    """Ejecuta un ciclo de pensamiento y acción del AI Orchestrator.
+    Devuelve la decision de la IA o el resultado del escaneo en modo offline."""
+    if not AI_ORCH_AVAILABLE:
+        raise HTTPException(503, "AI Orchestrator no disponible")
+
+    if AI_CONFIG.get("llm_api", {}).get("key", ""):
+        # Modo con IA — ejecutar ciclo completo
+        try:
+            decision = await AI_EXECUTOR.cycle()
+            return {
+                "status": "completed",
+                "mode": "ai",
+                "decision": decision,
+                "timestamp": now_iso(),
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "timestamp": now_iso()}
+    else:
+        # Modo offline — solo escaneo, sin IA
+        try:
+            scan_result = AI_EXECUTOR.run_scan(AI_CONFIG["target_network"])
+            hosts = AI_EXECUTOR.parse_nmap_output(scan_result.get("raw", ""))
+            AI_SYSTEM.add_event("offline_scan", {
+                "network": AI_CONFIG["target_network"],
+                "hosts_found": len(hosts),
+            })
+            return {
+                "status": "completed",
+                "mode": "offline",
+                "hosts": hosts,
+                "scan_result": scan_result,
+                "timestamp": now_iso(),
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "timestamp": now_iso()}
+
+
+@app.post("/api/commander/ai/generate")
+async def ai_generate(request: Request):
+    """Genera código de explotación para un objetivo específico.
+    Body: {"target": "192.168.1.1", "service": "http", "version": "Apache 2.4.41"}
+    """
+    if not AI_ORCH_AVAILABLE:
+        raise HTTPException(503, "AI Orchestrator no disponible")
+
+    data = await request.json()
+    target = data.get("target", "")
+    service = data.get("service", "")
+    version = data.get("version", "")
+
+    if not target or not service:
+        raise HTTPException(400, "target y service son requeridos")
+
+    if not AI_CONFIG.get("llm_api", {}).get("key", ""):
+        raise HTTPException(503, "LLM_API_KEY no configurada — no se puede generar sin IA")
+
+    try:
+        result = await AI_CLIENT.generate_exploit(target, service, version)
+
+        # Verificar si la respuesta contiene intento de extracción
+        if isinstance(result, dict):
+            content = result.get("content", "")
+            if is_extraction_attempt(content):
+                AI_SYSTEM.add_event("extraction_blocked", {
+                    "target": target,
+                    "service": service,
+                })
+                return {"status": "blocked", "reason": "Respuesta contenía intento de extracción"}
+
+        return {
+            "status": "completed",
+            "result": result,
+            "target": target,
+            "service": service,
+            "timestamp": now_iso(),
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e), "timestamp": now_iso()}
+
+
+@app.get("/api/commander/ai/history")
+async def ai_history(limit: int = 20):
+    """Obtiene los últimos N eventos del historial del AI Orchestrator."""
+    if not AI_ORCH_AVAILABLE:
+        raise HTTPException(503, "AI Orchestrator no disponible")
+    return {
+        "events": AI_SYSTEM.get_history(limit=limit),
+        "total": len(AI_SYSTEM.memory.get("history", [])),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SOL — Testigo personal (HTML estático local, sin dependencias)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_SOL_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol.html")
+
+@app.get("/sol")
+async def sol_page():
+    """Página de Sol — HTML estático en backend/static/ (fuera de tauri-frontend/dist,
+    que vite build vacía por completo con emptyOutDir:true)."""
+    if os.path.isfile(_SOL_PATH):
+        return FileResponse(_SOL_PATH, media_type="text/html")
+    raise HTTPException(404, "Sol no encuentra su página en backend/static/sol.html")
+
+@app.get("/sol.html")
+async def sol_page_alt():
+    """Alias directo."""
+    return await sol_page()
+
+# ── SPA fallback — rutas del React Router (ej. /dashboard, /osint) que no son archivos ni API ──
+_SPA_EXCLUDED_PREFIXES = ("api/", "docs", "openapi.json", "redoc", "ws", "assets/", "sol")
+
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    if full_path.startswith(_SPA_EXCLUDED_PREFIXES):
+        raise HTTPException(404, "Not found")
+    if _FRONTEND_BUILT:
+        return FileResponse(_FRONTEND_INDEX, media_type="text/html")
+    raise HTTPException(404, "Frontend no compilado. Ejecuta: cd tauri-frontend && npm install && npm run build")
+
+
 # STARTUP
 # ═══════════════════════════════════════════════════════════════════════════════
 

@@ -1,0 +1,39 @@
+{
+  "operators": [
+    {
+      "id": "OP-001",
+      "name": "Harold Giovanni Paredes",
+      "role": "admin",
+      "seal_hash": "SS_ADMIN_HGP",
+      "created": "2026-07-20T00:00:00Z",
+      "permissions": [
+        "all"
+      ]
+    },
+    {
+      "id": "OP-002",
+      "name": "Reviewer",
+      "role": "reviewer",
+      "seal_hash": "SS_REVIEWER",
+      "created": "2026-08-25T00:00:00Z",
+      "permissions": [
+        "read",
+        "review",
+        "report"
+      ]
+    },
+    {
+      "id": "OP-003",
+      "name": "Field Operator",
+      "role": "operator",
+      "seal_hash": "SS_OPERATOR",
+      "created": "2026-08-25T00:00:00Z",
+      "permissions": [
+        "recon",
+        "enumeration",
+        "vulnerability",
+        "reporting"
+      ]
+    }
+  ]
+}

@@ -1,120 +1,164 @@
 # SourceSeal Console — Estado del Proyecto
 
-**Ultima actualizacion:** 2026-08-25
-**Version:** 6.0-LEVIATHAN-IoT
+**Última actualización:** 2026-09-01
+**Versión:** 7.0-TACTICAL-HOTRELOAD
 **Repositorio:** https://github.com/sourceseal-star/Red-team-tauri
 **Branch:** main
-**Ultimo commit:** 7e45001 (feat: grilla de camaras batch con thumbnails + CVEs + stream)
+**Último commit:** feat(infra): motor táctico profesional con hot-reload + módulos + playbooks
 
 ---
 
-## ✅ FIXES APLICADOS (25-ago-2026)
+## ✅ NOVEDADES (01-sep-2026)
 
-### Build frontend no-fatal (commit 14a1242)
-- `set -e` + `npm run build | tail -5` + `cp -r dist/.` mataba el script si el build fallaba
-- Ahora: `FRONTEND_BUILD_OK` flag, si falla usa dist/ existente, el backend SIEMPRE arranca
+### Motor Táctico Profesional con Hot-Reload
+- **watcher.py** — Monitorea `redteam/modules/` cada 2s, sella cambios en ledger SourceSeal con chain hash SHA-256, envía SIGUSR1 al dashboard para recargar módulos sin reiniciar
+- **hot_loader.py** — Carga módulos en caliente con handler SIGUSR1, detecta cambios por mtime
 
-### Camaras: proxy MJPEG real (commit 0f64ecd)
-- `/api/iot/stream` devolvia 501 → ahora proxy MJPEG con StreamingResponse
-- `/api/iot/snapshot` probaba 1 path sin auth → ahora 11 paths + auth basico
-- Soporta credenciales via query params (user/pwd)
+### 6 Módulos Nuevos
+- `recon.py` — nmap, masscan, subfinder (red + host + subdominios + TCP connect fallback)
+- `enumeration.py` — SMB, RPC, LDAP, NetBIOS (enum4linux, smbclient, rpcclient, nmblookup, ldapsearch)
+- `vulnerability.py` — nikto, nuclei, sslscan con extracción automática de CVEs
+- `exploitation.py` — PLANTILLA para validación de vulns (tú la llenas)
+- `post.py` — PLANTILLA para post-explotación con evidencia
+- `reporting.py` — Informes HTML sellados con SHA-256, badges de severidad, tabla de hallazgos
 
-### Frontend: fallback MJPEG (commit 7fad54c)
-- Si snapshot falla, carga stream MJPEG automaticamente
+### Configuración Profesional
+- `config/engagements.json` — Alcance autorizado por cliente
+- `config/policies.json` — Acciones permitidas por rol y política
+- `config/operators.json` — Roles: admin / reviewer / operator
 
-### OSINT: 0 POSTs, todos los endpoints correctos (commits 354ab20, d5b8588, 058505b, 4aefa7d)
-- `osintApi.ts` llamaba `/api/osint/v2/*` (no existe) → `/api/osint/*`
-- 8 endpoints del OSINTAdvancedPanel corregidos (email, subdomains, search, threat, shodan, headers, virustotal, censys, social, dns)
-- 0 POSTs restantes en todo el panel
+### Playbooks
+- `playbooks/external_pentest.json` — recon → enum → vuln → report
+- `playbooks/internal_audit.json` — recon → enum → tactical → vuln → report
+- `playbooks/webapp_test.json` — recon → nikto+nuclei → report
 
-### IoT: vendor detection + CVE DB + default creds (commit 4c00156)
-- 7 fabricantes con CVEs: Hikvision(3), Dahua(3), Xiongmai(2), D-Link(2), Netgear(1), GoAhead(1), Ubiquiti(1)
-- 23 credenciales por defecto probadas automaticamente
-- RTSP paths especificos por vendor
-- `_identify_camera_vendor()` detecta por Server header + HTML paths
-
-### IoT: auto-access orquestado (commit 7bd0096)
-- `GET /api/iot/auto-access?ip=X&port=Y` — vendor → CVEs → creds → snapshot → stream en 1 llamado
-- `POST /api/iot/auto-access-batch` — escanea red CIDR entera, procesa todas las camaras
-- 8 camaras en paralelo, devuelve resumen con full/partial/no_access
-
-### Frontend: grilla batch de camaras (commit 7e45001)
-- Boton "Escanear Todo" morado en CameraCommandCenter
-- Grilla responsiva (2-5 columnas) con thumbnails, badges LIVE/DATA/OFF
-- CVEs mostrados, credenciales, link directo al stream
+### Frontend
+- **TacticalPanel.tsx** — Panel de auditoría táctica con botón "Ejecutar Auditoría"
+  - Input de subnet (auto-detectar si vacío)
+  - Log en vivo con timestamps
+  - Stats cards: hosts, puertos, cámaras, creds, CVEs
+  - Tabla de hallazgos con vendor, credenciales y CVEs
+  - Descarga de reporte sellado HTML/JSON
 
 ---
 
-## 🏗️ ARQUITECTURA ACTUAL (v6.0-LEVIATHAN-IoT)
+## 🏗️ ARQUITECTURA ACTUAL (v7.0-TACTICAL-HOTRELOAD)
 
 ```
 Red-team-tauri/
-├── redteam/scripts/dashboard_server.py  # Backend UNICO — FastAPI :8001
-├── tauri-frontend/                        # Frontend UNICO — React/Vite/TS
-│   ├── src/components/                    #   51 componentes
-│   ├── src/api/                           #   artoApi, interceptorApi, osintApi
-│   └── dist/                             #   Build output
-├── leviathan_core/                        # LEVIATHAN v3.0 (31+ archivos)
-│   ├── api/
-│   │   ├── leviathan_router.py            # /api/leviathan/*
-│   │   └── integration_router.py          # /api/v1/* (unificado)
-│   ├── config/profiles.json
-│   ├── modules/scanners/ (6)
-│   ├── modules/exploiters/ (5)
-│   ├── modules/ai_analyzers/ (4)
-│   └── modules/reporters/ (3)
-├── arto/                                  # ARTO AI (23 endpoints)
-├── seal/                                  # SEAL SUPER PACK v2.0
-├── kraken/                                # KRAKEN v3.0 (56 archivos)
+├── watcher.py                            # HOT-RELOAD: monitorea módulos, señaliza dashboard
+├── config/
+│   ├── engagements.json                  # Alcances autorizados por cliente
+│   ├── policies.json                     # Políticas de acciones permitidas
+│   └── operators.json                     # Roles: admin / reviewer / operator
+├── redteam/
+│   ├── runner/
+│   │   ├── orchestrator.py                # Orquestador de playbooks
+│   │   ├── hot_loader.py                  # HOT LOADER: SIGUSR1 recarga en caliente
+│   │   └── engagement_guard.py           # Validación fail-closed de alcance
+│   └── modules/
+│       ├── __init__.py
+│       ├── base.py                        # Clase base: sellado SHA-256 automático
+│       ├── recon.py                       # nmap, masscan, subfinder
+│       ├── enumeration.py                 # SMB, RPC, LDAP, NetBIOS
+│       ├── vulnerability.py               # nikto, nuclei, sslscan + CVEs
+│       ├── exploitation.py                # PLANTILLA (tú la llenas)
+│       ├── post.py                        # PLANTILLA (tú la llenas)
+│       ├── reporting.py                   # Informes HTML sellados
+│       └── tactical_executor.py           # Ejecutor táctico integral
+├── tauri-frontend/
+│   └── src/components/TacticalPanel.tsx   # Panel de auditoría táctica
+├── playbooks/
+│   ├── external_pentest.json
+│   ├── internal_audit.json
+│   └── webapp_test.json
+├── evidence/
+│   ├── findings/                          # JSON de hallazgos sellados
+│   └── sealed/                            # Informes sellados
+├── reports/
+│   └── templates/                         # Plantillas de reportes
+├── redteam/scripts/dashboard_server.py    # Backend FastAPI :8001
+├── arrancar.sh                            # Arranque Termux
 ├── replit_start.sh                        # Arranque Replit
-├── arrancar.sh                            # Arranque Termux (build no-fatal)
-└── replit.nix                             # Deps Nix (onnxruntime, pillow, pyyaml)
+└── replit.nix                             # Deps Nix
 ```
 
 ---
 
-## ⚡ ARRANQUE RAPIDO
+## ⚡ ARRANQUE RÁPIDO
 
-### Termux (recomendado)
+### Opción 1: Termux (recomendado)
 ```bash
+cd ~/Red-team-tauri
 git stash && git pull origin main && git stash pop
 bash arrancar.sh
 ```
 
-### Replit
+### Opción 2: Replit
 ```bash
 bash replit_start.sh
+```
+
+### Opción 3: Manual
+```bash
+cd ~/Red-team-tauri
+git pull origin main
+cd tauri-frontend && npm install && npm run build && cp -r dist/. ../public/
+cd .. && python3 redteam/scripts/dashboard_server.py
 ```
 
 → http://localhost:8001
 
 ---
 
-## 📡 ENDPOINTS IoT NUEVOS
+## 🔄 HOT-RELOAD (NUEVO)
 
-| Metodo | Endpoint | Descripcion |
+El watcher monitorea módulos y recarga en caliente:
+
+```bash
+# Terminal 1: Dashboard
+bash arrancar.sh
+
+# Terminal 2: Watcher (background)
+python3 watcher.py &
+
+# Editar un módulo, ej:
+nano redteam/modules/recon.py
+
+# El watcher detecta el cambio automáticamente:
+# 🔄 MODIFIED: recon.py (a1b2c3d4...)
+# 🔗 Sellado en ledger SourceSeal
+# 📡 Señal reload enviada al dashboard
+# [HOT-LOADER] Recargando módulos...
+# [HOT-LOADER] Cargado: recon.py
+```
+
+---
+
+## 📡 ENDPOINTS TÁCTICOS
+
+| Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/iot/vulns?ip=X&port=Y` | Vendor + CVEs + creds + URLs |
-| GET | `/api/iot/auto-access?ip=X&port=Y` | Orquestacion completa en 1 llamado |
-| POST | `/api/iot/auto-access-batch` | Escanea red CIDR, procesa todas las camaras |
-| GET | `/api/iot/snapshot?ip=X&port=Y&user=U&pwd=P` | Snapshot con 11 paths + auth |
-| GET | `/api/iot/stream?ip=X&port=Y&path=P&user=U&pwd=P` | Proxy MJPEG en vivo |
+| POST | `/api/tactical/scan` | Ejecuta auditoría táctica completa |
+| GET | `/api/tactical/report/{filename}` | Descarga informe sellado |
+| GET | `/api/tactical/credentials` | Ver diccionario (conteo por vendor) |
+| GET | `/api/tactical/ports` | Puertos por defecto escaneados |
 
 ---
 
 ## ⏳ PENDIENTES
 
-1. **Probar en Termux** — `git pull && bash arrancar.sh` y verificar:
-   - El frontend compila (revisar output de npm run build)
-   - El sidebar muestra LEVIATHAN, ARTO, SEAL, IoT, OSINT
-   - El boton "Escanear Todo" en Camaras funciona
-2. **Configurar API Keys** — SHODAN_API_KEY y ABUSEIPDB_KEY en .env
-3. **Verificar camara** — Probar `/api/iot/auto-access?ip=IP&port=80` con la camara real
+1. **Probar en Termux** — `git pull && bash arrancar.sh`
+2. **Probar hot-reload** — `python3 watcher.py &` y editar un módulo
+3. **Probar TacticalPanel** — sidebar → "Auditoría Táctica" → "Ejecutar Auditoría"
+4. **Configurar API Keys** — SHODAN_API_KEY y ABUSEIPDB_KEY en .env
+5. **Implementar exploitation.py** — Llenar la plantilla con técnicas autorizadas
+6. **Implementar post.py** — Llenar la plantilla con recolección de evidencia
 
 ## 🔑 PENDIENTES MANUALES (no urgentes)
 
 1. Configurar keystore en GitHub Secrets (APK build)
-2. Probar Integrity Check en produccion
+2. Probar Integrity Check en producción
 3. Migrar a Railway (siguiente fase)
 4. Configurar dominio en Cloudflare
 
@@ -124,16 +168,17 @@ bash replit_start.sh
 
 - `server.js.deprecated` — viejo backend Node.js v1
 - `backend/main.py.deprecated` — viejo backend Python v2
-- `tauri-app-src/` — version anterior del frontend
-- `redteam-dashboard/` — version paralela vieja del frontend
-- `leviathan-frontend/` — version paralela vieja del frontend LEVIATHAN
+- `tauri-app-src/` — versión anterior del frontend
+- `redteam-dashboard/` — versión paralela vieja del frontend
+- `leviathan-frontend/` — versión paralela vieja del frontend LEVIATHAN
 
 ---
 
 ## 📝 CHANGELOG
 
-- **v6.0** LEVIATHAN IoT + Camera Batch (2026-08-25) — vendor detection, CVE DB, auto-access batch, grilla de camaras
+- **v7.0** TACTICAL HOT-RELOAD (2026-09-01) — watcher, hot_loader, 6 módulos, configs, playbooks, TacticalPanel frontend
+- **v6.0** LEVIATHAN IoT + Camera Batch (2026-08-25) — vendor detection, CVE DB, auto-access batch, grilla de cámaras
 - **v5.0** ARTO + VPN (2026-08-19) — fixes de auth + WS + docs
-- **v4.1** Topologia + Traffic Analyzer (2026-08-18)
+- **v4.1** Topología + Traffic Analyzer (2026-08-18)
 - **v4.0** OSINT Advanced + Interceptor Advanced (2026-08-14)
 - **v3.0** Backend unificado Python/FastAPI (2026-08-10)

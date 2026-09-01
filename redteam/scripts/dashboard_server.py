@@ -34,6 +34,8 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import hashlib as _hashlib
+import hmac as _hmac
 import json
 import os
 import re
@@ -65,6 +67,29 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 BASE       = SCRIPT_DIR.parent                         # redteam/
 ROOT       = BASE                                       # alias
 DIST       = (BASE.parent / "tauri-frontend" / "dist").resolve()
+PROJECT_ROOT = BASE.parent
+# sys.path: garantizar que todos los módulos del repo sean importables
+# sin importar desde qué directorio se ejecute el script.
+for _p in [
+    str(PROJECT_ROOT),
+    str(SCRIPT_DIR),                           # redteam/scripts/ (modules.*, tlsproxy.*)
+    str(PROJECT_ROOT / "leviathan_core"),      # leviathan_core.*
+    str(PROJECT_ROOT / "kraken"),              # kraken.*
+    str(PROJECT_ROOT / "commander"),           # commander.*
+]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+from nexus_credentials import (
+    ensure_managed_secret,
+    ensure_nexus_credentials,
+    resolve_project_value,
+    update_project_env,
+)
+
+NEXUS_PORT = int(os.environ.get("NEXUS_PORT", "8004"))
+NEXUS_CREDENTIALS = ensure_nexus_credentials()
+NEXUS_AUTH_USER = NEXUS_CREDENTIALS.user
+NEXUS_AUTH_PASS = NEXUS_CREDENTIALS.password
 
 REPORTS   = ROOT / "reports"
 EVIDENCE  = ROOT / "evidence"
@@ -159,15 +184,10 @@ except Exception as _ia_err:
     _INTERCEPTOR_ADVANCED_OK = False
     print(f"[WARN] interceptor_advanced import falló: {_ia_err}", flush=True)
 
-API_KEY = os.environ.get("REDTEAM_API_KEY", "").strip()
+API_KEY = ensure_managed_secret("REDTEAM_API_KEY")
 
-# ── Motor de Cierre (leads/checkout/metrics) — antes corria como un 2do
-# proceso FastAPI en el MISMO puerto 8001 que este backend, lo que hacia
-# que solo uno de los dos pudiera estar vivo a la vez. Se monta aqui como
-# sub-app para que TODO viva en un solo proceso/puerto de verdad.
-    # Alinear el API key: dashboard_server.py emite tokens via REDTEAM_API_KEY
-    # su propio default distinto ("dev-key-cambiar-en-produccion") -> con
-    # esto ambos aceptan el MISMO token emitido por /api/auth/login.
+# Las rutas activas se mantienen en este backend unificado; la autenticación
+# usa REDTEAM_API_KEY tanto para login como para las rutas protegidas.
 
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -322,6 +342,922 @@ except Exception as _lev_err:
     traceback.print_exc()
     _LEVIATHAN_OK = False
 
+# ── COMMANDER — Auditoría de red, OSINT, forense (repo hermano) ───────────
+# Unifica COMMANDER dentro de este mismo dashboard: no requiere un puerto
+# ni proceso separado. Se monta como router in-process, igual que LEVIATHAN.
+_COMMANDER_OK = False
+_commander_mod = None
+try:
+    import importlib.util as _il_util
+    from starlette.concurrency import run_in_threadpool
+    from fastapi import APIRouter as _CmdAPIRouter
+
+    _commander_candidates = [
+        os.environ.get("COMMANDER_DIR", ""),
+        str(ROOT.parent / "commander"),
+        str(ROOT / "commander"),
+        os.path.expanduser("~/commander"),
+    ]
+    _commander_dir = next((d for d in _commander_candidates if d and Path(d, "commander.py").exists()), None)
+
+    if _commander_dir:
+        _spec = _il_util.spec_from_file_location("commander_mod", str(Path(_commander_dir) / "commander.py"))
+        _commander_mod = _il_util.module_from_spec(_spec)
+        sys.modules["commander_mod"] = _commander_mod
+        _spec.loader.exec_module(_commander_mod)
+
+        commander_router = _CmdAPIRouter()
+
+        @commander_router.get("/api/commander/health")
+        async def commander_health():
+            return {
+                "available": True,
+                "dir": _commander_dir,
+                "version": getattr(_commander_mod, "__version__", "3.5.0"),
+                "capabilities": [
+                    "network_scan",
+                    "camera_scan",
+                    "complete_audit",
+                    "osint",
+                    "audit_history",
+                    "checkpoint_resume",
+                    "encrypted_reports",
+                    "sourceseal_anchor",
+                ],
+                "execution_context": "Integrado en el proceso del dashboard",
+            }
+
+        def _commander_db_path():
+            config = getattr(_commander_mod, "CONFIG", {})
+            return os.path.expanduser(str(config.get("db_path", "~/commander.db")))
+
+        def _commander_report_dir():
+            config = getattr(_commander_mod, "CONFIG", {})
+            return Path(os.path.expanduser(str(
+                config.get("report_dir", "~/storage/downloads/commander_reports")
+            )))
+
+        def _commander_audits(limit=50):
+            import sqlite3
+            _commander_mod.init_db()
+            conn = sqlite3.connect(_commander_db_path())
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """SELECT id, target, scan_type, timestamp, status, hash,
+                          checkpoint_data
+                   FROM audits ORDER BY timestamp DESC LIMIT ?""",
+                (max(1, min(int(limit), 100)),),
+            ).fetchall()
+            conn.close()
+            result = []
+            for row in rows:
+                item = dict(row)
+                checkpoint = item.pop("checkpoint_data", None)
+                try:
+                    item["phase"] = json.loads(checkpoint).get("phase") if checkpoint else None
+                except (TypeError, json.JSONDecodeError):
+                    item["phase"] = None
+                result.append(item)
+            return result
+
+        @commander_router.get("/api/commander/status")
+        async def commander_status():
+            try:
+                audits = await run_in_threadpool(_commander_audits, 100)
+                return {
+                    "available": True,
+                    "version": getattr(_commander_mod, "__version__", "3.5.0"),
+                    "database": _commander_db_path(),
+                    "audits_total": len(audits),
+                    "audits_pending": sum(1 for item in audits if item["status"] != "completed"),
+                    "audits_completed": sum(1 for item in audits if item["status"] == "completed"),
+                    "reports_dir": str(_commander_report_dir()),
+                    "capabilities": [
+                        "network_scan", "camera_scan", "complete_audit", "osint",
+                        "audit_history", "checkpoint_resume", "encrypted_reports",
+                        "sourceseal_anchor",
+                    ],
+                }
+            except Exception as exc:
+                return JSONResponse({"available": False, "error": str(exc)}, status_code=503)
+
+        @commander_router.get("/api/commander/audits")
+        async def commander_audits(limit: int = Query(default=50, ge=1, le=100)):
+            try:
+                return {"audits": await run_in_threadpool(_commander_audits, limit)}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.get("/api/commander/audits/{scan_id}")
+        async def commander_audit_detail(scan_id: int):
+            def _detail():
+                import sqlite3
+                _commander_mod.init_db()
+                conn = sqlite3.connect(_commander_db_path())
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    """SELECT id, target, scan_type, timestamp, data_json, hash,
+                              status, checkpoint_data
+                       FROM audits WHERE id = ?""",
+                    (scan_id,),
+                ).fetchone()
+                conn.close()
+                if not row:
+                    return None
+                item = dict(row)
+                for key in ("data_json", "checkpoint_data"):
+                    raw = item.get(key)
+                    try:
+                        item[key] = json.loads(raw) if raw else None
+                    except (TypeError, json.JSONDecodeError):
+                        pass
+                return item
+            detail = await run_in_threadpool(_detail)
+            if detail is None:
+                return JSONResponse({"error": "Auditoría no encontrada"}, status_code=404)
+            return {"audit": detail}
+
+        @commander_router.post("/api/commander/scan/network")
+        async def commander_scan_network(payload: dict = Body(default={})):
+            target = payload.get("target", "")
+            ports = payload.get("ports", "22,80,443,3306,8080,554,21,25,53,139,445,3389")
+            if not target:
+                return JSONResponse({"error": "target requerido"}, status_code=400)
+            if payload.get("authorized") is not True:
+                return JSONResponse(
+                    {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
+                    status_code=400,
+                )
+            try:
+                result = await run_in_threadpool(_commander_mod.scan_network, target, ports)
+                return {"target": target, "result": result}
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        @commander_router.post("/api/commander/scan/cameras")
+        async def commander_scan_cameras(payload: dict = Body(default={})):
+            target = str(payload.get("target", "")).strip()
+            if not target:
+                return JSONResponse({"error": "target requerido"}, status_code=400)
+            if payload.get("authorized") is not True:
+                return JSONResponse(
+                    {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
+                    status_code=400,
+                )
+            try:
+                result = await run_in_threadpool(_commander_mod.scan_cameras, target)
+                return {"target": target, "result": result}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/audit")
+        async def commander_complete_audit(payload: dict = Body(default={})):
+            target = str(payload.get("target", "")).strip()
+            email = str(payload.get("email", "")).strip() or None
+            if not target:
+                return JSONResponse({"error": "target requerido"}, status_code=400)
+            if payload.get("authorized") is not True:
+                return JSONResponse(
+                    {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
+                    status_code=400,
+                )
+            try:
+                def _run():
+                    scan_id = _commander_mod.create_scan_record(target, "dashboard_audit")
+                    report_path = _commander_mod.run_audit_phased(scan_id, target, email)
+                    return {
+                        "scan_id": scan_id,
+                        "target": target,
+                        "report": str(report_path) if report_path else None,
+                    }
+                result = await run_in_threadpool(_run)
+                return {"ok": True, **result}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/audits/{scan_id}/resume")
+        async def commander_resume_audit(scan_id: int, payload: dict = Body(default={})):
+            email = str(payload.get("email", "")).strip() or None
+            if payload.get("authorized") is not True:
+                return JSONResponse(
+                    {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
+                    status_code=400,
+                )
+            try:
+                result = await run_in_threadpool(_commander_mod.resume_scan, scan_id, email)
+                return {"ok": True, "scan_id": scan_id, "report": str(result) if result else None}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.get("/api/commander/reports")
+        async def commander_reports():
+            try:
+                directory = _commander_report_dir()
+                if not directory.exists():
+                    return {"reports": []}
+                reports = []
+                for path in sorted(
+                    (item for item in directory.iterdir() if item.is_file()),
+                    key=lambda item: item.stat().st_mtime,
+                    reverse=True,
+                )[:100]:
+                    stat = path.stat()
+                    reports.append({
+                        "name": path.name,
+                        "size": stat.st_size,
+                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                        "encrypted": path.suffix == ".enc" or path.name.endswith(".html.enc"),
+                    })
+                return {"reports": reports, "directory": str(directory)}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/anchor")
+        async def commander_anchor(payload: dict = Body(default={})):
+            hash_value = str(payload.get("hash", "")).strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{64}", hash_value):
+                return JSONResponse({"error": "hash SHA-256 inválido"}, status_code=400)
+            if payload.get("confirm") is not True:
+                return JSONResponse(
+                    {"error": "confirm=true requerido para solicitar el anclaje"},
+                    status_code=400,
+                )
+            try:
+                proof = await run_in_threadpool(
+                    _commander_mod.anchor_to_sourceseal,
+                    hash_value,
+                    {"source": "sourceseal-commander-dashboard"},
+                )
+                return {"ok": bool(proof and proof[0]), "hash": hash_value, "proof": proof[1] if proof else None}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=502)
+
+        @commander_router.post("/api/commander/osint")
+        async def commander_osint(payload: dict = Body(default={})):
+            qtype = payload.get("type", "ip")
+            query = payload.get("query", "")
+            if not query:
+                return JSONResponse({"error": "query requerido"}, status_code=400)
+            fn_name = {"ip": "osint_ip", "domain": "osint_domain", "email": "osint_email"}.get(qtype)
+            if not fn_name or not hasattr(_commander_mod, fn_name):
+                return JSONResponse({"error": f"tipo inválido: {qtype}"}, status_code=400)
+            try:
+                result = await run_in_threadpool(getattr(_commander_mod, fn_name), query)
+                return {"type": qtype, "query": query, "result": result}
+            except Exception as e:
+                return JSONResponse({"error": str(e)}, status_code=500)
+
+        def _comlink_paths():
+            comlink_dir = Path(_commander_dir) / "comlink"
+            return (
+                comlink_dir / "comlink.sh",
+                comlink_dir / "data" / "config.json",
+                comlink_dir / "data" / "contacts.json",
+                comlink_dir / "data" / "queue" / "queue.db",
+                comlink_dir / "data" / "last_emergency.json",
+            )
+
+        def _read_comlink_json(path: Path, default):
+            try:
+                with path.open("r", encoding="utf-8") as handle:
+                    return json.load(handle)
+            except (OSError, json.JSONDecodeError):
+                return default
+
+        def _write_comlink_json(path: Path, value):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = path.with_name(f"{path.name}.tmp")
+            with temp_path.open("w", encoding="utf-8") as handle:
+                json.dump(value, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+            os.replace(temp_path, path)
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
+
+        def _comlink_contacts_document(document):
+            if isinstance(document, dict) and isinstance(document.get("contacts"), dict):
+                return document["contacts"], "contacts"
+            return document if isinstance(document, dict) else {}, None
+
+        def _redact_comlink_config(config):
+            safe = json.loads(json.dumps(config if isinstance(config, dict) else {}))
+            telegram = safe.get("telegram")
+            if isinstance(telegram, dict) and "bot_token" in telegram:
+                telegram["bot_token"] = {"configured": bool(telegram.get("bot_token"))}
+            voip = safe.get("voip", {})
+            if isinstance(voip, dict) and isinstance(voip.get("sip"), dict):
+                sip = voip["sip"]
+                if "password" in sip:
+                    sip["password"] = {"configured": bool(sip.get("password"))}
+            network = safe.get("network", {})
+            if isinstance(network, dict) and isinstance(network.get("mesh_wifi"), dict):
+                mesh_wifi = network["mesh_wifi"]
+                if "password" in mesh_wifi:
+                    mesh_wifi["password"] = {"configured": bool(mesh_wifi.get("password"))}
+            return safe
+
+        def _comlink_data_snapshot(include_messages=True):
+            import sqlite3
+            _, config_path, contacts_path, queue_path, emergency_path = _comlink_paths()
+            config = _read_comlink_json(config_path, {})
+            contacts_doc = _read_comlink_json(contacts_path, {})
+            contacts, _ = _comlink_contacts_document(contacts_doc)
+            queue = []
+            stats = {name: 0 for name in ("pending", "processing", "sent", "failed")}
+            if queue_path.exists():
+                conn = sqlite3.connect(str(queue_path))
+                conn.row_factory = sqlite3.Row
+                for row in conn.execute(
+                    "SELECT status, COUNT(*) AS count FROM messages GROUP BY status"
+                ).fetchall():
+                    stats[str(row["status"])] = int(row["count"])
+                if include_messages:
+                    queue = [
+                        dict(row) for row in conn.execute(
+                            """SELECT id, contact_id, channel, message, encrypted,
+                                      timestamp, status, priority, attempts,
+                                      last_attempt, metadata
+                               FROM messages
+                               ORDER BY priority DESC, timestamp ASC
+                               LIMIT 100"""
+                        ).fetchall()
+                    ]
+                conn.close()
+            return {
+                "config": _redact_comlink_config(config),
+                "contacts": contacts,
+                "queue": queue,
+                "queue_stats": stats,
+                "last_emergency": _read_comlink_json(emergency_path, None),
+            }
+
+        def _run_comlink_command(args, timeout=30):
+            comlink_sh, *_ = _comlink_paths()
+            if not comlink_sh.exists():
+                raise FileNotFoundError("COM-LINK no disponible")
+            result = subprocess.run(
+                ["bash", str(comlink_sh), *args],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=str(comlink_sh.parent),
+            )
+            return {
+                "ok": result.returncode == 0,
+                "returncode": result.returncode,
+                "stdout": (result.stdout or "")[-4000:],
+                "stderr": (result.stderr or "")[-2000:],
+            }
+
+        @commander_router.get("/api/commander/comlink/status")
+        async def commander_comlink_status():
+            comlink_sh, *_ = _comlink_paths()
+            if not comlink_sh.exists():
+                return JSONResponse({"available": False, "ready_count": 0, "channels": []}, status_code=503)
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    ["bash", str(comlink_sh), "status-json"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                if result.returncode != 0:
+                    return JSONResponse(
+                        {"available": True, "ready_count": 0, "channels": [],
+                         "error": (result.stderr or result.stdout)[-1000:]},
+                        status_code=503,
+                    )
+                import json
+                data = json.loads(result.stdout)
+                data["execution_context"] = (
+                    "El canal se ejecuta en el mismo entorno que el dashboard; "
+                    "para Termux, el dashboard debe estar iniciado en Termux."
+                )
+                return data
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"available": True, "ready_count": 0, "channels": [],
+                                     "error": "COM-LINK status timeout"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"available": True, "ready_count": 0, "channels": [],
+                                     "error": str(exc)}, status_code=503)
+
+        @commander_router.get("/api/commander/comlink/data")
+        async def commander_comlink_data():
+            try:
+                return await run_in_threadpool(_comlink_data_snapshot)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.put("/api/commander/comlink/config")
+        async def commander_comlink_config(payload: dict = Body(default={})):
+            """Update only non-secret COM-LINK settings from the dashboard."""
+            _, config_path, _, _, _ = _comlink_paths()
+            updates = payload.get("config", payload.get("updates", {}))
+            if not isinstance(updates, dict):
+                return JSONResponse({"error": "config debe ser un objeto"}, status_code=400)
+
+            allowed = {
+                "device": {"name": str, "id": str},
+                "network": {
+                    "fallback_order": list, "retry_attempts": int, "retry_delay": int,
+                    "mesh_wifi": {"ssid": str, "port": int},
+                    "mesh_bluetooth": {"name": str, "channel": int},
+                },
+                "telegram": {"default_chat_id": str, "webhook_url": str},
+                "voip": {
+                    "sip": {"server": str, "username": str, "port": int},
+                    "asterisk": {"enabled": bool, "config_path": str},
+                },
+                "radio": {"enabled": bool, "frequency": (str, int, float), "mode": str, "baudrate": int},
+                "satellite": {"enabled": bool, "provider": str, "device": str},
+                "security": {
+                    "encryption": bool, "auto_delete": bool, "auto_delete_days": int,
+                    "log_level": str, "key_length": int, "stealth_mode": bool,
+                },
+            }
+            forbidden = {"bot_token", "password", "private_key", "private_key_pem"}
+            errors = []
+            config = _read_comlink_json(config_path, {})
+
+            for section, values in updates.items():
+                schema = allowed.get(section)
+                if schema is None or not isinstance(values, dict):
+                    errors.append(f"sección no editable o inválida: {section}")
+                    continue
+                destination = config.setdefault(section, {})
+                for key, value in values.items():
+                    expected = schema.get(key)
+                    path = f"{section}.{key}"
+                    if expected is None or key in forbidden:
+                        errors.append(f"campo no editable: {path}")
+                        continue
+                    if isinstance(expected, dict):
+                        if not isinstance(value, dict):
+                            errors.append(f"{path} debe ser un objeto")
+                            continue
+                        nested = destination.setdefault(key, {})
+                        for nested_key, nested_value in value.items():
+                            nested_expected = expected.get(nested_key)
+                            nested_path = f"{path}.{nested_key}"
+                            if nested_expected is None or nested_key in forbidden:
+                                errors.append(f"campo no editable: {nested_path}")
+                            elif not isinstance(nested_value, nested_expected):
+                                errors.append(f"tipo inválido: {nested_path}")
+                            else:
+                                nested[nested_key] = nested_value
+                    elif not isinstance(value, expected):
+                        errors.append(f"tipo inválido: {path}")
+                    else:
+                        destination[key] = value
+
+            fallback = updates.get("network", {}).get("fallback_order")
+            valid_channels = {"sms", "telegram", "voip", "mesh_wifi", "mesh_bluetooth", "radio", "satellite"}
+            if fallback is not None and (not fallback or any(item not in valid_channels for item in fallback)):
+                errors.append("network.fallback_order contiene un canal inválido")
+            if errors:
+                return JSONResponse({"error": "No se guardó la configuración", "details": errors}, status_code=400)
+            try:
+                await run_in_threadpool(_write_comlink_json, config_path, config)
+                return {"ok": True, "config": _redact_comlink_config(config)}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.get("/api/commander/comlink/contacts")
+        async def commander_comlink_contacts():
+            try:
+                snapshot = await run_in_threadpool(_comlink_data_snapshot, False)
+                return {"contacts": snapshot["contacts"]}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/comlink/contacts")
+        async def commander_comlink_contact_create(payload: dict = Body(default={})):
+            if payload.get("confirm") is not True:
+                return JSONResponse({"error": "confirm=true requerido para modificar contactos"}, status_code=400)
+            contact_id = str(payload.get("id", "")).strip()
+            name = str(payload.get("name", "")).strip()
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact_id):
+                return JSONResponse({"error": "id inválido"}, status_code=400)
+            if not name:
+                return JSONResponse({"error": "name requerido"}, status_code=400)
+            _, _, contacts_path, _, _ = _comlink_paths()
+            fields = ("name", "phone", "telegram_chat_id", "sip_address",
+                      "mesh_wifi_ip", "mesh_bluetooth_mac", "priority", "trusted")
+            contact = {key: payload[key] for key in fields if key in payload}
+            contact["name"] = name
+            try:
+                contact["priority"] = max(1, min(int(contact.get("priority", 5)), 10))
+            except (TypeError, ValueError):
+                return JSONResponse({"error": "priority inválida"}, status_code=400)
+            contact["trusted"] = bool(contact.get("trusted", True))
+            try:
+                document = _read_comlink_json(contacts_path, {})
+                contacts, wrapper = _comlink_contacts_document(document)
+                if contact_id in contacts:
+                    return JSONResponse({"error": "el contacto ya existe"}, status_code=409)
+                contacts[contact_id] = contact
+                _write_comlink_json(contacts_path, document if wrapper else contacts)
+                return {"ok": True, "id": contact_id, "contact": contact}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.put("/api/commander/comlink/contacts/{contact_id}")
+        async def commander_comlink_contact_update(contact_id: str, payload: dict = Body(default={})):
+            if payload.get("confirm") is not True:
+                return JSONResponse({"error": "confirm=true requerido para modificar contactos"}, status_code=400)
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact_id):
+                return JSONResponse({"error": "id inválido"}, status_code=400)
+            _, _, contacts_path, _, _ = _comlink_paths()
+            fields = ("name", "phone", "telegram_chat_id", "sip_address",
+                      "mesh_wifi_ip", "mesh_bluetooth_mac", "priority", "trusted")
+            updates = {key: payload[key] for key in fields if key in payload}
+            if "name" in updates and not str(updates["name"]).strip():
+                return JSONResponse({"error": "name no puede estar vacío"}, status_code=400)
+            if "priority" in updates:
+                try:
+                    updates["priority"] = max(1, min(int(updates["priority"]), 10))
+                except (TypeError, ValueError):
+                    return JSONResponse({"error": "priority inválida"}, status_code=400)
+            if "trusted" in updates:
+                updates["trusted"] = bool(updates["trusted"])
+            try:
+                document = _read_comlink_json(contacts_path, {})
+                contacts, wrapper = _comlink_contacts_document(document)
+                if contact_id not in contacts:
+                    return JSONResponse({"error": "contacto no encontrado"}, status_code=404)
+                contacts[contact_id].update(updates)
+                _write_comlink_json(contacts_path, document if wrapper else contacts)
+                return {"ok": True, "id": contact_id, "contact": contacts[contact_id]}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.delete("/api/commander/comlink/contacts/{contact_id}")
+        async def commander_comlink_contact_delete(contact_id: str, payload: dict = Body(default={})):
+            if payload.get("confirm") is not True:
+                return JSONResponse({"error": "confirm=true requerido para eliminar contactos"}, status_code=400)
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact_id):
+                return JSONResponse({"error": "id inválido"}, status_code=400)
+            _, _, contacts_path, _, _ = _comlink_paths()
+            try:
+                document = _read_comlink_json(contacts_path, {})
+                contacts, wrapper = _comlink_contacts_document(document)
+                if contact_id not in contacts:
+                    return JSONResponse({"error": "contacto no encontrado"}, status_code=404)
+                del contacts[contact_id]
+                _write_comlink_json(contacts_path, document if wrapper else contacts)
+                return {"ok": True, "deleted": contact_id}
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/comlink/action")
+        async def commander_comlink_action(payload: dict = Body(default={})):
+            action = str(payload.get("action", "")).strip()
+            confirm_required = {"send_location", "queue_process", "queue_retry_failed", "queue_clean"}
+            if action in confirm_required and payload.get("confirm") is not True:
+                return JSONResponse({"error": "confirm=true requerido para esta acción"}, status_code=400)
+            if action == "send_location":
+                contact = str(payload.get("contact", "")).strip()
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact):
+                    return JSONResponse({"error": "contact inválido"}, status_code=400)
+                args, timeout = ["location", contact], 30
+            elif action == "queue_process":
+                channel = str(payload.get("channel", "")).strip()
+                allowed_channels = {"", "sms", "telegram", "voip", "mesh_wifi", "mesh_bluetooth", "radio", "satellite"}
+                if channel not in allowed_channels:
+                    return JSONResponse({"error": "canal inválido"}, status_code=400)
+                args, timeout = ["queue-process"] + ([channel] if channel else []), 90
+            elif action == "queue_retry_failed":
+                args, timeout = ["queue-retry-failed"], 90
+            elif action == "queue_clean":
+                try:
+                    days = max(0, min(int(payload.get("days", 30)), 3650))
+                except (TypeError, ValueError):
+                    return JSONResponse({"error": "days inválido"}, status_code=400)
+                args, timeout = ["queue-clean", str(days)], 30
+            elif action == "device_info":
+                args, timeout = ["device-info"], 20
+            elif action == "battery_status":
+                args, timeout = ["battery-status"], 15
+            elif action == "location_status":
+                args, timeout = ["location-get"], 20
+            else:
+                return JSONResponse({"error": f"acción no permitida: {action}"}, status_code=400)
+            try:
+                result = await run_in_threadpool(_run_comlink_command, args, timeout)
+                if action in {"queue_process", "queue_retry_failed", "queue_clean"}:
+                    result["data"] = await run_in_threadpool(_comlink_data_snapshot, True)
+                return {"action": action, **result}
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": "COM-LINK timeout"}, status_code=504)
+            except FileNotFoundError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=503)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/comlink/send")
+        async def commander_comlink_send(payload: dict = Body(default={})):
+            comlink_sh, *_ = _comlink_paths()
+            channel = str(payload.get("channel", "")).strip()
+            message = str(payload.get("message", "")).strip()
+            destination = str(payload.get("destination", "")).strip()
+            allowed_channels = {
+                "sms", "telegram", "voip", "mesh_wifi",
+                "mesh_bluetooth", "radio", "satellite",
+            }
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
+            if channel not in allowed_channels:
+                return JSONResponse({"error": f"canal inválido: {channel}"}, status_code=400)
+            if not message:
+                return JSONResponse({"error": "message requerido"}, status_code=400)
+            if payload.get("confirm") is not True:
+                return JSONResponse(
+                    {"error": "confirm=true requerido para transmitir desde el dashboard"},
+                    status_code=400,
+                )
+
+            command = ["bash", str(comlink_sh), "send", channel, message]
+            if destination:
+                command.append(destination)
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    command,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                return {
+                    "ok": result.returncode == 0,
+                    "channel": channel,
+                    "returncode": result.returncode,
+                    "stdout": result.stdout[-1000:] if result.stdout else "",
+                    "stderr": result.stderr[-1000:] if result.stderr else "",
+                }
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": "COM-LINK timeout"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/comlink/emergency")
+        async def commander_comlink_emergency(payload: dict = Body(default={})):
+            """Run the explicitly confirmed COM-LINK emergency broadcast."""
+            comlink_sh, *_ = _comlink_paths()
+            contact = str(payload.get("contact", "")).strip()
+            message = str(payload.get("message", "")).strip()
+            dry_run = payload.get("dry_run") is True
+            confirm = payload.get("confirm") is True
+            include_location = payload.get("include_location", True) is not False
+
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
+            if not contact:
+                return JSONResponse({"error": "contact requerido"}, status_code=400)
+            if not message:
+                return JSONResponse({"error": "message requerido"}, status_code=400)
+            if not dry_run and not confirm:
+                return JSONResponse(
+                    {"error": "confirm=true requerido para transmitir; usa dry_run=true para revisar"},
+                    status_code=400,
+                )
+
+            command = ["bash", str(comlink_sh), "emergency", contact, message]
+            command.append("--dry-run" if dry_run else "--confirm")
+            if not include_location:
+                command.append("--no-location")
+
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    command,
+                    capture_output=True,
+                    text=True,
+                    timeout=45,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                report = None
+                for line in reversed((result.stdout or "").splitlines()):
+                    try:
+                        candidate = json.loads(line)
+                        if isinstance(candidate, dict) and "results" in candidate:
+                            report = candidate
+                            break
+                    except json.JSONDecodeError:
+                        continue
+                return JSONResponse(
+                    {
+                        "ok": result.returncode == 0,
+                        "returncode": result.returncode,
+                        "contact": contact,
+                        "dry_run": dry_run,
+                        "report": report,
+                        "stdout": (result.stdout or "")[-2000:],
+                        "stderr": (result.stderr or "")[-1000:],
+                    },
+                    status_code=200 if result.returncode == 0 else 502,
+                )
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": "COM-LINK emergency timeout"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        # ─── COM-LINK: Gestión de claves criptográficas (wrapper no-interactivo) ──
+        @commander_router.get("/api/commander/comlink/keys")
+        async def commander_comlink_keys_list():
+            """Lista las claves criptográficas generadas para cada contacto."""
+            comlink_sh, config_path, contacts_path, queue_path, _ = _comlink_paths()
+            keys_dir = Path(_commander_dir) / "comlink" / "data" / "keys"
+            if not keys_dir.exists():
+                return {"keys": {}, "available": True}
+            contacts_doc = _read_comlink_json(contacts_path, {})
+            contacts = contacts_doc.get("contacts", {})
+            result = {}
+            for f in sorted(keys_dir.iterdir()):
+                if f.is_file():
+                    # Nombre: <contact_id>_<type>.<ext>
+                    name = f.name
+                    parts = name.rsplit("_", 1)
+                    if len(parts) != 2:
+                        continue
+                    contact_id, type_ext = parts
+                    if contact_id not in result:
+                        result[contact_id] = {
+                            "contact_name": contacts.get(contact_id, {}).get("name", contact_id),
+                            "aes": False, "rsa_public": False, "rsa_private": False,
+                        }
+                    if type_ext == "key.txt":
+                        result[contact_id]["aes"] = True
+                    elif type_ext == "public.pem":
+                        result[contact_id]["rsa_public"] = True
+                    elif type_ext == "private.pem":
+                        result[contact_id]["rsa_private"] = True
+            return {"keys": result, "available": True}
+
+        @commander_router.post("/api/commander/comlink/keys/generate")
+        async def commander_comlink_keys_generate(payload: dict = Body(default={})):
+            """Genera par de claves AES+RSA para un contacto (wrapper de generate_keys)."""
+            comlink_sh, *_ = _comlink_paths()
+            contact_id = str(payload.get("contact_id", "")).strip()
+            if not contact_id or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact_id):
+                return JSONResponse({"error": "contact_id inválido (alfanumérico, 1-64 chars)"}, status_code=400)
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
+            # generate_keys no es un subcomando CLI — es una función interna.
+            # La invocamos via source del key_manager.sh con las variables de entorno.
+            script = (
+                f'source "$(dirname "$0")/crypto/key_manager.sh"; '
+                f'generate_keys "{contact_id}"'
+            )
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    ["bash", "-c", script],
+                    capture_output=True, text=True, timeout=15,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                return {
+                    "ok": result.returncode == 0,
+                    "contact_id": contact_id,
+                    "returncode": result.returncode,
+                    "stdout": result.stdout[-500:] if result.stdout else "",
+                    "stderr": result.stderr[-500:] if result.stderr else "",
+                }
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": "Timeout generando claves"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.delete("/api/commander/comlink/keys/{contact_id}")
+        async def commander_comlink_keys_delete(contact_id: str):
+            """Elimina todas las claves de un contacto."""
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", contact_id):
+                return JSONResponse({"error": "contact_id inválido"}, status_code=400)
+            keys_dir = Path(_commander_dir) / "comlink" / "data" / "keys"
+            if not keys_dir.exists():
+                return {"ok": True, "deleted": 0}
+            deleted = 0
+            for f in keys_dir.glob(f"{contact_id}_*"):
+                try:
+                    f.unlink()
+                    deleted += 1
+                except OSError:
+                    pass
+            return {"ok": True, "deleted": deleted, "contact_id": contact_id}
+
+        # ─── COM-LINK: Mesh P2P (discovery + start/stop servidores) ─────────────
+        @commander_router.post("/api/commander/comlink/mesh/discover")
+        async def commander_comlink_mesh_discover(payload: dict = Body(default={})):
+            """Ejecuta discovery de dispositivos en la red local (scan_all del discovery.sh)."""
+            comlink_sh, *_ = _comlink_paths()
+            method = str(payload.get("method", "all")).strip()
+            if method not in ("all", "wifi", "bluetooth"):
+                return JSONResponse({"error": "method inválido: all|wifi|bluetooth"}, status_code=400)
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
+            # Invocar discovery.sh directamente con el metodo pedido
+            discovery_sh = Path(_commander_dir) / "comlink" / "mesh" / "discovery.sh"
+            if not discovery_sh.exists():
+                return JSONResponse({"error": "discovery.sh no encontrado"}, status_code=503)
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    ["bash", str(discovery_sh), f"scan_{method}" if method != "all" else "scan_all"],
+                    capture_output=True, text=True, timeout=30,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                # Intentar parsear dispositivos conocidos del JSON
+                known_path = Path(_commander_dir) / "comlink" / "data" / "known_devices.json"
+                known = _read_comlink_json(known_path, []) if known_path.exists() else []
+                return {
+                    "ok": result.returncode == 0,
+                    "method": method,
+                    "returncode": result.returncode,
+                    "stdout": result.stdout[-2000:] if result.stdout else "",
+                    "stderr": result.stderr[-500:] if result.stderr else "",
+                    "known_devices": known,
+                }
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": "Discovery timeout"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.post("/api/commander/comlink/mesh/server")
+        async def commander_comlink_mesh_server(payload: dict = Body(default={})):
+            """Inicia o detiene el servidor P2P HTTP (mesh WiFi)."""
+            comlink_sh, *_ = _comlink_paths()
+            action = str(payload.get("action", "")).strip()
+            if action not in ("start", "stop"):
+                return JSONResponse({"error": "action requerido: start|stop"}, status_code=400)
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
+            p2p_http = Path(_commander_dir) / "comlink" / "mesh" / "p2p_http.sh"
+            if not p2p_http.exists():
+                return JSONResponse({"error": "p2p_http.sh no encontrado"}, status_code=503)
+            func = "start_p2p_http_server" if action == "start" else "stop_p2p_http_server"
+            script = f'source "$(dirname "$0")/mesh/p2p_http.sh"; {func}'
+            timeout = 10 if action == "stop" else 30
+            try:
+                result = await run_in_threadpool(
+                    subprocess.run,
+                    ["bash", "-c", script],
+                    capture_output=True, text=True, timeout=timeout,
+                    cwd=str(Path(_commander_dir) / "comlink"),
+                )
+                return {
+                    "ok": result.returncode == 0,
+                    "action": action,
+                    "returncode": result.returncode,
+                    "stdout": result.stdout[-1000:] if result.stdout else "",
+                    "stderr": result.stderr[-500:] if result.stderr else "",
+                }
+            except subprocess.TimeoutExpired:
+                return JSONResponse({"error": f"P2P server {action} timeout"}, status_code=504)
+            except Exception as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
+
+        @commander_router.get("/api/commander/comlink/mesh/known-devices")
+        async def commander_comlink_mesh_known_devices():
+            """Lista los dispositivos COM-LINK conocidos."""
+            known_path = Path(_commander_dir) / "comlink" / "data" / "known_devices.json"
+            if not known_path.exists():
+                return {"devices": []}
+            data = _read_comlink_json(known_path, [])
+            return {"devices": data if isinstance(data, list) else []}
+
+        @commander_router.post("/api/commander/comlink/mesh/known-devices")
+        async def commander_comlink_mesh_add_known_device(payload: dict = Body(default={})):
+            """Añade un dispositivo COM-LINK conocido manualmente."""
+            ip = str(payload.get("ip", "")).strip()
+            name = str(payload.get("name", "")).strip()
+            device_id = str(payload.get("device_id", "")).strip()
+            if not ip or not re.fullmatch(r"[0-9.]{7,15}", ip):
+                return JSONResponse({"error": "ip inválida"}, status_code=400)
+            known_path = Path(_commander_dir) / "comlink" / "data" / "known_devices.json"
+            devices = _read_comlink_json(known_path, [])
+            if not isinstance(devices, list):
+                devices = []
+            entry = {"ip": ip, "name": name or ip, "id": device_id or f"dev_{len(devices)+1}"}
+            devices.append(entry)
+            _write_comlink_json(known_path, devices)
+            return {"ok": True, "device": entry}
+
+        app.routes.extend(commander_router.routes)
+        _COMMANDER_OK = True
+        print(f"[COMMANDER] Router montado: /api/commander/* (dir: {_commander_dir})", flush=True)
+    else:
+        print("[WARN] COMMANDER no encontrado (busca carpeta hermana 'commander/' con commander.py) — /api/commander/* desactivado", flush=True)
+
+except Exception as _cmd_err:
+    import traceback
+    print(f"[WARN] COMMANDER import falló: {_cmd_err}", flush=True)
+    traceback.print_exc()
+    _COMMANDER_OK = False
+
 # ── Endpoints de integración ARTO + SEAL ──────────────────────────────────
 @app.get("/api/integrated/health")
 async def integrated_health():
@@ -369,7 +1305,7 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 # Endpoints PÚBLICOS (no requieren API key):
 #   /api/health, /health, /healthz  → health checks
 #   /canary/callback               → intruso phone-home (debe ser accesible)
-PUBLIC_PATHS = {"/api/health", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json"}
+PUBLIC_PATHS = {"/api/health", "/api/healthz", "/health", "/healthz", "/canary/callback", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json"}
 
 # ── CORS lockdown ───────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
@@ -412,6 +1348,40 @@ try:
 except Exception as e:
     print(f"[OSINT] No cargado: {e}")
 # == END CORSET + TRIAGE + OSINT INTEGRATION ================================"
+
+def _android_field_scope_status() -> dict:
+    if _corset is None:
+        return {
+            "active": False,
+            "configured": False,
+            "note": "Corset no está configurado en este proceso",
+        }
+    try:
+        status = _corset.status()
+        configured = bool(status.get(
+            "scope_loaded",
+            status.get("networks", 0) > 0 or status.get("hosts", 0) > 0,
+        ))
+        return {"active": bool(status.get("active")), "configured": configured, **status}
+    except Exception as exc:
+        return {"active": False, "configured": False, "error": str(exc)}
+
+try:
+    from android_field import router as android_field_router
+    from android_field import configure_scope as configure_android_scope
+    configure_android_scope(_android_field_scope_status)
+    app.include_router(android_field_router)
+    print("[ANDROID] Integraciones de campo cargadas", flush=True)
+except Exception as e:
+    print(f"[ANDROID] No cargado: {e}", flush=True)
+
+# ── SourceSeal Operations Monitor (solo lectura + auditoría local) ───────────
+try:
+    from monitor.operations_monitor import router as operations_monitor_router
+    app.include_router(operations_monitor_router)
+    print("[OPERATIONS] Monitor seguro montado en /api/operations/*", flush=True)
+except Exception as e:
+    print(f"[OPERATIONS] No cargado: {e}", flush=True)
 
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
                    allow_methods=["GET", "POST", "DELETE", "PATCH", "OPTIONS"], 
@@ -472,8 +1442,26 @@ async def security_middleware(request: Request, call_next):
     if not _rate_check(client_ip):
         return JSONResponse({"error": "Rate limit exceeded"}, status_code=429)
 
-    # Health checks y canary callback son públicos
-    if path in PUBLIC_PATHS or path == "/" or path.startswith("/assets/") or path.startswith("/vite/") or path.endswith(".ico") or path.endswith(".png") or path.endswith(".svg") or path.endswith(".webmanifest"):
+    # Health checks y canary callback son públicos. Las navegaciones GET que
+    # no pertenecen a la API también deben llegar al fallback SPA para que
+    # rutas como /geo funcionen al abrirse directamente en el navegador.
+    # La protección sigue aplicándose a /api/*, WebSocket y documentación.
+    is_spa_navigation = (
+        request.method == "GET"
+        and not path.startswith(("/api/", "/ws", "/docs", "/redoc"))
+        and path != "/openapi.json"
+    )
+    if (
+        path in PUBLIC_PATHS
+        or path == "/"
+        or is_spa_navigation
+        or path.startswith("/assets/")
+        or path.startswith("/vite/")
+        or path.endswith(".ico")
+        or path.endswith(".png")
+        or path.endswith(".svg")
+        or path.endswith(".webmanifest")
+    ):
         return await call_next(request)
 
     # Todo lo demás requiere autenticación. El frontend envía el token emitido
@@ -504,7 +1492,8 @@ async def security_middleware(request: Request, call_next):
     # Timeout: los escaneos de red (nmap, ONVIF) pueden tardar hasta 60s en
     # Termux. El resto de endpoints se limita a 25s para evitar cuelgues.
     _scan_paths = ("/api/scan/", "/api/enhanced/discover", "/api/network/cameras",
-                   "/api/iot/scan", "/api/capture/")
+                   "/api/iot/scan", "/api/capture/", "/api/discover/network",
+                   "/api/android/port-scan")
     _timeout = 150.0 if any(path.startswith(p) for p in _scan_paths for path in [request.url.path]) else 25.0
     try:
         return await asyncio.wait_for(call_next(request), timeout=_timeout)
@@ -707,6 +1696,21 @@ SERVICE_DEFS = {
         "log_file": str(LOGS_DIR / "canary.log")},
     "network-ids": {"description": "Network IDS — intrusion detection",
         "cmd": [sys.executable, str(ROOT / "honeypot" / "network-ids" / "ids_rules.py")], "log_file": str(LOGS_DIR / "network-ids.log")},
+    "ghost-phantom-master": {"description": "GHOST HUNTER PHANTOM — Master orquestador (:8002)",
+        "cmd": [sys.executable, str(ROOT / "ghost_hunter_phantom" / "master.py")],
+        "log_file": str(LOGS_DIR / "phantom_master.log"),
+        "env": {"BACKEND_API": "http://localhost:8001", "MASTER_PORT": "8002"}},
+    "ghost-phantom-node": {"description": "GHOST HUNTER PHANTOM — Node worker (ejecuta playbooks)",
+        "cmd": [sys.executable, str(ROOT / "ghost_hunter_phantom" / "node.py")],
+        "log_file": str(LOGS_DIR / "phantom_node.log"),
+        "env": {"NODE_ID": "phantom_node_1", "MASTER_URL": "http://localhost:8002", "BACKEND_API": "http://localhost:8001"}},
+    "commander": {"description": "COMMANDER — Auditoría de red, OSINT, forense (repo hermano, in-process)",
+        "cmd": None, "log_file": str(LOGS_DIR / "dashboard.log"), "in_process_flag": "_COMMANDER_OK"},
+    "nexus-omni": {"description": "NEXUS OMNI v9.0 — IA predictiva, adaptativa, auto-reparable (:8004)",
+        "cmd": [sys.executable, str(ROOT.parent / "nexus_omni_v9.py")],
+        "log_file": str(LOGS_DIR / "nexus_omni.log"),
+        "env": {"NEXUS_DB": str(ROOT / "nexus_omni.db")},
+        "cwd": str(ROOT.parent)},
 }
 
 _svc_lock = threading.Lock()
@@ -759,7 +1763,9 @@ def _start_service(name: str) -> dict:
         proc = _svc_procs.get(name)
         if proc and proc.poll() is None: return {"ok": True, "message": f"{name} already running (PID {proc.pid})"}
         log_f = open(defn["log_file"], "a")
-        proc = subprocess.Popen(defn["cmd"], stdout=log_f, stderr=log_f, cwd=str(ROOT))
+        _env = {**os.environ, **defn.get("env", {})}
+        _cwd = defn.get("cwd", str(ROOT))
+        proc = subprocess.Popen(defn["cmd"], stdout=log_f, stderr=log_f, cwd=_cwd, env=_env)
         _svc_procs[name] = proc; _svc_start_times[name] = time.time()
         return {"ok": True, "message": f"{name} started (PID {proc.pid})"}
 
@@ -1135,6 +2141,67 @@ async def scan_network_stream(subnet: str = ""):
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
+@app.get("/api/network/interfaces")
+async def list_network_interfaces():
+    """Enumera TODAS las interfaces de red activas (WiFi, datos, ethernet, loopback).
+    Sin filtros. El operador decide cual escanear."""
+    import ipaddress as _ipa
+    interfaces = []
+    try:
+        ok, out = await _nmap_or_empty(["ip", "-o", "addr", "show"], timeout=5)
+        if not ok:
+            # Fallback: /proc/net/fib_trie o ifconfig
+            ok2, out2 = await _nmap_or_empty(["ifconfig"], timeout=5)
+            if ok2:
+                # Parse ifconfig output (menos preciso pero funciona)
+                current = {}
+                for line in out2.splitlines():
+                    if line and not line[0].isspace():
+                        if current.get("name"):
+                            interfaces.append(current)
+                        name = line.split(":")[0].strip()
+                        current = {"name": name, "ip_address": "", "network_cidr": "", "is_up": True, "type_hint": "unknown"}
+                        if "inet " in line or "inet addr:" in line:
+                            import re as _re
+                            m = _re.search(r'inet (?:addr:)?(\d+\.\d+\.\d+\.\d+)', line)
+                            if m: current["ip_address"] = m.group(1)
+                    elif current.get("name") and "inet " in line:
+                        import re as _re
+                        m = _re.search(r'inet (?:addr:)?(\d+\.\d+\.\d+\.\d+).*?(\d+)', line)
+                        if m and not current["ip_address"]:
+                            current["ip_address"] = m.group(1)
+                if current.get("name"): interfaces.append(current)
+        else:
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) < 4 or "inet" not in parts: continue
+                iface_name = parts[1]
+                ip_cidr = parts[3] if "/" in parts[3] else ""
+                if not ip_cidr: continue
+                type_hint = "unknown"
+                if iface_name == "lo": type_hint = "loopback"
+                elif iface_name.startswith("wlan"): type_hint = "wifi"
+                elif iface_name.startswith("rmnet") or iface_name.startswith("ccmni"): type_hint = "mobile"
+                elif iface_name.startswith("eth"): type_hint = "ethernet"
+                elif iface_name.startswith("ap"): type_hint = "hotspot"
+                try:
+                    net = _ipa.ip_network(ip_cidr, strict=False)
+                    interfaces.append({"name": iface_name, "ip_address": ip_cidr.split("/")[0],
+                        "network_cidr": str(net), "prefix": net.prefixlen, "is_up": True, "type_hint": type_hint})
+                except ValueError: continue
+    except Exception as e:
+        interfaces.append({"name": "error", "ip_address": "", "network_cidr": "", "is_up": False, "type_hint": "error", "error": str(e)})
+    # Fallback absoluto: usar subnet_from_iface
+    if not any(i.get("type_hint") not in ("loopback", "error") for i in interfaces):
+        subnet = await asyncio.to_thread(subnet_from_iface)
+        local_info = _detect_local_network()
+        if subnet:
+            interfaces.insert(0, {"name": "auto", "ip_address": local_info.get("ip",""), "network_cidr": subnet,
+                "prefix": 24, "is_up": True, "type_hint": "auto-detected"})
+    priority = {"wifi": 0, "hotspot": 1, "mobile": 2, "ethernet": 3, "auto-detected": 4, "loopback": 5, "unknown": 6}
+    interfaces.sort(key=lambda x: priority.get(x.get("type_hint",""), 7))
+    return interfaces
+
 @app.get("/api/network/info")
 async def network_info():
     """Info de red REAL instantanea (sin escaneo). Usada por el frontend para
@@ -1145,6 +2212,143 @@ async def network_info():
     net = _detect_local_network()
     return {"subnet": subnet, "local_ip": net.get("ip", ""),
             "local_hostname": socket.gethostname() if hasattr(socket, "gethostname") else ""}
+
+def _detect_gateway(subnet: str = "") -> str:
+    """Detecta el gateway real via `ip route show default`. Si falla (comun
+    en Android sin root -- SELinux bloquea la tabla de rutas para apps sin
+    privilegios), asume .1 de la subred detectada como ultimo recurso
+    (convencion casi universal en redes domesticas/hotspots)."""
+    try:
+        out = subprocess.check_output(["ip", "route", "show", "default"],
+                                      stderr=subprocess.DEVNULL, timeout=3).decode()
+        for line in out.splitlines():
+            parts = line.split()
+            if parts and parts[0] == "default" and "via" in parts:
+                return parts[parts.index("via") + 1]
+    except Exception:
+        pass
+    try:
+        import ipaddress as _ipa
+        net = _ipa.ip_network(subnet, strict=False)
+        return str(list(net.hosts())[0])
+    except Exception:
+        return ""
+
+@app.get("/api/discover/network")
+async def discover_network(subnet: str = ""):
+    """Descubrimiento de red SIN root — TCP connect() en toda la subred
+    (metodo primario, probado) + ARP como enriquecimiento opcional de MAC.
+
+    IMPORTANTE (Android/Termux): `ip neigh` y /proc/net/arp estan bloqueados
+    por SELinux para apps sin root en la gran mayoria de dispositivos -> SIEMPRE
+    devuelven vacio sin importar cuantos dispositivos reales haya en la red.
+    Antes este endpoint dependia de ARP como filtro obligatorio (si ARP no
+    encontraba nada, el TCP scan de respaldo NUNCA se ejecutaba) -- por eso
+    la topologia se veia siempre vacia en Termux. Ahora el TCP connect() de
+    subred completa (el mismo motor probado de /api/scan/topology) es SIEMPRE
+    el metodo primario; ARP solo agrega la MAC cuando esta disponible.
+    """
+    if not subnet:
+        subnet = await asyncio.to_thread(subnet_from_iface)
+    local_info = _detect_local_network()
+    local_ip = local_info.get("ip", "")
+    gateway = await asyncio.to_thread(_detect_gateway, subnet)
+
+    # 1. ARP opcional -- solo enriquece con MAC, nunca bloquea el descubrimiento
+    arp_macs = {}
+    try:
+        ok, out = await _nmap_or_empty(["ip", "neigh"], timeout=3)
+        if ok:
+            for line in out.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 4:
+                    ip = parts[0]
+                    mac = next((p for p in parts if len(p) == 17 and p.count(":") == 5), None)
+                    if mac and mac != "00:00:00:00:00:00":
+                        arp_macs[ip] = mac
+    except Exception:
+        pass
+    if not arp_macs:
+        try:
+            arp_data = await asyncio.to_thread(lambda: open("/proc/net/arp").read())
+            for line in arp_data.splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 6 and parts[3] != "00:00:00:00:00:00":
+                    arp_macs[parts[0]] = parts[3]
+        except Exception:
+            pass
+
+    # 2. Descubrimiento REAL: TCP connect() en toda la subred (SIEMPRE corre,
+    # sin importar el resultado de ARP -- este es el fix del bug).
+    tcp_ips = set(await _discover_hosts_tcp(subnet))
+    if gateway:
+        tcp_ips.add(gateway)
+    tcp_ips.update(arp_macs.keys())
+    tcp_ips.discard(local_ip)
+
+    # 3. Fingerprint de cada host encontrado (tipo, riesgo, puertos, vendor)
+    hosts = []
+    if tcp_ips:
+        ip_list = sorted(tcp_ips)
+        fp_results = await asyncio.gather(*[_fingerprint_host(ip) for ip in ip_list])
+        for ip, fp in zip(ip_list, fp_results):
+            mac = arp_macs.get(ip)
+            dev_type = fp["type"]
+            risk = fp["risk"]
+            risk_reasons = list(fp["risk_reasons"])
+            if ip == gateway:
+                if dev_type == "unknown":
+                    dev_type = "router"
+                if not risk_reasons:
+                    risk_reasons.append("Gateway")
+                if risk == "low":
+                    risk = "medium"
+            hosts.append({
+                "ip": ip, "mac": mac, "state": "REACHABLE", "type": dev_type,
+                "vendor": fp["vendor"] or ("gateway" if ip == gateway else None),
+                "risk": risk, "risk_reasons": risk_reasons,
+                "ports": [{"port": p, "service": SERVICE_NAMES.get(p, "unknown"), "state": "open",
+                           "banner": (fp["banners"].get(p) or "")[:80]} for p in fp["ports"]],
+                "source": "tcp+arp" if mac else "tcp",
+            })
+
+    # 4. IP local siempre presente (el propio dispositivo)
+    hosts.append({"ip": local_ip, "mac": None, "state": "LOCAL", "type": "phone",
+                  "vendor": "this device", "risk": "low", "risk_reasons": [], "ports": [],
+                  "source": "local"})
+
+    await broadcast({"type": "progress", "payload": f"Descubrimiento: {len(hosts)} dispositivos (TCP full-scan + ARP)"})
+    return {"results": hosts, "hosts_up": len(hosts), "subnet": subnet, "local_ip": local_ip,
+            "gateway": gateway, "method": "tcp+arp", "timestamp": datetime.now().isoformat()}
+
+@app.get("/api/discover/wifi")
+async def discover_wifi():
+    """WiFi scan — termux-api + fallbacks."""
+    networks = []; errors = []
+    try:
+        result = await asyncio.to_thread(lambda: subprocess.run(["termux-wifi-scaninfo"], capture_output=True, text=True, timeout=15))
+        if result.returncode == 0 and result.stdout.strip():
+            data = json.loads(result.stdout)
+            for net in data:
+                networks.append({"ssid": net.get("ssid", "Hidden"), "bssid": net.get("bssid", "unknown"), "channel": int(net.get("channel", 0)), "rssi": int(net.get("rssi", -100)), "encryption": net.get("capabilities", "Unknown"), "frequency": int(net.get("frequency", 0)), "timestamp": net.get("timestamp", 0)})
+            return {"networks": networks, "method": "termux-api", "count": len(networks)}
+        else:
+            errors.append(f"termux-wifi-scaninfo: rc={result.returncode}")
+    except FileNotFoundError:
+        errors.append("Termux:API no instalado — instala desde F-Droid + concede permiso Ubicación")
+    except Exception as e:
+        errors.append(f"termux-api: {e}")
+    try:
+        wifi_data = await asyncio.to_thread(lambda: open("/proc/net/wireless").read())
+        lines = wifi_data.strip().splitlines()
+        if len(lines) > 2:
+            parts = lines[2].split()
+            if len(parts) >= 6:
+                networks.append({"ssid": "(red actual)", "bssid": "connected", "channel": 0, "rssi": int(float(parts[3])), "encryption": "connected", "frequency": 0, "interface": parts[0].rstrip(":")})
+        return {"networks": networks, "method": "proc_wireless", "count": len(networks), "errors": errors}
+    except Exception:
+        pass
+    return {"networks": [], "method": "none", "count": 0, "errors": errors}
 
 @app.post("/api/scan/topology")
 async def scan_topology(subnet: str = ""):
@@ -2609,30 +3813,70 @@ import secrets as _secrets
 import json as _json
 import time as _time
 
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@redteam.local").strip()
+ADMIN_EMAIL = resolve_project_value("ADMIN_EMAIL", "admin@redteam.local")
+ADMIN_PASSWORD = ensure_managed_secret("ADMIN_PASSWORD")
 # FIX CRITICO: antes leia "API_KEY" (env var que nunca se seteaba) mientras
 # el middleware de seguridad exige "REDTEAM_API_KEY" (variable API_KEY definida
 # arriba, linea ~136). Esto causaba que el login emitiera un token que NUNCA
 # coincidia con el que el middleware validaba -> 401 en TODO despues de loguear.
-DASHBOARD_TOKEN = API_KEY or "local-dev-token"
+DASHBOARD_TOKEN = API_KEY
 
 _AUTH_DIR = os.path.join(os.path.dirname(__file__), ".auth")
 _PASS_FILE = os.path.join(_AUTH_DIR, "password.json")
 _WEBAUTHN_FILE = os.path.join(_AUTH_DIR, "webauthn.json")
-os.makedirs(_AUTH_DIR, exist_ok=True)
+os.makedirs(_AUTH_DIR, mode=0o700, exist_ok=True)
+try:
+    os.chmod(_AUTH_DIR, 0o700)
+except OSError:
+    pass
 
-def _get_password():
-    if os.path.exists(_PASS_FILE):
-        try:
-            with open(_PASS_FILE) as f:
-                return _json.load(f).get("password", "")
-        except Exception:
-            pass
-    return os.environ.get("ADMIN_PASSWORD", "admin123").strip()
+def _password_matches(candidate):
+    """Validate a password without keeping it in the auth file."""
+    try:
+        with open(_PASS_FILE, encoding="utf-8") as f:
+            record = _json.load(f)
+        stored_hash = record.get("password_hash", "")
+        salt = record.get("salt", "")
+        iterations = int(record.get("iterations", 310000))
+        if stored_hash and salt:
+            derived = _hashlib.pbkdf2_hmac(
+                "sha256", candidate.encode("utf-8"), bytes.fromhex(salt), iterations
+            ).hex()
+            return _hmac.compare_digest(derived, stored_hash)
+        # One-time migration for the old plaintext auth file.
+        legacy = record.get("password", "")
+        if legacy and _hmac.compare_digest(candidate, legacy):
+            _set_password(candidate)
+            return True
+    except (OSError, ValueError, TypeError, _json.JSONDecodeError):
+        pass
+    return bool(candidate) and _hmac.compare_digest(candidate, ADMIN_PASSWORD)
 
 def _set_password(new_pass):
-    with open(_PASS_FILE, 'w') as f:
-        _json.dump({"password": new_pass, "changed": _time.time()}, f)
+    global ADMIN_PASSWORD
+    if not new_pass:
+        raise ValueError("La contraseña no puede estar vacía")
+    salt = os.urandom(16)
+    iterations = 310000
+    password_hash = _hashlib.pbkdf2_hmac(
+        "sha256", new_pass.encode("utf-8"), salt, iterations
+    ).hex()
+    with open(_PASS_FILE, "w", encoding="utf-8") as f:
+        _json.dump({
+            "algorithm": "pbkdf2-sha256",
+            "iterations": iterations,
+            "salt": salt.hex(),
+            "password_hash": password_hash,
+            "changed": _time.time(),
+        }, f)
+    try:
+        os.chmod(_PASS_FILE, 0o600)
+    except OSError:
+        pass
+    # Keep the operator recovery file synchronized with an in-app password change.
+    update_project_env({"ADMIN_PASSWORD": new_pass})
+    ADMIN_PASSWORD = new_pass
+    os.environ["ADMIN_PASSWORD"] = new_pass
 
 def _load_webauthn():
     if os.path.exists(_WEBAUTHN_FILE):
@@ -2651,7 +3895,7 @@ def _save_webauthn(data):
 async def auth_login(body: dict = Body(...)):
     email = (body.get("email") or "").strip()
     password = body.get("password") or ""
-    if email != ADMIN_EMAIL or password != _get_password():
+    if email != ADMIN_EMAIL or not _password_matches(password):
         raise HTTPException(status_code=401, detail="Credenciales invalidas")
     return {"token": DASHBOARD_TOKEN, "email": email}
 
@@ -2659,7 +3903,7 @@ async def auth_login(body: dict = Body(...)):
 async def change_password(body: dict = Body(...)):
     current = body.get("current_password", "")
     new = body.get("new_password", "")
-    if current != _get_password():
+    if not _password_matches(current):
         raise HTTPException(status_code=401, detail="Contrasena actual incorrecta")
     if len(new) < 6:
         raise HTTPException(status_code=400, detail="Minimo 6 caracteres")
@@ -2675,7 +3919,7 @@ async def webauthn_status():
 async def webauthn_register_begin(body: dict = Body(...)):
     email = (body.get("email") or "").strip()
     password = body.get("password") or ""
-    if email != ADMIN_EMAIL or password != _get_password():
+    if email != ADMIN_EMAIL or not _password_matches(password):
         raise HTTPException(status_code=401, detail="Credenciales invalidas")
     challenge = _secrets.token_urlsafe(32)
     data = _load_webauthn()
@@ -2733,14 +3977,32 @@ async def webauthn_auth_finish(body: dict = Body(...)):
     _save_webauthn(data)
     return {"token": DASHBOARD_TOKEN, "email": ADMIN_EMAIL}
 
+@app.get("/api/healthz")
 @app.get("/api/health")
 @app.get("/health")
 @app.get("/healthz")
 async def health():
-    return {"status": "ok", "backend": "red-team-tauri-unified", "version": "3.0-unified",
+    memory = {}
+    if HAS_PSUTIL:
+        try:
+            process = psutil.Process(os.getpid())
+            process_rss = process.memory_info().rss
+            system = psutil.virtual_memory()
+            memory = {
+                "rss": process_rss,
+                "rssPercentOfSystem": round((process_rss / system.total) * 100, 2) if system.total else 0,
+                "systemUsedPercent": system.percent,
+                "systemFreeMemMB": round(system.available / 1024 / 1024, 2),
+                "systemTotalMemMB": round(system.total / 1024 / 1024, 2),
+            }
+        except (OSError, RuntimeError, ValueError):
+            memory = {}
+
+    return {"status": "operational", "backend": "red-team-tauri-unified", "version": "3.0-unified",
             "dist_built": DIST.exists(), "ws_clients": len(ws_clients),
             "honeypot_running": bool(honeypot_proc and honeypot_proc.poll() is None),
-            "psutil": HAS_PSUTIL, "geo_intel": _GEO_INTEL_OK, "ts": int(time.time())}
+            "psutil": HAS_PSUTIL, "geo_intel": _GEO_INTEL_OK, "memory": memory,
+            "ts": int(time.time())}
 
 @app.get("/")
 async def root():
@@ -2947,7 +4209,6 @@ except RuntimeError:
 # FASE 3: EVIDENCIA BLINDADA (Hash + Blockchain + QR + PDF)
 # ============================================================
 
-import hashlib as _hashlib
 import csv as _csv
 import io as _io
 import base64 as _b64
@@ -6488,44 +7749,6 @@ async def kraken_daemon_status():
     return {"running": _kraken_running}
 
 
-#  FRONTEND ESTÁTICO — SPA
-# ═════════════════════════════════════════════════════════════════════════════
-
-if DIST.exists() and DIST.is_dir():
-    assets_dir = DIST / "assets"
-    if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-
-    @app.get("/{full_path:path}")
-    async def spa_fallback(full_path: str):
-        if not full_path:
-            index = DIST / "index.html"
-            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
-        # NUNCA servir el SPA para rutas API — devuelve 404 JSON
-        # Si empieza con un prefijo conocido de API/backend, no servir el SPA.
-        # El catch-all está registrado antes que muchas rutas API, asi que
-        # si no excluimos estas, las captura y devuelve 404 JSON.
-        if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/", "leviathan/")):
-            return JSONResponse({"error": "not found"}, status_code=404)
-        if full_path.startswith("assets/"):
-            candidate = DIST / full_path
-            if candidate.exists() and candidate.is_file():
-                return FileResponse(candidate)
-            return JSONResponse({"error": "not found"}, status_code=404)
-        candidate = DIST / full_path
-        if candidate.exists() and candidate.is_file():
-            return FileResponse(candidate)
-        index = DIST / "index.html"
-        return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
-else:
-    @app.get("/{full_path:path}")
-    async def no_dist_fallback(full_path: str):
-        if full_path.startswith(("api/", "canary/", "ws", "health", "motor/", "hls/")):
-            return JSONResponse({"error": "not found"}, status_code=404)
-        return JSONResponse({"status": "ok", "backend": "red-team-tauri-unified",
-                            "dist_built": False, "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})"})
-
-
 # ═════════════════════════════════════════════════════════════════════════════
 #  MAIN — debe ir al FINAL para que todos los @app endpoints se registren
 # ═════════════════════════════════════════════════════════════════════════════
@@ -6552,6 +7775,305 @@ async def phantom_alert(payload: dict = Body(default={})):
     except Exception:
         pass
     return {"status": "received", "severity": severity}
+
+@app.get("/api/phantom/status")
+async def phantom_status():
+    """Estado del Master PHANTOM mediante el backend unificado."""
+    try:
+        import httpx as _hx
+        async with _hx.AsyncClient(timeout=2) as client:
+            response = await client.get("http://127.0.0.1:8002/api/status")
+        try:
+            status_data = response.json()
+        except Exception:
+            status_data = {}
+        return {
+            "available": response.status_code == 200,
+            "status": status_data,
+            "http_status": response.status_code,
+        }
+    except Exception as exc:
+        return {"available": False, "status": None, "error": str(exc)[:160]}
+
+
+# ── NEXUS OMNI v9.0 proxy ───────────────────────────────────
+@app.get("/api/nexus/health")
+async def nexus_health():
+    try:
+        import httpx as _hx
+        async with _hx.AsyncClient() as c:
+            r = await c.get(
+                f"http://127.0.0.1:{NEXUS_PORT}/",
+                auth=(NEXUS_AUTH_USER, NEXUS_AUTH_PASS),
+                timeout=2,
+            )
+        return {"available": r.status_code == 200, "port": NEXUS_PORT, "http_status": r.status_code}
+    except Exception as exc:
+        return {"available": False, "port": NEXUS_PORT, "error": str(exc)[:160]}
+
+@app.get("/api/nexus/ui")
+async def nexus_ui_proxy():
+    """Sirve la UI de NEXUS OMNI desde su puerto interno via proxy."""
+    try:
+        import httpx as _hx
+        async with _hx.AsyncClient() as c:
+            r = await c.get(
+                f"http://127.0.0.1:{NEXUS_PORT}/",
+                auth=(NEXUS_AUTH_USER, NEXUS_AUTH_PASS),
+                timeout=3,
+            )
+        if r.status_code != 200:
+            return HTMLResponse(f"<h2>NEXUS OMNI respondió HTTP {r.status_code}.</h2>", status_code=502)
+        # The browser sees the dashboard origin, not the internal :8004
+        # origin. Route Nexus API calls through the dashboard proxy.
+        html = r.text.replace(
+            "</head>",
+            "<script>window.NEXUS_API_BASE='/api/nexus';</script></head>",
+            1,
+        )
+        return HTMLResponse(html)
+    except Exception:
+        return HTMLResponse("<h2>NEXUS OMNI no está corriendo. Inícialo desde Control Tower.</h2>", status_code=503)
+
+async def _nexus_proxy_json(method: str, path: str, **kwargs):
+    """Forward a Nexus JSON request using the shared Basic credentials."""
+    import httpx as _hx
+    async with _hx.AsyncClient() as client:
+        response = await client.request(
+            method,
+            f"http://127.0.0.1:{NEXUS_PORT}{path}",
+            auth=(NEXUS_AUTH_USER, NEXUS_AUTH_PASS),
+            timeout=5,
+            **kwargs,
+        )
+    if response.status_code != 200:
+        return JSONResponse(
+            {"error": f"NEXUS OMNI respondió HTTP {response.status_code}."},
+            status_code=502,
+        )
+    return JSONResponse(response.json())
+
+@app.get("/api/nexus/state")
+async def nexus_state_proxy():
+    return await _nexus_proxy_json("GET", "/api/state")
+
+@app.post("/api/nexus/scan")
+async def nexus_scan_proxy():
+    return await _nexus_proxy_json("POST", "/api/scan")
+
+# === MODULO A — Reportes PDF con Hash Sellado ===
+async def _generate_audit_pdf(devices, subnet="", exploits=None):
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib import colors as rl_colors
+    except ImportError:
+        return {"error": "reportlab no instalado. pip install reportlab"}
+    import hashlib as _hl
+    out_dir = ROOT / "reports"
+    out_dir.mkdir(exist_ok=True)
+    fn = str(out_dir / f"NEXUS_Audit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+    doc = SimpleDocTemplate(fn, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
+    elements.append(Paragraph("<b>NEXUS Security Audit Report</b>", styles['Heading1']))
+    elements.append(Spacer(1, 12))
+    all_ips = ",".join(sorted([d.get("ip","") for d in devices]))
+    ghash = _hl.sha256(all_ips.encode()).hexdigest()
+    meta = [["Fecha:", datetime.now().strftime("%Y-%m-%d %H:%M")], ["Subred:", subnet or "N/A"],
+            ["Dispositivos:", str(len(devices))], ["Cameras:", str(len([d for d in devices if d.get("type")=="camera"]))],
+            ["Routers:", str(len([d for d in devices if d.get("type")=="router"]))],
+            ["Hash Integridad:", ghash[:32] + "..."]]
+    t_meta = Table(meta)
+    t_meta.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,rl_colors.black),('FONTNAME',(0,0),(-1,-1),'Helvetica'),('FONTSIZE',(0,0),(-1,-1),10),('BACKGROUND',(0,0),(0,-1),rl_colors.lightgrey)]))
+    elements.append(t_meta)
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph("<b>Dispositivos Detectados</b>", styles['Heading2']))
+    data = [["IP","MAC","Tipo","Riesgo","Puertos"]]
+    for d in devices:
+        ps = ", ".join([str(p.get("port","")) for p in d.get("ports",[])]) if isinstance(d.get("ports"),list) else str(d.get("ports",""))
+        data.append([d.get("ip",""), d.get("mac","") or "---", d.get("type","unknown"), d.get("risk","low").upper(), ps])
+    t_dev = Table(data)
+    t_dev.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,rl_colors.black),('ROWBACKGROUNDS',(0,1),(-1,-1),[rl_colors.beige, rl_colors.white]),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),9)]))
+    elements.append(t_dev)
+    elements.append(Spacer(1, 20))
+    if exploits:
+        elements.append(Paragraph("<b>Vulnerabilidades / Credenciales</b>", styles['Heading2']))
+        ed = [["IP","Puerto","Servicio","Creds","Hash"]]
+        for e in exploits:
+            ed.append([e.get("ip",""),str(e.get("port","")),e.get("service",""),e.get("credentials",""),(e.get("sealed_hash","") or ghash)[:16]+"..."])
+        t_exp = Table(ed)
+        t_exp.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,rl_colors.black),('ROWBACKGROUNDS',(0,1),(-1,-1),[rl_colors.lightpink, rl_colors.white]),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),9)]))
+        elements.append(t_exp)
+    elements.append(Spacer(1, 30))
+    elements.append(Paragraph(f"<i>Sello SHA-256: {ghash}</i>", styles['Normal']))
+    doc.build(elements)
+    return {"path": fn, "hash": ghash, "devices": len(devices)}
+
+@app.post("/api/report/pdf")
+async def generate_pdf_report(subnet: str = ""):
+    try:
+        r = await discover_network()
+        result = await _generate_audit_pdf(r.get("results",[]), r.get("subnet",subnet))
+        if "error" in result: return JSONResponse(result, status_code=500)
+        return FileResponse(result["path"], media_type="application/pdf", filename=os.path.basename(result["path"]))
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/report/pdf/list")
+async def list_pdf_reports():
+    out_dir = ROOT / "reports"
+    if not out_dir.exists(): return {"reports": []}
+    files = sorted(out_dir.glob("NEXUS_Audit_*.pdf"), key=lambda f: f.stat().st_mtime, reverse=True)
+    return {"reports": [{"name": f.name, "size": f.stat().st_size} for f in files[:20]]}
+
+@app.get("/api/report/pdf/download")
+async def download_pdf_report(name: str = Query(...)):
+    f = ROOT / "reports" / name
+    if not f.exists() or not f.name.startswith("NEXUS_Audit_"): raise HTTPException(404, "No encontrado")
+    return FileResponse(str(f), media_type="application/pdf", filename=f.name)
+
+# === MODULO B — Notificador Telegram ===
+_TELEGRAM_CONFIG = {"token": os.environ.get("TELEGRAM_BOT_TOKEN",""), "chat_id": os.environ.get("TELEGRAM_CHAT_ID",""), "enabled": False}
+
+def _telegram_send_sync(message):
+    if not _TELEGRAM_CONFIG["token"] or not _TELEGRAM_CONFIG["chat_id"]: return False
+    try:
+        import urllib.request as _ur
+        url = f"https://api.telegram.org/bot{_TELEGRAM_CONFIG['token']}/sendMessage"
+        payload = json.dumps({"chat_id": _TELEGRAM_CONFIG["chat_id"], "text": message, "parse_mode": "Markdown"}).encode()
+        req = _ur.Request(url, data=payload, headers={"Content-Type":"application/json"})
+        _ur.urlopen(req, timeout=5)
+        return True
+    except Exception as e:
+        print(f"[telegram] Error: {e}", flush=True)
+        return False
+
+async def _telegram_send(message):
+    return await asyncio.to_thread(_telegram_send_sync, message)
+
+async def _telegram_notify_critical(device, exploit=None):
+    lines = ["*ALERTA CRITICA NEXUS*", ""]
+    lines.append(f"IP: `{device.get('ip','')}`")
+    lines.append(f"Tipo: {device.get('type','unknown')}")
+    if device.get('mac'): lines.append(f"MAC: `{device['mac']}`")
+    lines.append(f"Riesgo: *{device.get('risk','unknown').upper()}*")
+    ports = device.get('ports',[])
+    if isinstance(ports, list) and ports:
+        lines.append("Puertos: " + ", ".join([f"{p.get('port','')}/{p.get('service','')}" for p in ports[:5]]))
+    if device.get('risk_reasons'): lines.append("Razones: " + ", ".join(device['risk_reasons']))
+    if exploit:
+        lines.append(f"Explotado: {exploit.get('service','')}")
+        lines.append(f"Creds: `{exploit.get('credentials','')}`")
+    lines.append(f"Hora: {datetime.now().strftime('%H:%M:%S')}")
+    msg = chr(10).join(lines)
+    await _telegram_send(msg)
+    await broadcast({"type":"alert","severity":"critical","payload":msg})
+
+@app.get("/api/telegram/config")
+async def telegram_get_config():
+    return {"enabled": _TELEGRAM_CONFIG["enabled"], "token_set": bool(_TELEGRAM_CONFIG["token"]), "chat_id_set": bool(_TELEGRAM_CONFIG["chat_id"])}
+
+@app.post("/api/telegram/config")
+async def telegram_set_config(request: Request):
+    try: body = await request.json()
+    except: body = {}
+    if body.get("token"): _TELEGRAM_CONFIG["token"] = body["token"]
+    if body.get("chat_id"): _TELEGRAM_CONFIG["chat_id"] = body["chat_id"]
+    _TELEGRAM_CONFIG["enabled"] = bool(body.get("enabled", _TELEGRAM_CONFIG["token"] and _TELEGRAM_CONFIG["chat_id"]))
+    return {"ok": True, "enabled": _TELEGRAM_CONFIG["enabled"]}
+
+@app.post("/api/telegram/test")
+async def telegram_test():
+    if not _TELEGRAM_CONFIG["token"]: return JSONResponse({"error":"Token no configurado"}, status_code=400)
+    ok = await _telegram_send("NEXUS Dashboard - Telegram conectado correctamente.")
+    return {"sent": ok}
+
+# === MODULO C — Monitoreo Continuo ===
+_MONITOR_STATE = {"running": False, "interval": 300, "previous_ips": set(), "last_scan": None, "alerts_sent": 0}
+
+async def _monitor_loop(interval_seconds):
+    print(f"[monitor] Iniciando cada {interval_seconds}s...", flush=True)
+    _MONITOR_STATE["running"] = True
+    while _MONITOR_STATE["running"]:
+        try:
+            print(f"[monitor] Ciclo {datetime.now().strftime('%H:%M:%S')}...", flush=True)
+            r = await discover_network()
+            devices = r.get("results", [])
+            current_ips = {d.get("ip") for d in devices if d.get("ip")}
+            new_ips = current_ips - _MONITOR_STATE["previous_ips"]
+            if new_ips and _MONITOR_STATE["previous_ips"]:
+                for ip in new_ips:
+                    dev = next((d for d in devices if d.get("ip") == ip), None)
+                    if dev and dev.get("risk") in ["high","critical"]:
+                        await _telegram_notify_critical(dev)
+                        _MONITOR_STATE["alerts_sent"] += 1
+                        print(f"[monitor] Nuevo critico: {ip}", flush=True)
+                await broadcast({"type":"monitor","payload":f"Nuevos: {len(new_ips)} | Total: {len(devices)}"})
+            gone = _MONITOR_STATE["previous_ips"] - current_ips
+            if gone and _MONITOR_STATE["previous_ips"]:
+                await broadcast({"type":"monitor","payload":f"Desconectados: {len(gone)}"})
+                print(f"[monitor] Desconectados: {gone}", flush=True)
+            _MONITOR_STATE["previous_ips"] = current_ips
+            _MONITOR_STATE["last_scan"] = datetime.now().isoformat()
+            print(f"[monitor] {len(devices)} disp | {len(new_ips)} nuevos | durmiendo {interval_seconds}s", flush=True)
+        except Exception as e:
+            print(f"[monitor] Error: {e}", flush=True)
+        await asyncio.sleep(interval_seconds)
+
+@app.get("/api/monitor/status")
+async def monitor_status():
+    return {"running": _MONITOR_STATE["running"], "interval": _MONITOR_STATE["interval"],
+            "last_scan": _MONITOR_STATE["last_scan"], "alerts_sent": _MONITOR_STATE["alerts_sent"],
+            "devices_tracked": len(_MONITOR_STATE["previous_ips"])}
+
+@app.post("/api/monitor/start")
+async def monitor_start(interval_minutes: int = Query(5)):
+    if _MONITOR_STATE["running"]: return {"ok": True, "message": "Ya corriendo"}
+    _MONITOR_STATE["interval"] = interval_minutes * 60
+    asyncio.create_task(_monitor_loop(_MONITOR_STATE["interval"]))
+    return {"ok": True, "message": f"Monitoreo cada {interval_minutes} min"}
+
+@app.post("/api/monitor/stop")
+async def monitor_stop():
+    _MONITOR_STATE["running"] = False
+    return {"ok": True, "message": "Detenido"}
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  FRONTEND ESTÁTICO — SPA
+# ═════════════════════════════════════════════════════════════════════════════
+# Este catch-all debe registrarse después de TODAS las rutas API. Si se registra
+# antes, FastAPI captura las rutas declaradas más abajo y devuelve un 404 JSON.
+if DIST.exists() and DIST.is_dir():
+    assets_dir = DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        if not full_path:
+            index = DIST / "index.html"
+            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
+        if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/", "leviathan/")):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if full_path.startswith("assets/"):
+            candidate = DIST / full_path
+            if candidate.exists() and candidate.is_file():
+                return FileResponse(candidate)
+            return JSONResponse({"error": "not found"}, status_code=404)
+        candidate = DIST / full_path
+        if candidate.exists() and candidate.is_file():
+            return FileResponse(candidate)
+        index = DIST / "index.html"
+        return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
+else:
+    @app.get("/{full_path:path}")
+    async def no_dist_fallback(full_path: str):
+        if full_path.startswith(("api/", "canary/", "ws", "health", "motor/", "hls/")):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return JSONResponse({"status": "ok", "backend": "red-team-tauri-unified",
+                            "dist_built": False, "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})"})
 
 if __name__ == "__main__":
     import uvicorn
@@ -6591,3 +8113,138 @@ if __name__ == "__main__":
     _seed_v2_if_empty()
     print("═" * 60, flush=True)
     uvicorn.run(app, host=host, port=port, log_level="info")
+
+# === MÓDULO D — TACTICAL EXECUTOR (Ejecución real: scan + creds + informe) ===
+# Integrado al dashboard: usa el mismo motor TCP que discover_network, pero
+# añade prueba de credenciales por defecto (HTTP Basic + RTSP) y genera un
+# informe HTML sellado con hash SHA-256. Notifica por Telegram si está configurado.
+
+try:
+    sys.path.insert(0, str(ROOT / "modules"))
+    from tactical_executor import (
+        run_tactical_scan as _tactical_run,
+        generate_sealed_report as _tactical_report,
+        format_telegram_message as _tactical_tgmsg,
+        CREDENTIAL_DICT as _TACTICAL_CREDS,
+        TACTICAL_PORTS as _TACTICAL_PORTS,
+    )
+    _TACTICAL_OK = True
+    print("[tactical] Módulo cargado: scan + credential testing + sealed reports")
+except Exception as _tactical_err:
+    _TACTICAL_OK = False
+    print(f"[WARN] tactical_executor import falló: {_tactical_err}", flush=True)
+
+@app.post("/api/tactical/scan")
+async def tactical_scan(payload: dict = Body(default={})):
+    """Ejecuta un scan táctico completo sobre la red especificada.
+
+    Body (opcional): {
+      "subnet": "192.168.1.0/24",   // si se omite, auto-detecta
+      "ports": [80, 443, 554, ...],  // si se omite, usa defaults
+      "notify_telegram": true        // si se omite, usa la config global
+    }
+
+    Flujo: descubrir hosts (TCP connect) → fingerprint → identificar cámaras →
+    probar credenciales por defecto → generar informe sellado → notificar.
+    """
+    if not _TACTICAL_OK:
+        return JSONResponse(
+            {"error": "Módulo tactical_executor no disponible"},
+            status_code=503,
+        )
+
+    subnet = payload.get("subnet", "")
+    custom_ports = payload.get("ports")
+    notify_tg = payload.get("notify_telegram", True)
+
+    # 1. Descubrir hosts (reutiliza el endpoint discover_network)
+    if not subnet:
+        subnet = await asyncio.to_thread(subnet_from_iface)
+    local_info = _detect_local_network()
+    local_ip = local_info.get("ip", "")
+
+    # Wake-up sweep + TCP discovery
+    gateway = await asyncio.to_thread(_detect_gateway, subnet)
+    tcp_ips = set(await _discover_hosts_tcp(subnet))
+    if gateway:
+        tcp_ips.add(gateway)
+    tcp_ips.discard(local_ip)
+
+    # Fingerprint de cada host
+    hosts = []
+    if tcp_ips:
+        ip_list = sorted(tcp_ips)
+        fp_results = await asyncio.gather(*[_fingerprint_host(ip) for ip in ip_list])
+        for ip, fp in zip(ip_list, fp_results):
+            hosts.append({
+                "ip": ip, "mac": None, "type": fp["type"],
+                "ports": [{"port": p, "service": SERVICE_NAMES.get(p, "unknown"),
+                            "state": "open"} for p in fp["ports"]],
+                "vendor": fp.get("vendor"),
+                "risk": fp["risk"], "risk_reasons": fp["risk_reasons"],
+            })
+
+    # 2. Scan táctico con prueba de credenciales
+    progress_log = []
+    async def _progress(idx, total, ip):
+        msg = f"Tactical scan: {idx+1}/{total} — {ip}"
+        progress_log.append(msg)
+        await broadcast({"type": "tactical_progress", "payload": msg})
+
+    scan_ports = [int(p) for p in custom_ports] if custom_ports else None
+    results = await _tactical_run(hosts, scan_ports=scan_ports, progress_callback=_progress)
+
+    # 3. Generar informe sellado
+    report_info = _tactical_report(results, REPORTS)
+
+    # 4. Notificar por Telegram
+    tg_sent = False
+    if notify_tg and _TELEGRAM_CONFIG["token"] and _TELEGRAM_CONFIG["chat_id"]:
+        msg = _tactical_tgmsg(results, report_info)
+        tg_sent = await _telegram_send(msg)
+
+    # 5. Si se encontraron credenciales, alertar
+    if results["credentials_found"]:
+        for cred in results["credentials_found"][:3]:
+            await broadcast({
+                "type": "alert",
+                "severity": "critical",
+                "payload": (
+                    f"🔑 CREDENCIALES VÁLIDAS: {cred['ip']}:{cred['port']} → "
+                    f"{cred['user']}:{cred['password']} ({cred['method']})"
+                ),
+            })
+
+    await broadcast({
+        "type": "tactical_complete",
+        "payload": results,
+    })
+
+    return {
+        "ok": True,
+        "results": results,
+        "report": report_info,
+        "telegram_sent": tg_sent,
+    }
+
+@app.get("/api/tactical/report/{filename}")
+async def tactical_download_report(filename: str):
+    """Descarga un informe táctico generado."""
+    f = REPORTS / filename
+    if not f.exists() or not f.name.startswith("tactical_report_"):
+        raise HTTPException(404, "Informe no encontrado")
+    return FileResponse(str(f), media_type="text/html", filename=f.name)
+
+@app.get("/api/tactical/credentials")
+async def tactical_credential_dict():
+    """Devuelve el diccionario de credenciales por defecto configurado (sin
+    mostrar las contraseñas en el listado del frontend — solo conteo)."""
+    return {
+        vendor: {"count": len(creds), "sample": creds[0][0] + ":***"}
+        for vendor, creds in _TACTICAL_CREDS.items()
+    } if _TACTICAL_OK else {"error": "no disponible"}
+
+@app.get("/api/tactical/ports")
+async def tactical_default_ports():
+    """Devuelve los puertos que escanea el tactical executor por defecto."""
+    return {"ports": _TACTICAL_PORTS} if _TACTICAL_OK else {"error": "no disponible"}

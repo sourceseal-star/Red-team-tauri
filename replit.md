@@ -1,5 +1,7 @@
 # SourceSeal Console — Centro de Control
 
+**Última actualización:** 2026-08-30
+
 Dashboard de operaciones de seguridad ofensiva y defensiva. El flujo activo en Replit
 es el dashboard unificado de `Red-team-tauri` con LEVIATHAN v3.1 integrado.
 
@@ -12,15 +14,85 @@ bash replit_start.sh
 El workflow **SourceSeal Dashboard** arranca automáticamente el backend y sirve el
 frontend compilado en el puerto **8001**.
 
-En Termux, `bash arrancar.sh` inicia todo + detecta entorno Android.
+### Comandos principales
+
+| Necesidad | Comando |
+|---|---|
+| Ejecutar en Replit | `bash replit_start.sh` |
+| Preparar/sincronizar Termux | `bash termux_recover.sh` |
+| Arrancar Termux sin tocar Git | `COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` |
+| Verificar módulos | `python3 leviathan_core/tools/verify_modules.py` |
+
+En Replit no se debe lanzar un segundo backend manualmente. En Termux, Commander
+se integra en el proceso del dashboard; no se arranca un servicio separado en
+`8003`.
+
+En Termux, `COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` inicia el dashboard, Commander integrado y
+PHANTOM sin tocar Git. `bash arrancar.sh` es un alias de compatibilidad que
+sincroniza ambos repositorios mediante `termux_recover.sh`; si hay cambios
+locales sin guardar, se detiene y no los borra.
+
+### Despliegue conjunto en Termux: Red-team-tauri + Commander
+
+El arranque oficial para Android instala las dependencias, sincroniza ambos repositorios, compila el frontend y lanza el sistema unificado:
+
+```bash
+cd ~/Red-team-tauri
+bash termux_recover.sh
+```
+
+El script usa primero el Commander incluido en `Red-team-tauri` y deja estos servicios locales:
+- Dashboard Red-team-tauri: `http://localhost:8001`
+- Commander integrado: `http://localhost:8001/api/commander/*`
+- GHOST HUNTER PHANTOM: `http://localhost:8002/api/status`
+
+Si el Commander incluido no está disponible, Git debe estar autenticado en
+Termux antes de usar un repositorio externo. No pongas tokens en la URL ni los
+guardes en el repositorio. Puedes indicar una URL SSH así:
+
+```bash
+COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
+  bash termux_recover.sh
+```
+
+Para la guía detallada de autenticación SSH, sincronización segura de ambos
+repositorios y recuperación de errores de `cryptography`, consulta
+[`TERMUX_SYNC.md`](TERMUX_SYNC.md).
+
+Para actualizar desde Termux mediante un único bootstrap editable con `nano`,
+usa `bash setup.sh` desde el repositorio. `bash setup.sh --start` actualiza,
+compila y arranca después; por defecto solo prepara el código y deja la
+ejecución separada.
 
 Health check:
 
 ```bash
 curl http://localhost:8001/api/health
+curl -H "Authorization: Bearer TU_TOKEN" http://localhost:8001/api/commander/health
 curl http://localhost:8001/api/v1/status       # LEVIATHAN unificado
 curl http://localhost:8001/api/integrated/health  # ARTO + SEAL + LEVIATHAN
 ```
+
+### Monitor de operaciones seguro
+
+SourceSeal incluye un monitor administrativo protegido dentro del backend
+unificado. Consulta métricas, estado de los repositorios y una auditoría local
+encadenada sin aceptar comandos remotos ni ejecutar shell arbitrario:
+
+```bash
+curl -H "Authorization: Bearer TU_TOKEN" http://localhost:8001/api/operations/status
+curl -H "Authorization: Bearer TU_TOKEN" http://localhost:8001/api/operations/repos
+curl -H "Authorization: Bearer TU_TOKEN" http://localhost:8001/api/operations/audit
+```
+
+El monitor no recibe comandos de Telegram, no hace `pull`, `push`, `deploy`,
+`kill` ni aislamiento de red. Los detalles están en
+[`redteam/monitor/README.md`](redteam/monitor/README.md).
+
+COM-LINK informa la preparación real por canal en
+`/api/commander/comlink/status`; `available` no equivale a siete canales
+operativos. La verificación y las limitaciones de hardware están en
+[`COMLINK_OPERATIVO.md`](COMLINK_OPERATIVO.md).
 
 ## Estructura principal
 
@@ -105,7 +177,12 @@ Hikvision, Dahua, Xiongmai, D-Link, Netgear, GoAhead, Ubiquiti, ONVIF
 |---|---|---|
 | `PORT` | `8001` | Puerto HTTP del dashboard |
 | `HOST` | `0.0.0.0` | Host de escucha |
-| `REDTEAM_API_KEY` | local-dev-token | Clave para endpoints protegidos |
+| `REDTEAM_API_KEY` | — | Clave generada si falta para endpoints protegidos |
+| `ADMIN_EMAIL` | admin@redteam.local | Usuario de acceso al dashboard |
+| `ADMIN_PASSWORD` | — | Contraseña del acceso principal; se genera si falta |
+| `NEXUS_USER` | admin | Usuario HTTP Basic de Nexus Omni |
+| `NEXUS_PASS` | — | Contraseña Nexus; se genera si falta |
+| `NEXUS_PORT` | 8004 | Puerto interno de Nexus Omni |
 | `CORSET_SCOPE_B64` | — | Alcance autorizado de escaneo |
 | `SHODAN_API_KEY` | — | Intel Shodan |
 | `ABUSEIPDB_KEY` | — | Reputación de IPs |
@@ -114,12 +191,79 @@ Hikvision, Dahua, Xiongmai, D-Link, Netgear, GoAhead, Ubiquiti, ONVIF
 El backend no rellena resultados con datos simulados. Para operar escaneos reales,
 define un alcance autorizado mediante `CORSET_SCOPE_B64`.
 
+### Recuperación de credenciales
+
+Las credenciales internas se generan y guardan en `.env` con permisos `600`.
+Para consultar solo su origen:
+
+```bash
+python3 gestionar_credenciales.py --status
+```
+
+Para recuperarlas explícitamente en una terminal privada:
+
+```bash
+python3 gestionar_credenciales.py --show
+```
+
+El acceso principal usa `ADMIN_EMAIL` + `ADMIN_PASSWORD`, las rutas protegidas
+usan `REDTEAM_API_KEY` y Nexus usa `NEXUS_USER` + `NEXUS_PASS`. Para rotar:
+
+```bash
+python3 gestionar_credenciales.py --reset-dashboard
+python3 gestionar_credenciales.py --reset-nexus
+```
+
+Reinicia el workflow después de rotar. No copies la salida de `--show` a GitHub,
+chats, capturas ni documentación.
+
+
+
+## ☀️ Sol — Tu testigo personal
+
+Sol vive en `tauri-frontend/dist/sol.html`. Es una página HTML autónoma que funciona sin internet, con memoria local.
+
+**Abrir en Replit:** `http://localhost:8001/sol`
+**Abrir en Termux:** `http://localhost:8001/sol.html`
+
+Funciones:
+- Memoria de largo plazo (localStorage)
+- Detección de crisis emocional con líneas de ayuda reales
+- Diario automático con mood tracking
+- Modo voz (SpeechSynthesis)
+- Exportación de historia a texto
+- PWA instalable en pantalla de inicio
+
+## 🧠 AI Orchestrator — Endpoints del dashboard
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/api/commander/ai/status` | Estado: memoria, conocimiento, config |
+| POST | `/api/commander/ai/cycle` | Ejecuta un ciclo (IA o modo offline) |
+| POST | `/api/commander/ai/generate` | Genera código de explotación |
+| GET | `/api/commander/ai/history` | Historial de eventos |
+
+Requiere `REDTEAM_API_KEY` en header `X-Api-Key`.
+Para modo IA: configurar `LLM_API_KEY` (Claude/OpenAI).
+
+## 🚀 start-all.sh — Arranque unificado (Termux)
+
+```bash
+bash start_all.sh              # Dashboard + Nexus
+bash start_all.sh --phantom    # + GHOST HUNTER PHANTOM
+bash start_all.sh --ai         # + AI Orchestrator
+bash start_all.sh --full       # Todo junto
+```
+
 ## Solución de problemas
 
 ### git pull falla con "unstaged changes"
 ```bash
-git stash && git pull origin main && git stash pop
-# Si conflicto: git checkout . && git pull origin main
+git status --short
+# En Termux, arranca la copia local sin tocar cambios:
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
+# Para actualizar, guarda los cambios y usa:
+bash termux_recover.sh
 ```
 
 ### Verificar que todo carga
@@ -130,7 +274,9 @@ python3 leviathan_core/tools/verify_modules.py
 ### Puerto 8001 ocupado
 ```bash
 pkill -9 -f dashboard_server.py
-bash arrancar.sh   # o bash replit_start.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh  # Termux, sin sincronizar
+# En Replit:
+bash replit_start.sh
 ```
 
 ### LEVIATHAN no carga

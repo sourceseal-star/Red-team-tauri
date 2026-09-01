@@ -56,7 +56,7 @@ deps = [
     ("numpy", "NumPy (pkg install python-numpy)"),
     ("PIL", "Pillow (imágenes)"),
     ("cv2", "OpenCV (opcional)"),
-    ("cryptography", "Fernet encryption"),
+    ("Crypto", "AES encryption (pycryptodome)"),
 ]
 dep_ok = 0
 for mod, desc in deps:

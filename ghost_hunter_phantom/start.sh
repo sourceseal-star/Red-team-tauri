@@ -4,7 +4,7 @@
 # Arranca Master (:8002) + N nodos workers
 # Se integra con el backend SourceSeal en :8001
 # =====================================================================
-set -e
+# set -e  # removido: no matar todo si algo falla
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"

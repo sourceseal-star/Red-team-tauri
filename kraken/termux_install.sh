@@ -31,7 +31,7 @@ pip install \
   pydantic>=2.0 \
   python-dotenv>=1.0 \
   pyyaml>=6.0 \
-  cryptography>=41.0
+  pycryptodome>=3.19
 
 # Estas son opcionales — si fallan, KRAKEN sigue funcionando
 echo -e "${Y}📦 Dependencias opcionales (pueden fallar en Termux)...${N}"

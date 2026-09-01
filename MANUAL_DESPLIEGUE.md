@@ -1,9 +1,10 @@
 # 🛡 SourceSeal Red Team — Manual de Despliegue Completo
 # Red-team-tauri v6.0 — ARTO + LEVIATHAN UNIFIED
 
+> **Última actualización:** 2026-08-30
 > **Backend único:** `redteam/scripts/dashboard_server.py` (FastAPI :8001)
 > **Frontend único:** `tauri-frontend/` (React/Vite/TypeScript)
-> **Arranque recomendado:** `bash arrancar.sh` (Termux) / `bash replit_start.sh` (Replit)
+> **Arranque recomendado:** `COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh` (Termux) / `bash replit_start.sh` (Replit)
 
 ---
 
@@ -60,16 +61,48 @@ termux-setup-storage
 pkg update -y && pkg upgrade -y
 pkg install -y python nodejs-lts git openssl curl
 
-# 5. Clonar repositorio
+# 5. Clonar repositorio principal
 cd ~
-git clone https://github.com/sourceseal-star/Red-team-tauri.git
+git clone git@github.com:sourceseal-star/Red-team-tauri.git
 cd Red-team-tauri
 
 # 6. (Opcional) termux-api para wake-lock
 pkg install -y termux-api
 
-# 7. Arrancar (instala deps Python, compila frontend, levanta backend)
-bash arrancar.sh
+# 7. Preparar/sincronizar Red-team-tauri + Commander y arrancar
+bash termux_recover.sh
+```
+
+Para ejecutar la copia local sin modificarla ni sincronizar Git:
+
+```bash
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
+```
+
+`termux_recover.sh` conserva `.env` y se detiene ante cambios locales sin
+guardar. `arrancar.sh` es solo un alias compatible del recuperador; no es el
+comando de arranque local.
+
+### COM-LINK y hardware Android
+
+COM-LINK no es un servicio remoto adicional. Sus comandos se ejecutan donde
+corre `dashboard_server.py`. En Replit el archivo puede estar instalado, pero
+no hay Termux:API ni hardware del teléfono. En Termux, verifica la preparación
+sin enviar mensajes:
+
+```bash
+bash commander/comlink/comlink.sh status-json | jq
+```
+
+No asumas que los siete canales están activos. Revisa `ready_count` y
+`channels[].reason`; radio AX.25 y satélite permanecen no implementados hasta
+contar con un driver probado. Consulta [`COMLINK_OPERATIVO.md`](COMLINK_OPERATIVO.md).
+
+Si se necesita usar un checkout independiente de Commander:
+
+```bash
+COMMANDER_REPO_URL=git@github.com:sourceseal-star/commander.git \
+  bash termux_recover.sh
 ```
 
 ---
@@ -99,7 +132,9 @@ bash replit_start.sh
 
 ```
 Red-team-tauri/
-├── arrancar.sh                ← Arranque Termux (7 pasos, recomendado)
+├── termux_recover.sh          ← Preparar/sincronizar Termux de forma segura
+├── iniciar_unificado.sh       ← Arranque local unificado sin tocar Git
+├── arrancar.sh                ← Alias compatible del recuperador
 ├── start-termux.sh            ← Arranque Termux con gateway mesh opcional
 ├── replit_start.sh            ← Arranque Replit
 ├── quickstart.sh              ← Arranque + smoke tests automáticos
@@ -148,12 +183,12 @@ Red-team-tauri/
 
 ## <a name="arranque"></a>5. Arranque del Backend
 
-### Opción A: arrancar.sh (Recomendado — Termux)
+### Opción A: iniciar_unificado.sh (Termux, sin sincronizar)
 ```bash
-bash arrancar.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
-Hace todo en 7 pasos: wake-lock, git pull, instalar deps, crear .env,
-compilar frontend, matar procesos anteriores, levantar backend en :8001.
+Levanta la copia local sin `git pull`, `reset`, `stash` ni instalación de
+paquetes. Inicia el dashboard unificado, Commander integrado y PHANTOM.
 
 ### Opción B: replit_start.sh (Replit)
 ```bash
@@ -165,6 +200,13 @@ bash replit_start.sh
 bash quickstart.sh
 ```
 Instala deps, compila frontend, levanta backend y ejecuta smoke tests.
+
+### Preparar o actualizar Termux
+```bash
+bash termux_recover.sh
+```
+Sincroniza ambos repositorios solo cuando no hay cambios locales sin guardar,
+prepara dependencias, compila el frontend y arranca todo.
 
 ### Opción D: Manual
 ```bash
@@ -308,7 +350,7 @@ Ver `SETUP_FIRMA_APK.md` para instrucciones de firma.
 curl http://localhost:8001/api/health
 # Si no responde:
 pkill -f "dashboard_server.py"
-bash arrancar.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 ### "python3: not found"
@@ -327,7 +369,7 @@ npm run build
 ### Puerto 8001 ocupado
 ```bash
 pkill -9 -f dashboard_server.py
-bash arrancar.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 ### AbuseIPDB no devuelve datos
@@ -342,7 +384,7 @@ grep ABUSEIPDB .env
 curl localhost:8001/api/arto/status
 # Si responde error, reiniciar:
 pkill -f dashboard_server.py
-bash arrancar.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 ### Traffic Analyzer muestra error "tcpdump no instalado"
@@ -360,18 +402,18 @@ termux-wake-lock
 ### git pull falla con conflictos
 ```bash
 cd ~/Red-team-tauri
-git stash
-git pull origin main
-git stash pop
-# Si sigue fallando:
-git checkout . && git pull origin main
+git status --short
+# Ejecutar la versión local sin perder cambios:
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
+# Para actualizar, guarda primero los cambios y luego:
+bash termux_recover.sh
 ```
 
 ### Error en memoria SQLite de ARTO
 ```bash
 rm -f arto/data/arto_memory.db
 # Reiniciar — se recrea automáticamente
-bash arrancar.sh
+COMMANDER_DIR="$PWD/commander" bash iniciar_unificado.sh
 ```
 
 ---
@@ -402,7 +444,7 @@ git log --oneline -10
 ## 📌 Notas Importantes
 
 1. **SOLO un backend a la vez** — Todos usan puerto 8001
-2. **`arrancar.sh` es el arranque recomendado** — Hace todo automáticamente
+2. **`termux_recover.sh` prepara/actualiza; `iniciar_unificado.sh` ejecuta localmente**
 3. **`redteam/scripts/dashboard_server.py` es el backend único** — No usar otros
 4. **SQLite se crea automáticamente** — No requiere configuración manual
 5. **WebSocket requiere cliente** — Conectar a `ws://localhost:8001/ws/alerts`
@@ -421,5 +463,5 @@ git log --oneline -10
 
 ---
 
-*Última actualización: v6.0 — ARTO + LEVIATHAN UNIFIED (2026-08-21)*
+*Última actualización: v6.0 — ARTO + LEVIATHAN UNIFIED (2026-08-30)*
 *Ver también: `MANUAL_OPERATIVO.md` (referencia completa), `GUIA_ARRANQUE.md` (arranque rápido)*

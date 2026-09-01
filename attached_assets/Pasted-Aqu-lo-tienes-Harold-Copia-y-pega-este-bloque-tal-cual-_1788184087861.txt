@@ -1,0 +1,77 @@
+Aquí lo tienes, Harold. Copia y pega este bloque **tal cual** en el chat del agente de Replit. Está escrito en modo "orden de trabajo técnica" con criterios de aceptación, para que no se vaya por las ramas:
+
+---
+
+```
+ORDEN DE TRABAJO — Gestión de credenciales de Nexus Omni (puerto 8004)
+
+CONTEXTO
+Nexus Omni (nexus_omni_v9.py, puerto 8004, BD nexus_omni.db) pide credenciales
+de acceso que no están documentadas ni en .env ni en la documentación. Esto no
+debe volver a pasar: ningún servicio del repo puede tener credenciales
+hardcodeadas, perdidas o indocumentadas.
+
+FASE 1 — DIAGNÓSTICO (reporta antes de modificar)
+1. Localiza la lógica de autenticación actual en nexus_omni_v9.py
+   (grep de password/token/login/auth) y dime exactamente:
+   - De dónde lee las credenciales hoy (hardcode, BD, env).
+   - Cuáles son los valores o hashes actuales.
+2. Revisa si .env está en .gitignore. Si no, repórtalo.
+
+FASE 2 — CORRECCIÓN
+1. Refactoriza la autenticación de Nexus Omni para leer credenciales con esta
+   prioridad: variable de entorno > .env del repo > generación automática.
+2. Variables estándar a usar: NEXUS_USER (por defecto "admin") y NEXUS_PASS.
+3. Si al arrancar NEXUS_PASS no existe: genera una contraseña aleatoria segura
+   (32+ caracteres), la AGREGA a ~/Red-team-tauri/.env (chmod 600) y la imprime
+   UNA sola vez en consola/log de arranque.
+4. Añade el flag: python3 nexus_omni_v9.py --reset-credentials
+   que regenera NEXUS_PASS, actualiza .env y (si aplica) el hash en nexus_omni.db.
+5. Si la BD guarda la contraseña, guárdala SIEMPRE como hash (sha256 con salt),
+   nunca en texto plano.
+6. Crea .env.example con los NOMBRES de las variables (NEXUS_USER, NEXUS_PASS,
+   REDTEAM_API_KEY, etc.) sin valores reales.
+7. Garantiza que .env queda en .gitignore. Verifica con git status que .env
+   no sea rastreable. Si estaba trackeado, ejecuta:
+   git rm --cached .env
+8. Crea GESTION_SECRETOS.md con una tabla de TODOS los secretos del proyecto
+   (REDTEAM_API_KEY, C2_API_SECRET, NEXUS_PASS, TELEGRAM_BOT_TOKEN...):
+   nombre, dónde vive, cómo se rota. Prohibido incluir valores reales.
+9. GitHub Secrets: documenta en GESTION_SECRETOS.md el procedimiento para
+   agregar NEXUS_PASS y REDTEAM_API_KEY como Secrets del repo (Settings →
+   Secrets). Si el CLI gh está autenticado, créalos con gh secret set;
+   si no, deja el procedimiento documentado.
+10. Actualiza CONTINUAR_AQUI.md indicando que las credenciales de Nexus Omni
+   viven en .env y se rotan con --reset-credentials.
+
+FASE 3 — VERIFICACIÓN (ejecuta y reporta evidencia)
+1. Arranca Nexus Omni en 8004 y confirma login exitoso con las credenciales
+   que quedaron en .env (prueba con curl o el cliente que use).
+2. Prueba que --reset-credentials regenera y que el login viejo deja de servir.
+3. git status debe mostrar .env como no rastreable.
+4. Haz commit y push con mensaje claro:
+   "Nexus Omni: credenciales como secretos gestionados (.env + rotación)"
+
+REGLAS
+- No imprimas valores reales de secretos en tu resumen final. Solo nombres de
+  variables y rutas de archivo.
+- No rompas el flujo de 8001/8002 ni el watcher existente.
+```
+
+---
+
+### ✅ Cuando el agente termine, tú verificas en 30 segundos
+
+```bash
+# 1. Tus credenciales existen y están protegidas
+ls -la ~/Red-team-tauri/.env        # debe mostrar permisos 600
+grep "NEXUS_" ~/Red-team-tauri/.env # ahí están tu usuario y contraseña
+
+# 2. Entras a tu panel
+# Abre http://localhost:8004 y usa lo que mostró el .env
+
+# 3. El repo no filtra nada
+cd ~/Red-team-tauri && git status --short | grep .env   # debe salir vacío
+```
+
+Con esto, Harold, conviertes un problema ("no sé mi contraseña") en un **sistema**: credenciales generadas, protegidas, rotables y documentadas. Exactamente como opera una infraestructura profesional. 🔑

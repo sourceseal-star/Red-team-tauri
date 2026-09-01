@@ -1,17 +1,20 @@
 """
 Threat Intelligence - Inteligencia de Amenazas
 ==============================================
-Recopila y analiza información de amenazas de múltiples fuentes.
+Recopila y analiza información de amenazas de múltiples fuentes reales.
+Carga API keys desde variables de entorno (.env).
 """
 
 import asyncio
 import datetime
 import json
+import os
+import ipaddress
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 
 try:
-    import aiohttp  # noqa: F401  (reservado para futuros feeds HTTP de threat intel)
+    import aiohttp
 except ImportError:
     aiohttp = None
 
@@ -44,14 +47,14 @@ class Threat:
 
 
 class ThreatIntelligence:
-    """Inteligencia de Amenazas"""
+    """Inteligencia de Amenazas con APIs reales"""
     
     def __init__(self):
         self.sources: Dict[str, Dict] = {
             "local": {"enabled": True, "priority": 10},
             "virus_total": {"enabled": True, "priority": 9, "api_key": None},
             "shodan": {"enabled": True, "priority": 8, "api_key": None},
-            "censys": {"enabled": True, "priority": 7, "api_key": None},
+            "censys": {"enabled": True, "priority": 7, "api_id": None, "api_secret": None},
             "abuse_ipdb": {"enabled": True, "priority": 6, "api_key": None},
             "threat_fox": {"enabled": True, "priority": 5, "api_key": None}
         }
@@ -62,29 +65,59 @@ class ThreatIntelligence:
     async def initialize(self):
         """Inicializa el módulo de inteligencia de amenazas"""
         print("🎯 Inicializando Threat Intelligence...")
-        
-        # Cargar configuración
         await self._load_configuration()
-        
         self.initialized = True
+        
+        # Reportar qué fuentes tienen API keys
+        configured = [s for s, c in self.sources.items() if s == "local" or c.get("api_key") or c.get("api_id")]
+        unconfigured = [s for s, c in self.sources.items() if s != "local" and not (c.get("api_key") or c.get("api_id"))]
+        if configured:
+            print(f"  ✅ Fuentes con API key: {', '.join(configured)}")
+        if unconfigured:
+            print(f"  ⚠️  Fuentes sin API key (simulación): {', '.join(unconfigured)}")
         print("✅ Threat Intelligence listo")
     
     async def _load_configuration(self):
-        """Carga la configuración de fuentes"""
-        # En implementación completa, esto cargaría de un archivo de configuración
-        pass
+        """Carga las API keys desde las variables de entorno (.env)"""
+        # VirusTotal
+        vt_key = os.environ.get("VIRUSTOTAL_API_KEY", "").strip()
+        self.sources["virus_total"]["api_key"] = vt_key or None
+        if not vt_key:
+            self.sources["virus_total"]["enabled"] = False
+        
+        # Shodan
+        shodan_key = os.environ.get("SHODAN_API_KEY", "").strip()
+        self.sources["shodan"]["api_key"] = shodan_key or None
+        if not shodan_key:
+            self.sources["shodan"]["enabled"] = False
+        
+        # Censys (usa ID + Secret)
+        censys_id = os.environ.get("CENSYS_API_ID", "").strip()
+        censys_secret = os.environ.get("CENSYS_API_SECRET", "").strip()
+        self.sources["censys"]["api_id"] = censys_id or None
+        self.sources["censys"]["api_secret"] = censys_secret or None
+        if not censys_id or not censys_secret:
+            self.sources["censys"]["enabled"] = False
+        
+        # AbuseIPDB
+        abuse_key = os.environ.get("ABUSEIPDB_KEY", "").strip()
+        self.sources["abuse_ipdb"]["api_key"] = abuse_key or None
+        if not abuse_key:
+            self.sources["abuse_ipdb"]["enabled"] = False
+        
+        # ThreatFox (no requiere API key — API pública gratuita)
+        # https://threatfox.abuse.ch/api/ — pública, sin autenticación
+    
+    def _is_ip(self, target: str) -> bool:
+        """Determina si el target es una IP o un dominio"""
+        try:
+            ipaddress.ip_address(target)
+            return True
+        except ValueError:
+            return False
     
     async def analyze_target(self, target: str, scan_result: Optional[Dict] = None) -> Dict:
-        """
-        Analiza un objetivo en busca de amenazas.
-        
-        Args:
-            target: Objetivo a analizar (IP, dominio, URL)
-            scan_result: Resultados de escaneo (opcional)
-            
-        Returns:
-            Análisis de amenazas
-        """
+        """Analiza un objetivo en busca de amenazas usando todas las fuentes activas."""
         analysis = {
             "target": target,
             "timestamp": datetime.datetime.now().isoformat(),
@@ -94,11 +127,9 @@ class ThreatIntelligence:
             "sources_checked": []
         }
         
-        # Analizar con cada fuente
         for source_name, source_config in self.sources.items():
             if not source_config.get("enabled", False):
                 continue
-            
             try:
                 result = await self._analyze_with_source(source_name, target, scan_result)
                 if result:
@@ -107,11 +138,9 @@ class ThreatIntelligence:
             except Exception as e:
                 print(f"⚠️ Error con fuente {source_name}: {e}")
         
-        # Calcular score de amenaza
         analysis["threat_score"] = self._calculate_threat_score(analysis["threats"])
         analysis["severity"] = self._determine_severity(analysis["threat_score"])
         
-        # Almacenar en caché
         for threat in analysis["threats"]:
             self.threat_cache[threat.get("id")] = Threat(**threat)
         
@@ -135,12 +164,9 @@ class ThreatIntelligence:
         return None
     
     async def _analyze_local(self, target: str, scan_result: Optional[Dict]) -> Dict:
-        """Analiza usando datos locales"""
+        """Analiza usando datos locales del escaneo previo"""
         threats = []
-        
-        # Analizar basado en escaneo
         if scan_result:
-            # Buscar puertos peligrosos
             port_scan = scan_result.get("sources", {}).get("port_scan", {})
             for port in port_scan.get("open_ports", []):
                 if port.get("risk") == "high":
@@ -155,8 +181,6 @@ class ThreatIntelligence:
                         "timestamp": datetime.datetime.now().isoformat(),
                         "metadata": {"port": port["port"], "service": port["service"]}
                     })
-            
-            # Analizar VirusTotal local
             vt_data = scan_result.get("sources", {}).get("virustotal", {})
             if vt_data.get("malicious", False):
                 threats.append({
@@ -170,8 +194,6 @@ class ThreatIntelligence:
                     "timestamp": datetime.datetime.now().isoformat(),
                     "metadata": {"detection_ratio": vt_data.get("detection_ratio", 0)}
                 })
-            
-            # Analizar Shodan local
             shodan_data = scan_result.get("sources", {}).get("shodan", {})
             for vuln in shodan_data.get("vulnerabilities", []):
                 threats.append({
@@ -185,111 +207,279 @@ class ThreatIntelligence:
                     "timestamp": datetime.datetime.now().isoformat(),
                     "metadata": {"vulnerability": vuln}
                 })
-        
         return {"threats": threats, "source": "local"}
     
     async def _analyze_virustotal(self, target: str) -> Dict:
-        """Analiza usando VirusTotal API"""
-        # Simulación - en implementación real usar la API
+        """Analiza usando VirusTotal API v3 (real)"""
+        api_key = self.sources["virus_total"].get("api_key")
+        if not api_key:
+            return {"threats": [], "source": "virus_total"}
+        
+        is_ip = self._is_ip(target)
+        if aiohttp is None:
+            return {"threats": [], "source": "virus_total"}
+        
+        url = f"https://www.virustotal.com/api/v3/{'ip_addresses' if is_ip else 'domains'}/{target}"
+        headers = {"x-apikey": api_key, "accept": "application/json"}
         threats = []
         
-        # Simular resultado
-        if target in ["malicious.com", "evil.com", "bad-actor.net"]:
-            threats.append({
-                "id": f"vt_{target}",
-                "type": "malicious_domain",
-                "target": target,
-                "description": f"Dominio {target} marcado como malicioso en VirusTotal",
-                "severity": "critical",
-                "confidence": 0.95,
-                "source": "virus_total",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "metadata": {"detected_by": ["Kaspersky", "Norton", "McAfee"]}
-            })
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status != 200:
+                        return {"threats": [], "source": "virus_total"}
+                    data = await resp.json()
+                    attrs = data.get("data", {}).get("attributes", {})
+                    last_analysis = attrs.get("last_analysis_stats", {})
+                    malicious = last_analysis.get("malicious", 0)
+                    suspicious = last_analysis.get("suspicious", 0)
+                    total = sum(last_analysis.values())
+                    
+                    if malicious > 0:
+                        severity = "critical" if malicious >= 5 else "high"
+                        threats.append({
+                            "id": f"vt_{target}",
+                            "type": "malicious_indicator" if is_ip else "malicious_domain",
+                            "target": target,
+                            "description": f"{target} detectado por {malicious}/{total} engines en VirusTotal",
+                            "severity": severity,
+                            "confidence": min(0.95, 0.5 + malicious / max(total, 1) * 0.5),
+                            "source": "virus_total",
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "metadata": {"malicious": malicious, "suspicious": suspicious, "total": total}
+                        })
+                    elif suspicious > 0:
+                        threats.append({
+                            "id": f"vt_{target}",
+                            "type": "suspicious_indicator",
+                            "target": target,
+                            "description": f"{target} marcado como sospechoso por {suspicious} engines",
+                            "severity": "medium",
+                            "confidence": 0.6,
+                            "source": "virus_total",
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "metadata": {"suspicious": suspicious, "total": total}
+                        })
+        except asyncio.TimeoutError:
+            print("  ⚠️ VirusTotal: timeout")
+        except Exception as e:
+            print(f"  ⚠️ VirusTotal: {e}")
         
         return {"threats": threats, "source": "virus_total"}
     
     async def _analyze_shodan(self, target: str) -> Dict:
-        """Analiza usando Shodan API"""
-        # Simulación
+        """Analiza usando Shodan API (real)"""
+        api_key = self.sources["shodan"].get("api_key")
+        if not api_key or aiohttp is None:
+            return {"threats": [], "source": "shodan"}
+        
+        is_ip = self._is_ip(target)
         threats = []
         
-        # Simular resultado
-        if target in ["192.168.1.1", "10.0.0.1"]:
-            threats.append({
-                "id": f"shodan_{target}",
-                "type": "exposed_service",
-                "target": target,
-                "description": f"Servicios expuestos en {target}",
-                "severity": "high",
-                "confidence": 0.9,
-                "source": "shodan",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "metadata": {"ports": [80, 443, 22, 3389]}
-            })
+        try:
+            if is_ip:
+                # Shodan host lookup para IPs
+                url = f"https://api.shodan.io/shodan/host/{target}?key={api_key}"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status == 404:
+                            return {"threats": [], "source": "shodan"}
+                        if resp.status != 200:
+                            return {"threats": [], "source": "shodan"}
+                        data = await resp.json()
+                        
+                        # Puertos expuestos
+                        ports = data.get("ports", [])
+                        if len(ports) > 5:
+                            threats.append({
+                                "id": f"shodan_{target}_exposed",
+                                "type": "exposed_services",
+                                "target": target,
+                                "description": f"{len(ports)} puertos expuestos en {target}: {', '.join(map(str, ports[:10]))}",
+                                "severity": "high" if len(ports) > 10 else "medium",
+                                "confidence": 0.9,
+                                "source": "shodan",
+                                "timestamp": datetime.datetime.now().isoformat(),
+                                "metadata": {"ports": ports, "country": data.get("country_name"), "org": data.get("org")}
+                            })
+                        
+                        # Vulnerabilidades conocidas
+                        vulns = data.get("vulns", [])
+                        for v in vulns[:10]:
+                            threats.append({
+                                "id": f"shodan_{target}_vuln_{v}",
+                                "type": "vulnerability",
+                                "target": target,
+                                "description": f"Vulnerabilidad {v} detectada en {target}",
+                                "severity": "high",
+                                "confidence": 0.85,
+                                "source": "shodan",
+                                "timestamp": datetime.datetime.now().isoformat(),
+                                "metadata": {"cve": v}
+                            })
+            else:
+                # Shodan dns-domain lookup para dominios
+                url = f"https://api.shodan.io/dns/domain/{target}?key={api_key}"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status != 200:
+                            return {"threats": [], "source": "shodan"}
+                        data = await resp.json()
+                        subdomains = data.get("subdomains", [])
+                        if len(subdomains) > 0:
+                            threats.append({
+                                "id": f"shodan_dns_{target}",
+                                "type": "dns_exposure",
+                                "target": target,
+                                "description": f"{len(subdomains)} subdominios encontrados en Shodan para {target}",
+                                "severity": "info",
+                                "confidence": 0.7,
+                                "source": "shodan",
+                                "timestamp": datetime.datetime.now().isoformat(),
+                                "metadata": {"subdomain_count": len(subdomains)}
+                            })
+        except asyncio.TimeoutError:
+            print("  ⚠️ Shodan: timeout")
+        except Exception as e:
+            print(f"  ⚠️ Shodan: {e}")
         
         return {"threats": threats, "source": "shodan"}
     
     async def _analyze_censys(self, target: str) -> Dict:
-        """Analiza usando Censys API"""
-        # Simulación
+        """Analiza usando Censys API v2 (real)"""
+        api_id = self.sources["censys"].get("api_id")
+        api_secret = self.sources["censys"].get("api_secret")
+        if not api_id or not api_secret or aiohttp is None:
+            return {"threats": [], "source": "censys"}
+        
+        is_ip = self._is_ip(target)
         threats = []
         
-        # Simular resultado
-        if target in ["192.168.1.1", "10.0.0.1"]:
-            threats.append({
-                "id": f"censys_{target}",
-                "type": "misconfiguration",
-                "target": target,
-                "description": f"Configuración incorrecta en {target}",
-                "severity": "medium",
-                "confidence": 0.8,
-                "source": "censys",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "metadata": {"issue": "TLS outdated"}
-            })
+        try:
+            # Censys Search API v2
+            auth = (api_id, api_secret)
+            if is_ip:
+                url = "https://search.censys.io/api/v2/hosts/search"
+                query = f"ip: {target}"
+            else:
+                url = "https://search.censys.io/api/v2/hosts/search"
+                query = f"services.tls.certificates.leaf_data.subject.common_name: {target}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json={"q": query, "per_page": 25}, 
+                                        auth=aiohttp.BasicAuth(api_id, api_secret),
+                                        timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status != 200:
+                        return {"threats": [], "source": "censys"}
+                    data = await resp.json()
+                    hits = data.get("result", {}).get("hits", [])
+                    if hits:
+                        services_count = sum(len(h.get("services", [])) for h in hits)
+                        if services_count > 5:
+                            threats.append({
+                                "id": f"censys_{target}",
+                                "type": "exposed_services",
+                                "target": target,
+                                "description": f"Censys detectó {services_count} servicios expuestos en {target}",
+                                "severity": "medium",
+                                "confidence": 0.8,
+                                "source": "censys",
+                                "timestamp": datetime.datetime.now().isoformat(),
+                                "metadata": {"hosts_count": len(hits), "services_count": services_count}
+                            })
+        except asyncio.TimeoutError:
+            print("  ⚠️ Censys: timeout")
+        except Exception as e:
+            print(f"  ⚠️ Censys: {e}")
         
         return {"threats": threats, "source": "censys"}
     
     async def _analyze_abuseipdb(self, target: str) -> Dict:
-        """Analiza usando AbuseIPDB API"""
-        # Simulación
+        """Analiza usando AbuseIPDB API v2 (real)"""
+        api_key = self.sources["abuse_ipdb"].get("api_key")
+        if not api_key or aiohttp is None:
+            return {"threats": [], "source": "abuse_ipdb"}
+        
+        if not self._is_ip(target):
+            return {"threats": [], "source": "abuse_ipdb"}  # AbuseIPDB solo funciona con IPs
+        
+        url = "https://api.abuseipdb.com/api/v2/check"
+        headers = {"Key": api_key, "Accept": "application/json"}
+        params = {"ipAddress": target, "maxAgeInDays": 90}
         threats = []
         
-        # Simular resultado
-        if target in ["192.168.1.100", "10.0.0.100"]:
-            threats.append({
-                "id": f"abuseipdb_{target}",
-                "type": "abusive_ip",
-                "target": target,
-                "description": f"IP {target} reportada por actividad abusiva",
-                "severity": "high",
-                "confidence": 0.85,
-                "source": "abuse_ipdb",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "metadata": {"abuse_score": 95}
-            })
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, params=params,
+                                      timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status != 200:
+                        return {"threats": [], "source": "abuse_ipdb"}
+                    data = await resp.json()
+                    abuse_score = data.get("data", {}).get("abuseConfidenceScore", 0)
+                    
+                    if abuse_score >= 50:
+                        threats.append({
+                            "id": f"abuseipdb_{target}",
+                            "type": "abusive_ip",
+                            "target": target,
+                            "description": f"IP {target} tiene score de abuso {abuse_score}% en AbuseIPDB",
+                            "severity": "critical" if abuse_score >= 75 else "high",
+                            "confidence": abuse_score / 100,
+                            "source": "abuse_ipdb",
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "metadata": {"abuse_score": abuse_score, "country": data.get("data", {}).get("countryCode")}
+                        })
+                    elif abuse_score > 0:
+                        threats.append({
+                            "id": f"abuseipdb_{target}",
+                            "type": "abusive_ip",
+                            "target": target,
+                            "description": f"IP {target} reportada con score {abuse_score}% en AbuseIPDB",
+                            "severity": "low",
+                            "confidence": abuse_score / 100,
+                            "source": "abuse_ipdb",
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "metadata": {"abuse_score": abuse_score}
+                        })
+        except asyncio.TimeoutError:
+            print("  ⚠️ AbuseIPDB: timeout")
+        except Exception as e:
+            print(f"  ⚠️ AbuseIPDB: {e}")
         
         return {"threats": threats, "source": "abuse_ipdb"}
     
     async def _analyze_threatfox(self, target: str) -> Dict:
-        """Analiza usando ThreatFox API"""
-        # Simulación
-        threats = []
+        """Analiza usando ThreatFox API (pública, sin API key)"""
+        if aiohttp is None:
+            return {"threats": [], "source": "threat_fox"}
         
-        # Simular resultado
-        if target in ["malware-domain.com", "c2-server.net"]:
-            threats.append({
-                "id": f"threatfox_{target}",
-                "type": "malware_domain",
-                "target": target,
-                "description": f"Dominio {target} asociado a malware",
-                "severity": "critical",
-                "confidence": 0.98,
-                "source": "threat_fox",
-                "timestamp": datetime.datetime.now().isoformat(),
-                "metadata": {"malware_family": "Emotet"}
-            })
+        threats = []
+        try:
+            url = "https://threatfox-api.abuse.ch/api/v1/"
+            payload = {"query": "search_ioc", "search_term": target}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload,
+                                       timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status != 200:
+                        return {"threats": [], "source": "threat_fox"}
+                    data = await resp.json()
+                    iocs = data.get("data", [])
+                    for ioc in iocs[:5]:
+                        threats.append({
+                            "id": f"threatfox_{target}_{ioc.get('id', '')}",
+                            "type": "malware_indicator",
+                            "target": target,
+                            "description": f"IOC en ThreatFox: {ioc.get('ioc_type', 'unknown')} — {ioc.get('malware', 'unknown')}",
+                            "severity": "critical" if ioc.get("confidence_level") == "100" else "high",
+                            "confidence": int(ioc.get("confidence_level", 50)) / 100,
+                            "source": "threat_fox",
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "metadata": {"malware": ioc.get("malware"), "threat_type": ioc.get("threat_type")}
+                        })
+        except asyncio.TimeoutError:
+            print("  ⚠️ ThreatFox: timeout")
+        except Exception as e:
+            print(f"  ⚠️ ThreatFox: {e}")
         
         return {"threats": threats, "source": "threat_fox"}
     
@@ -297,18 +487,13 @@ class ThreatIntelligence:
         """Calcula el score de amenaza"""
         if not threats:
             return 0.0
-        
         score = 0.0
         weights = {"critical": 1.0, "high": 0.8, "medium": 0.5, "low": 0.2, "info": 0.0}
-        
         for threat in threats:
             severity = threat.get("severity", "info")
             confidence = threat.get("confidence", 0.5)
             score += weights.get(severity, 0.0) * confidence
-        
-        # Normalizar
         score = score / len(threats)
-        
         return max(0.0, min(1.0, score))
     
     def _determine_severity(self, score: float) -> str:
@@ -344,14 +529,11 @@ class ThreatIntelligence:
         """Obtiene estadísticas de amenazas"""
         severity_counts = {}
         source_counts = {}
-        
         for threat in self.threat_cache.values():
             severity = threat.severity
             severity_counts[severity] = severity_counts.get(severity, 0) + 1
-            
             source = threat.source
             source_counts[source] = source_counts.get(source, 0) + 1
-        
         return {
             "total_threats": len(self.threat_cache),
             "severity_counts": severity_counts,

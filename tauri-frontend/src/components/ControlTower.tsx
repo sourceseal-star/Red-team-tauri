@@ -11,7 +11,7 @@ export default function ControlTower() {
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
-  const authH = useCallback(() => {
+  const authH = useCallback((): Record<string, string> => {
     const k = localStorage.getItem('api_token');
     return k ? { 'Authorization': `Bearer ${k}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
   }, []);

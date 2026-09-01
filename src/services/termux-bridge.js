@@ -25,7 +25,7 @@ const axiosRetry = axiosRetryModule.default || axiosRetryModule;
 const { EventEmitter } = require('events');
 
 // ─── Configuración ──────────────────────────────────────────────────────────
-const TERMUX_API_URL = process.env.TERMUX_API_URL || 'http://127.0.0.1:8000';
+const TERMUX_API_URL = process.env.TERMUX_API_URL || 'http://127.0.0.1:8001';
 const REQUEST_TIMEOUT_MS = 5000;      // máximo 5s por petición
 const HEARTBEAT_INTERVAL_MS = 60000;  // cada 60s
 const MAX_RETRIES = 3;
@@ -98,6 +98,14 @@ function getStatus() {
   };
 }
 
+function getStatusMessage() {
+  return currentState === STATE.RESILIENCE
+    ? RESILIENCE_MESSAGE
+    : currentState === STATE.NORMAL
+      ? 'Conexión con Termux estable.'
+      : 'Conectando con el backend Termux…';
+}
+
 function onStateChange(listener) {
   emitter.on('stateChange', listener);
   return () => emitter.off('stateChange', listener);
@@ -159,5 +167,6 @@ module.exports = {
   checkHealth,
   request,
   getStatus,
+  getStatusMessage,
   onStateChange,
 };

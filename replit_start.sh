@@ -1,16 +1,23 @@
 #!/bin/bash
 # =====================================================================
-# SourceSeal / Red-Team-Tauri -- Arranque unificado para Replit v6.1
+# SourceSeal / Red-Team-Tauri -- Arranque unificado para Replit v6.2
 # Backend + Frontend (dist/) en un solo proceso, puerto :8001
+# v6.2: auth_bootstrap antes del backend — .env es la única fuente de verdad
 # =====================================================================
-set -e
+# set -e  # removido: no matar todo si algo falla
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 PORT=8001
 
 echo ""
 echo "======================================================"
-echo "  SourceSeal Engine v6.1 -- Replit (unified)"
+echo "  SourceSeal Engine v6.2 -- Replit (unified)"
 echo "======================================================"
+
+# -- 0. Sincronizar hash de password desde .env si falta --
+if [ -f "$ROOT/auth_bootstrap.py" ]; then
+  echo "[start] Sincronizando credenciales desde .env..."
+  (cd "$ROOT" && python3 auth_bootstrap.py --verbose) || true
+fi
 
 # -- 1. Matar CUALQUIER proceso zombie en el puerto --
 echo "[start] Liberando puerto :$PORT si esta ocupado..."
@@ -39,7 +46,7 @@ done
 
 # -- 3. Deps Node + build frontend --
 cd "$ROOT/tauri-frontend"
-if [ ! -d "node_modules" ]; then
+if [ ! -d "node_modules" ] || [ ! -d "node_modules/vis-network" ]; then
   echo "[start] Instalando dependencias Node..."
   npm install --prefer-offline --no-audit --no-fund 2>&1 | tail -5 || true
 fi
@@ -55,6 +62,10 @@ cd "$ROOT/redteam/scripts"
 export PORT=$PORT
 export HOST=0.0.0.0
 export PYTHONUNBUFFERED=1
+if [ -f "$ROOT/commander/commander.py" ]; then
+  export COMMANDER_DIR="$ROOT/commander"
+  echo "[start] Commander detectado en $COMMANDER_DIR"
+fi
 python3 dashboard_server.py &
 BACKEND_PID=$!
 echo "[start] Backend PID: $BACKEND_PID"
@@ -89,6 +100,27 @@ if [ "$READY" != "1" ]; then
   exit 1
 fi
 
+# -- 6. NEXUS OMNI (interno en :8004, visible a través del proxy del dashboard) --
+echo "[start] Iniciando NEXUS OMNI en :8004..."
+# The dashboard now protects service control with REDTEAM_API_KEY. Read it
+# locally for this internal call without ever printing it.
+NEXUS_API_KEY="${REDTEAM_API_KEY:-}"
+if [ -z "$NEXUS_API_KEY" ] && [ -f "$ROOT/.env" ]; then
+  NEXUS_API_KEY=$(sed -n 's/^REDTEAM_API_KEY=//p' "$ROOT/.env" | head -n 1)
+fi
+NEXUS_AUTH_ARGS=()
+if [ -n "$NEXUS_API_KEY" ]; then
+  NEXUS_AUTH_ARGS=(-H "X-API-Key: $NEXUS_API_KEY")
+fi
+NEXUS_START_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  "${NEXUS_AUTH_ARGS[@]}" \
+  -X POST "http://127.0.0.1:$PORT/api/services/start?name=nexus-omni" 2>/dev/null || echo "000")
+if [ "$NEXUS_START_CODE" = "200" ]; then
+  echo "[start] OK NEXUS solicitado; su UI queda disponible dentro del dashboard en /api/nexus/ui"
+else
+  echo "[start] ! NEXUS no pudo iniciarse automáticamente (HTTP $NEXUS_START_CODE); puede iniciarse desde Control Tower."
+fi
+
 echo ""
 echo "[start] Sistema unificado corriendo:"
 echo "        -> Backend + Frontend: http://0.0.0.0:$PORT"
@@ -98,7 +130,7 @@ echo "        -> Health: http://localhost:$PORT/api/health"
 echo "        -> ARTO Status: http://localhost:$PORT/api/arto/status"
 echo ""
 
-# -- 6. GHOST HUNTER PHANTOM (Master + Nodo en :8002) --
+# -- 7. GHOST HUNTER PHANTOM (Master + Nodo en :8002) --
 echo "[start] Iniciando GHOST HUNTER PHANTOM..."
 cd "$ROOT/ghost_hunter_phantom"
 BACKEND_API="http://localhost:$PORT" MASTER_PORT=8002 NUM_NODES=1 bash start.sh all &
