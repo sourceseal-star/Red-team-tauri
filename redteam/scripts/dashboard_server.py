@@ -8104,3 +8104,138 @@ if __name__ == "__main__":
     _seed_v2_if_empty()
     print("═" * 60, flush=True)
     uvicorn.run(app, host=host, port=port, log_level="info")
+
+# === MÓDULO D — TACTICAL EXECUTOR (Ejecución real: scan + creds + informe) ===
+# Integrado al dashboard: usa el mismo motor TCP que discover_network, pero
+# añade prueba de credenciales por defecto (HTTP Basic + RTSP) y genera un
+# informe HTML sellado con hash SHA-256. Notifica por Telegram si está configurado.
+
+try:
+    sys.path.insert(0, str(ROOT / "modules"))
+    from tactical_executor import (
+        run_tactical_scan as _tactical_run,
+        generate_sealed_report as _tactical_report,
+        format_telegram_message as _tactical_tgmsg,
+        CREDENTIAL_DICT as _TACTICAL_CREDS,
+        TACTICAL_PORTS as _TACTICAL_PORTS,
+    )
+    _TACTICAL_OK = True
+    print("[tactical] Módulo cargado: scan + credential testing + sealed reports")
+except Exception as _tactical_err:
+    _TACTICAL_OK = False
+    print(f"[WARN] tactical_executor import falló: {_tactical_err}", flush=True)
+
+@app.post("/api/tactical/scan")
+async def tactical_scan(payload: dict = Body(default={})):
+    """Ejecuta un scan táctico completo sobre la red especificada.
+
+    Body (opcional): {
+      "subnet": "192.168.1.0/24",   // si se omite, auto-detecta
+      "ports": [80, 443, 554, ...],  // si se omite, usa defaults
+      "notify_telegram": true        // si se omite, usa la config global
+    }
+
+    Flujo: descubrir hosts (TCP connect) → fingerprint → identificar cámaras →
+    probar credenciales por defecto → generar informe sellado → notificar.
+    """
+    if not _TACTICAL_OK:
+        return JSONResponse(
+            {"error": "Módulo tactical_executor no disponible"},
+            status_code=503,
+        )
+
+    subnet = payload.get("subnet", "")
+    custom_ports = payload.get("ports")
+    notify_tg = payload.get("notify_telegram", True)
+
+    # 1. Descubrir hosts (reutiliza el endpoint discover_network)
+    if not subnet:
+        subnet = await asyncio.to_thread(subnet_from_iface)
+    local_info = _detect_local_network()
+    local_ip = local_info.get("ip", "")
+
+    # Wake-up sweep + TCP discovery
+    gateway = await asyncio.to_thread(_detect_gateway, subnet)
+    tcp_ips = set(await _discover_hosts_tcp(subnet))
+    if gateway:
+        tcp_ips.add(gateway)
+    tcp_ips.discard(local_ip)
+
+    # Fingerprint de cada host
+    hosts = []
+    if tcp_ips:
+        ip_list = sorted(tcp_ips)
+        fp_results = await asyncio.gather(*[_fingerprint_host(ip) for ip in ip_list])
+        for ip, fp in zip(ip_list, fp_results):
+            hosts.append({
+                "ip": ip, "mac": None, "type": fp["type"],
+                "ports": [{"port": p, "service": SERVICE_NAMES.get(p, "unknown"),
+                            "state": "open"} for p in fp["ports"]],
+                "vendor": fp.get("vendor"),
+                "risk": fp["risk"], "risk_reasons": fp["risk_reasons"],
+            })
+
+    # 2. Scan táctico con prueba de credenciales
+    progress_log = []
+    async def _progress(idx, total, ip):
+        msg = f"Tactical scan: {idx+1}/{total} — {ip}"
+        progress_log.append(msg)
+        await broadcast({"type": "tactical_progress", "payload": msg})
+
+    scan_ports = [int(p) for p in custom_ports] if custom_ports else None
+    results = await _tactical_run(hosts, scan_ports=scan_ports, progress_callback=_progress)
+
+    # 3. Generar informe sellado
+    report_info = _tactical_report(results, REPORTS)
+
+    # 4. Notificar por Telegram
+    tg_sent = False
+    if notify_tg and _TELEGRAM_CONFIG["token"] and _TELEGRAM_CONFIG["chat_id"]:
+        msg = _tactical_tgmsg(results, report_info)
+        tg_sent = await _telegram_send(msg)
+
+    # 5. Si se encontraron credenciales, alertar
+    if results["credentials_found"]:
+        for cred in results["credentials_found"][:3]:
+            await broadcast({
+                "type": "alert",
+                "severity": "critical",
+                "payload": (
+                    f"🔑 CREDENCIALES VÁLIDAS: {cred['ip']}:{cred['port']} → "
+                    f"{cred['user']}:{cred['password']} ({cred['method']})"
+                ),
+            })
+
+    await broadcast({
+        "type": "tactical_complete",
+        "payload": results,
+    })
+
+    return {
+        "ok": True,
+        "results": results,
+        "report": report_info,
+        "telegram_sent": tg_sent,
+    }
+
+@app.get("/api/tactical/report/{filename}")
+async def tactical_download_report(filename: str):
+    """Descarga un informe táctico generado."""
+    f = REPORTS / filename
+    if not f.exists() or not f.name.startswith("tactical_report_"):
+        raise HTTPException(404, "Informe no encontrado")
+    return FileResponse(str(f), media_type="text/html", filename=f.name)
+
+@app.get("/api/tactical/credentials")
+async def tactical_credential_dict():
+    """Devuelve el diccionario de credenciales por defecto configurado (sin
+    mostrar las contraseñas en el listado del frontend — solo conteo)."""
+    return {
+        vendor: {"count": len(creds), "sample": creds[0][0] + ":***"}
+        for vendor, creds in _TACTICAL_CREDS.items()
+    } if _TACTICAL_OK else {"error": "no disponible"}
+
+@app.get("/api/tactical/ports")
+async def tactical_default_ports():
+    """Devuelve los puertos que escanea el tactical executor por defecto."""
+    return {"ports": _TACTICAL_PORTS} if _TACTICAL_OK else {"error": "no disponible"}
