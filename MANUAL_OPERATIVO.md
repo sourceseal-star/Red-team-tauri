@@ -1017,3 +1017,88 @@ TOTAL: 28/30 módulos OK
 | `AlertsPanel.tsx` | 7.5KB | ✅ Importado en App.tsx, SSE con token |
 | `ExportPanel.tsx` | 4.7KB | ✅ Importado en App.tsx, exports con token |
 | `AppShell.tsx` | 17KB | ✅ 3 módulos nuevos en menú (Topología, IoT, Alertas, Exportar) |
+
+---
+
+## ☀️ Sol Autónoma v4.1
+
+Sol es el centinela del ecosistema SourceSeal. Funciona como un daemon en
+Termux que escucha el sistema y habla proactivamente cuando algo importante
+pasa: un servicio cae, la batería está baja, un reporte está listo.
+
+### Archivos
+
+| Archivo | Ubicación | Función |
+|---------|-----------|---------|
+| `sol_core.py` | `~/Red-team-tauri/` | Cerebro: voz (tts), memoria, conversación |
+| `sol_daemon.py` | `~/Red-team-tauri/` | Daemon autónomo: monitorea servicios, batería, reportes |
+| `sol.sh` | `~/Red-team-tauri/` | Script de control: start, stop, status, talk, speak |
+| `~/.sol/` | Home | Memoria (memory.json/jsonl), config, logs, PID |
+
+### Comandos
+
+```bash
+# Iniciar Sol en modo autónomo (daemon en background)
+bash ~/sol.sh start
+
+# Conversar con Sol (modo interactivo)
+bash ~/sol.sh talk
+
+# Hacer que Sol hable algo específico
+bash ~/sol.sh speak "Hola Harold, ya estoy autónoma"
+
+# Ver si está corriendo
+bash ~/sol.sh status
+
+# Ver memoria reciente
+bash ~/sol.sh socre
+
+# Ver logs en tiempo real
+bash ~/sol.sh logs
+
+# Reiniciar Sol
+bash ~/sol.sh restart
+
+# Detener Sol
+bash ~/sol.sh stop
+```
+
+### Eventos que Sol detecta automáticamente
+
+| Evento | Acción |
+|--------|--------|
+| Servicio cae (dashboard, nexus, phantom) | Habla: "Harold, [servicio] cayó" |
+| Servicio vuelve | Habla: "[servicio] a la vida" |
+| Batería < 20% | Habla: "Harold, batería al X%" |
+| Reporte generado | Habla: "El reporte X está listo" |
+
+### Auto-arranque
+
+Sol se inicia automáticamente con `arrancar.sh`. Si el PID stale,
+se limpia y se reinicia. El healthcheck (`scripts/healthcheck_all.sh`)
+verifica el estado de Sol junto con el dashboard.
+
+### Configuración
+
+La configuración vive en `~/.sol/config.json` (se crea automáticamente):
+
+```json
+{
+  "name": "Harold",
+  "voice_speed": 1.0,
+  "voice_pitch": 1.0,
+  "language": "es",
+  "speak_enabled": true,
+  "log_enabled": true
+}
+```
+
+### Requisitos
+
+```bash
+pkg install termux-api python
+pip install requests
+```
+
+`termux-tts-speak` es opcional — si no está instalado, Sol imprime
+los mensajes sin voz. La memoria y el monitoreo funcionan igual.

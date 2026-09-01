@@ -135,6 +135,21 @@ else
     PASS=$((PASS + 1))  # info, no fallo
 fi
 
+# 8. Sol Autónoma
+echo "  Sol Autónoma:"
+SOL_PID_FILE="$HOME/.sol/sol.pid"
+if [ -f "$SOL_PID_FILE" ]; then
+    SOL_PID=$(cat "$SOL_PID_FILE" 2>/dev/null)
+    if [ -n "$SOL_PID" ] && kill -0 "$SOL_PID" 2>/dev/null; then
+        ok "Sol autónoma: OK (PID: $SOL_PID)"
+    else
+        echo "  ⚠️  Sol autónoma: INACTIVA (usa 'bash ~/sol.sh start')"
+        rm -f "$SOL_PID_FILE" 2>/dev/null || true
+    fi
+else
+    echo "  ⚠️  Sol autónoma: INACTIVA (usa 'bash ~/sol.sh start')"
+fi
+
 echo ""
 echo "────────────────────────────────────────────────────────"
 echo "  RESULTADO: $PASS OK · $FAIL FALLO"

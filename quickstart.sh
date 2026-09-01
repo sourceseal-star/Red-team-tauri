@@ -258,6 +258,20 @@ echo ""
 echo -e "${B}── Honeypot ──${N}"
 run_test "GET /api/honeypot/status"  "$BASE/api/honeypot/status"  "GET"
 
+# ─── SOL AUTÓNOMA ──────────────────────────────────────────────────
+echo ""
+echo -e "${B}── Sol Autónoma ──${N}"
+if [ -f "$HOME/.sol/sol.pid" ]; then
+    SOL_PID=$(cat "$HOME/.sol/sol.pid" 2>/dev/null)
+    if [ -n "$SOL_PID" ] && kill -0 "$SOL_PID" 2>/dev/null; then
+        ok "Sol autónoma: OK (PID: $SOL_PID)"
+    else
+        warn "Sol autónoma: INACTIVA (usa 'bash ~/sol.sh start')"
+    fi
+else
+    warn "Sol autónoma: INACTIVA (usa 'bash ~/sol.sh start')"
+fi
+
 # ─── RESUMEN ──────────────────────────────────────────────────────────
 echo ""
 echo -e "${C}════════════════════════════════════════════════════${N}"
