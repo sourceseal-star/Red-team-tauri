@@ -64,7 +64,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 class C2Config:
     """Configuración inmutable del C2."""
     api_host: str = "0.0.0.0"
-    api_port: int = 8080
+    api_port: int = int(os.environ.get("C2_PORT", "8005"))
     api_secret: str = field(default_factory=lambda: os.environ.get("C2_API_SECRET", "c2_dev_secret"))
 
     telegram_token: str = field(default_factory=lambda: os.environ.get("TELEGRAM_BOT_TOKEN", ""))
@@ -983,7 +983,8 @@ if __name__ == "__main__":
     print("  C2 UNIFIED PRO v5.0 — SourceSeal Global Protocol")
     print("  Centro de Operaciones Táctico Unificado")
     print("=" * 60)
-    print(f"  API:     http://0.0.0.0:{CFG.api_port}")
+    print(f"  API:     http://0.0.0.0:{CFG.api_port} (C2)")
+    print(f"  Dashboard: :8001 | GHOST: :8002 | Nexus: :8004 | C2: :8005")
     print(f"  Telegram: {'✅' if CFG.telegram_token else '❌'}")
     print(f"  Watchdog: {'✅' if CFG.watchdog_enabled else '❌'}")
     print(f"  Forensic: ✅ SourceSeal ZKP")
