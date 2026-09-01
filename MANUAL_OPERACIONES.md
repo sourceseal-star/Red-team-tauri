@@ -16,6 +16,8 @@
 | 8002 | PHANTOM Master | (interno) |
 | 8004 | NEXUS OMNI | NEXUS_USER / NEXUS_PASS (.env) |
 | 8005 | Controller (pendiente) | REDTEAM_API_KEY |
+| 8001 | Seal IA API (montada en dashboard) | ADMIN_PASSWORD (.env) |
+| 8006 | Seal IA standalone (reservado, no usado aún) | — |
 
 Archivos clave: `.env`, `control_claves.sh`, `auth_bootstrap.py`,
 `nexus_credentials.py`, `iniciar_unificado.sh`, `redteam/scripts/.auth/password.json`
@@ -153,6 +155,80 @@ bash scripts/snapshot_env.sh
 | `control_claves.sh restore` | .env borrado — restaura desde respaldo de control_claves |
 | `control_claves.sh set` | Desde cero — define nuevas credenciales |
 | `control_claves.sh status` | Verificar sin revelar valores |
+
+## 9. Seal IA — Orquestador de Operaciones Continuas
+
+Seal IA es el orquestador de monitoreo continuo de red del SEAL SUPER PACK.
+Vive en `seal/orchestrator/seal_orchestrator.py` y su API REST ya está montada
+en el dashboard principal (8001) bajo `/api/devices`, `/api/scan`,
+`/api/alerts`, `/api/status`, `/api/arto/*`.
+
+### Variables de entorno (.env)
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `SEAL_NETWORK` | `192.168.1.0/24` | Red propia/autorizada para escaneo |
+| `SEAL_ENABLED` | `0` | `1` = arranca con `iniciar_unificado.sh` |
+| `LLM_API_KEY` | (vacío) | Clave Anthropic `sk-ant-…`. Sin ella = modo sin IA |
+
+### Modos del orquestador
+
+```bash
+# Ver estado del orquestador
+python3 seal/orchestrator/seal_orchestrator.py --status
+
+# Arrancar monitoreo continuo (cada 15 min)
+python3 seal/orchestrator/seal_orchestrator.py --start
+
+# Detener
+python3 seal/orchestrator/seal_orchestrator.py --stop
+
+# Escaneo manual puntual
+python3 seal/orchestrator/seal_orchestrator.py --scan
+
+# Ver configuración
+python3 seal/orchestrator/seal_orchestrator.py --config
+```
+
+### Sin LLM_API_KEY
+
+Sin la clave Anthropic, Seal funciona en modo "reflejos tácticos": escanea,
+fingerprinta, sella y reporta. La clave `sk-ant-…` es un upgrade a
+"pensamiento con contexto MITRE" — no es un requisito.
+
+### API REST (montada en dashboard 8001)
+
+| Endpoint | Método | Descripción |
+|----------|--------|-------------|
+| `/api/devices` | GET | Lista dispositivos detectados |
+| `/api/scan` | GET | Ejecuta escaneo de red |
+| `/api/alerts` | GET | Lista alertas |
+| `/api/alerts/unresolved` | GET | Alertas no resueltas |
+| `/api/status` | GET | Estado del orquestador |
+| `/api/arto/analyze` | GET | Análisis con ARTO |
+| `/api/arto/predictions` | GET | Predicciones de ARTO |
+
+### Healthcheck
+
+```bash
+bash scripts/healthcheck_all.sh   # incluye check de Seal IA
+```
+
+### Comando /seal (Telegram)
+
+```bash
+bash scripts/seal_telegram_cmd.sh   # ejecuta --status, responde máx 500 chars
+```
+
+Listo para enchufar a un poller de Telegram: el script envía por Telegram
+si `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` están configurados, o imprime
+a stdout si no.
+
+### Puertos
+
+Seal IA **no usa puerto propio** — su API está montada en el dashboard (8001).
+Si en el futuro se necesita una instancia standalone, usar puerto **8006**
+(nunca 8000, 8001, 8002, 8004, 8005 que ya están asignados).
 
 ### Reglas de oro
 

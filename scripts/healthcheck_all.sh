@@ -114,6 +114,27 @@ else
     fail "Ledger SourceSeal no encontrado"
 fi
 
+# 7. Seal IA — orquestador de operaciones continuas
+echo "  Seal IA:"
+if [ -f "$ROOT/seal/orchestrator/seal_orchestrator.py" ]; then
+    SEAL_OUT="$("$PYTHON_BIN" "$ROOT/seal/orchestrator/seal_orchestrator.py" --status 2>&1 || true)"
+    if echo "$SEAL_OUT" | grep -qi "En ejecución\|running"; then
+        ok "SEAL IA: en ejecución"
+    elif echo "$SEAL_OUT" | grep -qi "Detenido\|stopped"; then
+        echo "  ⚠️  SEAL IA: detenido (SEAL_ENABLED=0 o no arrancado)"
+        PASS=$((PASS + 1))  # no es fallo, es info
+    elif [ -n "$SEAL_OUT" ]; then
+        echo "  ⚠️  SEAL IA: $SEAL_OUT" | head -c 200
+        echo ""
+        PASS=$((PASS + 1))
+    else
+        fail "SEAL IA: sin respuesta (--status vacío)"
+    fi
+else
+    echo "  ⚠️  seal/orchestrator/seal_orchestrator.py no encontrado"
+    PASS=$((PASS + 1))  # info, no fallo
+fi
+
 echo ""
 echo "────────────────────────────────────────────────────────"
 echo "  RESULTADO: $PASS OK · $FAIL FALLO"

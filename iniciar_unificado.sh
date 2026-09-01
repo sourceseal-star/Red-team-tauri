@@ -360,6 +360,35 @@ fi
 
 cd "$ROOT"
 
+# ─── 7. Seal IA (orquestador de operaciones continuas) ────
+SEAL_ENABLED_VAL="$(grep -q '^SEAL_ENABLED=1' "$ENV_FILE" 2>/dev/null && echo 1 || echo 0)"
+if [ "$SEAL_ENABLED_VAL" = "1" ] && [ -f "$ROOT/seal/orchestrator/seal_orchestrator.py" ]; then
+    echo "[unified] Arrancando Seal IA..."
+    SEAL_PID_FILE="$HOME/.seal_orchestrator.pid"
+    # Idempotente: si ya está corriendo, no duplicar
+    if [ -f "$SEAL_PID_FILE" ] && kill -0 "$(cat "$SEAL_PID_FILE" 2>/dev/null)" 2>/dev/null; then
+        echo "[unified] ✅ Seal IA ya activo (PID $(cat "$SEAL_PID_FILE")) — no se duplica"
+    else
+        SEAL_NETWORK_VAL="$(grep '^SEAL_NETWORK=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d "'\"" || echo "192.168.1.0/24")"
+        cd "$ROOT"
+        nohup "$PYTHON_BIN" "$ROOT/seal/orchestrator/seal_orchestrator.py" --start > "$HOME/seal_ia.log" 2>&1 &
+        SEAL_PID=$!
+        echo "$SEAL_PID" > "$SEAL_PID_FILE"
+        echo "[unified] Seal IA PID: $SEAL_PID — log: ~/seal_ia.log"
+        sleep 1
+        if kill -0 "$SEAL_PID" 2>/dev/null; then
+            echo "[unified] ✅ Seal IA arrancado"
+        else
+            echo "[unified][WARN] Seal IA terminó de inmediato — ver ~/seal_ia.log"
+            tail -5 "$HOME/seal_ia.log" 2>/dev/null
+        fi
+    fi
+else
+    echo "[unified][INFO] Seal IA desactivado (SEAL_ENABLED≠1 o falta seal/orchestrator/seal_orchestrator.py)"
+fi
+
+cd "$ROOT"
+
 # Mantener vivos los procesos. Si uno cae, no dejamos servicios huérfanos.
 while true; do
     if ! kill -0 "$DASHBOARD_PID" 2>/dev/null; then
