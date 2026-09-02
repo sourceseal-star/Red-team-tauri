@@ -95,6 +95,56 @@
     pointer-events: none;
   }
   .avatar-img-talk.on { opacity: 1; }
+
+  /* Frame intermedio de boca (medio abierta) para transiciones suaves al hablar */
+  .avatar-img-talk-half {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--amber);
+    opacity: 0;
+    transition: opacity 0.06s ease-in-out;
+    pointer-events: none;
+  }
+  .avatar-img-talk-half.on { opacity: 1; }
+
+  /* Parpadeo real — frame con ojos cerrados */
+  .avatar-img-blink {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--amber);
+    opacity: 0;
+    transition: opacity 0.04s ease-in-out;
+    pointer-events: none;
+  }
+  .avatar-img-blink.on { opacity: 1; }
+
+  /* Expresiones contextuales (crossfade sobre el base) */
+  /* Increíble que tengamos que explicar esto aquí también — son capas
+     que se muestran vía opacity (crossfade) según el estado de la conversación.
+     Z-order: base < happy < thinking < study < talk_half < talk < blink */
+  .avatar-expr {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--amber);
+    opacity: 0;
+    transition: opacity 0.55s ease-in-out;
+    pointer-events: none;
+  }
+  .avatar-expr.on { opacity: 1; }
+  .avatar-expr.thinking { filter: brightness(0.92) contrast(1.05); }
+  .avatar-expr.study { filter: brightness(1.05) saturate(1.1); }
+  .avatar-expr.happy { filter: brightness(1.06) saturate(1.08); }
+  .avatar-expr.listening { filter: brightness(1.04) contrast(1.06); }
+  .avatar-expr.curious { filter: brightness(1.10) saturate(1.15) contrast(1.03); }
+  .avatar-expr.smile { filter: brightness(1.08) saturate(1.12) contrast(1.02); }
+  .avatar-img.smile-glow { animation: smilePulse 2.8s ease-in-out infinite; }
+  @keyframes smilePulse { 0%,100% { box-shadow: 0 0 30px rgba(249,168,76,0.3); } 50% { box-shadow: 0 0 50px rgba(249,168,76,0.55); } }
+  .avatar-img.thinking-glow { animation: thinkPulse 2.2s ease-in-out infinite; }
+  .avatar-img.study-glow { animation: studyPulse 2.5s ease-in-out infinite; }
+  .avatar-img.happy-glow { animation: happyPulse 2s ease-in-out infinite; }
+  @keyframes thinkPulse { 0%,100% { box-shadow: 0 0 30px rgba(0,212,255,0.28); } 50% { box-shadow: 0 0 50px rgba(0,212,255,0.5); } }
+  @keyframes studyPulse { 0%,100% { box-shadow: 0 0 30px rgba(201,168,76,0.25); } 50% { box-shadow: 0 0 45px rgba(201,168,76,0.45); } }
+  @keyframes happyPulse { 0%,100% { box-shadow: 0 0 35px rgba(249,168,76,0.35); } 50% { box-shadow: 0 0 55px rgba(249,168,76,0.6); } }
   @keyframes breathe {
     0%, 100% { box-shadow: 0 0 30px rgba(79,195,255,0.28); transform: scale(1); }
     50% { box-shadow: 0 0 50px rgba(79,195,255,0.5); transform: scale(1.03); }
@@ -282,7 +332,18 @@
     <div class="pulse-ring"></div>
     <img class="avatar-img" id="avatar" src="/sol_avatar_official.jpg"
          onerror="this.onerror=null;this.src='/sol_avatar.jpg'">
+    <!-- Expresiones contextuales (crossfade sobre el base) -->
+    <img class="avatar-expr happy" id="avatar-happy" src="/sol_avatar_happy.png">
+    <img class="avatar-expr smile" id="avatar-smile" src="/sol_avatar_smile.png">
+    <img class="avatar-expr curious" id="avatar-curious" src="/sol_avatar_curious.png">
+    <img class="avatar-expr listening" id="avatar-listening" src="/sol_avatar_listening.png">
+    <img class="avatar-expr thinking" id="avatar-thinking" src="/sol_avatar_thinking.png">
+    <img class="avatar-expr study" id="avatar-study" src="/sol_avatar_study.png">
+    <!-- Frames de animación al hablar -->
+    <img class="avatar-img-talk-half" id="avatar-talk-half" src="/sol_avatar_talk_half.png">
     <img class="avatar-img-talk" id="avatar-talk" src="/sol_avatar_talk.png">
+    <!-- Parpadeo -->
+    <img class="avatar-img-blink" id="avatar-blink" src="/sol_avatar_blink.png">
   </div>
 
   <!-- Subtitle -->
@@ -542,13 +603,24 @@ async function sendMsg() {
     return;
   }
 
+  setExpr('thinking');
   document.getElementById('subtitle').textContent = '💭 pensando…';
   document.getElementById('subtitle').className = 'subtitle thinking';
   try {
     const d = await api('/api/sol/think?q=' + encodeURIComponent(text));
-    await typeSubtitle(d.response || '...');
-    addMsg(d.response || '...', 'sol');
+    const resp = d.response || '...';
+    await typeSubtitle(resp);
+    addMsg(resp, 'sol');
     loadMemory();
+    // Expresión contextual tras responder
+    const txtLow = resp.toLowerCase();
+    if (txtLow.includes('?') || txtLow.includes('vaya') || txtLow.includes('wow') || txtLow.includes('no puedo creer')) {
+      setExpr('curious'); setTimeout(() => setExpr('idle'), 4000);
+    } else if (txtLow.includes('hola') || txtLow.includes('☀') || txtLow.includes('amor') || txtLow.includes('❤') || txtLow.includes('bien') || txtLow.includes('genial')) {
+      setExpr('smile'); setTimeout(() => setExpr('idle'), 3500);
+    } else {
+      setTimeout(() => setExpr('idle'), 1500);
+    }
   } catch (e) {
     const msg = '⚠️ No pude conectar con mi cerebro. ¿Iniciaste sesión en el Dashboard primero?';
     await typeSubtitle(msg);
@@ -585,29 +657,89 @@ async function typeSubtitle(text) {
 // el frame base y el frame de "boca abierta" (avatar-talk) en un ritmo
 // pseudo-aleatorio mientras suena el audio, para que de verdad se vea
 // que Sol esta hablando y no solo una foto con un halo pulsando.
+// ═══ SISTEMA DE EXPRESIONES CONTEXTUALES (unificado desde repo sol) ═══
+const EXPR = {
+  idle:      document.getElementById('avatar'),
+  happy:     document.getElementById('avatar-happy'),
+  thinking:  document.getElementById('avatar-thinking'),
+  study:     document.getElementById('avatar-study'),
+  smile:     document.getElementById('avatar-smile'),
+  listeningExpr: document.getElementById('avatar-listening'),
+  curious:    document.getElementById('avatar-curious'),
+  talk:      document.getElementById('avatar-talk'),
+  talkHalf:  document.getElementById('avatar-talk-half'),
+  blink:     document.getElementById('avatar-blink'),
+};
+
+let currentExpr = 'idle';
+let exprTimer = null;
+
+function setExpr(name) {
+  if (speaking && name !== 'idle') return;
+  if (listening && name !== 'thinking' && name !== 'idle') return;
+  currentExpr = name;
+  ['happy', 'thinking', 'study', 'smile', 'listeningExpr', 'curious'].forEach(k => {
+    if (EXPR[k]) EXPR[k].classList.remove('on');
+  });
+  if (name !== 'idle' && EXPR[name]) {
+    EXPR[name].classList.add('on');
+  }
+  const av = EXPR.idle;
+  if (av) {
+    av.classList.remove('listening', 'thinking-glow', 'study-glow', 'happy-glow', 'smile-glow');
+    if (name === 'listening') av.classList.add('listening');
+    else if (name === 'thinking') av.classList.add('thinking-glow');
+    else if (name === 'study') av.classList.add('study-glow');
+    else if (name === 'happy') av.classList.add('happy-glow', 'smile-glow');
+  }
+}
+
+// Animación de boca de 3 frames: cerrada -> media -> abierta -> media -> cerrada
 let mouthInterval = null;
+let mouthStep = 0;
+
+function _setMouthFrame(step) {
+  const half = document.getElementById('avatar-talk-half');
+  const open = document.getElementById('avatar-talk');
+  if (!half || !open) return;
+  half.classList.toggle('on', step === 1 || step === 3);
+  open.classList.toggle('on', step === 2);
+}
 
 function startMouthMovement() {
-  const talkFrame = document.getElementById('avatar-talk');
-  if (!talkFrame) return;
-  let open = false;
+  mouthStep = 0;
+  _setMouthFrame(mouthStep);
   mouthInterval = setInterval(() => {
-    open = !open;
-    talkFrame.classList.toggle('on', open);
-  }, 130 + Math.random() * 90); // ritmo irregular, se siente mas organico que un parpadeo fijo
+    mouthStep = (mouthStep + 1) % 4;
+    _setMouthFrame(mouthStep);
+  }, 90 + Math.random() * 70);
 }
 
 function stopMouthMovement() {
   if (mouthInterval) { clearInterval(mouthInterval); mouthInterval = null; }
-  const talkFrame = document.getElementById('avatar-talk');
-  if (talkFrame) talkFrame.classList.remove('on');
+  _setMouthFrame(0);
 }
+
+// ═══ BLINK — parpadeo real con imagen de ojos cerrados ═══
+function scheduleBlink() {
+  const delay = 3500 + Math.random() * 3200;
+  setTimeout(() => {
+    const blinkFrame = document.getElementById('avatar-blink');
+    if (blinkFrame) {
+      blinkFrame.classList.add('on');
+      setTimeout(() => blinkFrame.classList.remove('on'), 130 + Math.random() * 50);
+    }
+    scheduleBlink();
+  }, delay);
+}
+scheduleBlink();
 
 function speak(text) {
   const avatar = document.getElementById('avatar');
   if (!voiceOn) return;
   const clean = text.replace(/[☀️🧠💭✨⚠️💛🌙🔗📋✅❌🟢🔴⭐🌹🔦📳]/g, '').trim();
   if (!clean) return;
+  setExpr('happy');
   document.getElementById('speak-bars').classList.remove('hidden');
   speaking = true;
   avatar.classList.add('speaking');
@@ -617,6 +749,7 @@ function speak(text) {
     speaking = false;
     avatar.classList.remove('speaking');
     stopMouthMovement();
+    setTimeout(() => setExpr('idle'), 500);
   };
   // Try gTTS via backend
   const audio = new Audio('/api/sol/tts?text=' + encodeURIComponent(clean.slice(0, 500)));
@@ -656,8 +789,10 @@ function toggleMic() {
     listening = false;
     btn.classList.remove('active');
     avatar.classList.remove('listening');
+    setExpr('idle');
     return;
   }
+  setExpr('listening');
   recognition = new SR();
   recognition.lang = 'es-ES';
   recognition.continuous = false;
@@ -1227,6 +1362,12 @@ function switchTab(tab, el) {
     const panel = document.getElementById('tab-' + t);
     if (panel) panel.classList.toggle('hidden', t !== tab);
   });
+  // Expresión contextual: study al entrar a SIL, idle al salir
+  if (tab === 'sil' || tab === 'siladv') {
+    setExpr('study');
+  } else {
+    setExpr('idle');
+  }
 }
 
 // ═══ START ═══

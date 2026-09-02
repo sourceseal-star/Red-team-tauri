@@ -273,3 +273,43 @@ Opciones a evaluar en una próxima sesión:
       copia — más simple pero depende de que ese Replit esté siempre "up".
 Harold pidió explícitamente dejar esto pendiente por ahora y priorizar
 los bugs concretos (frames/tools/sync), que ya quedaron resueltos.
+
+## Sesión 2026-09-02 (2) — Unificación UI de Sol: 11 frames en Red-team-tauri
+
+**Antes:** Red-team-tauri tenía una copia vieja de sol.html con solo 2 frames
+(avatar base + boca abierta). El repo `sol` tenía 11 frames con expresiones
+contextuales completas. Eran DOS implementaciones divergentes.
+
+**Ahora:** Se unificó el sistema completo:
+
+1. **8 frames nuevos copiados** a backend/static/ y tauri-frontend/public/:
+   blink, curious, happy, listening, smile, study, talk_half, thinking
+
+2. **CSS actualizado** en backend/static/sol.html:
+   - Clases .avatar-expr con crossfade de 0.55s
+   - .avatar-img-talk-half para el frame intermedio de boca
+   - .avatar-img-blink para parpadeo real
+   - Filtros por expresión (brightness/saturate/contrast)
+   - Animaciones de glow: thinkPulse, studyPulse, happyPulse, smilePulse
+
+3. **DOM del avatar actualizado** con los 11 <img> en z-order correcto:
+   base < happy < thinking < study < talk_half < talk < blink
+
+4. **JS del sistema de expresiones portado** desde el repo sol:
+   - Objeto EXPR con todas las capas
+   - setExpr(name) con crossfade y guards (no cambia si está hablando/escuchando)
+   - Animación de boca de 3 frames: cerrada → media → abierta → media (loop)
+   - scheduleBlink() con timing irregular 3.5-6.7s
+   - Hooks contextuales:
+     * thinking → al enviar mensaje
+     * smile/curious → al recibir respuesta (según contenido)
+     * listening → al activar micrófono
+     * study → al entrar a tabs SIL/SIL+
+     * idle → al terminar cualquier acción
+
+5. **Sincronizado** a tauri-frontend/public/sol.html y dist/sol.html
+
+**Pendiente:**
+- FloatingSol.tsx (widget React) sigue mostrando solo el avatar base.
+- Actualizarlo al sistema de expresiones requeriría estado React + refs
+  para las capas de imágenes → queda para una próxima sesión.
