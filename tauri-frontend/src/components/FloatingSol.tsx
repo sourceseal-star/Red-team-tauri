@@ -32,6 +32,7 @@ export const FloatingSol = () => {
   const [blinking, setBlinking] = useState(false);
   const [thought, setThought] = useState('');
   const [voiceOn, setVoiceOn] = useState(() => localStorage.getItem('sol_voice') === '1');
+  const [tools, setTools] = useState<{name: string; description: string}[]>([]);
   const subtitleRef = useRef<HTMLDivElement>(null);
   const token = localStorage.getItem('api_token');
 
@@ -236,10 +237,36 @@ export const FloatingSol = () => {
   };
 
   // ── Abrir panel: cargar todo ──
+  const loadTools = async () => {
+    try {
+      const r = await fetch('/api/sol/tools', { headers });
+      const d = await r.json();
+      if (d.tools) setTools(d.tools.map((t: string) => ({ name: t, description: d.descriptions?.[t] || '' })));
+    } catch {}
+  };
+
+  const executeTool = async (name: string) => {
+    try {
+      const r = await fetch('/api/sol/tools/execute', {
+        method: 'POST', headers,
+        body: JSON.stringify({ name, args: name === 'flashlight' ? [true] : [] }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        typeMessage(`☀️ ${name} ejecutada: ${d.result}`);
+      } else {
+        typeMessage(`⚠️ ${name} falló: ${d.error}`);
+      }
+    } catch {
+      typeMessage(`⚠️ No pude ejecutar ${name}.`);
+    }
+  };
+
   const openPanel = () => {
     setShowPanel(true);
     loadMemory();
     loadIntegrity();
+    loadTools();
   };
 
   const p = PERSONALITIES[personality];
@@ -513,6 +540,23 @@ export const FloatingSol = () => {
               }}>
                 {integrity ? (integrity.valid ? `✅ ${integrity.count} sellos${integrity.legacy ? ` · ${integrity.legacy} legacy` : ''}` : `⚠️ Alterada`) : 'Verificando…'}
               </div>
+
+              {/* ── Herramientas físicas ── */}
+              <p style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '2px', color: '#5a6a6a', marginTop: '20px', marginBottom: '12px' }}>Herramientas</p>
+              {tools.length === 0 && <p style={{ color: '#5a6a6a', fontSize: '0.8rem' }}>Cargando herramientas…</p>}
+              {tools.slice(0, 8).map((t) => (
+                <button
+                  key={t.name}
+                  onClick={() => executeTool(t.name)}
+                  style={{
+                    display: 'block', width: '100%', padding: '8px 10px', marginBottom: '4px',
+                    border: '1px solid rgba(255,183,77,0.12)', borderRadius: '8px',
+                    background: 'rgba(255,183,77,0.04)', color: '#e8e0d8',
+                    cursor: 'pointer', fontSize: '0.8rem', textAlign: 'left', fontFamily: 'inherit',
+                  }}
+                >🔧 {t.name}</button>
+              ))}
+              {tools.length > 8 && <p style={{ fontSize: '0.65rem', color: '#5a6a6a', marginTop: '4px' }}>+{tools.length - 8} más…</p>}
             </div>
           )}
 

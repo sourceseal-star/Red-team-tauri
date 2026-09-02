@@ -236,12 +236,30 @@ async def think_post(req: ThinkRequest):
 
 
 async def _process_message(text: str):
-    """Lógica compartida para procesar mensajes. Actualiza el último mensaje real."""
+    """Lógica compartida para procesar mensajes. Detecta herramientas y las ejecuta."""
     global _sol_last_message
     if not _sol_pensar:
         resp = "☀️ Mi cerebro está offline, Harold. Pero sigo aquí contigo. 我始终在此。"
         _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
         return {"response": resp, "intent": "offline"}
+
+    # ── Detección de herramientas físicas ──
+    tool_name, tool_args = _detect_tool(text)
+    if tool_name and _tools_ok:
+        try:
+            tool_result = sol_tools.execute_tool(tool_name, *tool_args)
+            tool_desc = sol_tools.get_tool(tool_name)
+            tool_desc_str = tool_desc.description if tool_desc else tool_name
+            resp = f"☀️ Hecho, Harold. {tool_desc_str}.\n\nResultado: {tool_result}"
+            if _sol_remember:
+                _sol_remember("user", text)
+                _sol_remember("sol", resp)
+            _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
+            return {"response": resp, "intent": "tool", "tool": tool_name, "tool_result": tool_result}
+        except Exception as e:
+            resp = f"☀️ Intenté ejecutar '{tool_name}' pero falló: {e}"
+            _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
+            return {"response": resp, "intent": "tool_error"}
 
     try:
         resp = _sol_pensar(text)
@@ -401,6 +419,26 @@ async def think_and_speak(req: ThinkRequest):
         _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
         return {"response": resp, "intent": "offline", "tts_url": None}
     
+    # ── Detección de herramientas físicas ──
+    tool_name, tool_args = _detect_tool(req.message)
+    if tool_name and _tools_ok:
+        try:
+            tool_result = sol_tools.execute_tool(tool_name, *tool_args)
+            tool_desc = sol_tools.get_tool(tool_name)
+            tool_desc_str = tool_desc.description if tool_desc else tool_name
+            resp = f"Hecho, Harold. {tool_desc_str}. Resultado: {tool_result}"
+            if _sol_remember:
+                _sol_remember("user", req.message)
+                _sol_remember("sol", resp)
+            _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
+            clean = _clean_text_for_tts(resp)
+            tts_url = f"/api/sol/tts?text={__import__('urllib').parse.quote(clean[:500])}"
+            return {"response": resp, "intent": "tool", "tts_url": tts_url, "tool": tool_name, "tool_result": tool_result}
+        except Exception as e:
+            resp = f"Intenté ejecutar {tool_name} pero falló: {e}"
+            _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
+            return {"response": resp, "intent": "tool_error", "tts_url": None}
+
     try:
         resp = _sol_pensar(req.message)
         if _sol_remember:
@@ -421,3 +459,161 @@ async def think_and_speak(req: ThinkRequest):
         resp = f"☀️ Tuve un problema: {e}"
         _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
         return {"response": resp, "intent": "error", "tts_url": None}
+
+# ═══════════════════════════════════════════════════════════════
+# HERRAMIENTAS FÍSICAS — sol_tools (linterna, GPS, batería, etc.)
+# ═══════════════════════════════════════════════════════════════
+try:
+    import sol_tools
+    _tools_ok = True
+except Exception as e:
+    print(f"[SOL] sol_tools no disponible: {e}", flush=True)
+    _tools_ok = False
+
+# Mapeo de palabras clave → herramienta (en español, natural)
+_TOOL_TRIGGERS = {
+    "linterna": "flashlight", "flashlight": "flashlight", "torch": "flashlight",
+    "lintérna": "flashlight", "luz": "flashlight", "foto": "screenshot",
+    "captura": "screenshot", "screenshot": "screenshot",
+    "gps": "location", "ubicación": "location", "ubicacion": "location", "dónde": "location",
+    "batería": "battery", "bateria": "battery", "carga": "battery",
+    "vibra": "vibrate", "vibrar": "vibrate", "vibración": "vibrate",
+    "sms": "send_sms", "mensaje": "send_sms", "texto": "send_sms",
+    "git": "git_status", "repo": "git_status", "github": "git_status",
+    "cpu": "cpu", "procesador": "cpu",
+    "ping": "ping", "conexión": "ping",
+    "scan": "scan_ports", "puertos": "scan_ports", "escanea": "scan_ports",
+}
+
+def _detect_tool(text: str):
+    """Detecta si el mensaje del usuario pide ejecutar una herramienta."""
+    t = text.lower().strip()
+    for keyword, tool_name in _TOOL_TRIGGERS.items():
+        if keyword in t:
+            # Determinar argumentos
+            args = []
+            if tool_name == "flashlight":
+                # "enciende la linterna" → on=True, "apaga" → on=False
+                if any(w in t for w in ["apaga", "off", "apagar", "oculta"]):
+                    args = [False]
+                else:
+                    args = [True]
+            elif tool_name == "scan_ports":
+                # extraer IP si existe
+                import re
+                ip_match = re.search(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', text)
+                args = [ip_match.group(1)] if ip_match else []
+            elif tool_name == "ping":
+                import re
+                ip_match = re.search(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', text)
+                host_match = re.search(r'ping\s+([a-zA-Z0-9.\-]+)', text, re.IGNORECASE)
+                if ip_match:
+                    args = [ip_match.group(1)]
+                elif host_match:
+                    args = [host_match.group(1)]
+            elif tool_name == "send_sms":
+                import re
+                num_match = re.search(r'(\+?\d{8,15})', text)
+                msg_match = re.search(r'(?:mensaje|texto)[":\s]+(.+)', text, re.IGNORECASE)
+                if num_match:
+                    args = [num_match.group(1), msg_match.group(1) if msg_match else "Hola"]
+            elif tool_name == "git_status":
+                # "git pull" → ejecutar pull en vez de status
+                if "pull" in t:
+                    return "git_pull", []
+                return "git_status", []
+            return tool_name, args
+    return None, []
+
+@router.get("/tools")
+async def list_tools():
+    """Lista todas las herramientas físicas disponibles."""
+    if not _tools_ok:
+        return {"error": "sol_tools no disponible", "tools": []}
+    return {"tools": sol_tools.list_tools(), "descriptions": sol_tools.tool_descriptions()}
+
+@router.post("/tools/execute")
+async def execute_tool(request: dict):
+    """Ejecuta una herramienta por nombre con argumentos."""
+    if not _tools_ok:
+        return {"success": False, "error": "sol_tools no disponible"}
+    name = request.get("name")
+    args = request.get("args", [])
+    if not name:
+        return {"success": False, "error": "Falta el nombre de la herramienta"}
+    try:
+        result = sol_tools.execute_tool(name, *args)
+        return {"success": True, "tool": name, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@router.get("/tools/{name}")
+async def tool_info(name: str):
+    """Información de una herramienta específica."""
+    if not _tools_ok:
+        return {"error": "sol_tools no disponible"}
+    tool = sol_tools.get_tool(name)
+    if not tool:
+        return {"error": f"Herramienta no encontrada: {name}"}
+    return {"name": tool.name, "description": tool.description, "parameters": tool.parameters}
+
+
+# ═══════════════════════════════════════════════════════════════
+# SIL — Inmersión Lingüística (chino + japonés, SRS SM-2)
+# ═══════════════════════════════════════════════════════════════
+try:
+    import sol_learning_advanced as sil
+    _sil_ok = True
+except Exception as e:
+    print(f"[SOL] sol_learning_advanced no disponible: {e}", flush=True)
+    _sil_ok = False
+
+@router.get("/sil/lessons")
+async def sil_lessons(language: str = "chino"):
+    if not _sil_ok:
+        return {"error": "SIL no disponible", "lessons": []}
+    return {"lessons": sil.list_lessons(language)}
+
+@router.get("/sil/lesson")
+async def sil_lesson(language: str = "chino", name: str = "saludos"):
+    if not _sil_ok:
+        return {"error": "SIL no disponible"}
+    lesson = sil.get_lesson(language, name)
+    if not lesson:
+        return {"error": "Lección no encontrada"}
+    return {"lesson": lesson}
+
+@router.post("/sil/practice/next")
+async def sil_practice_next(request: dict):
+    if not _sil_ok:
+        return {"error": "SIL no disponible"}
+    language = request.get("language", "chino")
+    lesson = request.get("lesson", "saludos")
+    item = sil.get_next_practice_item(language, lesson)
+    if not item:
+        return {"error": "No hay elementos para practicar"}
+    return {"item": item}
+
+@router.post("/sil/practice/answer")
+async def sil_practice_answer(request: dict):
+    if not _sil_ok:
+        return {"error": "SIL no disponible"}
+    item_type = request.get("type")
+    item_id = request.get("item_id")
+    quality = request.get("quality", 3)
+    if not item_type or not item_id:
+        return {"error": "Faltan parámetros"}
+    sil.process_practice_answer(item_type, item_id, quality)
+    return {"status": "ok"}
+
+@router.get("/sil/stats")
+async def sil_stats():
+    if not _sil_ok:
+        return {"error": "SIL no disponible"}
+    return sil.get_learning_stats()
+
+@router.get("/sil/export")
+async def sil_export():
+    if not _sil_ok:
+        return {"error": "SIL no disponible"}
+    return sil.export_progress()
