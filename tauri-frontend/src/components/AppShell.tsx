@@ -4,6 +4,7 @@ import {
   Terminal, Settings, Bell, Search, Menu, X, ChevronRight, ChevronDown, Download,
   Zap, Lock, Eye, Fingerprint, Bug, FileText, Network,
   Sun, Moon, LogOut, Cpu, MapPin, Smartphone, Crosshair
+  Siren,
 } from 'lucide-react'
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 import CommanderPanel from './CommanderPanel';
@@ -44,6 +45,7 @@ const MODULES = [
   { id: 'tower', label: 'Control Tower', icon: Radio, color: 'text-cyan-400', badge: null },
   { id: 'commander', label: 'COMMANDER', icon: Terminal, color: 'text-green-400', badge: 'NEW' },
   { id: 'comlink', label: 'COM-LINK', icon: Radio, color: 'text-cyan-300', badge: 'NEW' },
+  { id: 'emergency', label: 'Emergency Room', icon: Siren, color: 'text-red-400', badge: 'SOS' },
   { id: 'netmap', label: 'Mapa de Red', icon: MapPin, color: 'text-cyan-400', badge: 'LIVE' },
   { id: 'nexus', label: 'NEXUS v9', icon: Cpu, color: 'text-purple-400', badge: 'AI' },
   { id: 'integrated', label: 'Integración', icon: Network, color: 'text-violet-400', badge: 'LIVE' },
@@ -68,7 +70,7 @@ const SIDEBAR_SECTIONS = [
   { id: 'red', title: '🗺️ Red', moduleIds: ['netmap', 'topology', 'wifi', 'iot'] },
   { id: 'inteligencia', title: '🧠 Inteligencia', moduleIds: ['nexus', 'osint_adv', 'threat', 'arto', 'blackmirror'] },
   { id: 'laboratorio', title: '⚔️ Laboratorio', moduleIds: ['osint', 'leviathan', 'interceptor', 'tactical'] },
-  { id: 'campo', title: '📡 Campo', moduleIds: ['comlink', 'commander', 'android'] },
+  { id: 'campo', title: '📡 Campo', moduleIds: ['comlink', 'emergency', 'commander', 'android'] },
   { id: 'sistema', title: '⚙️ Sistema', moduleIds: ['alerts', 'export', 'settings', 'seal', 'cameras', 'ultra'] },
 ];
 
@@ -85,6 +87,7 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
   tower: 'Salud del backend y recursos del sistema',
   commander: 'Reconocimiento autorizado, OSINT, IoT y PHANTOM',
   comlink: 'Canales de comunicación explícitos y auditables',
+  emergency: 'Centro de emergencia multicanal — SOS, broadcast y envío rápido',
   netmap: 'Mapa de red y descubrimiento de interfaces',
   nexus: 'NEXUS OMNI v9 · análisis asistido',
   integrated: 'Estado unificado de ARTO, SEAL y LEVIATHAN',
