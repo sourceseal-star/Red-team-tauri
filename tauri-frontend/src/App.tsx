@@ -33,6 +33,7 @@ import NetworkMapPanel from './components/NetworkMapPanel';
 import AndroidFieldPanel from './components/AndroidFieldPanel';
 import NexusPanel from './components/NexusPanel';
 import ComlinkPanel from './components/ComlinkPanel';
+import EmergencyRoomPanel from './components/EmergencyRoomPanel';
 import OperationsPanel from './components/OperationsPanel';
 import IntegratedPanel from './components/IntegratedPanel';
 import TacticalPanel from './components/TacticalPanel';
@@ -89,6 +90,7 @@ function App() {
       {module === 'leviathan' && <LeviathanPanel />}
       {module === 'commander' && <CommanderPanel />}
       {module === 'comlink' && <ComlinkPanel />}
+      {module === 'emergency' && <EmergencyRoomPanel />}
       {module === 'netmap' && <NetworkMapPanel />}
       {module === 'nexus' && <NexusPanel />}
       {module === 'integrated' && <IntegratedPanel />}
