@@ -964,8 +964,9 @@ function switchTab(tab, el) {
   currentTab = tab;
   document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
-  ['mem', 'pers', 'sil', 'tools'].forEach(t => {
-    document.getElementById('tab-' + t).classList.toggle('hidden', t !== tab);
+  ['mem', 'pers', 'sil', 'tools', 'sec', 'repos', 'siladv'].forEach(t => {
+    const panel = document.getElementById('tab-' + t);
+    if (panel) panel.classList.toggle('hidden', t !== tab);
   });
 }
 
