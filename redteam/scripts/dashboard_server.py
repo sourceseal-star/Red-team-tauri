@@ -607,6 +607,26 @@ try:
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
 
+        # ── COM-LINK real (comlink_real.py si está disponible) ──
+        _comlink_real_mod = None
+        try:
+            import sys as _sys
+            _cl_root = Path(__file__).resolve().parent.parent.parent
+            if str(_cl_root) not in _sys.path:
+                _sys.path.insert(0, str(_cl_root))
+            import comlink_real as _comlink_real_mod
+        except Exception:
+            pass
+
+        def _comlink_real():
+            # Return a ComLinkReal instance, or None if not available.
+            if _comlink_real_mod is None:
+                return None
+            try:
+                return _comlink_real_mod.ComLinkReal(comlink_dir=Path(_commander_dir) / "comlink")
+            except Exception:
+                return None
+
         def _comlink_paths():
             comlink_dir = Path(_commander_dir) / "comlink"
             return (
@@ -695,6 +715,17 @@ try:
 
         def _run_comlink_command(args, timeout=30):
             comlink_sh, *_ = _comlink_paths()
+            # Try comlink_real.py first (Python implementation)
+            cl = _comlink_real()
+            if cl is not None:
+                try:
+                    cmd = args[0] if args else ""
+                    if cmd == "status-json":
+                        return {"ok": True, "returncode": 0,
+                                "stdout": json.dumps(cl.status(), ensure_ascii=False),
+                                "stderr": ""}
+                except Exception:
+                    pass  # Fall through to bash
             if not comlink_sh.exists():
                 raise FileNotFoundError("COM-LINK no disponible")
             result = subprocess.run(
@@ -713,6 +744,15 @@ try:
 
         @commander_router.get("/api/commander/comlink/status")
         async def commander_comlink_status():
+            # Try comlink_real.py first (real-time Python status)
+            cl = _comlink_real()
+            if cl is not None:
+                try:
+                    data = cl.status()
+                    data["execution_context"] = "comlink_real.py - implementacion Python real"
+                    return data
+                except Exception:
+                    pass  # Fall through to bash
             comlink_sh, *_ = _comlink_paths()
             if not comlink_sh.exists():
                 return JSONResponse({"available": False, "ready_count": 0, "channels": []}, status_code=503)
@@ -960,7 +1000,6 @@ try:
 
         @commander_router.post("/api/commander/comlink/send")
         async def commander_comlink_send(payload: dict = Body(default={})):
-            comlink_sh, *_ = _comlink_paths()
             channel = str(payload.get("channel", "")).strip()
             message = str(payload.get("message", "")).strip()
             destination = str(payload.get("destination", "")).strip()
@@ -968,8 +1007,6 @@ try:
                 "sms", "telegram", "voip", "mesh_wifi",
                 "mesh_bluetooth", "radio", "satellite",
             }
-            if not comlink_sh.exists():
-                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
             if channel not in allowed_channels:
                 return JSONResponse({"error": f"canal inválido: {channel}"}, status_code=400)
             if not message:
@@ -979,6 +1016,25 @@ try:
                     {"error": "confirm=true requerido para transmitir desde el dashboard"},
                     status_code=400,
                 )
+
+            # Try comlink_real.py first (real SMS/call/Telegram)
+            cl = _comlink_real()
+            if cl is not None:
+                try:
+                    if channel == "sms" and destination:
+                        return cl.send_sms(destination, message)
+                    elif channel == "telegram" and destination:
+                        return cl.send_telegram(destination, message)
+                    elif channel == "voip" and destination:
+                        return cl.make_call(destination)
+                    elif channel == "mesh_wifi" and destination:
+                        return cl.send_mesh_wifi(destination, message)
+                except Exception:
+                    pass  # Fall through to bash
+
+            comlink_sh, *_ = _comlink_paths()
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
 
             command = ["bash", str(comlink_sh), "send", channel, message]
             if destination:
