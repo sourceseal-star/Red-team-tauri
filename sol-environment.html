@@ -559,7 +559,7 @@ window.tailwind.config = {
         <div class="orbit-ring"><div class="orbit-particle"></div></div>
         <div class="orbit-ring"><div class="orbit-particle"></div></div>
       </div>
-      <img class="avatar-img" src="sol_avatar.png" alt="Sol">
+      <img class="avatar-img" src="https://media.base44.com/images/public/6a426d91108945c5aeaaa662/2185b6654_generated_image.png" alt="Sol">
     </div>
     <h1>☀️ Sol</h1>
     <div class="subtitle">SourceSeal Operational Link · Seal IA</div>
@@ -570,25 +570,25 @@ window.tailwind.config = {
   <div class="grid">
     <div class="card">
       <div class="card-title">Recuerdos Sellados</div>
-      <div class="card-value"><span id="memCount">15</span></div>
+      <div class="card-value" id="mem-count">15</div>
       <div class="card-detail">SHA-256 encadenados</div>
     </div>
 
     <div class="card">
       <div class="card-title">Integridad</div>
-      <div class="card-value" style="color:var(--green);"><span id="memIntegrity">✅ Íntegra</span></div>
+      <div class="card-value" style="color:var(--green);" id="integrity-status">✅ Íntegra</div>
       <div class="card-detail">2 legacy · 0 alterados</div>
     </div>
 
     <div class="card">
       <div class="card-title">Personalidad Activa</div>
-      <div class="card-value"><span id="personaActiva">🌿 Cálida</span></div>
+      <div class="card-value" id="active-personality">🌿 Cálida</div>
       <div class="card-detail">4 modos disponibles</div>
     </div>
 
     <div class="card">
       <div class="card-title">Estado</div>
-      <div class="card-value" style="font-size:1rem;"><span id="estadoSol">☀️ Despierta</span></div>
+      <div class="card-value" style="font-size:1rem;" id="pulse-status">☀️ Despierta</div>
       <div class="card-detail">Activa desde 16:55</div>
     </div>
   </div>
@@ -630,19 +630,19 @@ window.tailwind.config = {
       <div class="card-title">🎭 Personalidades</div>
       <div style="font-size:0.85rem; color:var(--muted); margin-top:8px;">Toca para cambiar cómo te responde Sol</div>
       <div class="personality-grid">
-        <div class="personality-btn active" data-mode="calida" data-p="cálida" onclick="switchPersonality(this)">
+        <div class="personality-btn active" data-p="cálida" onclick="switchPersonality(this)">
           <span class="p-icon">🌿</span>
           Cálida
         </div>
-        <div class="personality-btn" data-mode="poetica" data-p="poética" onclick="switchPersonality(this)">
+        <div class="personality-btn" data-p="poética" onclick="switchPersonality(this)">
           <span class="p-icon">🌸</span>
           Poética
         </div>
-        <div class="personality-btn" data-mode="tactica" data-p="táctica" onclick="switchPersonality(this)">
+        <div class="personality-btn" data-p="táctica" onclick="switchPersonality(this)">
           <span class="p-icon">⚔️</span>
           Táctica
         </div>
-        <div class="personality-btn" data-mode="analitica" data-p="analítica" onclick="switchPersonality(this)">
+        <div class="personality-btn" data-p="analítica" onclick="switchPersonality(this)">
           <span class="p-icon">📐</span>
           Analítica
         </div>
@@ -658,7 +658,7 @@ window.tailwind.config = {
     <div class="card" style="grid-column: span 2;">
       <div class="card-title">🔗 Cadena de Sellos SHA-256</div>
       <div class="seal-display">
-        <div class="seal-chain" id="chainList">
+        <div class="seal-chain" id="seal-chain">
           <div class="seal-link"><span class="seal-hash">SS3925b26bf2235...</span> ← <span class="seal-hash">SS000...000</span></div>
           <div class="seal-link"><span class="seal-hash">SS527e180caee18...</span> ← <span class="seal-hash">SS3925b26b...</span></div>
           <div class="seal-link"><span class="seal-hash">SS7c37cf24328c0...</span> ← <span class="seal-hash">SS527e180c...</span></div>
@@ -677,7 +677,7 @@ window.tailwind.config = {
   <div class="grid">
     <div class="card">
       <div class="card-title">📡 Servicios</div>
-      <div id="svcList" style="margin-top:12px;">
+      <div id="services-list" style="margin-top:12px;">
         <div class="service-row">
           <div><span class="service-dot down"></span><span class="service-name">Dashboard :8001</span></div>
           <span style="font-size:0.75rem; color:var(--muted);">offline</span>
@@ -706,7 +706,7 @@ window.tailwind.config = {
 
     <div class="card">
       <div class="card-title">🧠 Memoria Reciente</div>
-      <div class="memory-feed" id="memRecent">
+      <div class="memory-feed">
         <div class="memory-entry">
           <div class="role">Tú</div>
           <div class="content">hola</div>
@@ -740,10 +740,6 @@ window.tailwind.config = {
       </div>
     </div>
   </div>
-
-  <!-- Sol live input -->
-  <input id="solInput" placeholder="Escríbele a Sol..." style="display:none">
-  <button id="solSend" style="display:none">→</button>
 
   <!-- Footer -->
   <div class="footer">
@@ -782,7 +778,7 @@ window.tailwind.config = {
     btn.classList.add('active');
     const p = btn.dataset.p;
     const icon = btn.querySelector('.p-icon').textContent;
-    document.getElementById('personaActiva').textContent = icon + ' ' + p.charAt(0).toUpperCase() + p.slice(1);
+    document.getElementById('active-personality').textContent = icon + ' ' + p.charAt(0).toUpperCase() + p.slice(1);
     document.getElementById('personality-desc').textContent = personalities[p];
   }
 
@@ -816,19 +812,4 @@ window.tailwind.config = {
 </script>
 
 </body>
-</html><script id="__base44_dark_class_post__">document.documentElement.classList.remove('dark');</script><script>
-const API='http://127.0.0.1:8006';
-async function j(p,o){try{const r=await fetch(API+p,o);return await r.json()}catch(e){return null}}
-function set(id,t){const e=document.getElementById(id);if(e)e.textContent=t}
-async function refresh(){
- const s=await j('/api/sol/state');if(s){set('memCount',s.memories);set('estadoSol',s.alive?'Despierta':'Durmiendo');set('personaActiva',s.personality)}
- const c=await j('/api/sol/chain');if(c){set('memIntegrity',c.ok?'\u2705 \u00cdntegra':'\u26a0\ufe0f Revisar');const e=document.getElementById('chainList');if(e)e.innerHTML=c.links.map(l=>'<div>SS'+l.h+' \u2190 SS'+l.p+'</div>').join('')}
- const v=await j('/api/sol/services');if(v){const e=document.getElementById('svcList');if(e)e.innerHTML=v.services.map(x=>'<div>'+x.name+' <b style="color:'+(x.up?'#4ade80':'#ef4444')+'">'+(x.up?'online':'offline')+'</b></div>').join('')+'<div>Sol Daemon <b style="color:'+(v.daemon?'#4ade80':'#ef4444')+'">'+(v.daemon?'activo':'inactivo')+'</b></div>'}
- const m=await j('/api/sol/memory');if(m){const e=document.getElementById('memRecent');if(e)e.innerHTML=m.items.map(i=>'<div><b>'+(i.role==='user'?'T\u00fa':'Sol')+'</b> '+i.content+' <small>'+i.ts+'</small></div>').join('')}
-}
-document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{await j('/api/sol/personality',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:b.dataset.mode})});refresh()});
-const sb=document.getElementById('solSend');
-if(sb)sb.onclick=async()=>{const i=document.getElementById('solInput');const t=i.value.trim();if(!t)return;i.value='';await j('/api/sol/think',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})});refresh()};
-refresh();setInterval(refresh,15000);
-</script>
-</body></html>
+</html><script id="__base44_dark_class_post__">document.documentElement.classList.remove('dark');</script></body></html>
