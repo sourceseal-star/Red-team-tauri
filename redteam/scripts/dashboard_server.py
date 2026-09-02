@@ -4257,6 +4257,11 @@ try:
 except RuntimeError:
     pass  # Ya montado
 
+# Servir archivos estáticos de Sol (widget, avatar, etc.)
+_STATIC_DIR = BASE.parent / "backend" / "static"
+if _STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR), html=True), name="static")
+
 # == END VIDEO EN VIVO ================================================
 
 # ============================================================

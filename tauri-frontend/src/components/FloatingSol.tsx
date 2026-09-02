@@ -130,7 +130,7 @@ export const FloatingSol = () => {
     setPersonality(p);
     setShowPersonality(false);
     try {
-      await fetch(`/api/sol/personality?p=${p}`, { headers });
+      await fetch(`/api/sol/personality/set?p=${p}`, { headers });
     } catch {}
   };
 
@@ -168,8 +168,8 @@ export const FloatingSol = () => {
           <div className="flex items-center gap-3 p-4 border-b border-amber-500/20 bg-gradient-to-r from-amber-500/10 to-transparent">
             <div className="relative">
               <img
-                src="/sol_avatar_official.jpg"
-                onError={(e) => { (e.target as HTMLImageElement).src = '/sol_avatar.jpg'; }}
+                src="/static/sol_avatar.png"
+                onError={(e) => { (e.target as HTMLImageElement).src = '/static/sol_avatar.png'; }}
                 alt="Sol"
                 className="w-10 h-10 rounded-full object-cover border-2 border-amber-500"
                 style={{ animation: breathing ? 'solBreathe 4s ease-in-out infinite' : 'none' }}
@@ -311,8 +311,8 @@ export const FloatingSol = () => {
         {/* Avatar */}
         <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-amber-500 shadow-[0_4px_24px_rgba(245,158,11,0.5)] group-hover:shadow-[0_4px_32px_rgba(245,158,11,0.7)] transition-all group-hover:scale-110 group-active:scale-95">
           <img
-            src="/sol_avatar_official.jpg"
-            onError={(e) => { (e.target as HTMLImageElement).src = '/sol_avatar.jpg'; }}
+            src="/static/sol_avatar.png"
+            onError={(e) => { (e.target as HTMLImageElement).src = '/static/sol_avatar.png'; }}
             alt="Sol"
             className="w-full h-full object-cover"
             style={{ animation: breathing ? 'solBreathe 4s ease-in-out infinite' : 'none' }}
