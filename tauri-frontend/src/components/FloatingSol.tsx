@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { SolFace } from './SolFace';
 
 // ═══════════════════════════════════════════════════════════════
 // Sol — presencia viva en el dashboard (modo videollamada holográfica)
@@ -314,6 +313,20 @@ export const FloatingSol = () => {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
+        @keyframes solFloat {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-6px); }
+        }
+        @keyframes solTalk {
+          0%, 100% { transform: scaleY(0.4); opacity: 0.5; }
+          25% { transform: scaleY(0.95); opacity: 0.7; }
+          50% { transform: scaleY(0.55); opacity: 0.55; }
+          75% { transform: scaleY(1); opacity: 0.75; }
+        }
+        @keyframes solScanSweep {
+          0% { transform: translateY(-130%) rotate(12deg); }
+          100% { transform: translateY(130%) rotate(12deg); }
+        }
       `}</style>
 
       {/* ── Notificación proactiva flotante ── */}
@@ -349,9 +362,11 @@ export const FloatingSol = () => {
             animation: 'solBreathe 4s ease-in-out infinite',
           }}
         >
-          <div style={{ width: '100%', height: '100%' }}>
-            <SolFace speaking={false} mood={mood} size={56} />
-          </div>
+          <img
+            src="/static/sol_avatar.png"
+            alt="Sol"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
           <span style={{
             position: 'absolute', bottom: '0', right: '0',
             width: '12px', height: '12px', borderRadius: '50%',
@@ -501,8 +516,8 @@ export const FloatingSol = () => {
             </div>
           )}
 
-          {/* ── HOLOGRAMA: avatar con anillos orbitales ── */}
-          <div style={styles.holoContainer}>
+          {/* ── HOLOGRAMA: avatar con anillos orbitales — flota suavemente ── */}
+          <div style={{ ...styles.holoContainer, animation: 'solFloat 6s ease-in-out infinite' }}>
             {/* Anillo exterior */}
             <div style={{
               position: 'absolute', inset: '-30px',
@@ -522,9 +537,46 @@ export const FloatingSol = () => {
               animation: 'spin 20s linear infinite reverse',
             }} />
 
-            {/* Avatar — rostro animado real (canvas), no imagen estática */}
+            {/* Avatar — imagen holográfica real + parpadeo y habla en las posiciones reales de ojos/boca (detectadas con OpenCV) */}
             <div style={styles.avatarFrame}>
-              <SolFace speaking={speaking} mood={mood} size={200} />
+              <img src="/static/sol_avatar.png" alt="Sol" style={styles.avatarImg} />
+
+              {/* Barrido de luz — sensación de escaneo holográfico */}
+              <div style={{
+                position: 'absolute', left: '-20%', right: '-20%', top: '-60%', height: '60%',
+                background: 'linear-gradient(180deg, transparent, rgba(255,220,150,0.22), transparent)',
+                animation: 'solScanSweep 7s linear infinite',
+                mixBlendMode: 'screen', pointerEvents: 'none', zIndex: 5,
+              }} />
+
+              {/* Párpados — sobre la posición real de cada ojo (46%/54% x, 21% y) */}
+              {[46, 54].map((eyeX) => (
+                <div key={eyeX} style={{
+                  position: 'absolute', left: `${eyeX}%`, top: '21%',
+                  width: '11%', height: '6%',
+                  transform: `translate(-50%, -50%) scaleY(${blinking ? 1 : 0.05})`,
+                  transformOrigin: 'center',
+                  background: 'radial-gradient(ellipse, rgba(35,22,14,0.92) 0%, rgba(35,22,14,0.5) 70%, transparent 100%)',
+                  opacity: blinking ? 0.95 : 0,
+                  borderRadius: '50%',
+                  transition: 'transform 0.08s ease, opacity 0.08s ease',
+                  pointerEvents: 'none', zIndex: 6,
+                }} />
+              ))}
+
+              {/* Boca — sobre la posición real (50%/30%), se activa al hablar */}
+              <div style={{
+                position: 'absolute', left: '50%', top: '30%',
+                width: '13%', height: '5%',
+                transform: 'translate(-50%, -50%)',
+                transformOrigin: 'center',
+                background: 'radial-gradient(ellipse, rgba(120,50,40,0.55) 0%, rgba(120,50,40,0.25) 70%, transparent 100%)',
+                borderRadius: '50%',
+                opacity: speaking ? 1 : 0,
+                animation: speaking ? 'solTalk 0.42s ease-in-out infinite' : 'none',
+                transition: 'opacity 0.2s ease',
+                mixBlendMode: 'multiply', pointerEvents: 'none', zIndex: 6,
+              }} />
             </div>
             {thought && (
               <div style={{
