@@ -2,9 +2,12 @@
 # -*- coding: utf-8 -*-
 """sol_repo_tools.py — Herramientas de gestión de repositorios para Sol.
 
-Permite a Sol gestionar los 2 repositorios de Harold:
-  1. sourceseal-star/sol (este repo)
-  2. sourceseal-star/Red-team-tauri
+Permite a Sol gestionar los 3 repositorios de Harold:
+  1. sourceseal-star/sol (este repo — el cerebro y cuerpo de Sol)
+  2. sourceseal-star/Red-team-tauri (dashboard, COM-LINK, War Room, frontend)
+  3. sourceseal-star/commander (COMMANDER v3.4.1 — suite táctica standalone,
+     NO es el subdirectorio commander/ dentro de Red-team-tauri, es un repo
+     separado con su propio historial y codigo)
 
 Funciones disponibles:
   - repo_status: estado de git (branch, cambios, últimos commits)
@@ -33,6 +36,7 @@ REPO_PATHS = {
     "sol": os.path.expanduser("~/sol"),
     "red-team-tauri": os.path.expanduser("~/Red-team-tauri"),
     "redteam": os.path.expanduser("~/Red-team-tauri"),  # alias
+    "commander": os.path.expanduser("~/commander"),  # repo standalone, NO subdirectorio
 }
 
 # Mapping de nombres locales a nombres en GitHub
@@ -40,6 +44,7 @@ GITHUB_REPOS = {
     "sol": "sourceseal-star/sol",
     "red-team-tauri": "sourceseal-star/Red-team-tauri",
     "redteam": "sourceseal-star/Red-team-tauri",
+    "commander": "sourceseal-star/commander",  # repo standalone (COMMANDER v3.4.1)
 }
 
 
@@ -318,7 +323,7 @@ def repo_run(name="sol", command=""):
 def list_repos():
     """Lista los repos disponibles."""
     repos = []
-    for name in ["sol", "red-team-tauri"]:
+    for name in ["sol", "red-team-tauri", "commander"]:
         info = {"name": name, "github": GITHUB_REPOS.get(name)}
         path = _get_repo_path(name)
         info["local"] = bool(path)
