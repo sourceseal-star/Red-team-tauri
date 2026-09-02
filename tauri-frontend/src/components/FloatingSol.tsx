@@ -34,7 +34,13 @@ export const FloatingSol = () => {
   const [voiceOn, setVoiceOn] = useState(() => localStorage.getItem('sol_voice') === '1');
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<any>(null);
-  const [tools, setTools] = useState<{name: string; description: string}[]>([]);
+  const [tools, setTools] = useState<{name: string; description: string; params: string[]}[]>([]);
+  const [silLessons, setSilLessons] = useState<string[]>([]);
+  const [silLesson, setSilLesson] = useState<any>(null);
+  const [silPractice, setSilPractice] = useState<any>(null);
+  const [silStats, setSilStats] = useState<any>(null);
+  const [showSil, setShowSil] = useState(false);
+  const [silLessonName, setSilLessonName] = useState('');
   const subtitleRef = useRef<HTMLDivElement>(null);
   const token = localStorage.getItem('api_token');
 
@@ -275,15 +281,85 @@ export const FloatingSol = () => {
     try {
       const r = await fetch('/api/sol/tools', { headers });
       const d = await r.json();
-      if (d.tools) setTools(d.tools.map((t: string) => ({ name: t, description: d.descriptions?.[t] || '' })));
+      if (d.tools) setTools(d.tools.map((t: string) => ({
+        name: t,
+        description: d.descriptions?.[t] || '',
+        params: d.params?.[t] || [],
+      })));
+    } catch {}
+  };
+
+  // ── SIL — Inmersión Lingüística (chino, pinyin) ──
+  const loadSilLessons = async () => {
+    try {
+      const r = await fetch('/api/sil/lessons?language=chino', { headers });
+      const d = await r.json();
+      setSilLessons(d.lessons || []);
+    } catch {}
+  };
+
+  const loadSilStats = async () => {
+    try {
+      const r = await fetch('/api/sil/stats', { headers });
+      const d = await r.json();
+      setSilStats(d);
+    } catch {}
+  };
+
+  const openSilLesson = async (name: string) => {
+    try {
+      const r = await fetch(`/api/sil/lesson?language=chino&name=${encodeURIComponent(name)}`, { headers });
+      const d = await r.json();
+      setSilLesson(d.lesson || null);
+      setSilLessonName(name);
+      setSilPractice(null);
+    } catch {}
+  };
+
+  const nextSilPractice = async (lessonName: string) => {
+    try {
+      const r = await fetch('/api/sil/practice/next', {
+        method: 'POST', headers,
+        body: JSON.stringify({ language: 'chino', lesson: lessonName }),
+      });
+      const d = await r.json();
+      setSilPractice(d.item || null);
+    } catch {}
+  };
+
+  const answerSilPractice = async (quality: number) => {
+    if (!silPractice) return;
+    try {
+      await fetch('/api/sil/practice/answer', {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          type: silPractice.type,
+          item_id: silPractice.data?.word || silPractice.data?.chinese || silPractice.data?.pinyin || 'item',
+          quality,
+        }),
+      });
+      typeMessage(quality >= 3 ? '☀️ ¡Bien! Sigamos.' : '☀️ Tranquilo, repetimos esta.');
+      if (silLessonName) nextSilPractice(silLessonName);
     } catch {}
   };
 
   const executeTool = async (name: string) => {
+    const tool = tools.find(t => t.name === name);
+    let args: any[] = [];
+    if (name === 'flashlight') {
+      args = [true];
+    } else if (tool && tool.params.length > 0) {
+      // Pedir cada parámetro requerido antes de ejecutar (evita "missing required param")
+      for (const p of tool.params) {
+        const val = window.prompt(`${name} — ${p}:`);
+        if (val === null) return; // cancelado
+        args.push(val);
+      }
+    }
     try {
       const r = await fetch('/api/sol/tools/execute', {
         method: 'POST', headers,
-        body: JSON.stringify({ name, args: name === 'flashlight' ? [true] : [] }),
+        body: JSON.stringify({ name, args }),
       });
       const d = await r.json();
       if (d.success) {
@@ -301,6 +377,8 @@ export const FloatingSol = () => {
     loadMemory();
     loadIntegrity();
     loadTools();
+    loadSilLessons();
+    loadSilStats();
   };
 
   const p = PERSONALITIES[personality];
@@ -591,6 +669,102 @@ export const FloatingSol = () => {
                 >🔧 {t.name}</button>
               ))}
               {tools.length > 8 && <p style={{ fontSize: '0.65rem', color: '#5a6a6a', marginTop: '4px' }}>+{tools.length - 8} más…</p>}
+
+              {/* ── SIL — Inmersión Lingüística (aprender chino/pinyin con Sol) ── */}
+              <p style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '2px', color: '#5a6a6a', marginTop: '20px', marginBottom: '12px' }}>🀄 Aprender chino con Sol</p>
+
+              {silStats && (
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#5a6a6a',
+                  marginBottom: '10px', padding: '6px 10px', background: 'rgba(255,183,77,0.04)', borderRadius: '8px',
+                }}>
+                  <span>📈 {silStats.srs?.learned_items ?? 0} palabras aprendidas</span>
+                  <span>🔁 {silStats.srs?.due_today ?? 0} para repasar hoy</span>
+                </div>
+              )}
+
+              {!showSil ? (
+                <button
+                  onClick={() => setShowSil(true)}
+                  style={{
+                    display: 'block', width: '100%', padding: '10px', marginBottom: '8px',
+                    border: '1px solid rgba(255,183,77,0.25)', borderRadius: '8px',
+                    background: 'rgba(255,183,77,0.08)', color: '#ffb74d',
+                    cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold', fontFamily: 'inherit',
+                  }}
+                >🈳 Empezar / continuar lección</button>
+              ) : (
+                <div>
+                  {!silLesson && (
+                    <>
+                      <p style={{ fontSize: '0.75rem', color: '#5a6a6a', marginBottom: '8px' }}>Elige una lección:</p>
+                      {silLessons.length === 0 && <p style={{ color: '#5a6a6a', fontSize: '0.8rem' }}>Cargando lecciones…</p>}
+                      {silLessons.map((name) => (
+                        <button
+                          key={name}
+                          onClick={() => openSilLesson(name)}
+                          style={{
+                            display: 'block', width: '100%', padding: '8px 10px', marginBottom: '4px',
+                            border: '1px solid rgba(255,183,77,0.12)', borderRadius: '8px',
+                            background: 'rgba(255,183,77,0.04)', color: '#e8e0d8',
+                            cursor: 'pointer', fontSize: '0.8rem', textAlign: 'left', fontFamily: 'inherit',
+                          }}
+                        >📖 {name}</button>
+                      ))}
+                    </>
+                  )}
+
+                  {silLesson && !silPractice && (
+                    <div>
+                      <p style={{ fontSize: '0.8rem', color: '#ffb74d', marginBottom: '8px' }}>{silLesson.title || 'Lección'}</p>
+                      {(silLesson.vocabulary || []).slice(0, 6).map((v: any, i: number) => (
+                        <div key={i} style={{
+                          display: 'flex', justifyContent: 'space-between', padding: '6px 10px',
+                          borderBottom: '1px solid rgba(255,183,77,0.08)', fontSize: '0.85rem',
+                        }}>
+                          <span>{v.word || v.chinese}</span>
+                          <span style={{ color: '#ffb74d' }}>{v.pinyin}</span>
+                          <span style={{ color: '#5a6a6a' }}>{v.meaning || v.spanish}</span>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => nextSilPractice(silLessonName)}
+                        style={{
+                          display: 'block', width: '100%', padding: '10px', marginTop: '10px',
+                          border: 'none', borderRadius: '8px', background: '#ffb74d', color: '#050a0f',
+                          cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold', fontFamily: 'inherit',
+                        }}
+                      >🎯 Practicar esta lección</button>
+                      <button
+                        onClick={() => { setSilLesson(null); setSilPractice(null); setSilLessonName(''); }}
+                        style={{
+                          display: 'block', width: '100%', padding: '8px', marginTop: '6px',
+                          border: '1px solid rgba(255,183,77,0.12)', borderRadius: '8px',
+                          background: 'transparent', color: '#5a6a6a',
+                          cursor: 'pointer', fontSize: '0.75rem', fontFamily: 'inherit',
+                        }}
+                      >← Otras lecciones</button>
+                    </div>
+                  )}
+
+                  {silPractice && (
+                    <div style={{ textAlign: 'center' }}>
+                      <p style={{ fontSize: '0.7rem', color: '#5a6a6a', marginBottom: '6px' }}>¿Qué significa esto?</p>
+                      <p style={{ fontSize: '1.6rem', color: '#ffb74d', margin: '10px 0' }}>
+                        {silPractice.data?.word || silPractice.data?.chinese || silPractice.data?.pinyin}
+                      </p>
+                      <p style={{ fontSize: '0.85rem', color: '#e8e0d8', marginBottom: '10px' }}>
+                        {silPractice.data?.pinyin} — {silPractice.data?.meaning || silPractice.data?.spanish}
+                      </p>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button onClick={() => answerSilPractice(1)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '8px', background: 'rgba(239,83,80,0.15)', color: '#ef5350', cursor: 'pointer', fontSize: '0.75rem' }}>😵 No sabía</button>
+                        <button onClick={() => answerSilPractice(3)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '8px', background: 'rgba(255,183,77,0.15)', color: '#ffb74d', cursor: 'pointer', fontSize: '0.75rem' }}>🤔 Más o menos</button>
+                        <button onClick={() => answerSilPractice(5)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '8px', background: 'rgba(102,187,106,0.15)', color: '#66bb6a', cursor: 'pointer', fontSize: '0.75rem' }}>😄 ¡Fácil!</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

@@ -75,7 +75,14 @@ except Exception as e:
 @app.get("/api/sol/tools")
 def list_tools():
     if not _tools_ok: return {"error": "sol_tools no disponible", "tools": []}
-    return {"tools": sol_tools.list_tools(), "descriptions": sol_tools.tool_descriptions()}
+    names = sol_tools.list_tools()
+    params, descs = {}, {}
+    for n in names:
+        t = sol_tools.get_tool(n)
+        if t:
+            params[n] = t.parameters
+            descs[n] = t.description
+    return {"tools": names, "descriptions": descs, "params": params}
 
 @app.post("/api/sol/tool/execute")
 def execute_tool(request: dict):
