@@ -72,19 +72,40 @@
   /* Avatar */
   .avatar-wrap {
     position: relative; width: 180px; height: 180px; margin: 80px auto 0; flex-shrink: 0;
+    animation: solSway 7s ease-in-out infinite;
   }
   .avatar-img {
     width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
     border: 2px solid var(--amber);
     box-shadow: 0 0 30px var(--amber-glow);
     animation: breathe 4s ease-in-out infinite;
-    transition: filter 0.4s;
+    transition: filter 0.4s, opacity 0.15s ease-in-out;
   }
   .avatar-img.speaking { animation: speakGlow 0.7s ease-in-out infinite; }
   .avatar-img.listening { animation: listenGlow 1.1s ease-in-out infinite; filter: brightness(1.08); }
+  /* Segundo frame (boca abierta) superpuesto — se alterna con el frame base
+     mientras Sol habla, para que de verdad parezca que mueve la boca y no
+     solo brille. Sin esto era una foto fija con un halo pulsando. */
+  .avatar-img-talk {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--amber);
+    opacity: 0;
+    transition: opacity 0.12s ease-in-out;
+    pointer-events: none;
+  }
+  .avatar-img-talk.on { opacity: 1; }
   @keyframes breathe {
     0%, 100% { box-shadow: 0 0 30px rgba(79,195,255,0.28); transform: scale(1); }
     50% { box-shadow: 0 0 50px rgba(79,195,255,0.5); transform: scale(1.03); }
+  }
+  /* Balanceo idle muy sutil — sin esto la avatar nunca se mueve de sitio y
+     se siente más como foto de perfil que como una presencia viva. */
+  @keyframes solSway {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    25% { transform: translate(1.5px, -2px) rotate(0.4deg); }
+    50% { transform: translate(0, -3px) rotate(0deg); }
+    75% { transform: translate(-1.5px, -1px) rotate(-0.4deg); }
   }
   @keyframes speakGlow {
     0%, 100% { box-shadow: 0 0 34px rgba(79,195,255,0.55); transform: scale(1.01); }
@@ -261,6 +282,7 @@
     <div class="pulse-ring"></div>
     <img class="avatar-img" id="avatar" src="/sol_avatar_official.jpg"
          onerror="this.onerror=null;this.src='/sol_avatar.jpg'">
+    <img class="avatar-img-talk" id="avatar-talk" src="/sol_avatar_talk.png">
   </div>
 
   <!-- Subtitle -->
@@ -355,10 +377,12 @@
     <div id="repo-files" style="margin-top:12px"></div>
     <h3>📜 Commits recientes</h3>
     <div id="repo-log"><p style="color:var(--muted);font-size:0.8rem">Selecciona un repo</p></div>
-    <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <button onclick="repoPull('sol')" style="padding:10px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">⬇️ Pull Sol</button>
-      <button onclick="repoPull('red-team-tauri')" style="padding:10px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">⬇️ Pull RT</button>
+    <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <button onclick="repoPull('sol')" style="padding:10px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.8rem">⬇️ Pull Sol</button>
+      <button onclick="repoPull('red-team-tauri')" style="padding:10px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.8rem">⬇️ Pull RT</button>
+      <button onclick="repoPull('commander')" style="padding:10px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.8rem">⬇️ Pull Cmd</button>
     </div>
+    <button onclick="buildKnowledge()" style="margin-top:8px;width:100%;padding:10px;background:rgba(79,195,255,0.1);border:1px solid var(--amber);color:var(--amber);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">🧠 Reconstruir conocimiento de los 3 repos</button>
   </div>
 
   <div id="tab-siladv" class="hidden">
@@ -557,6 +581,28 @@ async function typeSubtitle(text) {
 }
 
 // ═══ VOICE OUTPUT — el avatar reacciona mientras habla ═══
+// Antes solo brillaba mas fuerte (speakGlow). Ahora ademas alterna entre
+// el frame base y el frame de "boca abierta" (avatar-talk) en un ritmo
+// pseudo-aleatorio mientras suena el audio, para que de verdad se vea
+// que Sol esta hablando y no solo una foto con un halo pulsando.
+let mouthInterval = null;
+
+function startMouthMovement() {
+  const talkFrame = document.getElementById('avatar-talk');
+  if (!talkFrame) return;
+  let open = false;
+  mouthInterval = setInterval(() => {
+    open = !open;
+    talkFrame.classList.toggle('on', open);
+  }, 130 + Math.random() * 90); // ritmo irregular, se siente mas organico que un parpadeo fijo
+}
+
+function stopMouthMovement() {
+  if (mouthInterval) { clearInterval(mouthInterval); mouthInterval = null; }
+  const talkFrame = document.getElementById('avatar-talk');
+  if (talkFrame) talkFrame.classList.remove('on');
+}
+
 function speak(text) {
   const avatar = document.getElementById('avatar');
   if (!voiceOn) return;
@@ -565,10 +611,12 @@ function speak(text) {
   document.getElementById('speak-bars').classList.remove('hidden');
   speaking = true;
   avatar.classList.add('speaking');
+  startMouthMovement();
   const endSpeak = () => {
     document.getElementById('speak-bars').classList.add('hidden');
     speaking = false;
     avatar.classList.remove('speaking');
+    stopMouthMovement();
   };
   // Try gTTS via backend
   const audio = new Audio('/api/sol/tts?text=' + encodeURIComponent(clean.slice(0, 500)));
@@ -921,7 +969,33 @@ async function repoPull(name) {
     if (d.success) alert('✅ Pull OK\n' + (d.output || ''));
     else alert('❌ ' + (d.error || 'Falló'));
   } catch (e) {
-    alert('❌ Error: ' + (e.message || ''));
+    if ((e.message || '').includes('401')) {
+      alert('🔒 Esta acción necesita tu SOL_API_KEY.\n\nVe a la pestaña Seguridad y pégala ahí (se guarda en tu navegador). Sin eso, Sol solo puede leer los repos, no modificarlos.');
+    } else {
+      alert('❌ Error: ' + (e.message || ''));
+    }
+  }
+}
+
+async function buildKnowledge() {
+  const sk = getSolKey();
+  if (!sk) {
+    alert('🔒 Reconstruir el conocimiento necesita tu SOL_API_KEY.\n\nVe a la pestaña Seguridad y pégala ahí primero.');
+    return;
+  }
+  try {
+    const d = await api('/api/sol/knowledge/build', {method: 'POST', headers: {'x-sol-key': sk}});
+    if (d.status === 'built') {
+      alert('✅ Conocimiento reconstruido de: ' + (d.repos || []).join(', ') + '\n\n' + JSON.stringify(d.summary || {}, null, 2));
+    } else {
+      alert('❌ ' + (d.error || 'Falló'));
+    }
+  } catch (e) {
+    if ((e.message || '').includes('401')) {
+      alert('🔒 Necesitas tu SOL_API_KEY (pestaña Seguridad) para esta acción.');
+    } else {
+      alert('❌ Error: ' + (e.message || ''));
+    }
   }
 }
 
