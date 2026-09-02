@@ -105,39 +105,51 @@ def remember(role, content):
 
 # ── Cadena de integridad SHA-256 ──
 def _seal(content, role="sol"):
+    """Sella un mensaje en la cadena SHA-256. Guarda el fragmento de contenido
+    usado en el hash para que verify_integrity() pueda recalcularlo exactamente igual."""
     try:
         prev = "0" * 64
         if CHAIN_F.exists():
             lines = CHAIN_F.read_text().strip().splitlines()
             if lines:
                 prev = json.loads(lines[-1]).get("hash", prev)
-        h = hashlib.sha256(f"{prev}|{role}|{content[:80]}|{int(time.time())}".encode()).hexdigest()
+        ts = int(time.time())
+        snippet = content[:80]
+        h = hashlib.sha256(f"{prev}|{role}|{snippet}|{ts}".encode()).hexdigest()
         with open(CHAIN_F, "a") as f:
-            f.write(json.dumps({"hash": h, "prev": prev, "role": role, "ts": int(time.time())}) + "\n")
+            f.write(json.dumps(
+                {"hash": h, "prev": prev, "role": role, "content": snippet, "ts": ts},
+                ensure_ascii=False
+            ) + "\n")
     except Exception:
         pass
 
 def verify_integrity():
+    """Verifica la cadena SHA-256. Entradas sin campo 'content' son de versiones
+    anteriores (legacy) — se cuentan aparte, no como alteradas, porque no hay forma
+    de recalcular su hash sin el contenido original que nunca se guardó."""
     if not CHAIN_F.exists():
         return {"valid": True, "count": 0, "tampered": [], "legacy": 0}
     lines = CHAIN_F.read_text().strip().splitlines()
-    prev = "0" * 64
     tampered = []
     valid = 0
+    legacy = 0
     for i, line in enumerate(lines):
         try:
             entry = json.loads(line)
+            if "content" not in entry:
+                legacy += 1
+                continue
             expected = hashlib.sha256(
-                f"{entry['prev']}|{entry['role']}|{entry.get('content','')}|{entry['ts']}".encode()
+                f"{entry['prev']}|{entry['role']}|{entry['content']}|{entry['ts']}".encode()
             ).hexdigest()
             if entry["hash"] != expected:
                 tampered.append(i)
             else:
                 valid += 1
-            prev = entry["hash"]
         except Exception:
             tampered.append(i)
-    return {"valid": len(tampered) == 0, "count": valid, "tampered": tampered, "legacy": 0}
+    return {"valid": len(tampered) == 0, "count": valid, "tampered": tampered, "legacy": legacy}
 
 # ═══════════════════════════════════════════════════════════════════
 #  VOZ
