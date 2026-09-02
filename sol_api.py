@@ -371,15 +371,20 @@ except Exception as e:
 def list_tools():
     if not _tools_ok:
         return {"tools": []}
-    names = sol_tools.list_tools()
-    params, descs = {}, {}
-    for n in names:
-        t = sol_tools.get_tool(n)
-        if t:
-            params[n] = t.parameters
-            descs[n] = t.description
-    tools_list = [{"name": n, "description": descs.get(n, ""), "params": params.get(n, [])} for n in names]
-    return {"tools": tools_list}
+    try:
+        names = sol_tools.list_tools()
+        params, descs = {}, {}
+        for n in names:
+            t = sol_tools.get_tool(n)
+            if t:
+                # En ESTE repo, Tool tiene .parameters (en el repo sol usa .params — son copias divergentes)
+                attr = "parameters" if hasattr(t, "parameters") else "params"
+                params[n] = getattr(t, attr, [])
+                descs[n] = t.description
+        tools_list = [{"name": n, "description": descs.get(n, ""), "params": params.get(n, [])} for n in names]
+        return {"tools": tools_list}
+    except Exception as e:
+        return JSONResponse({"error": f"Error listando tools: {e}"}, status_code=500)
 
 @app.post("/api/sol/tools/execute")
 async def execute_tool(request: Request, x_sol_key: str = Header(default="")):
@@ -405,7 +410,8 @@ def tool_info(name: str):
     tool = sol_tools.get_tool(name)
     if not tool:
         return {"error": f"Herramienta no encontrada: {name}"}
-    return {"name": tool.name, "description": tool.description, "parameters": tool.parameters}
+    attr = "parameters" if hasattr(tool, "parameters") else "params"
+    return {"name": tool.name, "description": tool.description, "parameters": getattr(tool, attr, [])}
 
 # ═══════════════════════════════════════════════════════════════
 # SIL — Inmersión Lingüística (Chino / Pinyin)

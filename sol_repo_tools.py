@@ -31,6 +31,11 @@ from pathlib import Path
 GITHUB_TOKEN = os.environ.get("GITHUB_ACCESS_TOKEN", "")
 GITHUB_API = "https://api.github.com"
 
+# Directorio real donde vive ESTE script. En Replit, el repo puede estar
+# desplegado en su propia raíz (no clonado en ~/sol). Si este proceso tiene
+# un .git válido en su directorio, usamos esa ruta como fallback.
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Paths donde pueden estar los repos localmente (Replit/Termux)
 REPO_PATHS = {
     "sol": os.path.expanduser("~/sol"),
@@ -38,6 +43,15 @@ REPO_PATHS = {
     "redteam": os.path.expanduser("~/Red-team-tauri"),  # alias
     "commander": os.path.expanduser("~/commander"),  # repo standalone, NO subdirectorio
 }
+
+
+def _self_repo_path():
+    """Si este script vive dentro de un repo git válido, devuelve su
+    directorio. En Replit Red-team-tauri, sol_api.py corre desde la raíz
+    del repo, no desde ~/sol — antes no se encontraba a si mismo."""
+    if os.path.isdir(os.path.join(SCRIPT_DIR, ".git")):
+        return SCRIPT_DIR
+    return None
 
 # Mapping de nombres locales a nombres en GitHub
 GITHUB_REPOS = {
@@ -55,6 +69,12 @@ def _get_repo_path(name):
         if key == name:
             if os.path.isdir(path):
                 return path
+    # Auto-detección: si preguntan por 'sol' y ESTE script corre dentro
+    # de un repo git válido (ej. Red-team-tauri en Replit), úsalo.
+    if name == "sol":
+        self_path = _self_repo_path()
+        if self_path:
+            return self_path
     home = os.path.expanduser("~")
     candidates = [
         os.path.join(home, name),
