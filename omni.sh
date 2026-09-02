@@ -561,12 +561,19 @@ start() {
     else
       info "Sol API ☀️ — arrancando en :8006..."
       cd "$ROOT"
+      # Liberar puerto 8006 si hay zombie
+      fuser -k 8006/tcp >/dev/null 2>&1 || true
+      lsof -ti tcp:8006 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+      sleep 1
       nohup python3 sol_api.py >> "$LOG_DIR/sol_api.log" 2>&1 &
-      sleep 2
+      sleep 3
       if pgrep -f "sol_api.py" >/dev/null 2>&1; then
         ok "Sol API ☀️ activo en http://127.0.0.1:8006"
       else
         warn "Sol API ☀️ no arrancó — ver $LOG_DIR/sol_api.log"
+        echo -e "${R}  ── Error real (sol_api.log) ──${N}"
+        tail -n 10 "$LOG_DIR/sol_api.log" 2>/dev/null | sed 's/^/    /'
+        echo -e "${R}  ───────────────────────────${N}"
       fi
     fi
   else
@@ -1273,13 +1280,16 @@ watchdog() {
 start_sol_stack() {
   local root="$HOME/Red-team-tauri"
   # Sol API (:8006) — cerebro + herramientas + SIL
-  pgrep -f sol_api.py >/dev/null || ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & )
+  if ! pgrep -f sol_api.py >/dev/null; then
+    fuser -k 8006/tcp >/dev/null 2>&1 || true
+    cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 &
+  fi
   # Sol daemon — iniciativa + pensamiento idle
   pgrep -f sol_daemon.py >/dev/null || ( cd "$root" && nohup python3 sol_daemon.py >>"$HOME/.sol/daemon.log" 2>&1 & echo $! > "$HOME/.sol/sol.pid" )
   # Watchdog — revive procesos + blinda identidad
   pgrep -f sol_watchdog.sh >/dev/null || { chmod +x "$root/sol_watchdog.sh" 2>/dev/null; nohup bash "$root/sol_watchdog.sh" >>"$HOME/.sol/watchdog.log" 2>&1 & }
   # Verificar módulos de Sol
-  for mod in sol_tools.py sol_learning_advanced.py; do
+  for mod in sol_tools.py sol_learning_advanced.py sol_knowledge.py sol_groq.py sil_advanced.py sol_repo_tools.py sol_security.py; do
     [ -f "$root/$mod" ] || echo "[omni] ⚠️ Falta $mod — algunas funciones de Sol no estarán disponibles"
   done
   echo "[omni] ✅ stack de Sol activo (API + daemon + watchdog)"
