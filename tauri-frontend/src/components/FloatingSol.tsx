@@ -102,24 +102,58 @@ export const FloatingSol = () => {
     return () => { cancelled = true; clearTimeout(t); };
   }, []);
 
-  // ── Voz opcional en el navegador (tono real según ánimo de Sol) ──
+  // ── Voz natural de Google (gTTS vía backend) — bypass del TTS del teléfono ──
+  const ttsRef = useRef<HTMLAudioElement | null>(null);
+  const [ttsAvailable, setTtsAvailable] = useState(true);
+
   const speakBrowser = useCallback((text: string) => {
-    if (!voiceOn || !('speechSynthesis' in window)) return;
-    try {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text.replace(/[☀️🧠💭✨⚠️]/g, ''));
-      const voices = window.speechSynthesis.getVoices();
-      // Preferir voz de calidad (Google/red) antes que la primera voz local que aparezca
-      const esVoice = voices.find(v => /es/i.test(v.lang || '') && /google/i.test(v.name || ''))
-        || voices.find(v => /es/i.test(v.lang || '') && !/compact|local/i.test(v.name || ''))
-        || voices.find(v => /es/i.test(v.lang || ''));
-      if (esVoice) u.voice = esVoice;
-      u.lang = 'es-ES';
-      u.pitch = 1.0 + mood * 0.06;
-      u.rate = mood < 0 ? 0.88 : 0.95;
-      window.speechSynthesis.speak(u);
-    } catch {}
-  }, [voiceOn, mood]);
+    if (!voiceOn) return;
+    const clean = text.replace(/[☀️🧠💭✨⚠️💛🌙🔗📋✅❌🟢🔴⭐🌹]/g, '').trim();
+    if (!clean) return;
+
+    if (ttsRef.current) { ttsRef.current.pause(); ttsRef.current = null; }
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+
+    if (ttsAvailable) {
+      const audio = new Audio(`/api/sol/tts?text=${encodeURIComponent(clean.slice(0, 500))}`);
+      audio.onended = () => { ttsRef.current = null; setSpeaking(false); };
+      audio.onerror = () => {
+        setTtsAvailable(false);
+        if ('speechSynthesis' in window) {
+          try {
+            const u = new SpeechSynthesisUtterance(clean);
+            const voices = window.speechSynthesis.getVoices();
+            const esVoice = voices.find(v => /es/i.test(v.lang || '') && /google/i.test(v.name || ''))
+              || voices.find(v => /es/i.test(v.lang || ''));
+            if (esVoice) u.voice = esVoice;
+            u.lang = 'es-ES'; u.pitch = 1.0 + mood * 0.06; u.rate = mood < 0 ? 0.88 : 0.95;
+            u.onend = () => setSpeaking(false);
+            window.speechSynthesis.speak(u);
+          } catch {}
+        }
+      };
+      ttsRef.current = audio;
+      audio.play().catch(() => {
+        setTtsAvailable(false);
+        if ('speechSynthesis' in window) {
+          try {
+            const u = new SpeechSynthesisUtterance(clean);
+            u.lang = 'es-ES'; u.onend = () => setSpeaking(false);
+            window.speechSynthesis.speak(u);
+          } catch {}
+        }
+      });
+      return;
+    }
+    if ('speechSynthesis' in window) {
+      try {
+        const u = new SpeechSynthesisUtterance(clean);
+        u.lang = 'es-ES'; u.pitch = 1.0 + mood * 0.06; u.rate = mood < 0 ? 0.88 : 0.95;
+        u.onend = () => setSpeaking(false);
+        window.speechSynthesis.speak(u);
+      } catch {}
+    }
+  }, [voiceOn, mood, ttsAvailable]);
 
   const toggleVoice = useCallback(() => {
     setVoiceOn(prev => {

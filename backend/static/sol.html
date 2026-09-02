@@ -557,21 +557,78 @@ voiceBtn.onclick = () => {
     speechSynthesis.getVoices();
   }
 };
+// ═══ Voz natural de Google (gTTS vía backend) ═══
+// Bypass completo del motor TTS del teléfono — siempre suena natural
+let currentAudio = null;
+let ttsAvailable = true;  // se pone false si gTTS falla
+
 function speakBrowser(text) {
-  if (!voiceEnabled || !('speechSynthesis' in window)) return;
+  if (!voiceEnabled) return;
+  
+  // Limpiar texto
+  const clean = text.replace(/[☀️🧠💭✨⚠️💛🌙🔗📋✅❌🟢🔴⭐🌹╔╗╚╝║═│┌┐└┘├┤┬┴┼─]/g, '').trim();
+  if (!clean) return;
+  
+  // Detener audio anterior
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
+  // También detener speechSynthesis por si acaso
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  
+  // Intentar gTTS primero (voz natural de Google)
+  if (ttsAvailable) {
+    const ttsUrl = `/api/sol/tts?text=${encodeURIComponent(clean.slice(0, 500))}`;
+    const audio = new Audio(ttsUrl);
+    audio.crossOrigin = 'anonymous';
+    
+    audio.onplay = () => {
+      // El audio empezó — el holograma ya tiene .speaking del caller
+    };
+    
+    audio.onended = () => {
+      currentAudio = null;
+      speaking = false;
+      holo.classList.remove('speaking');
+      waves.classList.remove('speaking');
+    };
+    
+    audio.onerror = () => {
+      console.warn('[SOL] gTTS no disponible, usando voz del navegador');
+      ttsAvailable = false;
+      speakBrowserFallback(clean);
+    };
+    
+    currentAudio = audio;
+    audio.play().catch(() => {
+      ttsAvailable = false;
+      speakBrowserFallback(clean);
+    });
+    return;
+  }
+  
+  // Fallback: voz del navegador (puede sonar robótica)
+  speakBrowserFallback(clean);
+}
+
+function speakBrowserFallback(text) {
+  if (!('speechSynthesis' in window)) return;
   try {
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text.replace(/[☀️🧠💭✨⚠️]/g, ''));
+    const u = new SpeechSynthesisUtterance(text);
     const voices = speechSynthesis.getVoices();
-    // Preferir voz de calidad (Google/red) antes que la primera voz local que aparezca
     const esVoice = voices.find(v => /es/i.test(v.lang||'') && /google/i.test(v.name||''))
       || voices.find(v => /es/i.test(v.lang||'') && !/compact|local/i.test(v.name||''))
       || voices.find(v => /es/i.test(v.lang||''));
     if (esVoice) u.voice = esVoice;
     u.lang = 'es-ES';
-    // Tono según ánimo real (-2..2): más cálido y alto si feliz, más suave y bajo si triste
     u.pitch = 1.0 + (currentMood * 0.06);
     u.rate = currentMood < 0 ? 0.88 : 0.95;
+    u.onend = () => {
+      speaking = false;
+      holo.classList.remove('speaking');
+      waves.classList.remove('speaking');
+    };
     speechSynthesis.speak(u);
   } catch {}
 }

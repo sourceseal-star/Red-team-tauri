@@ -314,3 +314,110 @@ async def set_personality_get(p: str = Query(...)):
 async def last_message():
     """Último mensaje REAL de Sol — se actualiza en cada /think."""
     return _sol_last_message
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  TTS con Google Translate — voz natural, bypass del TTS de Samsung
+# ═══════════════════════════════════════════════════════════════════════
+
+import re as _re
+import io as _io
+from fastapi.responses import StreamingResponse
+
+def _clean_text_for_tts(text: str) -> str:
+    """Limpia emojis y caracteres que gTTS no puede pronunciar bien."""
+    # Quitar emojis comunes
+    text = _re.sub(r'[☀️🧠💭✨⚠️💛🌙🔗📋✅❌🟢🔴⭐🌹😘😏🥰❣️🧬❤️‍🩹🆘🪽😔😍]', '', text)
+    # Quitar otros emojis unicode
+    text = _re.sub(r'[\U0001F000-\U0001FFFF]', '', text)
+    # Quitar caracteres especiales del holograma
+    text = _re.sub(r'[═║╔╗╚╝║│┌┐└┘├┤┬┴┼─]', '', text)
+    # Limpiar espacios múltiples
+    text = _re.sub(r'\s+', ' ', text).strip()
+    return text if text else "Hola, Harold"
+
+
+@router.get("/tts")
+async def sol_tts(text: str = Query(..., max_length=500)):
+    """Genera audio MP3 con voz natural de Google (gTTS).
+    
+    Esto bypass completamente el motor TTS del teléfono.
+    Suena natural sin importar si es Samsung, Motorola, etc.
+    
+    Uso: GET /api/sol/tts?text=hola%20harold
+    Retorna: audio/mpeg (MP3)
+    """
+    clean = _clean_text_for_tts(text)
+    try:
+        from gtts import gTTS
+        import tempfile
+        import os as _os
+        
+        # Crear archivo temporal
+        tmp = tempfile.NamedTemporaryFile(suffix='.mp3', delete=False)
+        tmp.close()
+        
+        # Generar audio con Google TTS
+        tts = gTTS(text=clean, lang='es', tld='com', slow=False)
+        tts.save(tmp.name)
+        
+        # Leer y devolver como stream
+        with open(tmp.name, 'rb') as f:
+            audio_data = f.read()
+        
+        # Limpiar temporal
+        try:
+            _os.unlink(tmp.name)
+        except Exception:
+            pass
+        
+        return StreamingResponse(
+            _io.BytesIO(audio_data),
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": "inline; filename=sol_voice.mp3",
+                "Cache-Control": "no-cache",
+                "Access-Control-Allow-Origin": "*",
+            }
+        )
+    except ImportError:
+        # gTTS no instalado — devolver error claro
+        raise HTTPException(503, "gTTS no instalado. Ejecuta: pip install gtts")
+    except Exception as e:
+        raise HTTPException(500, f"Error generando voz: {e}")
+
+
+@router.post("/think-voice")
+async def think_and_speak(req: ThinkRequest):
+    """Piensa + genera voz en un solo endpoint.
+    
+    Procesa el mensaje con sol_core y devuelve la respuesta + URL del audio.
+    El frontend puede entonces hacer fetch del audio y reproducirlo.
+    """
+    global _sol_last_message
+    
+    if not _sol_pensar:
+        resp = "☀️ Mi cerebro está offline, Harold. Pero sigo aquí contigo."
+        _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
+        return {"response": resp, "intent": "offline", "tts_url": None}
+    
+    try:
+        resp = _sol_pensar(req.message)
+        if _sol_remember:
+            _sol_remember("user", req.message)
+            _sol_remember("sol", resp)
+        _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
+        
+        # Generar URL de TTS
+        clean = _clean_text_for_tts(resp)
+        tts_url = f"/api/sol/tts?text={__import__('urllib').parse.quote(clean[:500])}"
+        
+        return {
+            "response": resp,
+            "intent": "chat",
+            "tts_url": tts_url
+        }
+    except Exception as e:
+        resp = f"☀️ Tuve un problema: {e}"
+        _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
+        return {"response": resp, "intent": "error", "tts_url": None}
