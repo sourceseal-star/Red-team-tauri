@@ -495,7 +495,7 @@ export const FloatingSol = () => {
         </div>
       )}
 
-      {/* ── Burbuja flotante (avatar que respira) ── */}
+      {/* ── Burbuja flotante (avatar que respira + parpadea) ── */}
       {!expanded && (
         <div
           onClick={() => setExpanded(true)}
@@ -503,16 +503,44 @@ export const FloatingSol = () => {
             position: 'fixed', bottom: '24px', right: '6px', zIndex: 9997,
             width: '56px', height: '56px', borderRadius: '50%',
             overflow: 'hidden', cursor: 'pointer',
-            border: '2px solid rgba(255,183,77,0.4)',
-            boxShadow: '0 0 20px rgba(255,183,77,0.2)',
+            border: `2px solid rgba(255,183,77,${proactiveMsg ? 0.7 : 0.4})`,
+            boxShadow: proactiveMsg
+              ? '0 0 30px rgba(255,183,77,0.4)'
+              : '0 0 20px rgba(255,183,77,0.2)',
             animation: 'solBreathe 4s ease-in-out infinite',
           }}
         >
+          {/* Frame base */}
           <img
             src="/assets/sol_avatar_official.jpg" onError={(e) => { (e.target as HTMLImageElement).src = "/sol_avatar.jpg"; }}
             alt="Sol"
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
+          {/* Frame de parpadeo real (ojos cerrados) — overlay */}
+          <img
+            src="/sol_avatar_blink.png"
+            alt=""
+            style={{
+              position: 'absolute', top: 0, left: 0,
+              width: '100%', height: '100%', objectFit: 'cover',
+              opacity: blinking ? 1 : 0,
+              transition: 'opacity 0.04s ease-in-out',
+              pointerEvents: 'none',
+            }}
+          />
+          {/* Indicador de proceso: thinking */}
+          {thought && (
+            <div style={{
+              position: 'absolute', inset: 0,
+              borderRadius: '50%',
+              background: 'rgba(0,212,255,0.15)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '1rem', pointerEvents: 'none',
+              animation: 'solFadeIn 0.2s ease-out',
+            }}>
+              💭
+            </div>
+          )}
           <span style={{
             position: 'absolute', bottom: '0', right: '0',
             width: '12px', height: '12px', borderRadius: '50%',

@@ -313,3 +313,21 @@ contextuales completas. Eran DOS implementaciones divergentes.
 - FloatingSol.tsx (widget React) sigue mostrando solo el avatar base.
 - Actualizarlo al sistema de expresiones requeriría estado React + refs
   para las capas de imágenes → queda para una próxima sesión.
+
+## Sesión 2026-09-02 (3) — FloatingSol.tsx: parpadeo real en burbuja flotante
+
+**Contexto:** El panel expandido de FloatingSol ya carga sol.html vía iframe,
+que tiene los 11 frames completos. Pero la burbuja flotante pequeña (56px)
+solo mostraba el avatar base estático, sin parpadeo ni indicadores.
+
+**Cambio:**
+- Overlay del frame `sol_avatar_blink.png` (ojos cerrados reales) en la burbuja
+  colapsada, sincronizado con el state `blinking` que ya existía
+- Indicador visual 💭 cuando Sol está pensando (`thought` state)
+- Border y glow más intensos cuando hay un mensaje proactivo
+
+**Pendiente:** Si se quiere el sistema completo de 11 frames en la burbuja
+flotante (expresiones happy/curious/listening/etc), se necesitaría portar
+todo el sistema setExpr() al React state — pero la burbuja es solo 56px
+y las expresiones sutiles no se distinguirían. El panel expandido ya las
+tiene todas vía el iframe.
