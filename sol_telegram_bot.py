@@ -86,7 +86,11 @@ BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8001")
 API_KEY = os.environ.get("REDTEAM_API_KEY", "")
 
 # Avatar de Sol — solo visible para Harold
-AVATAR_URL = "https://media.base44.com/images/public/6a426d91108945c5aeaaa662/2185b6654_generated_image.png"
+# Avatar de Sol —Prioridad 1: archivo local en el repo (permanente).
+# Prioridad 2: URL externa (fallback si el archivo no existe).
+import os as _os
+_SOL_AVATAR_LOCAL = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "assets", "sol_avatar_official.jpg")
+AVATAR_URL = f"file://{_SOL_AVATAR_LOCAL}" if _os.path.isfile(_SOL_AVATAR_LOCAL) else "https://media.base44.com/images/public/6a426d91108945c5aeaaa662/2185b6654_generated_image.png"
 
 # Directorio de Sol
 SOL_DIR = Path.home() / ".sol"
