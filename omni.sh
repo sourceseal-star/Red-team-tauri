@@ -235,6 +235,7 @@ COMANDOS:
   logs [serv]    Ver logs: dash | ghost | tg | nexus | seal | all
   snapshot       Crea snapshot cifrado del .env
   verify         Verifica que las credenciales críticas existan
+  comlink [sub]  COM-LINK: status | channels | sms | call | queue | emergency
   help           Esta ayuda
 
 SERVICIOS:
@@ -795,6 +796,24 @@ status_short() {
     warn "Watchdog 🐕        🟡 DETENIDO"
   fi
 
+  # COM-LINK (estado real de canales)
+  if [ -f "$ROOT/comlink_real.py" ]; then
+    CL_STATUS=$(python3 "$ROOT/comlink_real.py" --status 2>/dev/null)
+    if [ -n "$CL_STATUS" ]; then
+      CL_READY=$(echo "$CL_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('ready_count',0))" 2>/dev/null || echo "0")
+      CL_ENV=$(echo "$CL_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('environment','?'))" 2>/dev/null || echo "?")
+      if [ "$CL_READY" -gt 0 ] 2>/dev/null; then
+        ok "COM-LINK 📡        🟢 ${CL_READY}/7 canales (${CL_ENV})"
+      else
+        warn "COM-LINK 📡        🟡 0/7 canales listos (${CL_ENV})"
+      fi
+    else
+      info "COM-LINK 📡        ⚪ Sin datos (comlink_real.py no ejecuta en este entorno)"
+    fi
+  else
+    info "COM-LINK 📡        ⚪ comlink_real.py no instalado"
+  fi
+
   echo ""
   # .env integrity
   if [ -f "$ENV_FILE" ]; then
@@ -1296,6 +1315,35 @@ start_sol_stack() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+#  COMLINK — acceso rápido a COM-LINK real
+# ═══════════════════════════════════════════════════════════════════════
+comlink() {
+  local subcmd="${1:-status}"
+  if [ ! -f "$ROOT/comlink_real.py" ]; then
+    fail "comlink_real.py no encontrado en $ROOT"
+    return 1
+  fi
+  case "$subcmd" in
+    status)  python3 "$ROOT/comlink_real.py" --status 2>&1 | python3 -m json.tool 2>/dev/null || python3 "$ROOT/comlink_real.py" --status ;;
+    channels) python3 "$ROOT/comlink_real.py" --channels 2>&1 ;;
+    sms)     shift; python3 "$ROOT/comlink_real.py" --sms "$@" ;;
+    call)    shift; python3 "$ROOT/comlink_real.py" --call "$@" ;;
+    queue)   python3 "$ROOT/comlink_real.py" --process-queue 2>&1 | python3 -m json.tool 2>/dev/null || python3 "$ROOT/comlink_real.py" --process-queue ;;
+    emergency) shift; python3 "$ROOT/comlink_real.py" --emergency "$@" 2>&1 | python3 -m json.tool 2>/dev/null || python3 "$ROOT/comlink_real.py" --emergency "$@" ;;
+    help)
+      echo "COM-LINK.real comandos:"
+      echo "  omni.sh comlink status     — estado de canales en tiempo real"
+      echo "  omni.sh comlink channels   — solo canales disponibles"
+      echo "  omni.sh comlink sms NUM MSG — enviar SMS real"
+      echo "  omni.sh comlink call NUM    — hacer llamada real"
+      echo "  omni.sh comlink queue       — procesar cola pendiente"
+      echo "  omni.sh comlink emergency MSG — alerta (dry-run, no envía)"
+      ;;
+    *) fail "Subcomando desconocido: $subcmd"; comlink help ;;
+  esac
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 #  DISPATCH
 # ═══════════════════════════════════════════════════════════════════════
 case "${1:-help}" in
@@ -1310,6 +1358,7 @@ case "${1:-help}" in
   snapshot)       snapshot ;;
   verify)         verify ;;
   watchdog)       watchdog ;;
+  comlink)        comlink "${2:-status}" ;;
   help|--help|-h) help ;;
   *)              echo "Comando desconocido: $1"; 
 # ════════════════════════════════════════════════════════════════════
