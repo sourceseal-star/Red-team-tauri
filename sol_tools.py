@@ -85,11 +85,15 @@ def tool_list_dir(path: str = ".") -> str:
             items.append(f"📄 {item.name} ({size_str})")
     return "\n".join(items[:50])
 
-def tool_find_files(pattern: str, path: str = ".") -> str:
-    """Busca archivos por patrón."""
+def tool_find_files(pattern: str = "*", path: str = ".") -> str:
+    """Busca archivos por patrón. Si no se especifica patrón (ej. Sol lo
+    invoca sola sin argumentos), busca todo en vez de tronar con
+    'missing 1 required positional argument'."""
     import glob
     p = Path(path).expanduser()
     results = glob.glob(str(p / f"**/{pattern}"), recursive=True)
+    if not results:
+        return "Sin resultados."
     return "\n".join(results[:30])
 
 # ============================================================
