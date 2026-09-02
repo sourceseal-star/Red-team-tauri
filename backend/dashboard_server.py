@@ -3271,12 +3271,21 @@ async def ai_history(limit: int = 20):
 _SOL_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol.html")
 _SOL_AVATAR_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar.jpg")
 
+# Sin esto el navegador puede quedarse con una copia vieja de sol.html
+# cacheada para siempre (paso real: alguien vio una version vieja de la
+# pagina que ya no existe en el repo — cache del navegador, no el server).
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
 @app.get("/sol")
 async def sol_page():
     """Página de Sol — HTML estático en backend/static/ (fuera de tauri-frontend/dist,
     que vite build vacía por completo con emptyOutDir:true)."""
     if os.path.isfile(_SOL_PATH):
-        return FileResponse(_SOL_PATH, media_type="text/html")
+        return FileResponse(_SOL_PATH, media_type="text/html", headers=_NO_CACHE_HEADERS)
     raise HTTPException(404, "Sol no encuentra su página en backend/static/sol.html")
 
 @app.get("/sol.html")
@@ -3292,6 +3301,15 @@ async def sol_avatar():
     if os.path.isfile(_SOL_AVATAR_PATH):
         return FileResponse(_SOL_AVATAR_PATH, media_type="image/jpeg")
     raise HTTPException(404, "Avatar no encontrado en backend/static/sol_avatar.jpg")
+
+_SOL_AVATAR_TALK_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_talk.png")
+
+@app.get("/sol_avatar_talk.png")
+async def sol_avatar_talk():
+    """Segundo frame del avatar de Sol (boca abierta) para animacion de habla."""
+    if os.path.isfile(_SOL_AVATAR_TALK_PATH):
+        return FileResponse(_SOL_AVATAR_TALK_PATH, media_type="image/png", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Avatar talk no encontrado en backend/static/sol_avatar_talk.png")
 
 # ── SPA fallback — rutas del React Router (ej. /dashboard, /osint) que no son archivos ni API ──
 _SPA_EXCLUDED_PREFIXES = ("api/", "docs", "openapi.json", "redoc", "ws", "assets/", "sol")
