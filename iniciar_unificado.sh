@@ -69,6 +69,7 @@ MASTER_PID=""
 NODE_PID=""
 NEXUS_PID=""
 CONTROLLER_PID=""
+WARROOM_PID=""
 STOPPING=0
 
 cleanup() {
@@ -86,6 +87,8 @@ cleanup() {
     [ -n "$CONTROLLER_PID" ] && kill "$CONTROLLER_PID" 2>/dev/null || true
     pkill -f "$ROOT/nexus_omni_v9.py" 2>/dev/null || true
     pkill -f "$HOME/sourceseal_controller.py" 2>/dev/null || true
+    [ -n "$WARROOM_PID" ] && kill "$WARROOM_PID" 2>/dev/null || true
+    pkill -f "$ROOT/warroom.py" 2>/dev/null || true
     echo "[unified] Sistema detenido"
 }
 trap 'cleanup; exit 0' SIGTERM SIGINT
@@ -385,6 +388,38 @@ if [ "$SEAL_ENABLED_VAL" = "1" ] && [ -f "$ROOT/seal/orchestrator/seal_orchestra
     fi
 else
     echo "[unified][INFO] Seal IA desactivado (SEAL_ENABLED≠1 o falta seal/orchestrator/seal_orchestrator.py)"
+fi
+
+# ─── 8. War Room :8010 (idempotente, opcional) ──────────
+WARROOM_PID=""
+WARROOM_ENABLED="${WARROOM_ENABLED:-1}"
+if [ "$WARROOM_ENABLED" = "1" ] && [ -f "$ROOT/warroom.py" ]; then
+    WR_UP=0
+    WRCODE="$(curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1:8010/api/health" 2>/dev/null || true)"
+    if [ "$WRCODE" != "000" ] && [ -n "$WRCODE" ]; then
+        echo "[unified] ✅ War Room ya activo en :8010 (HTTP $WRCODE) — no se duplica"
+        WR_UP=1
+    fi
+    if [ "$WR_UP" = "0" ]; then
+        echo "[unified] Arrancando War Room en :8010..."
+        nohup "$PYTHON_BIN" "$ROOT/warroom.py" > "$HOME/.warroom.log" 2>&1 &
+        WARROOM_PID=$!
+        echo "[unified] War Room PID: $WARROOM_PID — log: ~/.warroom.log"
+        for i in $(seq 1 10); do
+            WRCODE="$(curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1:8010/api/health" 2>/dev/null || true)"
+            if [ "$WRCODE" != "000" ] && [ -n "$WRCODE" ]; then
+                echo "[unified] ✅ War Room listo en :8010"
+                WR_UP=1
+                break
+            fi
+            sleep 1
+        done
+        if [ "$WR_UP" = "0" ]; then
+            echo "[unified][WARN] War Room no respondió en 10s — continua el resto del sistema"
+        fi
+    fi
+else
+    echo "[unified][INFO] War Room desactivado (WARROOM_ENABLED≠1 o falta warroom.py)"
 fi
 
 cd "$ROOT"
