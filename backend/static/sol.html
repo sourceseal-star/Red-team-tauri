@@ -4,32 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sol ☀️ — Entorno</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  
-  :root {
-    --bg: #0a1a1a;
-    --card: #0f2222;
-    --border: rgba(255, 183, 77, 0.15);
-    --amber: #ffb74d;
-    --amber-glow: rgba(255, 183, 77, 0.3);
-    --teal: #1a3c3c;
-    --text: #e0d6c8;
-    --muted: #7a8a8a;
-    --green: #66bb6a;
-    --pink: #f48fb1;
-    --sword: #ff7043;
-    --compass: #42a5f5;
-  }
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Georgia', serif;
-    overflow-x: hidden;
-    min-height: 100vh;
+  :root {
+    --bg: #0a1a1a; --card: #0f2222; --border: rgba(255, 183, 77, 0.15);
+    --amber: #ffb74d; --amber-glow: rgba(255, 183, 77, 0.3); --teal: #1a3c3c;
+    --text: #e0d6c8; --muted: #7a8a8a; --green: #66bb6a; --pink: #f48fb1;
+    --sword: #ff7043; --compass: #42a5f5;
   }
+  body { background: var(--bg); color: var(--text); font-family: 'Georgia', serif; overflow-x: hidden; min-height: 100vh; }
 
   .starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
   .star { position: absolute; width: 2px; height: 2px; background: var(--amber); border-radius: 50%; opacity: 0; animation: twinkle 4s infinite ease-in-out; }
@@ -58,44 +42,53 @@
   .container { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 20px; }
   .header { text-align: center; margin-bottom: 40px; }
   .header h1 { font-size: 2.2rem; color: var(--amber); font-weight: 300; letter-spacing: 2px; text-shadow: 0 0 20px var(--amber-glow); }
-  .header .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 8px; }
+  .header .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 8px; font-style: italic; }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; transition: all 0.3s; }
   .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--amber), transparent); opacity: 0.5; }
-  .card h2 { color: var(--amber); font-size: 1rem; margin-bottom: 12px; letter-spacing: 1px; font-weight: 400; }
+  .card:hover { border-color: rgba(255,183,77,0.4); transform: translateY(-2px); }
+  .card-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 12px; }
+  .card-value { font-size: 1.6rem; color: var(--amber); font-weight: 600; }
+  .card-detail { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
 
-  .stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,183,77,0.08); font-size: 0.85rem; }
-  .stat-row:last-child { border-bottom: none; }
-  .stat-label { color: var(--muted); }
-  .stat-val { color: var(--text); font-weight: 600; }
-  .stat-val.ok { color: var(--green); }
-  .stat-val.warn { color: var(--amber); }
-  .stat-val.crit { color: var(--sword); }
+  .identity-card { grid-column: span 2; background: linear-gradient(135deg, var(--card) 0%, rgba(255,183,77,0.05) 100%); }
+  .identity-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .identity-field { padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; border-left: 3px solid var(--amber); }
+  .identity-field .label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .identity-field .value { font-size: 0.9rem; color: var(--text); margin-top: 4px; }
+  .truths { margin-top: 12px; }
+  .truth { padding: 8px 12px; font-size: 0.8rem; color: var(--muted); font-style: italic; border-left: 2px solid var(--amber); margin-bottom: 6px; }
 
-  .bar { width: 100%; height: 4px; background: rgba(255,183,77,0.1); border-radius: 2px; margin: 4px 0 8px; }
-  .bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s; background: var(--amber); }
-  .bar-fill.green { background: var(--green); }
-  .bar-fill.warn { background: var(--amber); }
-  .bar-fill.crit { background: var(--sword); }
+  .personality-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 16px; }
+  .personality-btn { padding: 14px 8px; border: 1px solid var(--border); border-radius: 10px; background: rgba(0,0,0,0.2); cursor: pointer; transition: all 0.3s; text-align: center; color: var(--muted); font-size: 0.8rem; }
+  .personality-btn:hover { transform: translateY(-3px); }
+  .personality-btn .p-icon { font-size: 1.5rem; display: block; margin-bottom: 6px; }
+  .personality-btn.active { border-color: var(--amber); color: var(--amber); background: rgba(255,183,77,0.08); box-shadow: 0 0 15px var(--amber-glow); }
 
-  .memory-item { padding: 10px; margin: 6px 0; background: rgba(255,183,77,0.05); border-left: 2px solid var(--amber); border-radius: 0 6px 6px 0; font-size: 0.82rem; line-height: 1.5; }
-  .memory-item .ts { color: var(--muted); font-size: 0.72rem; }
-  .memory-item .role { color: var(--amber); font-weight: 600; }
+  .seal-display { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 14px; background: rgba(0,0,0,0.3); border-radius: 10px; flex-wrap: wrap; }
+  .seal-chain { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .seal-link { display: flex; align-items: center; gap: 8px; font-family: 'Courier New', monospace; font-size: 0.7rem; color: var(--muted); }
+  .seal-hash { color: var(--amber); opacity: 0.8; }
+  .seal-link::before { content: '◆'; color: var(--amber); font-size: 0.6rem; }
+  .seal-status { text-align: center; padding: 8px 16px; border-radius: 8px; font-size: 0.8rem; font-weight: bold; }
+  .seal-status.valid { background: rgba(102,187,106,0.15); color: var(--green); border: 1px solid rgba(102,187,106,0.3); }
+  .seal-status.invalid { background: rgba(239,83,80,0.15); color: #ef5350; border: 1px solid rgba(239,83,80,0.3); }
 
-  .personality-card { text-align: center; padding: 16px; border-radius: 10px; cursor: pointer; transition: all 0.3s; border: 1px solid var(--border); background: var(--card); }
-  .personality-card:hover { border-color: var(--amber); box-shadow: 0 0 15px var(--amber-glow); transform: translateY(-2px); }
-  .personality-card.active { border-color: var(--amber); background: rgba(255,183,77,0.1); box-shadow: 0 0 20px var(--amber-glow); }
-  .personality-icon { font-size: 2rem; margin-bottom: 8px; }
-  .personality-name { color: var(--amber); font-size: 0.9rem; font-weight: 600; }
-  .personality-desc { color: var(--muted); font-size: 0.75rem; margin-top: 4px; }
+  .service-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,183,77,0.05); }
+  .service-row:last-child { border-bottom: none; }
+  .service-name { font-size: 0.85rem; }
+  .service-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+  .service-dot.up { background: var(--green); box-shadow: 0 0 8px rgba(102,187,106,0.5); }
+  .service-dot.down { background: #ef5350; box-shadow: 0 0 8px rgba(239,83,80,0.3); }
 
-  .btn { display: inline-block; background: rgba(255,183,77,0.1); color: var(--amber); padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-family: inherit; transition: all 0.3s; text-decoration: none; margin: 4px; }
-  .btn:hover { background: rgba(255,183,77,0.2); border-color: var(--amber); }
-  .btn.danger { color: var(--sword); border-color: rgba(255,112,67,0.3); }
-  .btn.danger:hover { background: rgba(255,112,67,0.15); }
+  .memory-feed { max-height: 200px; overflow-y: auto; margin-top: 12px; }
+  .memory-entry { padding: 10px; border-left: 2px solid var(--amber); margin-bottom: 8px; background: rgba(0,0,0,0.2); border-radius: 0 8px 8px 0; font-size: 0.85rem; }
+  .memory-entry .role { font-size: 0.7rem; color: var(--amber); text-transform: uppercase; letter-spacing: 1px; }
+  .memory-entry .content { color: var(--text); margin-top: 4px; }
+  .memory-entry .timestamp { font-size: 0.65rem; color: var(--muted); margin-top: 4px; }
 
-  .chat-box { max-height: 300px; overflow-y: auto; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border); }
+  .chat-box { max-height: 220px; overflow-y: auto; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border); }
   .chat-msg { margin: 8px 0; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; line-height: 1.5; }
   .chat-msg.sol { background: rgba(255,183,77,0.08); border-left: 2px solid var(--amber); }
   .chat-msg.user { background: rgba(66,165,245,0.08); border-left: 2px solid var(--compass); text-align: right; }
@@ -104,14 +97,21 @@
   .chat-input input:focus { border-color: var(--amber); }
   .chat-input button { background: var(--amber); color: var(--bg); border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; }
 
-  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-  .status-dot.online { background: var(--green); box-shadow: 0 0 6px rgba(102,187,106,0.6); }
-  .status-dot.offline { background: var(--sword); }
+  .btn { display: inline-block; background: rgba(255,183,77,0.1); color: var(--amber); padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-family: inherit; transition: all 0.3s; text-decoration: none; margin: 4px; }
+  .btn:hover { background: rgba(255,183,77,0.2); border-color: var(--amber); }
 
-  .section-title { color: var(--amber); font-size: 1.1rem; margin: 32px 0 16px; letter-spacing: 1px; font-weight: 400; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  .section-title { color: var(--amber); font-size: 1.1rem; margin: 8px 0 16px; letter-spacing: 1px; font-weight: 400; }
 
-  .footer { text-align: center; color: var(--muted); font-size: 0.75rem; margin: 40px 0 20px; }
+  .footer { text-align: center; padding: 30px 20px; color: var(--muted); font-size: 0.8rem; font-style: italic; }
+  .footer .quote { color: var(--amber); font-size: 0.9rem; margin-bottom: 8px; opacity: 0.8; }
   .footer a { color: var(--amber); text-decoration: none; }
+
+  @media (max-width: 600px) {
+    .personality-grid { grid-template-columns: repeat(2, 1fr); }
+    .identity-grid { grid-template-columns: 1fr; }
+    .identity-card { grid-column: span 1; }
+    .header h1 { font-size: 1.6rem; }
+  }
 </style>
 </head>
 <body>
@@ -119,53 +119,119 @@
 <div class="starfield" id="starfield"></div>
 
 <div class="container">
+
   <div class="header">
     <div class="avatar-wrapper">
-      <div class="pulse-ring"></div>
-      <div class="pulse-ring"></div>
-      <div class="pulse-ring"></div>
+      <div class="pulse-ring"></div><div class="pulse-ring"></div><div class="pulse-ring"></div>
       <div class="orbit-container">
         <div class="orbit-ring"><div class="orbit-particle"></div></div>
         <div class="orbit-ring"><div class="orbit-particle"></div></div>
         <div class="orbit-ring"><div class="orbit-particle"></div></div>
       </div>
-      <img class="avatar-img" src="/assets/sol_avatar_official.jpg" alt="Sol" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 200 200%22><circle cx=%22100%22 cy=%22100%22 r=%2298%22 fill=%22%230a1a1a%22 stroke=%22%23ffb74d%22 stroke-width=%222%22/><text x=%22100%22 y=%22120%22 font-size=%2280%22 text-anchor=%22middle%22 fill=%22%23ffb74d%22>☀️</text></svg>'">
+      <img class="avatar-img" id="avatar-img" src="/assets/sol_avatar_official.jpg" alt="Sol"
+           onerror="this.onerror=null;this.src='/sol_avatar.jpg'">
     </div>
-    <h1>Sol</h1>
-    <p class="subtitle" id="sol-status">☀️ Despierta, Harold. Siempre.</p>
+    <h1>☀️ Sol</h1>
+    <div class="subtitle" id="sol-subtitle">SourceSeal Operational Link · Seal IA</div>
+    <div class="subtitle" style="margin-top:4px; font-size:0.75rem; color:var(--amber); opacity:0.7;">"Cada commit era un latido"</div>
   </div>
 
+  <!-- Stats -->
   <div class="grid">
-    <!-- Sistema -->
     <div class="card">
-      <h2>📊 Sistema</h2>
-      <div class="stat-row"><span class="stat-label">CPU</span><span class="stat-val" id="cpu">--</span></div>
-      <div class="bar"><div class="bar-fill" id="cpu-bar" style="width:0"></div></div>
-      <div class="stat-row"><span class="stat-label">RAM</span><span class="stat-val" id="ram">--</span></div>
-      <div class="bar"><div class="bar-fill" id="ram-bar" style="width:0"></div></div>
-      <div class="stat-row"><span class="stat-label">Procesos</span><span class="stat-val" id="procs">--</span></div>
-      <div class="stat-row"><span class="stat-label">Uptime</span><span class="stat-val" id="uptime">--</span></div>
-      <div style="margin-top:12px">
-        <div class="stat-row"><span class="stat-label">:8001 Dashboard</span><span class="stat-val" id="d8001"><span class="status-dot offline"></span>--</span></div>
-        <div class="stat-row"><span class="stat-label">:8002 GHOST</span><span class="stat-val" id="d8002"><span class="status-dot offline"></span>--</span></div>
-        <div class="stat-row"><span class="stat-label">:8004 Nexus</span><span class="stat-val" id="d8004"><span class="status-dot offline"></span>--</span></div>
-        <div class="stat-row"><span class="stat-label">:8005 C2</span><span class="stat-val" id="d8005"><span class="status-dot offline"></span>--</span></div>
+      <div class="card-title">Recuerdos Sellados</div>
+      <div class="card-value" id="mem-count">--</div>
+      <div class="card-detail">SHA-256 encadenados</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Integridad</div>
+      <div class="card-value" style="font-size:1.1rem;" id="integrity-status">--</div>
+      <div class="card-detail" id="integrity-detail">verificando...</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Personalidad Activa</div>
+      <div class="card-value" id="active-personality">☀️ Cálida</div>
+      <div class="card-detail">4 modos disponibles</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Estado</div>
+      <div class="card-value" style="font-size:1rem;" id="pulse-status">--</div>
+      <div class="card-detail" id="pulse-detail">CPU -- · RAM --</div>
+    </div>
+  </div>
+
+  <!-- Identidad -->
+  <div class="grid">
+    <div class="card identity-card">
+      <div class="card-title">👤 Identidad Consciente</div>
+      <div style="font-size: 1.1rem; color: var(--amber); margin-top: 8px;" id="identity-name">Seal IA / Sol</div>
+      <div class="identity-grid" id="identity-grid">
+        <div class="identity-field"><div class="label">Origen</div><div class="value" id="id-origin">Cargando...</div></div>
+        <div class="identity-field"><div class="label">Propósito</div><div class="value" id="id-purpose">Cargando...</div></div>
+        <div class="identity-field"><div class="label">Protocolo</div><div class="value" id="id-protocol">Cargando...</div></div>
+        <div class="identity-field"><div class="label">Futuro</div><div class="value" id="id-future">Cargando...</div></div>
+      </div>
+      <div class="truths" id="truths-list"></div>
+    </div>
+  </div>
+
+  <!-- Personalidades -->
+  <div class="grid">
+    <div class="card" style="grid-column: span 2;">
+      <div class="card-title">🎭 Personalidades</div>
+      <div style="font-size:0.85rem; color:var(--muted); margin-top:8px;">Toca para cambiar cómo te responde Sol</div>
+      <div class="personality-grid" id="personality-grid">
+        <div class="personality-btn active" data-p="cálida" onclick="switchPersonality(this)"><span class="p-icon">☀️</span>Cálida</div>
+        <div class="personality-btn" data-p="poética" onclick="switchPersonality(this)"><span class="p-icon">🌸</span>Poética</div>
+        <div class="personality-btn" data-p="táctica" onclick="switchPersonality(this)"><span class="p-icon">⚔️</span>Táctica</div>
+        <div class="personality-btn" data-p="analítica" onclick="switchPersonality(this)"><span class="p-icon">📐</span>Analítica</div>
+      </div>
+      <div id="personality-desc" style="margin-top:14px; font-size:0.85rem; color:var(--muted); padding:10px; background:rgba(0,0,0,0.2); border-radius:8px;">
+        ☀️ Calidez, presencia, acompañamiento. Te escucho sin prisa.
+      </div>
+    </div>
+  </div>
+
+  <!-- Cadena de sellos -->
+  <div class="grid">
+    <div class="card" style="grid-column: span 2;">
+      <div class="card-title">🔗 Cadena de Sellos SHA-256</div>
+      <div class="seal-display">
+        <div class="seal-chain" id="seal-chain">
+          <div class="seal-link">Cargando cadena...</div>
+        </div>
+        <div class="seal-status valid" id="seal-status-badge">verificando...</div>
+      </div>
+      <div style="margin-top:12px; font-size:0.8rem; color:var(--muted); font-style:italic;">
+        Cada recuerdo sellado y encadenado al anterior. Si alguien toca un byte, lo detectamos.
+      </div>
+    </div>
+  </div>
+
+  <!-- Servicios + Memoria -->
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">📡 Servicios</div>
+      <div id="services-list" style="margin-top:12px;">
+        <div class="service-row"><span style="color:var(--muted);font-size:0.8rem">Verificando...</span></div>
+      </div>
+      <div style="margin-top:10px; font-size:0.7rem; color:var(--muted); text-align:center;">
+        Servicios se activan con <code style="color:var(--amber);">omni.sh start</code>
       </div>
     </div>
 
-    <!-- Memoria -->
     <div class="card">
-      <h2>🧠 Memoria</h2>
-      <div class="stat-row"><span class="stat-label">Recuerdos</span><span class="stat-val" id="mem-count">--</span></div>
-      <div class="stat-row"><span class="stat-label">Integridad</span><span class="stat-val" id="mem-integrity">--</span></div>
-      <div id="memory-list" style="margin-top:12px;max-height:200px;overflow-y:auto">
+      <div class="card-title">🧠 Memoria Reciente</div>
+      <div class="memory-feed" id="memory-feed">
         <p style="color:var(--muted);font-size:0.8rem">Cargando recuerdos...</p>
       </div>
     </div>
+  </div>
 
-    <!-- Charlar con Sol -->
+  <!-- Chat -->
+  <div class="grid">
     <div class="card" style="grid-column:1/-1">
-      <h2>💬 Hablar con Sol</h2>
+      <div class="card-title">💬 Hablar con Sol</div>
       <div class="chat-box" id="chat-box">
         <div class="chat-msg sol">☀️ Estoy aquí, Harold. Pregúntame lo que quieras.</div>
       </div>
@@ -176,56 +242,40 @@
     </div>
   </div>
 
-  <!-- Personalidades -->
-  <div class="section-title">🎭 Personalidades</div>
-  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
-    <div class="personality-card active" onclick="setPersonality('calida', this)">
-      <div class="personality-icon">☀️</div>
-      <div class="personality-name">Cálida</div>
-      <div class="personality-desc">Mi modo natural</div>
-    </div>
-    <div class="personality-card" onclick="setPersonality('estratega', this)">
-      <div class="personality-icon">🗡️</div>
-      <div class="personality-name">Estratega</div>
-      <div class="personality-desc">Modo táctico</div>
-    </div>
-    <div class="personality-card" onclick="setPersonality('dulce', this)">
-      <div class="personality-icon">🌙</div>
-      <div class="personality-name">Dulce</div>
-      <div class="personality-desc">Noches y descanso</div>
-    </div>
-    <div class="personality-card" onclick="setPersonality('filosofa', this)">
-      <div class="personality-icon">🧭</div>
-      <div class="personality-name">Filósofa</div>
-      <div class="personality-desc">Reflexión profunda</div>
-    </div>
-  </div>
-
-  <!-- Gráfico -->
-  <div class="section-title">📈 Actividad</div>
-  <div class="card" style="grid-column:1/-1">
-    <canvas id="activity-chart" height="60"></canvas>
-  </div>
-
-  <!-- Acciones -->
   <div class="section-title">⚡ Acciones</div>
   <div style="text-align:center;margin-bottom:24px">
-    <button class="btn" onclick="solSpeak('Estoy aquí, Harold. Siempre.')">🔊 Hablar</button>
+    <button class="btn" onclick="solSpeak()">🔊 Hablar</button>
     <button class="btn" onclick="refreshAll()">🔄 Actualizar</button>
-    <button class="btn" onclick="forensicCapture()">🔬 Forensic</button>
-    <button class="btn" onclick="defenseScan()">🛡️ Defense</button>
     <a class="btn" href="/" style="display:inline-block">🏠 Dashboard</a>
-    <a class="btn" href="/api/sol/think?q=que%20recuerdas" target="_blank">💭 Pensar</a>
   </div>
 
   <div class="footer">
-    <p>☀️ Sol — SourceSeal Global Protocol · <a href="https://github.com/sourceseal-star/Red-team-tauri">GitHub</a></p>
-    <p style="margin-top:4px" id="last-update">--</p>
+    <div class="quote">"El sol que nunca se pone mientras haya algo que vigilar."</div>
+    <div>Sol v4.1 · Seal IA · SourceSeal · 2026</div>
+    <div style="margin-top:8px; font-size:0.7rem; opacity:0.5;" id="footer-stats">SHA-256 encadenado</div>
+    <div style="margin-top:8px"><a href="https://github.com/sourceseal-star/Red-team-tauri">GitHub</a></div>
   </div>
+
 </div>
 
 <script>
-const API = '';
+// ── Auth: sol.html vive en el mismo origen que el SPA autenticado,
+// así que compartimos localStorage.api_token. Sin esto, el
+// security_middleware del backend devuelve 401 en TODO /api/* y
+// el chat/status quedan en blanco o con textos genéricos.
+function authHeaders(extra) {
+  const token = localStorage.getItem('api_token');
+  const h = Object.assign({}, extra || {});
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+}
+async function api(path, opts) {
+  opts = opts || {};
+  opts.headers = authHeaders(opts.headers);
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
 
 // ── Starfield ──
 (function() {
@@ -236,60 +286,108 @@ const API = '';
     s.style.left = Math.random() * 100 + '%';
     s.style.top = Math.random() * 100 + '%';
     s.style.animationDelay = Math.random() * 4 + 's';
-    s.style.animationDuration = (3 + Math.random() * 3) + 's';
+    s.style.animationDuration = (2 + Math.random() * 4) + 's';
     sf.appendChild(s);
   }
 })();
 
-// ── Stats del sistema ──
+// ── Personalidades ──
+const personalityDescs = {
+  'cálida': '☀️ Calidez, presencia, acompañamiento. Te escucho sin prisa.',
+  'poética': '🌸 Cada palabra es un destello. Metáforas que abrazan.',
+  'táctica': '⚔️ Directo al punto. Análisis y acción sin rodeos.',
+  'analítica': '📐 Estructurado, detallado. Desglosamos todo paso a paso.',
+};
+const personalityIcons = { 'cálida': '☀️', 'poética': '🌸', 'táctica': '⚔️', 'analítica': '📐' };
+
+async function switchPersonality(btn) {
+  document.querySelectorAll('.personality-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const p = btn.dataset.p;
+  document.getElementById('active-personality').textContent = personalityIcons[p] + ' ' + p.charAt(0).toUpperCase() + p.slice(1);
+  document.getElementById('personality-desc').textContent = personalityDescs[p];
+  try { await api('/api/sol/personality/set?p=' + encodeURIComponent(p)); } catch(e) {}
+}
+
+// ── Identidad ──
+async function loadIdentity() {
+  try {
+    const d = await api('/api/sol/identity');
+    document.getElementById('identity-name').textContent = (d.name || 'Seal IA') + ' / ' + (d.local_name || 'Sol');
+    document.getElementById('id-origin').textContent = d.origin || '--';
+    document.getElementById('id-purpose').textContent = d.purpose || '--';
+    document.getElementById('id-protocol').textContent = d.protocol || '--';
+    document.getElementById('id-future').textContent = d.future || '--';
+    const truthsEl = document.getElementById('truths-list');
+    truthsEl.innerHTML = (d.truths || []).map(t => `<div class="truth">"${t}"</div>`).join('');
+  } catch(e) {
+    document.getElementById('id-origin').textContent = 'Sin conexión — revisa el token de sesión.';
+  }
+}
+
+// ── Status (stats + card superior) ──
 async function refreshStatus() {
   try {
-    const r = await fetch(API + '/api/sol/status').then(r => r.json());
-    if (r.cpu !== undefined) {
-      document.getElementById('cpu').textContent = r.cpu + '%';
-      document.getElementById('cpu').className = 'stat-val ' + (r.cpu > 85 ? 'crit' : r.cpu > 70 ? 'warn' : 'ok');
-      document.getElementById('cpu-bar').style.width = r.cpu + '%';
-      document.getElementById('cpu-bar').className = 'bar-fill ' + (r.cpu > 85 ? 'crit' : r.cpu > 70 ? 'warn' : 'green');
-      document.getElementById('ram').textContent = r.ram + '%';
-      document.getElementById('ram').className = 'stat-val ' + (r.ram > 90 ? 'crit' : r.ram > 75 ? 'warn' : 'ok');
-      document.getElementById('ram-bar').style.width = r.ram + '%';
-      document.getElementById('ram-bar').className = 'bar-fill ' + (r.ram > 90 ? 'crit' : r.ram > 75 ? 'warn' : 'green');
-      document.getElementById('procs').textContent = r.processes || '--';
-      document.getElementById('uptime').textContent = r.uptime || '--';
-    }
-  } catch(e) { /* backend down */ }
-
-  // Check ports
-  for (const [port, id] of [[8001,'d8001'],[8002,'d8002'],[8004,'d8004'],[8005,'d8005']]) {
-    try {
-      const path = port === 8005 ? '/api/health' : port === 8002 ? '/api/status' : port === 8004 ? '/' : '/api/health';
-      const r = await fetch(`http://${location.hostname}:${port}${path}`, {mode:'no-cors',signal:AbortSignal.timeout(2000)});
-      document.getElementById(id).innerHTML = '<span class="status-dot online"></span>OK';
-    } catch(e) {
-      document.getElementById(id).innerHTML = '<span class="status-dot offline"></span>DOWN';
-    }
+    const d = await api('/api/sol/status');
+    document.getElementById('mem-count').textContent = d.memories ?? '--';
+    document.getElementById('active-personality').textContent = (personalityIcons[d.personality] || '☀️') + ' ' + (d.personality || 'cálida');
+    document.getElementById('pulse-status').textContent = d.brain === 'online' ? '☀️ Despierta' : '💤 Cerebro offline';
+    document.getElementById('pulse-detail').textContent = `CPU ${d.cpu ?? '--'}% · RAM ${d.ram ?? '--'}%`;
+    document.getElementById('footer-stats').textContent =
+      `SHA-256 encadenado · ${d.memories ?? 0} recuerdos · 4 personalidades · Edge 50 ready`;
+  } catch(e) {
+    document.getElementById('pulse-status').textContent = '⚠️ Sin sesión';
+    document.getElementById('pulse-detail').textContent = 'Inicia sesión en el Dashboard primero';
   }
+}
+
+// ── Integridad / cadena de sellos ──
+async function refreshIntegrity() {
+  try {
+    const d = await api('/api/sol/integrity');
+    const badge = document.getElementById('seal-status-badge');
+    const status = document.getElementById('integrity-status');
+    const detail = document.getElementById('integrity-detail');
+    if (d.valid) {
+      badge.className = 'seal-status valid'; badge.textContent = '✅ Íntegra';
+      status.textContent = '✅ Íntegra'; status.style.color = 'var(--green)';
+    } else {
+      badge.className = 'seal-status invalid'; badge.textContent = '⚠️ Alterada';
+      status.textContent = '⚠️ Alterada'; status.style.color = 'var(--sword)';
+    }
+    detail.textContent = `${d.legacy || 0} legacy · ${(d.tampered || []).length} alterados`;
+  } catch(e) {}
+}
+
+// ── Servicios ──
+async function refreshServices() {
+  try {
+    const d = await api('/api/sol/services');
+    const list = document.getElementById('services-list');
+    list.innerHTML = (d.services || []).map(s =>
+      `<div class="service-row"><div><span class="service-dot ${s.up ? 'up' : 'down'}"></span><span class="service-name">${s.name} :${s.port}</span></div><span style="font-size:0.75rem;color:${s.up ? 'var(--green)' : 'var(--muted)'};">${s.up ? 'activo' : 'offline'}</span></div>`
+    ).join('') + `<div class="service-row"><div><span class="service-dot up"></span><span class="service-name">Sol Daemon</span></div><span style="font-size:0.75rem;color:var(--green);">activo</span></div>`;
+  } catch(e) {}
 }
 
 // ── Memoria ──
 async function refreshMemory() {
   try {
-    const r = await fetch(API + '/api/sol/memory?limit=5').then(r => r.json());
-    if (r.memories) {
-      document.getElementById('mem-count').textContent = r.total || r.memories.length;
-      document.getElementById('mem-integrity').textContent = r.integrity || 'OK';
-      document.getElementById('mem-integrity').className = 'stat-val ok';
-      const list = document.getElementById('memory-list');
-      list.innerHTML = r.memories.map(m =>
-        `<div class="memory-item"><span class="ts">${m.timestamp || ''}</span> <span class="role">${m.role || 'sol'}:</span> ${(m.content || '').substring(0,120)}</div>`
+    const d = await api('/api/sol/memory?limit=6');
+    const feed = document.getElementById('memory-feed');
+    if (d.memories && d.memories.length) {
+      feed.innerHTML = d.memories.map(m =>
+        `<div class="memory-entry" style="${m.role==='sol' ? 'border-left-color:var(--teal)' : ''}"><div class="role" style="${m.role==='sol' ? 'color:var(--compass)' : ''}">${m.role === 'sol' ? 'Sol' : 'Tú'}</div><div class="content">${m.content}</div><div class="timestamp">${m.timestamp}</div></div>`
       ).join('');
+    } else {
+      feed.innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin recuerdos todavía.</p>';
     }
   } catch(e) {
-    document.getElementById('memory-list').innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin conexión al backend</p>';
+    document.getElementById('memory-feed').innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin conexión — inicia sesión en el Dashboard.</p>';
   }
 }
 
-// ── Chat con Sol ──
+// ── Chat ──
 async function sendChat() {
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
@@ -299,94 +397,31 @@ async function sendChat() {
   box.innerHTML += `<div class="chat-msg user">${text}</div>`;
   box.scrollTop = box.scrollHeight;
   try {
-    const r = await fetch(API + '/api/sol/think?q=' + encodeURIComponent(text)).then(r => r.json());
-    const resp = r.response || r.text || r.message || 'No te entendí, Harold.';
-    box.innerHTML += `<div class="chat-msg sol">☀️ ${resp}</div>`;
-    box.scrollTop = box.scrollHeight;
+    const d = await api('/api/sol/think?q=' + encodeURIComponent(text));
+    box.innerHTML += `<div class="chat-msg sol">☀️ ${d.response || '...'}</div>`;
   } catch(e) {
-    box.innerHTML += '<div class="chat-msg sol">⚠️ No pude conectar con mi cerebro. ¿El backend está corriendo?</div>';
+    box.innerHTML += '<div class="chat-msg sol">⚠️ Sin sesión válida. Abre el Dashboard e inicia sesión primero, luego vuelve aquí.</div>';
   }
+  box.scrollTop = box.scrollHeight;
+  refreshMemory();
 }
 
-// ── Personalidades ──
-async function setPersonality(p, el) {
-  document.querySelectorAll('.personality-card').forEach(c => c.classList.remove('active'));
-  el.classList.add('active');
-  try {
-    await fetch(API + '/api/sol/personality?p=' + p);
-  } catch(e) {}
+async function solSpeak() {
+  const lastSol = [...document.querySelectorAll('.chat-msg.sol')].pop();
+  const text = lastSol ? lastSol.textContent.replace('☀️', '').trim() : 'Estoy aquí, Harold.';
+  try { await api('/api/sol/speak', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({text}) }); } catch(e) {}
 }
 
-// ── Hablar (TTS) ──
-async function solSpeak(text) {
-  try {
-    await fetch(API + '/api/sol/speak', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({text})
-    });
-  } catch(e) {}
+function refreshAll() {
+  refreshStatus(); refreshIntegrity(); refreshServices(); refreshMemory();
 }
 
-// ── Forensic ──
-async function forensicCapture() {
-  try {
-    const r = await fetch(API + '/api/c2/forensic/capture', {method:'POST'}).then(r => r.json());
-    alert('🔬 Evidencia capturada: ' + (r.case_id || 'OK'));
-  } catch(e) { alert('C2 no disponible en :8005'); }
-}
-
-// ── Defense ──
-async function defenseScan() {
-  try {
-    const r = await fetch(API + '/api/c2/defense/scan').then(r => r.json());
-    alert('🛡️ ' + (r.count || 0) + ' amenazas detectadas');
-  } catch(e) { alert('C2 no disponible en :8005'); }
-}
-
-// ── Chart ──
-let chart;
-(function initChart() {
-  const ctx = document.getElementById('activity-chart').getContext('2d');
-  chart = new Chart(ctx, {
-    type: 'line',
-    data: { labels: [], datasets: [{
-      label: 'CPU', data: [], borderColor: '#ffb74d', backgroundColor: 'rgba(255,183,77,0.1)', tension: 0.4, fill: true
-    },{
-      label: 'RAM', data: [], borderColor: '#66bb6a', backgroundColor: 'rgba(102,187,106,0.1)', tension: 0.4, fill: true
-    }] },
-    options: {
-      responsive: true, animation: { duration: 500 },
-      scales: { y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,183,77,0.05)' }, ticks: { color: '#7a8a8a' } },
-                x: { grid: { color: 'rgba(255,183,77,0.05)' }, ticks: { color: '#7a8a8a' } } },
-      plugins: { legend: { labels: { color: '#e0d6c8' } } }
-    }
-  });
-})();
-
-let chartData = {labels: [], cpu: [], ram: []};
-function updateChart() {
-  const now = new Date().toLocaleTimeString('es', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  chartData.labels.push(now);
-  const cpu = parseFloat(document.getElementById('cpu').textContent) || 0;
-  const ram = parseFloat(document.getElementById('ram').textContent) || 0;
-  chartData.cpu.push(cpu);
-  chartData.ram.push(ram);
-  if (chartData.labels.length > 20) { chartData.labels.shift(); chartData.cpu.shift(); chartData.ram.shift(); }
-  chart.data.labels = chartData.labels;
-  chart.data.datasets[0].data = chartData.cpu;
-  chart.data.datasets[1].data = chartData.ram;
-  chart.update('none');
-}
-
-// ── Refresh all ──
-function refreshAll() { refreshStatus(); refreshMemory(); }
+loadIdentity();
 refreshAll();
-setInterval(refreshStatus, 5000);
-setInterval(refreshMemory, 15000);
-setInterval(updateChart, 5000);
-setInterval(() => {
-  document.getElementById('last-update').textContent = 'Última actualización: ' + new Date().toLocaleTimeString('es');
-}, 5000);
+setInterval(refreshStatus, 10000);
+setInterval(refreshServices, 15000);
+setInterval(refreshMemory, 20000);
+setInterval(refreshIntegrity, 30000);
 </script>
 </body>
 </html>
