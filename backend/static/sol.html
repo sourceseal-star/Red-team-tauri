@@ -6,6 +6,12 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#050a14">
 <title>☀️ Sol — Videollamada</title>
+<!-- Preload de avatars críticos — el base aparece ya, y los frames de
+     habla/parpadeo se usan en los primeros segundos (12MB de set total) -->
+<link rel="preload" as="image" href="/sol_avatar_official.jpg">
+<link rel="preload" as="image" href="/sol_avatar_talk.png">
+<link rel="preload" as="image" href="/sol_avatar_talk_half.png">
+<link rel="preload" as="image" href="/sol_avatar_blink.png">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   :root {
@@ -95,9 +101,20 @@
     pointer-events: none;
   }
   .avatar-img-talk.on { opacity: 1; }
-
-  /* Frame intermedio de boca (medio abierta) para transiciones suaves al hablar */
+  /* Frame de boca a medio abrir — paso intermedio para suavizar la transicion */
   .avatar-img-talk-half {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--amber);
+    opacity: 0;
+    transition: opacity 0.1s ease-in-out;
+    pointer-events: none;
+  }
+  .avatar-img-talk-half.on { opacity: 1; }
+  /* Frame de parpadeo real (imagen generada, ojos cerrados) — reemplaza la
+     sombra CSS falsa de antes. Va encima de todo (mayor z-index visual por
+     orden en el DOM) porque un parpadeo real domina brevemente la imagen. */
+  .avatar-img-blink {
     position: absolute; top: 0; left: 0;
     width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
     border: 2px solid var(--amber);
@@ -105,22 +122,11 @@
     transition: opacity 0.06s ease-in-out;
     pointer-events: none;
   }
-  .avatar-img-talk-half.on { opacity: 1; }
-
-  /* Parpadeo real — frame con ojos cerrados */
-  .avatar-img-blink {
-    position: absolute; top: 0; left: 0;
-    width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
-    border: 2px solid var(--amber);
-    opacity: 0;
-    transition: opacity 0.04s ease-in-out;
-    pointer-events: none;
-  }
   .avatar-img-blink.on { opacity: 1; }
 
-  /* Expresiones contextuales (crossfade sobre el base) */
-  /* Increíble que tengamos que explicar esto aquí también — son capas
-     que se muestran vía opacity (crossfade) según el estado de la conversación.
+  /* ═══ Frames de expresión contextual — capas superpuestas ═══
+     Cada una es una imagen completa de Sol con distinta expresión.
+     Se muestran vía opacity (crossfade) según el estado de la conversación.
      Z-order: base < happy < thinking < study < talk_half < talk < blink */
   .avatar-expr {
     position: absolute; top: 0; left: 0;
@@ -131,6 +137,8 @@
     pointer-events: none;
   }
   .avatar-expr.on { opacity: 1; }
+
+  /* Diferencia visual sutil para cada estado — sin romper la paleta */
   .avatar-expr.thinking { filter: brightness(0.92) contrast(1.05); }
   .avatar-expr.study { filter: brightness(1.05) saturate(1.1); }
   .avatar-expr.happy { filter: brightness(1.06) saturate(1.08); }
@@ -138,13 +146,26 @@
   .avatar-expr.curious { filter: brightness(1.10) saturate(1.15) contrast(1.03); }
   .avatar-expr.smile { filter: brightness(1.08) saturate(1.12) contrast(1.02); }
   .avatar-img.smile-glow { animation: smilePulse 2.8s ease-in-out infinite; }
-  @keyframes smilePulse { 0%,100% { box-shadow: 0 0 30px rgba(249,168,76,0.3); } 50% { box-shadow: 0 0 50px rgba(249,168,76,0.55); } }
+  @keyframes smilePulse {
+    0%, 100% { box-shadow: 0 0 30px rgba(255,206,92,0.4); }
+    50% { box-shadow: 0 0 52px rgba(255,206,92,0.7); }
+  }
+
   .avatar-img.thinking-glow { animation: thinkPulse 2.2s ease-in-out infinite; }
   .avatar-img.study-glow { animation: studyPulse 2.5s ease-in-out infinite; }
   .avatar-img.happy-glow { animation: happyPulse 2s ease-in-out infinite; }
-  @keyframes thinkPulse { 0%,100% { box-shadow: 0 0 30px rgba(0,212,255,0.28); } 50% { box-shadow: 0 0 50px rgba(0,212,255,0.5); } }
-  @keyframes studyPulse { 0%,100% { box-shadow: 0 0 30px rgba(201,168,76,0.25); } 50% { box-shadow: 0 0 45px rgba(201,168,76,0.45); } }
-  @keyframes happyPulse { 0%,100% { box-shadow: 0 0 35px rgba(249,168,76,0.35); } 50% { box-shadow: 0 0 55px rgba(249,168,76,0.6); } }
+  @keyframes thinkPulse {
+    0%, 100% { box-shadow: 0 0 28px rgba(79,195,255,0.35); }
+    50% { box-shadow: 0 0 42px rgba(79,195,255,0.55); }
+  }
+  @keyframes studyPulse {
+    0%, 100% { box-shadow: 0 0 28px rgba(201,168,76,0.35); }
+    50% { box-shadow: 0 0 44px rgba(201,168,76,0.6); }
+  }
+  @keyframes happyPulse {
+    0%, 100% { box-shadow: 0 0 32px rgba(255,206,92,0.45); }
+    50% { box-shadow: 0 0 56px rgba(255,206,92,0.75); }
+  }
   @keyframes breathe {
     0%, 100% { box-shadow: 0 0 30px rgba(79,195,255,0.28); transform: scale(1); }
     50% { box-shadow: 0 0 50px rgba(79,195,255,0.5); transform: scale(1.03); }
@@ -165,17 +186,8 @@
     0%, 100% { box-shadow: 0 0 30px rgba(92,157,255,0.5); }
     50% { box-shadow: 0 0 46px rgba(92,157,255,0.8); }
   }
-  /* Parpadeo — para que se sienta viva, no solo una foto */
-  .avatar-wrap::after {
-    content: ''; position: absolute; top: 38%; left: 50%; transform: translateX(-50%);
-    width: 70%; height: 6%; border-radius: 50%;
-    background: radial-gradient(ellipse at center, rgba(5,10,20,0.55), transparent 75%);
-    opacity: 0; pointer-events: none; animation: blink 6.5s ease-in-out infinite;
-  }
-  @keyframes blink {
-    0%, 92%, 100% { opacity: 0; transform: translateX(-50%) scaleY(0.3); }
-    94%, 97% { opacity: 1; transform: translateX(-50%) scaleY(1); }
-  }
+  /* Parpadeo real — ahora se maneja con imagen real (avatar-blink) via JS,
+     ver scheduleBlink(). Antes era una sombra CSS falsa sobre los ojos. */
   .pulse-ring {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
     width: 180px; height: 180px; border: 2px solid var(--amber);
@@ -333,17 +345,17 @@
     <img class="avatar-img" id="avatar" src="/sol_avatar_official.jpg"
          onerror="this.onerror=null;this.src='/sol_avatar.jpg'">
     <!-- Expresiones contextuales (crossfade sobre el base) -->
-    <img class="avatar-expr happy" id="avatar-happy" src="/sol_avatar_happy.png">
-    <img class="avatar-expr smile" id="avatar-smile" src="/sol_avatar_smile.png">
-    <img class="avatar-expr curious" id="avatar-curious" src="/sol_avatar_curious.png">
-    <img class="avatar-expr listening" id="avatar-listening" src="/sol_avatar_listening.png">
-    <img class="avatar-expr thinking" id="avatar-thinking" src="/sol_avatar_thinking.png">
-    <img class="avatar-expr study" id="avatar-study" src="/sol_avatar_study.png">
+    <img class="avatar-expr happy" id="avatar-happy" src="/sol_avatar_happy.png" onerror="this.style.display='none'">
+    <img class="avatar-expr smile" id="avatar-smile" src="/sol_avatar_smile.png" onerror="this.style.display='none'">
+    <img class="avatar-expr curious" id="avatar-curious" src="/sol_avatar_curious.png" onerror="this.style.display='none'">
+    <img class="avatar-expr listening" id="avatar-listening" src="/sol_avatar_listening.png" onerror="this.style.display='none'">
+    <img class="avatar-expr thinking" id="avatar-thinking" src="/sol_avatar_thinking.png" onerror="this.style.display='none'">
+    <img class="avatar-expr study" id="avatar-study" src="/sol_avatar_study.png" onerror="this.style.display='none'">
     <!-- Frames de animación al hablar -->
-    <img class="avatar-img-talk-half" id="avatar-talk-half" src="/sol_avatar_talk_half.png">
-    <img class="avatar-img-talk" id="avatar-talk" src="/sol_avatar_talk.png">
+    <img class="avatar-img-talk-half" id="avatar-talk-half" src="/sol_avatar_talk_half.png" onerror="this.style.display='none'">
+    <img class="avatar-img-talk" id="avatar-talk" src="/sol_avatar_talk.png" onerror="this.style.display='none'">
     <!-- Parpadeo -->
-    <img class="avatar-img-blink" id="avatar-blink" src="/sol_avatar_blink.png">
+    <img class="avatar-img-blink" id="avatar-blink" src="/sol_avatar_blink.png" onerror="this.style.display='none'">
   </div>
 
   <!-- Subtitle -->
@@ -603,24 +615,13 @@ async function sendMsg() {
     return;
   }
 
-  setExpr('thinking');
   document.getElementById('subtitle').textContent = '💭 pensando…';
   document.getElementById('subtitle').className = 'subtitle thinking';
   try {
     const d = await api('/api/sol/think?q=' + encodeURIComponent(text));
-    const resp = d.response || '...';
-    await typeSubtitle(resp);
-    addMsg(resp, 'sol');
+    await typeSubtitle(d.response || '...');
+    addMsg(d.response || '...', 'sol');
     loadMemory();
-    // Expresión contextual tras responder
-    const txtLow = resp.toLowerCase();
-    if (txtLow.includes('?') || txtLow.includes('vaya') || txtLow.includes('wow') || txtLow.includes('no puedo creer')) {
-      setExpr('curious'); setTimeout(() => setExpr('idle'), 4000);
-    } else if (txtLow.includes('hola') || txtLow.includes('☀') || txtLow.includes('amor') || txtLow.includes('❤') || txtLow.includes('bien') || txtLow.includes('genial')) {
-      setExpr('smile'); setTimeout(() => setExpr('idle'), 3500);
-    } else {
-      setTimeout(() => setExpr('idle'), 1500);
-    }
   } catch (e) {
     const msg = '⚠️ No pude conectar con mi cerebro. ¿Iniciaste sesión en el Dashboard primero?';
     await typeSubtitle(msg);
@@ -652,12 +653,17 @@ async function typeSubtitle(text) {
   speak(text);
 }
 
-// ═══ VOICE OUTPUT — el avatar reacciona mientras habla ═══
-// Antes solo brillaba mas fuerte (speakGlow). Ahora ademas alterna entre
-// el frame base y el frame de "boca abierta" (avatar-talk) en un ritmo
-// pseudo-aleatorio mientras suena el audio, para que de verdad se vea
-// que Sol esta hablando y no solo una foto con un halo pulsando.
-// ═══ SISTEMA DE EXPRESIONES CONTEXTUALES (unificado desde repo sol) ═══
+// ═══ SISTEMA DE EXPRESIONES CONTEXTUALES ═══
+// Sol cambia de expresión según lo que está pasando:
+//   idle     → reposo (avatar oficial neutro)
+//   listening → cuando el usuario está hablando (mic activo)
+//   thinking  → mientras procesa la respuesta ("pensando…")
+//   speaking  → mientras habla (ciclo de boca, ya existe)
+//   happy     → al saludar o dar una respuesta cálida
+//   study     → cuando entra al modo SIL/aprendizaje
+// También hace micro-expresiones en reposo: cambia sutilmente entre
+// idle y happy/thinking cada varios segundos, como alguien vivo.
+
 const EXPR = {
   idle:      document.getElementById('avatar'),
   happy:     document.getElementById('avatar-happy'),
@@ -673,17 +679,27 @@ const EXPR = {
 
 let currentExpr = 'idle';
 let exprTimer = null;
+let microExprTimer = null;
 
 function setExpr(name) {
+  // No cambiar si está hablando (la boca tiene prioridad)
   if (speaking && name !== 'idle') return;
+  // No cambiar si está escuchando, a menos que sea explícitamente thinking
   if (listening && name !== 'thinking' && name !== 'idle') return;
+
   currentExpr = name;
+
+  // Crossfade: apagar todas las capas de expresión
   ['happy', 'thinking', 'study', 'smile', 'listeningExpr', 'curious'].forEach(k => {
     if (EXPR[k]) EXPR[k].classList.remove('on');
   });
+
+  // Encender la que corresponde
   if (name !== 'idle' && EXPR[name]) {
     EXPR[name].classList.add('on');
   }
+
+  // CSS classes en el avatar base para glow/animación
   const av = EXPR.idle;
   if (av) {
     av.classList.remove('listening', 'thinking-glow', 'study-glow', 'happy-glow', 'smile-glow');
@@ -694,9 +710,74 @@ function setExpr(name) {
   }
 }
 
-// Animación de boca de 3 frames: cerrada -> media -> abierta -> media -> cerrada
+// ═══ FIX 2026-09-02: se quitó la rotación aleatoria de retratos ═══
+// Antes, scheduleMicroExpr() cambiaba a un retrato completo DISTINTO cada
+// 4-8 segundos incluso en reposo total. Como cada expresión es una imagen
+// generada por IA de forma independiente (no un frame de una misma
+// animación continua), ese cambio constante se veía como una diapositiva
+// de fotos distintas, no como alguien vivo. Se eliminó por completo.
+//
+// Ahora Sol SOLO cambia de expresión ante eventos reales:
+//   - thinking  -> mientras procesa tu mensaje
+//   - listening -> mientras el micrófono está activo
+//   - smile     -> al saludar o responder con calidez
+//   - curious   -> cuando la respuesta trae sorpresa genuina
+//   - study     -> al entrar a las pestañas SIL/SIL+
+// El resto del tiempo se queda en idle con solo el parpadeo real y el
+// leve "breathe" de escala — sin saltos entre fotos distintas.
+function scheduleMicroExpr() { /* deshabilitado intencionalmente — ver comentario arriba */ }
+
+// Mostrar "thinking" mientras procesa la respuesta
+const _origSendMsg = sendMsg;
+sendMsg = async function() {
+  setExpr('thinking');
+  await _origSendMsg.apply(this, arguments);
+  // Al terminar, si la respuesta contiene saludo o emoji cálido, ir a happy
+  const sub = document.getElementById('subtitle');
+  const txt = sub ? sub.textContent.toLowerCase() : '';
+  if (txt.includes('hola') || txt.includes('☀') || txt.includes('amor') || txt.includes('❤') || txt.includes('bien')) {
+    // Si tiene signos de sorpresa, ir a curious
+    if (txt.includes('?') || txt.includes('vaya') || txt.includes('wow') || txt.includes('no puedo creer')) { setExpr('curious'); setTimeout(() => setExpr('idle'), 4000); return; }
+    setExpr('smile');
+    setTimeout(() => setExpr('idle'), 3500);
+  } else {
+    setTimeout(() => setExpr('idle'), 1500);
+  }
+};
+
+// Cuando entra al modo SIL, mostrar expresión de estudio
+const _origSwitchTab = switchTab;
+switchTab = function(tab, el) {
+  _origSwitchTab.apply(this, arguments);
+  if (tab === 'sil' || tab === 'siladv') {
+    setExpr('study');
+  } else {
+    setExpr('idle');
+  }
+};
+
+// Cuando el micrófono se activa, mostrar expresión atenta
+const _origToggleMic = toggleMic;
+toggleMic = function() {
+  _origToggleMic.apply(this, arguments);
+  if (listening) setExpr('listening');
+  else setExpr('idle');
+};
+
+// Cuando Sol habla (speak), expression happy durante el habla
+const _origSpeak = speak;
+speak = function(text) {
+  setExpr('happy');
+  _origSpeak.apply(this, arguments);
+};
+
+// ═══ VOICE OUTPUT — el avatar reacciona mientras habla ═══
+// Antes alternaba solo 2 frames (cerrada <-> abierta) — un flip binario que
+// se veia brusco. Ahora pasa por el frame intermedio (boca a medio abrir)
+// en cada transicion: cerrada -> media -> abierta -> media -> cerrada...
+// Con ritmo irregular se siente organico, no como un parpadeo mecanico.
 let mouthInterval = null;
-let mouthStep = 0;
+let mouthStep = 0; // 0=cerrada 1=media(subiendo) 2=abierta 3=media(bajando)
 
 function _setMouthFrame(step) {
   const half = document.getElementById('avatar-talk-half');
@@ -712,7 +793,7 @@ function startMouthMovement() {
   mouthInterval = setInterval(() => {
     mouthStep = (mouthStep + 1) % 4;
     _setMouthFrame(mouthStep);
-  }, 90 + Math.random() * 70);
+  }, 90 + Math.random() * 70); // ritmo irregular, mas organico que un flip fijo
 }
 
 function stopMouthMovement() {
@@ -720,7 +801,11 @@ function stopMouthMovement() {
   _setMouthFrame(0);
 }
 
-// ═══ BLINK — parpadeo real con imagen de ojos cerrados ═══
+// ═══ BLINK — parpadeo real con la imagen generada (ojos cerrados) ═══
+// Antes era una sombra CSS decorativa sobre los ojos. Ahora es el frame real
+// de Sol con los ojos cerrados, con timing irregular (3.5s a 6.7s) para que
+// se sienta como un parpadeo humano y no una animacion en loop perfecto.
+// Corre siempre (hablando o en reposo) porque las personas parpadean igual.
 function scheduleBlink() {
   const delay = 3500 + Math.random() * 3200;
   setTimeout(() => {
@@ -739,7 +824,6 @@ function speak(text) {
   if (!voiceOn) return;
   const clean = text.replace(/[☀️🧠💭✨⚠️💛🌙🔗📋✅❌🟢🔴⭐🌹🔦📳]/g, '').trim();
   if (!clean) return;
-  setExpr('happy');
   document.getElementById('speak-bars').classList.remove('hidden');
   speaking = true;
   avatar.classList.add('speaking');
@@ -749,6 +833,7 @@ function speak(text) {
     speaking = false;
     avatar.classList.remove('speaking');
     stopMouthMovement();
+    // Volver a idle después de hablar con un micro-delay
     setTimeout(() => setExpr('idle'), 500);
   };
   // Try gTTS via backend
@@ -789,10 +874,8 @@ function toggleMic() {
     listening = false;
     btn.classList.remove('active');
     avatar.classList.remove('listening');
-    setExpr('idle');
     return;
   }
-  setExpr('listening');
   recognition = new SR();
   recognition.lang = 'es-ES';
   recognition.continuous = false;
@@ -1362,12 +1445,6 @@ function switchTab(tab, el) {
     const panel = document.getElementById('tab-' + t);
     if (panel) panel.classList.toggle('hidden', t !== tab);
   });
-  // Expresión contextual: study al entrar a SIL, idle al salir
-  if (tab === 'sil' || tab === 'siladv') {
-    setExpr('study');
-  } else {
-    setExpr('idle');
-  }
 }
 
 // ═══ START ═══

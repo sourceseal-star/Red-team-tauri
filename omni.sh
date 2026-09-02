@@ -943,6 +943,21 @@ sync() {
         fi
       fi
     done
+    # Assets estáticos de Sol (UI + avatar) — el canonico vive en ~/sol/static
+    # pero el dashboard (:8001) sirve backend/static. Sin esto la UI queda vieja.
+    if [ -d "$SOL_REPO_DIR/static" ] && [ -d "$ROOT/backend/static" ]; then
+      for _f in static/sol.html static/sol_avatar.jpg static/sol_avatar.png \
+                static/sol_avatar_blink.png static/sol_avatar_curious.png \
+                static/sol_avatar_happy.png static/sol_avatar_listening.png \
+                static/sol_avatar_smile.png static/sol_avatar_study.png \
+                static/sol_avatar_talk.png static/sol_avatar_talk_half.png \
+                static/sol_avatar_thinking.png; do
+        if [ -f "$SOL_REPO_DIR/$_f" ] && ! diff -q "$SOL_REPO_DIR/$_f" "$ROOT/backend/$_f" >/dev/null 2>&1; then
+          info "Copiando $_f desde ~/sol (UI/avatar más nuevos)..."
+          cp "$SOL_REPO_DIR/$_f" "$ROOT/backend/$_f" && ok "$_f sincronizado"
+        fi
+      done
+    fi
   fi
   echo ""
 
