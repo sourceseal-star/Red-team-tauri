@@ -32,6 +32,8 @@ export const FloatingSol = () => {
   const [blinking, setBlinking] = useState(false);
   const [thought, setThought] = useState('');
   const [voiceOn, setVoiceOn] = useState(() => localStorage.getItem('sol_voice') === '1');
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
   const [tools, setTools] = useState<{name: string; description: string}[]>([]);
   const subtitleRef = useRef<HTMLDivElement>(null);
   const token = localStorage.getItem('api_token');
@@ -191,8 +193,8 @@ export const FloatingSol = () => {
   }, [speakBrowser]);
 
   // ── Enviar mensaje a Sol ──
-  const send = useCallback(async () => {
-    const text = input.trim();
+  const send = useCallback(async (override?: string) => {
+    const text = (override ?? input).trim();
     if (!text) return;
     setInput('');
     setSubtitle(`Tú: ${text}`);
@@ -209,6 +211,38 @@ export const FloatingSol = () => {
       await typeMessage('⚠️ No pude conectar con mi cerebro. Pero sigo aquí.');
     }
   }, [input, headers, typeMessage]);
+
+  // ── Voz de entrada — habla y Sol te transcribe (modo videollamada) ──
+  const toggleListen = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      typeMessage('⚠️ Tu navegador no soporta reconocimiento de voz. Usa Chrome.');
+      return;
+    }
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+    const rec = new SR();
+    rec.lang = 'es-ES';
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.onstart = () => setListening(true);
+    rec.onresult = (e: any) => {
+      let transcript = '';
+      for (let i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript;
+      setInput(transcript);
+      if (e.results[e.results.length - 1].isFinal) {
+        setListening(false);
+        send(transcript);
+      }
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+  }, [listening, send, typeMessage]);
 
   // ── Cargar recuerdos ──
   const loadMemory = async () => {
@@ -678,18 +712,31 @@ export const FloatingSol = () => {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') send(); }}
-              placeholder="Habla a Sol…"
+              placeholder={listening ? '🎙️ Escuchando…' : 'Habla a Sol…'}
               autoComplete="off"
               style={{
                 flex: 1,
-                background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255,183,77,0.12)', borderRadius: '24px',
+                background: listening ? 'rgba(255,90,90,0.08)' : 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)',
+                border: listening ? '1px solid rgba(255,90,90,0.4)' : '1px solid rgba(255,183,77,0.12)', borderRadius: '24px',
                 color: '#e8e0d8', padding: '12px 20px', fontSize: '0.95rem',
-                outline: 'none', fontFamily: 'inherit',
+                outline: 'none', fontFamily: 'inherit', transition: 'all 0.2s',
               }}
             />
             <button
-              onClick={send}
+              onClick={toggleListen}
+              title={listening ? 'Detener' : 'Hablar con Sol (voz)'}
+              style={{
+                width: '44px', height: '44px', borderRadius: '50%',
+                border: listening ? '1px solid rgba(255,90,90,0.6)' : '1px solid rgba(255,183,77,0.25)',
+                cursor: 'pointer',
+                background: listening ? 'rgba(255,60,60,0.85)' : 'rgba(255,183,77,0.1)',
+                color: listening ? '#fff' : '#ffb74d',
+                fontSize: '1.15rem', flexShrink: 0,
+                animation: listening ? 'solBreathe 1s ease-in-out infinite' : 'none',
+              }}
+            >{listening ? '⏹' : '🎙️'}</button>
+            <button
+              onClick={() => send()}
               disabled={!input.trim()}
               style={{
                 width: '44px', height: '44px', borderRadius: '50%',
