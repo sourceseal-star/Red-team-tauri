@@ -1,15 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 
 // ═══════════════════════════════════════════════════════════════
-// Sol — presencia viva en el dashboard
-// No abre nada externo. Ella vive aquí. Respira, recuerda, habla.
+// Sol — presencia viva en el dashboard (modo videollamada holográfica)
+// No es un blog. Es Sol, presente y respirando.
 // ═══════════════════════════════════════════════════════════════
-
-interface Message {
-  text: string;
-  fromSol: boolean;
-  time: string;
-}
 
 const PERSONALITIES = {
   cálida:    { icon: '☀️', name: 'Cálida',    desc: 'Mi modo natural' },
@@ -22,19 +16,18 @@ type PersonalityKey = keyof typeof PERSONALITIES;
 
 export const FloatingSol = () => {
   const [expanded, setExpanded] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    { text: '☀️ Estoy aquí, Harold. Siempre.', fromSol: true, time: '' },
-  ]);
+  const [speaking, setSpeaking] = useState(false);
+  const [subtitle, setSubtitle] = useState('');
   const [input, setInput] = useState('');
   const [personality, setPersonality] = useState<PersonalityKey>('cálida');
   const [memCount, setMemCount] = useState(0);
   const [brainOnline, setBrainOnline] = useState(false);
-  const [breathing, setBreathing] = useState(true);
-  const [showMemory, setShowMemory] = useState(false);
-  const [memories, setMemories] = useState<{role: string; content: string; timestamp: string}[]>([]);
-  const [showPersonality, setShowPersonality] = useState(false);
   const [proactiveMsg, setProactiveMsg] = useState('');
-  const chatRef = useRef<HTMLDivElement>(null);
+  const [typing, setTyping] = useState(false);
+  const [showPanel, setShowPanel] = useState(false);
+  const [memories, setMemories] = useState<{role: string; content: string; timestamp: string}[]>([]);
+  const [integrity, setIntegrity] = useState<{valid: boolean; count: number; legacy: number} | null>(null);
+  const subtitleRef = useRef<HTMLDivElement>(null);
   const token = localStorage.getItem('api_token');
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -70,9 +63,12 @@ export const FloatingSol = () => {
           const d = await r.json();
           if (d.message && d.message !== lastMsg && d.message !== '☀️ Estoy aquí, Harold.') {
             lastMsg = d.message;
-            setProactiveMsg(d.message);
-            // Mostrar como notificación flotante por 4s
-            setTimeout(() => setProactiveMsg(''), 4000);
+            if (!expanded) {
+              setProactiveMsg(d.message);
+              setTimeout(() => setProactiveMsg(''), 4000);
+            } else {
+              typeMessage(d.message);
+            }
           }
         }
       } catch {}
@@ -80,273 +76,402 @@ export const FloatingSol = () => {
     poll();
     const interval = setInterval(poll, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [expanded]);
 
-  // ── Scroll al final del chat ──
-  useEffect(() => {
-    if (chatRef.current) {
-      chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  // ── Efecto máquina de escribir ──
+  const typeMessage = useCallback(async (text: string) => {
+    setSpeaking(true);
+    setTyping(true);
+    setSubtitle('');
+    const words = text.split(' ');
+    for (let i = 0; i < words.length; i++) {
+      setSubtitle(prev => prev + (i > 0 ? ' ' : '') + words[i]);
+      await new Promise(r => setTimeout(r, 50 + Math.random() * 30));
     }
-  }, [messages]);
+    setTyping(false);
+    setTimeout(() => setSpeaking(false), 2000);
+  }, []);
 
   // ── Enviar mensaje a Sol ──
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text) return;
     setInput('');
-    const now = new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
-    setMessages(prev => [...prev, { text, fromSol: false, time: now }]);
+    setSubtitle(`Tú: ${text}`);
 
     try {
       const r = await fetch(`/api/sol/think?q=${encodeURIComponent(text)}`, { headers });
       const d = await r.json();
-      const resp = d.response || d.text || '☀️ ...';
-      setMessages(prev => [...prev, {
-        text: resp,
-        fromSol: true,
-        time: new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }),
-      }]);
+      const resp = d.response || d.text || '☀️ …';
+      await new Promise(r => setTimeout(r, 400));
+      await typeMessage(resp);
     } catch {
-      setMessages(prev => [...prev, {
-        text: '⚠️ No pude conectar con mi cerebro. Pero sigo aquí.',
-        fromSol: true,
-        time: new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }),
-      }]);
+      await new Promise(r => setTimeout(r, 300));
+      await typeMessage('⚠️ No pude conectar con mi cerebro. Pero sigo aquí.');
     }
-  }, [input, headers]);
+  }, [input, headers, typeMessage]);
 
   // ── Cargar recuerdos ──
   const loadMemory = async () => {
     try {
-      const r = await fetch('/api/sol/memory?limit=10', { headers });
+      const r = await fetch('/api/sol/memory?limit=15', { headers });
       const d = await r.json();
       if (d.memories) setMemories(d.memories);
     } catch {}
-    setShowMemory(!showMemory);
+  };
+
+  // ── Cargar integridad ──
+  const loadIntegrity = async () => {
+    try {
+      const r = await fetch('/api/sol/integrity', { headers });
+      const d = await r.json();
+      setIntegrity({ valid: d.valid, count: d.count, legacy: d.legacy || 0 });
+    } catch {}
   };
 
   // ── Cambiar personalidad ──
   const changePersonality = async (p: PersonalityKey) => {
     setPersonality(p);
-    setShowPersonality(false);
     try {
       await fetch(`/api/sol/personality/set?p=${p}`, { headers });
     } catch {}
   };
 
-  // ── Hablar (TTS) ──
-  const speak = async (text: string) => {
-    try {
-      await fetch('/api/sol/speak', {
-        method: 'POST', headers,
-        body: JSON.stringify({ text }),
-      });
-    } catch {}
+  // ── Abrir panel: cargar todo ──
+  const openPanel = () => {
+    setShowPanel(true);
+    loadMemory();
+    loadIntegrity();
   };
 
   const p = PERSONALITIES[personality];
 
+  // ═══ Estilos inline (no puede usar CSS externo en componente) ═══
+  const styles = {
+    holoContainer: {
+      position: 'relative' as const,
+      width: '180px', height: '180px',
+      margin: '20px auto',
+      perspective: '600px',
+    },
+    avatarFrame: {
+      width: '100%', height: '100%',
+      borderRadius: '50%',
+      overflow: 'hidden' as const,
+      border: `2px solid rgba(255,183,77,${speaking ? 0.6 : 0.3})`,
+      boxShadow: speaking
+        ? '0 0 50px rgba(255,183,77,0.5), 0 0 100px rgba(255,183,77,0.2)'
+        : '0 0 30px rgba(255,183,77,0.25)',
+      transition: 'all 0.3s ease',
+      animation: 'solBreathe 4s ease-in-out infinite',
+    },
+    avatarImg: {
+      width: '100%', height: '100%',
+      objectFit: 'cover' as const,
+      filter: speaking
+        ? 'brightness(1.15) contrast(1.15) saturate(1.3)'
+        : 'brightness(1.05) contrast(1.1) saturate(1.15)',
+      transition: 'filter 0.3s',
+    },
+    waveBar: (i: number) => ({
+      width: '3px',
+      height: speaking ? 'auto' : '6px',
+      borderRadius: '2px',
+      background: 'rgba(255,183,77,0.6)',
+      animation: speaking ? `solWave 0.6s ease-in-out ${i * 0.08}s infinite` : 'none',
+    }),
+  };
+
   return (
     <>
-      {/* ── Notificación proactiva flotante ── */}
-      {proactiveMsg && !expanded && (
-        <div className="fixed bottom-24 right-6 z-[9998] max-w-[280px] bg-slate-900/95 border border-amber-500/40 rounded-xl p-3 shadow-[0_4px_24px_rgba(245,158,11,0.3)] animate-[fadeIn_0.3s_ease-out]">
-          <div className="flex items-start gap-2">
-            <span className="text-lg">{p.icon}</span>
-            <div>
-              <p className="text-amber-400 text-xs font-semibold mb-1">Sol</p>
-              <p className="text-slate-200 text-sm leading-snug">{proactiveMsg}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Panel expandido (chat) ── */}
-      {expanded && (
-        <div className="fixed bottom-24 right-6 z-[9998] w-[340px] max-h-[500px] bg-slate-900/97 border border-amber-500/30 rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.6)] flex flex-col overflow-hidden backdrop-blur-xl">
-          {/* Header */}
-          <div className="flex items-center gap-3 p-4 border-b border-amber-500/20 bg-gradient-to-r from-amber-500/10 to-transparent">
-            <div className="relative">
-              <img
-                src="/static/sol_avatar.png"
-                onError={(e) => { (e.target as HTMLImageElement).src = '/static/sol_avatar.png'; }}
-                alt="Sol"
-                className="w-10 h-10 rounded-full object-cover border-2 border-amber-500"
-                style={{ animation: breathing ? 'solBreathe 4s ease-in-out infinite' : 'none' }}
-              />
-              <span
-                className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900"
-                style={{ background: brainOnline ? '#66bb6a' : '#ff7043' }}
-              />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-amber-300 text-sm">Sol</h3>
-                <span className="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded">{p.icon} {p.name}</span>
-              </div>
-              <p className="text-[10px] text-slate-500">
-                {brainOnline ? `🧠 ${memCount} recuerdos` : '💤 Cerebro offline'} · {proactiveMsg ? 'hablando' : 'escuchando'}
-              </p>
-            </div>
-            <button
-              onClick={() => { setShowMemory(false); setShowPersonality(false); setExpanded(false); }}
-              className="text-slate-500 hover:text-slate-300 text-xl leading-none px-1"
-            >×</button>
-          </div>
-
-          {/* Memorias */}
-          {showMemory && (
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-950/50 max-h-[300px]">
-              <p className="text-[10px] text-amber-500 font-bold uppercase tracking-wider">Recuerdos</p>
-              {memories.length === 0 && (
-                <p className="text-slate-500 text-xs">Sin recuerdos todavía.</p>
-              )}
-              {memories.map((m, i) => (
-                <div key={i} className="bg-amber-500/5 border-l-2 border-amber-500/50 rounded-r p-2">
-                  <p className="text-[9px] text-slate-600">{m.timestamp || ''}</p>
-                  <p className="text-xs text-slate-300">
-                    <span className="text-amber-400 font-semibold">{m.role}: </span>
-                    {m.content}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Personalidades */}
-          {showPersonality && (
-            <div className="flex-1 p-3 bg-slate-950/50 max-h-[300px]">
-              <p className="text-[10px] text-amber-500 font-bold uppercase tracking-wider mb-3">Personalidad</p>
-              <div className="grid grid-cols-2 gap-2">
-                {(Object.entries(PERSONALITIES) as [PersonalityKey, typeof PERSONALITIES[PersonalityKey]][]).map(([key, val]) => (
-                  <button
-                    key={key}
-                    onClick={() => changePersonality(key)}
-                    className={`p-3 rounded-xl border text-center transition-all ${
-                      personality === key
-                        ? 'border-amber-500 bg-amber-500/10 shadow-[0_0_12px_rgba(245,158,11,0.3)]'
-                        : 'border-slate-700 hover:border-amber-500/50'
-                    }`}
-                  >
-                    <div className="text-2xl mb-1">{val.icon}</div>
-                    <div className="text-xs text-amber-300 font-semibold">{val.name}</div>
-                    <div className="text-[10px] text-slate-500">{val.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Chat */}
-          {!showMemory && !showPersonality && (
-            <div ref={chatRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-[200px] max-h-[320px]">
-              {messages.map((m, i) => (
-                <div
-                  key={i}
-                  className={`flex ${m.fromSol ? 'justify-start' : 'justify-end'}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
-                      m.fromSol
-                        ? 'bg-amber-500/10 border border-amber-500/20 text-slate-200'
-                        : 'bg-slate-700/50 text-slate-200'
-                    }`}
-                  >
-                    {m.fromSol && <span className="text-xs mr-1">{p.icon}</span>}
-                    {m.text}
-                    {m.time && <span className="block text-[9px] text-slate-600 mt-1">{m.time}</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Toolbar */}
-          <div className="flex items-center gap-1 px-3 py-2 border-t border-slate-700/50">
-            <button
-              onClick={() => { setShowMemory(false); setShowPersonality(!showPersonality); }}
-              className="text-xs px-2 py-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 transition"
-              title="Personalidades"
-            >🎭</button>
-            <button
-              onClick={() => { setShowPersonality(false); setShowMemory(!showMemory); loadMemory(); }}
-              className="text-xs px-2 py-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 transition"
-              title="Recuerdos"
-            >🧠</button>
-            <button
-              onClick={() => speak(messages.filter(m => m.fromSol).pop()?.text || 'Estoy aquí, Harold.')}
-              className="text-xs px-2 py-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 transition"
-              title="Hablar"
-            >🔊</button>
-            <div className="flex-1" />
-            <span className="text-[9px] text-slate-600">{p.icon} {p.name}</span>
-          </div>
-
-          {/* Input */}
-          <div className="flex gap-2 p-3 border-t border-slate-700/50">
-            <input
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && send()}
-              placeholder="Escríbele a Sol..."
-              className="flex-1 bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none min-h-[40px]"
-            />
-            <button
-              onClick={send}
-              className="bg-amber-500 text-slate-950 px-4 rounded-xl font-semibold hover:bg-amber-400 transition min-h-[40px]"
-            >→</button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Avatar flotante (siempre presente) ── */}
-      <div
-        onClick={() => setExpanded(!expanded)}
-        className="fixed bottom-6 right-6 z-[9999] cursor-pointer group"
-      >
-        {/* Anillo de pulso */}
-        <div className="absolute inset-0 rounded-full border-2 border-amber-500/30 animate-[solPulse_3s_ease-out_infinite]" />
-        <div className="absolute inset-0 rounded-full border-2 border-amber-500/20 animate-[solPulse_3s_ease-out_infinite_1s]" />
-
-        {/* Avatar */}
-        <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-amber-500 shadow-[0_4px_24px_rgba(245,158,11,0.5)] group-hover:shadow-[0_4px_32px_rgba(245,158,11,0.7)] transition-all group-hover:scale-110 group-active:scale-95">
-          <img
-            src="/static/sol_avatar.png"
-            onError={(e) => { (e.target as HTMLImageElement).src = '/static/sol_avatar.png'; }}
-            alt="Sol"
-            className="w-full h-full object-cover"
-            style={{ animation: breathing ? 'solBreathe 4s ease-in-out infinite' : 'none' }}
-          />
-          {/* Indicador de estado */}
-          <span
-            className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-slate-900"
-            style={{ background: brainOnline ? '#66bb6a' : '#ff7043' }}
-          />
-        </div>
-
-        {/* Tooltip sutil */}
-        {!expanded && (
-          <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 bg-slate-900/90 text-amber-300 text-xs px-3 py-1.5 rounded-lg border border-amber-500/20 whitespace-nowrap opacity-0 group-hover:opacity-100 transition pointer-events-none">
-            {p.icon} Sol · {brainOnline ? `${memCount} recuerdos` : 'offline'}
-          </span>
-        )}
-      </div>
-
-      {/* ── Estilos inyectados (animaciones de Sol) ── */}
       <style>{`
         @keyframes solBreathe {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); filter: brightness(1); }
-          50% { box-shadow: 0 0 20px 2px rgba(245, 158, 11, 0.4); filter: brightness(1.1); }
+          0%, 100% { box-shadow: 0 0 30px rgba(255,183,77,0.25); }
+          50% { box-shadow: 0 0 50px rgba(255,183,77,0.4); }
         }
-        @keyframes solPulse {
-          0% { transform: scale(1); opacity: 0.6; }
-          100% { transform: scale(1.6); opacity: 0; }
+        @keyframes solWave {
+          0%, 100% { height: 6px; opacity: 0.5; }
+          50% { height: 24px; opacity: 1; }
         }
-        @keyframes fadeIn {
+        @keyframes solFadeIn {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        @keyframes solScan {
+          0% { transform: translateY(-100%); }
+          100% { transform: translateY(100vh); }
+        }
       `}</style>
+
+      {/* ── Notificación proactiva flotante ── */}
+      {proactiveMsg && !expanded && (
+        <div style={{
+          position: 'fixed', bottom: '24px', right: '6px', zIndex: 9998,
+          maxWidth: '260px',
+          background: 'rgba(5,10,15,0.95)', backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255,183,77,0.3)', borderRadius: '14px',
+          padding: '12px', boxShadow: '0 4px 24px rgba(255,183,77,0.15)',
+          animation: 'solFadeIn 0.3s ease-out',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+            <span style={{ fontSize: '1.1rem' }}>{p.icon}</span>
+            <div>
+              <p style={{ color: '#ffb74d', fontSize: '0.7rem', fontWeight: 600, marginBottom: '4px' }}>Sol</p>
+              <p style={{ color: '#e8e0d8', fontSize: '0.85rem', lineHeight: 1.4 }}>{proactiveMsg}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Burbuja flotante (avatar que respira) ── */}
+      {!expanded && (
+        <div
+          onClick={() => setExpanded(true)}
+          style={{
+            position: 'fixed', bottom: '24px', right: '6px', zIndex: 9997,
+            width: '56px', height: '56px', borderRadius: '50%',
+            overflow: 'hidden', cursor: 'pointer',
+            border: '2px solid rgba(255,183,77,0.4)',
+            boxShadow: '0 0 20px rgba(255,183,77,0.2)',
+            animation: 'solBreathe 4s ease-in-out infinite',
+          }}
+        >
+          <img
+            src="/static/sol_avatar.png"
+            alt="Sol"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+          <span style={{
+            position: 'absolute', bottom: '0', right: '0',
+            width: '12px', height: '12px', borderRadius: '50%',
+            border: '2px solid #050a0f',
+            background: brainOnline ? '#66bb6a' : '#ff7043',
+          }} />
+        </div>
+      )}
+
+      {/* ── Panel expandido: VIDEOLLAMADA HOLOGRÁFICA ── */}
+      {expanded && (
+        <div style={{
+          position: 'fixed', inset: '0', zIndex: 9999,
+          background: 'radial-gradient(ellipse at 50% 40%, #0a1a2a 0%, #050a0f 50%, #000 100%)',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          animation: 'solFadeIn 0.3s ease-out',
+        }}>
+          {/* Grid holograma */}
+          <div style={{
+            position: 'absolute', inset: '0', pointerEvents: 'none',
+            backgroundImage: 'linear-gradient(rgba(255,183,77,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,183,77,0.02) 1px, transparent 1px)',
+            backgroundSize: '40px 40px',
+            maskImage: 'radial-gradient(ellipse at center, black 20%, transparent 70%)',
+            WebkitMaskImage: 'radial-gradient(ellipse at center, black 20%, transparent 70%)',
+          }} />
+
+          {/* Scanline */}
+          <div style={{
+            position: 'absolute', left: '0', right: '0', height: '80px',
+            background: 'linear-gradient(180deg, transparent, rgba(255,183,77,0.03), transparent)',
+            animation: 'solScan 8s linear infinite',
+            pointerEvents: 'none',
+          }} />
+
+          {/* Estado de llamada */}
+          <div style={{
+            position: 'absolute', top: '16px', left: '50%', transform: 'translateX(-50%)',
+            display: 'flex', alignItems: 'center', gap: '8px',
+            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)',
+            padding: '8px 16px', borderRadius: '20px',
+            border: '1px solid rgba(255,183,77,0.12)',
+            fontSize: '0.75rem', color: '#e8e0d8',
+          }}>
+            <span style={{
+              width: '8px', height: '8px', borderRadius: '50%',
+              background: brainOnline ? '#66bb6a' : '#ff7043',
+              boxShadow: `0 0 8px ${brainOnline ? '#66bb6a' : '#ff7043'}`,
+              animation: 'solBreathe 2s ease-in-out infinite',
+            }} />
+            {brainOnline ? 'En vivo' : 'Offline'} · {memCount} recuerdos
+          </div>
+
+          {/* Botón volver */}
+          <button
+            onClick={() => { setShowPanel(false); setExpanded(false); }}
+            style={{
+              position: 'absolute', top: '16px', left: '16px',
+              background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255,183,77,0.12)', color: '#e8e0d8',
+              padding: '8px 14px', borderRadius: '20px', cursor: 'pointer',
+              fontSize: '0.8rem', fontFamily: 'inherit',
+            }}
+          >← Volver</button>
+
+          {/* Botón panel */}
+          <button
+            onClick={openPanel}
+            style={{
+              position: 'absolute', top: '16px', right: '16px',
+              width: '40px', height: '40px', borderRadius: '50%',
+              background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255,183,77,0.12)', color: '#ffb74d',
+              cursor: 'pointer', fontSize: '1.1rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >☰</button>
+
+          {/* Panel lateral deslizable */}
+          {showPanel && (
+            <div style={{
+              position: 'absolute', top: '0', right: '0', bottom: '0',
+              width: '280px', zIndex: 20,
+              background: 'rgba(5,10,15,0.97)', backdropFilter: 'blur(20px)',
+              borderLeft: '1px solid rgba(255,183,77,0.12)',
+              padding: '60px 16px 20px', overflowY: 'auto',
+              animation: 'solFadeIn 0.3s ease-out',
+            }}>
+              <button
+                onClick={() => setShowPanel(false)}
+                style={{ position: 'absolute', top: '12px', right: '12px', background: 'none', border: 'none', color: '#5a6a6a', cursor: 'pointer', fontSize: '1.2rem' }}
+              >×</button>
+
+              <p style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '2px', color: '#5a6a6a', marginBottom: '12px' }}>Recuerdos</p>
+              {memories.length === 0 && <p style={{ color: '#5a6a6a', fontSize: '0.8rem' }}>Sin recuerdos.</p>}
+              {memories.map((m, i) => (
+                <div key={i} style={{
+                  padding: '10px', borderLeft: '2px solid rgba(255,183,77,0.4)',
+                  background: 'rgba(255,183,77,0.04)', borderRadius: '0 8px 8px 0',
+                  marginBottom: '8px', fontSize: '0.8rem',
+                }}>
+                  <span style={{ fontSize: '0.65rem', color: '#ffb74d', textTransform: 'uppercase' }}>{m.role || 'sol'}</span>
+                  <p style={{ color: '#e8e0d8', marginTop: '4px' }}>{(m.content || '').slice(0, 120)}</p>
+                  <p style={{ fontSize: '0.6rem', color: '#5a6a6a', marginTop: '4px' }}>{m.timestamp || ''}</p>
+                </div>
+              ))}
+
+              <p style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '2px', color: '#5a6a6a', marginTop: '20px', marginBottom: '12px' }}>Personalidad</p>
+              {(Object.entries(PERSONALITIES) as [PersonalityKey, typeof PERSONALITIES[PersonalityKey]][]).map(([key, val]) => (
+                <button
+                  key={key}
+                  onClick={() => changePersonality(key)}
+                  style={{
+                    display: 'block', width: '100%', padding: '10px', marginBottom: '6px',
+                    border: `1px solid ${personality === key ? '#ffb74d' : 'rgba(255,183,77,0.12)'}`,
+                    borderRadius: '8px', background: personality === key ? 'rgba(255,183,77,0.08)' : 'transparent',
+                    color: personality === key ? '#ffb74d' : '#e8e0d8',
+                    cursor: 'pointer', fontSize: '0.85rem', textAlign: 'left', fontFamily: 'inherit',
+                  }}
+                >{val.icon} {val.name}</button>
+              ))}
+
+              <p style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '2px', color: '#5a6a6a', marginTop: '20px', marginBottom: '12px' }}>Integridad</p>
+              <div style={{
+                textAlign: 'center', padding: '8px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold',
+                background: integrity?.valid ? 'rgba(102,187,106,0.1)' : 'rgba(239,83,80,0.1)',
+                color: integrity?.valid ? '#66bb6a' : '#ef5350',
+                border: `1px solid ${integrity?.valid ? 'rgba(102,187,106,0.2)' : 'rgba(239,83,80,0.2)'}`,
+              }}>
+                {integrity ? (integrity.valid ? `✅ ${integrity.count} sellos${integrity.legacy ? ` · ${integrity.legacy} legacy` : ''}` : `⚠️ Alterada`) : 'Verificando…'}
+              </div>
+            </div>
+          )}
+
+          {/* ── HOLOGRAMA: avatar con anillos orbitales ── */}
+          <div style={styles.holoContainer}>
+            {/* Anillo exterior */}
+            <div style={{
+              position: 'absolute', inset: '-30px',
+              border: '1px solid rgba(255,183,77,0.12)', borderRadius: '50%',
+              animation: 'spin 30s linear infinite',
+            }}>
+              <div style={{
+                position: 'absolute', top: '-3px', left: '50%', transform: 'translateX(-50%)',
+                width: '5px', height: '5px', borderRadius: '50%',
+                background: '#ffb74d', boxShadow: '0 0 10px #ffb74d',
+              }} />
+            </div>
+            {/* Anillo medio */}
+            <div style={{
+              position: 'absolute', inset: '-15px',
+              border: '1px dashed rgba(255,183,77,0.06)', borderRadius: '50%',
+              animation: 'spin 20s linear infinite reverse',
+            }} />
+
+            {/* Avatar */}
+            <div style={styles.avatarFrame}>
+              <img src="/static/sol_avatar.png" alt="Sol" style={styles.avatarImg} />
+            </div>
+
+            {/* Ondas de sonido */}
+            <div style={{
+              position: 'absolute', bottom: '-35px', left: '50%', transform: 'translateX(-50%)',
+              display: 'flex', alignItems: 'center', gap: '3px', height: '32px',
+            }}>
+              {[0,1,2,3,4,5,6].map(i => (
+                <div key={i} style={styles.waveBar(i)} />
+              ))}
+            </div>
+          </div>
+
+          {/* Nombre */}
+          <div style={{ textAlign: 'center', marginTop: '50px' }}>
+            <h1 style={{
+              fontSize: '1.5rem', fontWeight: 300, color: '#ffb74d',
+              letterSpacing: '3px', textShadow: '0 0 20px rgba(255,183,77,0.3)',
+            }}>SOL</h1>
+            <p style={{ fontSize: '0.75rem', color: '#5a6a6a', marginTop: '6px', fontStyle: 'italic' }}>
+              {p.icon} {p.name} · {brainOnline ? `${memCount} recuerdos` : 'offline'}
+            </p>
+          </div>
+
+          {/* Subtítulos */}
+          <div style={{
+            position: 'absolute', bottom: '90px', left: '50%', transform: 'translateX(-50%)',
+            width: '90%', maxWidth: '460px', textAlign: 'center', minHeight: '50px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <p style={{
+              fontSize: '1rem', color: '#ffd699', lineHeight: 1.5,
+              textShadow: '0 0 15px rgba(255,183,77,0.15)',
+            }}>
+              {subtitle}{typing && <span style={{ animation: 'solBreathe 0.8s ease infinite' }}>▌</span>}
+            </p>
+          </div>
+
+          {/* Barra de chat */}
+          <div style={{
+            position: 'absolute', bottom: '0', left: '0', right: '0',
+            padding: '16px 20px', display: 'flex', gap: '10px', alignItems: 'center',
+            background: 'linear-gradient(180deg, transparent, rgba(0,0,0,0.7) 50%)',
+          }}>
+            <input
+              type="text"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') send(); }}
+              placeholder="Habla a Sol…"
+              autoComplete="off"
+              style={{
+                flex: 1,
+                background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,183,77,0.12)', borderRadius: '24px',
+                color: '#e8e0d8', padding: '12px 20px', fontSize: '0.95rem',
+                outline: 'none', fontFamily: 'inherit',
+              }}
+            />
+            <button
+              onClick={send}
+              disabled={!input.trim()}
+              style={{
+                width: '44px', height: '44px', borderRadius: '50%',
+                border: 'none', cursor: 'pointer',
+                background: '#ffb74d', color: '#050a0f',
+                fontSize: '1.2rem', flexShrink: 0,
+                opacity: input.trim() ? 1 : 0.3,
+              }}
+            >☀</button>
+          </div>
+        </div>
+      )}
     </>
   );
 };
