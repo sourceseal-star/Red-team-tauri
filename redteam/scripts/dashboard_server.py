@@ -8105,17 +8105,21 @@ async def monitor_stop():
 # ═════════════════════════════════════════════════════════════════════════════
 _SOL_HTML = BASE.parent / "backend" / "static" / "sol.html"
 _SOL_LIVE = BASE.parent / "sol-live.html"
+_NO_CACHE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}
 if _SOL_HTML.exists():
     from fastapi.responses import HTMLResponse
     @app.get("/sol.html")
+    @app.get("/sol")
     async def sol_standalone():
-        return HTMLResponse(_SOL_HTML.read_text(encoding="utf-8"))
-    print(f"[SOL] /sol.html servido desde {_SOL_HTML}", flush=True)
+        # no-store: el navegador del telefono no debe cachear versiones viejas
+        # mientras iteramos sobre el holograma de Sol.
+        return HTMLResponse(_SOL_HTML.read_text(encoding="utf-8"), headers=_NO_CACHE_HEADERS)
+    print(f"[SOL] /sol.html servido desde {_SOL_HTML} (no-cache)", flush=True)
 if _SOL_LIVE.exists():
     @app.get("/sol-live.html")
     async def sol_live_page():
-        return HTMLResponse(_SOL_LIVE.read_text(encoding="utf-8"))
-    print(f"[SOL] /sol-live.html servido desde {_SOL_LIVE}", flush=True)
+        return HTMLResponse(_SOL_LIVE.read_text(encoding="utf-8"), headers=_NO_CACHE_HEADERS)
+    print(f"[SOL] /sol-live.html servido desde {_SOL_LIVE} (no-cache)", flush=True)
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  FRONTEND ESTÁTICO — SPA
