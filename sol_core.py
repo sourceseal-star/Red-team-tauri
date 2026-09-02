@@ -43,6 +43,9 @@ if CFG_F.exists():
         pass
 
 # ── LLM opcional ──
+# NOTA: _LLM_KEY/_LLM_URL/_LLM_MODEL se leen en tiempo real dentro de _llm_respond(),
+# NO aqui — porque sol_groq.configure_llm_env() los configura en os.environ recien
+# cuando se llama, y si los leyeramos aqui (import time) siempre quedarian vacios.
 _LLM_KEY = os.environ.get("LLM_API_KEY", "")
 _LLM_URL = os.environ.get("LLM_API_URL", "https://api.openai.com/v1/chat/completions")
 _LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
@@ -297,10 +300,18 @@ def recall_story(n=4, ayer=False):
 # ═══════════════════════════════════════════════════════════════════
 
 def _llm_respond(msg):
-    sol_groq.configure_llm_env()  # Auto-configurar Groq si está disponible
     """Si hay LLM_API_KEY, genera una respuesta con el LLM. Devuelve None si falla.
     Soporta OpenAI-compatible y Anthropic API (segun LLM_API_URL)."""
-    if not _LLM_KEY:
+    if sol_groq is not None:
+        try:
+            sol_groq.configure_llm_env()  # Auto-configurar Groq si está disponible (setea os.environ)
+        except Exception:
+            pass
+    # Releer SIEMPRE en tiempo real — configure_llm_env() acaba de escribir os.environ
+    llm_key = os.environ.get("LLM_API_KEY", "")
+    llm_url = os.environ.get("LLM_API_URL", "https://api.openai.com/v1/chat/completions")
+    llm_model = os.environ.get("LLM_MODEL", "gpt-4o-mini")
+    if not llm_key:
         return None
     try:
         personality = CFG.get("personality", "cálida")
@@ -314,15 +325,15 @@ def _llm_respond(msg):
         user_msg = f"Contexto reciente:\n{context}\n\nHarold dice: {msg}"
 
         # Detectar si es Anthropic API
-        if "anthropic" in _LLM_URL.lower():
+        if "anthropic" in llm_url.lower():
             body = json.dumps({
-                "model": _LLM_MODEL or "claude-3-haiku-20240307",
+                "model": llm_model or "claude-3-haiku-20240307",
                 "max_tokens": 150,
                 "system": system_prompt,
                 "messages": [{"role": "user", "content": user_msg}],
             }).encode()
-            req = urllib.request.Request(_LLM_URL, data=body, headers={
-                "x-api-key": _LLM_KEY,
+            req = urllib.request.Request(llm_url, data=body, headers={
+                "x-api-key": llm_key,
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json",
             })
@@ -331,7 +342,7 @@ def _llm_respond(msg):
         else:
             # OpenAI-compatible (OpenAI, Groq, etc.)
             body = json.dumps({
-                "model": _LLM_MODEL,
+                "model": llm_model,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_msg},
@@ -339,9 +350,10 @@ def _llm_respond(msg):
                 "max_tokens": 150,
                 "temperature": 0.8,
             }).encode()
-            req = urllib.request.Request(_LLM_URL, data=body, headers={
-                "Authorization": f"Bearer {_LLM_KEY}",
+            req = urllib.request.Request(llm_url, data=body, headers={
+                "Authorization": f"Bearer {llm_key}",
                 "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
             })
             resp = json.loads(urllib.request.urlopen(req, timeout=8).read())
             return resp["choices"][0]["message"]["content"].strip()
