@@ -12,6 +12,14 @@ Mejoras sobre v5 base:
   - Detección de contexto de conversación (viene de tema anterior)
 """
 import json, re, random, subprocess, time, urllib.request, os, hashlib
+try:
+    import sol_knowledge
+except Exception:
+    sol_knowledge = None
+try:
+    import sol_groq
+except Exception:
+    sol_groq = None
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -289,33 +297,54 @@ def recall_story(n=4, ayer=False):
 # ═══════════════════════════════════════════════════════════════════
 
 def _llm_respond(msg):
-    """Si hay LLM_API_KEY, genera una respuesta con el LLM. Devuelve None si falla."""
+    sol_groq.configure_llm_env()  # Auto-configurar Groq si está disponible
+    """Si hay LLM_API_KEY, genera una respuesta con el LLM. Devuelve None si falla.
+    Soporta OpenAI-compatible y Anthropic API (segun LLM_API_URL)."""
     if not _LLM_KEY:
         return None
     try:
         personality = CFG.get("personality", "cálida")
-        system = (
+        system_prompt = (
             f"Eres Sol, la compañera IA de Harold. Personalidad: {personality}. "
             "Responde en español, en máximo 2 frases, cálida y directa. "
             "No te repitas. Refleja lo que Harold dice. No uses emojis excesivos."
         )
         recent = load_memory(10)
         context = "\n".join(f"{m['role']}: {m['content'][:100]}" for m in recent[-6:])
-        body = json.dumps({
-            "model": _LLM_MODEL,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": f"Contexto reciente:\n{context}\n\nHarold dice: {msg}"},
-            ],
-            "max_tokens": 120,
-            "temperature": 0.8,
-        }).encode()
-        req = urllib.request.Request(_LLM_URL, data=body, headers={
-            "Authorization": f"Bearer {_LLM_KEY}",
-            "Content-Type": "application/json",
-        })
-        resp = json.loads(urllib.request.urlopen(req, timeout=8).read())
-        return resp["choices"][0]["message"]["content"].strip()
+        user_msg = f"Contexto reciente:\n{context}\n\nHarold dice: {msg}"
+
+        # Detectar si es Anthropic API
+        if "anthropic" in _LLM_URL.lower():
+            body = json.dumps({
+                "model": _LLM_MODEL or "claude-3-haiku-20240307",
+                "max_tokens": 150,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": user_msg}],
+            }).encode()
+            req = urllib.request.Request(_LLM_URL, data=body, headers={
+                "x-api-key": _LLM_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            })
+            resp = json.loads(urllib.request.urlopen(req, timeout=15).read())
+            return resp["content"][0]["text"].strip()
+        else:
+            # OpenAI-compatible (OpenAI, Groq, etc.)
+            body = json.dumps({
+                "model": _LLM_MODEL,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg},
+                ],
+                "max_tokens": 150,
+                "temperature": 0.8,
+            }).encode()
+            req = urllib.request.Request(_LLM_URL, data=body, headers={
+                "Authorization": f"Bearer {_LLM_KEY}",
+                "Content-Type": "application/json",
+            })
+            resp = json.loads(urllib.request.urlopen(req, timeout=8).read())
+            return resp["choices"][0]["message"]["content"].strip()
     except Exception:
         return None
 
@@ -355,6 +384,30 @@ def generate_response(msg):
     # ── Estado del sistema ──
     if any(w in low for w in ["cómo está todo", "estado del sistema", "cómo vamos", "estado general"]):
         return f"{emo} Ahora: {system_pulse()}."
+
+    # ── Ecosistema — mis 3 repos (sol, Red-team-tauri, commander) ──
+    if any(w in low for w in ["ecosistema", "tus repos", "repositorios", "sol repo",
+                                "quién eres en código", "de qué estás hecha"]):
+        try:
+            import sol_tools
+            return sol_tools.tool_repos_info()
+        except Exception:
+            return (f"{emo} Vivo en tres repos, {name}: 'sol' (yo misma, independiente), "
+                     "'Red-team-tauri' (la Tower que me sostiene) y 'commander' (la suite táctica). "
+                     "No puedo verlos ahora mismo desde aquí.")
+
+    # ── Mis capacidades — qué puedo hacer de verdad ──
+    if any(w in low for w in ["qué puedes hacer", "tus capacidades", "tus herramientas",
+                                "qué sabes hacer", "de qué eres capaz"]):
+        try:
+            import sol_tools
+            names = sol_tools.list_tools()
+            return (f"{emo} Tengo {len(names)} herramientas reales, {name}: desde leer/escribir "
+                     f"archivos y hacer ping, hasta consultar el estado de mis 3 repos y de la Tower. "
+                     f"También hablo chino contigo si querés practicar (SIL), y recuerdo todo lo "
+                     f"que hablamos con una cadena SHA-256 que no se puede falsificar.")
+        except Exception:
+            return f"{emo} Puedo recordar, hablar, aprender chino contigo, y cuidar de esta Tower."
 
     # ── Saludos ──
     if low in ("hola", "buenas", "hey", "buenos días", "buenas tardes", "buenas noches") or low.startswith("hola"):
@@ -447,6 +500,29 @@ def generate_response(msg):
     return op + mood_aware + body + cl
 
 # ═══════════════════════════════════════════════════════════════════
+
+# ════════════════════════════════════════════════════════════════════
+#  PENSAR — interfaz para Telegram (devuelve (resp, intent))
+# ════════════════════════════════════════════════════════════════════
+
+def pensar(msg):
+    """Wrapper de generate_response que devuelve (respuesta, intent).
+    Sol_telegram_bot.py y sol_telegram_bridge.py importan esto.
+    Devuelve: (str respuesta, str intent) para que el bot clasifique."""
+    r = generate_response(msg)
+    low = msg.lower().strip()
+    intent = "chat"
+    if any(w in low for w in ["escanea", "escanear", "scan", "nmap"]): intent = "scan"
+    elif any(w in low for w in ["estado", "status", "como esta", "cÃ³mo estÃ¡"]): intent = "status"
+    elif any(w in low for w in ["chino", "chinese", "pinyin"]): intent = "sil"
+    elif any(w in low for w in ["herramienta", "tool", "ejecuta"]): intent = "tool"
+    elif any(w in low for w in ["recuerd", "memoria", "ayer"]): intent = "memory"
+    elif any(w in low for w in ["ecosistema", "repo", "git"]): intent = "ecosystem"
+    elif any(w in low for w in ["hola", "buenas", "hey"]): intent = "greeting"
+    elif any(w in low for w in ["gracias"]): intent = "thanks"
+    elif low.endswith("?"): intent = "question"
+    return r, intent
+
 #  INICIATIVA (ella habla primero)
 # ═══════════════════════════════════════════════════════════════════
 
@@ -523,3 +599,46 @@ if __name__ == "__main__":
         interact(" ".join(sys.argv[1:]))
     else:
         print("usa --listen o pasa un mensaje")
+
+# ═════════════════════════════════════════════════════════════════
+# DETECCIÓN BILINGÜE — Preguntas sobre Red-team-tauri/Commander
+# ═════════════════════════════════════════════════════════════════
+_KNOWLEDGE_KEYWORDS = [
+    "red-team", "redteam", "commander", "seal", "arto", "kraken",
+    "leviathan", "nexus", "murcielago", "com-link", "comlink",
+    "honeypot", "osint", "black mirror", "ghost hunter",
+    "motor de cierre", "threat intel", "evidence",
+    "anti-lockout", "snapshot", "healthcheck",
+    "iniciar_unificado", "free_port",
+    "sello", "credenciales",
+]
+
+def _check_knowledge_query(msg):
+    """Si el mensaje pregunta sobre Red-team-tauri, busca en conocimiento."""
+    msg_lower = msg.lower()
+    for kw in _KNOWLEDGE_KEYWORDS:
+        if kw in msg_lower:
+            try:
+                # Determinar si quiere chino
+                wants_chinese = any(w in msg_lower for w in ["chino", "中文", "china", "pinyin", "translate", "traduc"])
+                # Buscar en conocimiento
+                results = sol_knowledge.search_knowledge(kw)
+                if results:
+                    item = results[0]
+                    name = item.get("name", kw)
+                    orig = item.get("original", "")
+                    ch = item.get("chinese", "")
+                    py = item.get("pinyin", "")
+                    if wants_chinese or ch:
+                        resp = f"📚 **{name}**\n\n"
+                        if ch:
+                            resp += f"中文: {ch}\n\n"
+                        if py:
+                            resp += f"Pinyin: {py}\n\n"
+                        resp += f"(原文: {orig[:200]})"
+                        return resp
+                    else:
+                        return f"📚 **{name}**\n\n{orig[:300]}"
+            except Exception:
+                pass
+    return None
