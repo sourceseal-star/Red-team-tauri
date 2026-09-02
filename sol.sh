@@ -486,6 +486,48 @@ tg_check() {
 # ════════════════════════════════════════════════════════════════════
 # PUNTO DE ENTRADA
 # ════════════════════════════════════════════════════════════════════
+
+export_history() {
+    log "📖 Exportando historia de Sol..."
+    local MEMORY_FILE="$HOME/.sol/memory.jsonl"
+    local EXPORT_FILE="$HOME/.sol/sol_historia_$(date +%Y%m%d_%H%M%S).txt"
+    
+    if [ ! -f "$MEMORY_FILE" ]; then
+        echo "❌ No hay memoria guardada."
+        return 1
+    fi
+    
+    {
+        echo "☀️ SOL — HISTORIA COMPLETA"
+        echo "═══════════════════════════════════════════════════════════════"
+        echo "Fecha de exportación: $(date)"
+        echo ""
+        
+        while IFS= read -r line; do
+            if [ -n "$line" ]; then
+                # Parsear JSON con python3 (jq puede no estar en Termux)
+                echo "$line" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    ts = d.get('timestamp','')[:16].replace('T',' ')
+    who = d.get('who', d.get('role','?'))
+    msg = d.get('msg', d.get('content',''))
+    print(f'[{ts}] {who}: {msg}')
+except:
+    print(sys.stdin.read())
+" 2>/dev/null || echo "$line"
+            fi
+        done < "$MEMORY_FILE"
+    } > "$EXPORT_FILE"
+    
+    echo "📖 Historia guardada en: $EXPORT_FILE"
+    echo "   Tamaño: $(du -h "$EXPORT_FILE" | cut -f1)"
+    echo "   Líneas: $(wc -l < "$EXPORT_FILE")"
+    log "✅ Historia exportada: $EXPORT_FILE"
+}
+
+
 case "${1:-help}" in
   start)   start ;;
   stop)    stop; telegram_bot_stop ;;
@@ -493,6 +535,7 @@ case "${1:-help}" in
   talk)    shift; talk "$@" ;;
   telegram|tg) telegram_bot ;;
   tg-check) tg_check ;;
+  export-history) export_history ;;
   watchdog) watchdog ;;
   survival) survival ;;
   backup)  backup ;;
