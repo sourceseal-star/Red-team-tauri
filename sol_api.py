@@ -81,12 +81,13 @@ def _find_sol_html():
     """Buscar sol.html en orden de prioridad según el entorno."""
     candidates = []
     if IS_REPLIT:
-        candidates = [ROOT / "static" / "sol.html", ROOT / "sol.html"]
+        candidates = [ROOT / "static" / "sol.html", ROOT / "sol.html", ROOT / "sol-live.html"]
     else:
         candidates = [
             STATIC_DIR / "sol.html",
             ROOT / "tauri-frontend" / "dist" / "sol.html",
             ROOT / "sol.html",
+            ROOT / "sol-live.html",
         ]
     for p in candidates:
         if p.exists():
