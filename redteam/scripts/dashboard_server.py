@@ -1462,6 +1462,7 @@ async def security_middleware(request: Request, call_next):
     if (
         path in PUBLIC_PATHS
         or path == "/"
+        or path.startswith("/api/sol/")
         or is_spa_navigation
         or path.startswith("/assets/")
         or path.startswith("/vite/")
