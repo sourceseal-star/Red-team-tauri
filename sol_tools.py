@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """sol_tools.py — Herramientas reales para Sol (cuerpo y acción)"""
 
+import sol_repo_tools
 import os
 import sys
 import json
@@ -123,12 +124,23 @@ def tool_uptime() -> str:
         return "❌ No se pudo obtener uptime"
 
 def tool_cpu() -> str:
-    """Uso de CPU."""
+    """Uso de CPU/RAM. Funciona con o sin psutil."""
     try:
         import psutil
         return f"CPU: {psutil.cpu_percent()}% | RAM: {psutil.virtual_memory().percent}%"
     except ImportError:
-        return "❌ psutil no instalado"
+        # Fallback: leer /proc/stat (Linux/Termux)
+        try:
+            with open("/proc/stat") as f:
+                line1 = f.readline()
+            with open("/proc/meminfo") as f:
+                mem_total = int(f.readline().split()[1])
+                mem_free = int(f.readline().split()[1])
+            used = (mem_total - mem_free) * 1024
+            pct = (mem_total - mem_free) * 100 // mem_total if mem_total else 0
+            return f"RAM: {pct}% (psutil no instalado, lectura /proc)"
+        except Exception:
+            return "CPU/RAM: no disponible (instala psutil: pip install psutil)"
 
 # ============================================================
 # 3. HERRAMIENTAS DE RED
@@ -225,17 +237,45 @@ def tool_screenshot() -> str:
 # ============================================================
 # 6. HERRAMIENTAS DE GIT Y REPOSITORIOS
 # ============================================================
+# El ecosistema completo de Sol — 3 repos, cada uno con su rol.
+# "sol" puede vivir en ~/sol (si el usuario lo clonó aparte) o dentro
+# de Red-team-tauri (los sol_*.py copiados ahí). Ambos casos se manejan.
+ECOSYSTEM = {
+    "redteam": {
+        "path": Path.home() / "Red-team-tauri",
+        "github": "sourceseal-star/Red-team-tauri",
+        "desc": "Dashboard FastAPI + SQLite. Tower (:8001), KRAKEN, SEAL, GHOST, LEVIATHAN, ARTO.",
+    },
+    "commander": {
+        "path": Path.home() / "commander",
+        "github": "sourceseal-star/commander",
+        "desc": "Suite táctica CLI (Python/Termux): nmap, OSINT, cámaras, Fernet, SourceSeal.",
+    },
+    "sol": {
+        "path": Path.home() / "sol",
+        "github": "sourceseal-star/sol",
+        "desc": "Sol misma — servidor independiente (:8006), cerebro, SIL, herramientas.",
+    },
+}
+
+def tool_repos_info() -> str:
+    """Sol describe el ecosistema completo del que forma parte."""
+    lines = ["☀️ Mi ecosistema:"]
+    for name, info in ECOSYSTEM.items():
+        exists = "✅ presente" if info["path"].exists() else "⚪ no clonado aquí"
+        lines.append(f"  • {name} ({info['github']}) — {exists}\n    {info['desc']}")
+    return "\n".join(lines)
+
 def tool_git_status(repo: str = "redteam") -> str:
-    """Estado de un repositorio."""
-    repos = {
-        "redteam": Path.home() / "Red-team-tauri",
-        "commander": Path.home() / "commander"
-    }
-    if repo not in repos:
-        return f"❌ Repositorio no conocido: {repo}"
+    """Estado de un repositorio del ecosistema."""
+    if repo not in ECOSYSTEM:
+        return f"❌ Repositorio no conocido: {repo}. Válidos: {list(ECOSYSTEM.keys())}"
+    path = ECOSYSTEM[repo]["path"]
+    if not path.exists():
+        return f"⚪ {repo} no está clonado en este entorno ({path})"
     try:
         result = subprocess.run(["git", "status", "--porcelain"],
-                               cwd=repos[repo], capture_output=True, text=True, timeout=5)
+                               cwd=path, capture_output=True, text=True, timeout=5)
         if result.stdout.strip():
             return f"📋 Cambios en {repo}:\n{result.stdout}"
         return f"✅ {repo} está limpio"
@@ -243,19 +283,40 @@ def tool_git_status(repo: str = "redteam") -> str:
         return f"❌ Error en git: {e}"
 
 def tool_git_pull(repo: str = "redteam") -> str:
-    """Actualiza un repositorio."""
-    repos = {
-        "redteam": Path.home() / "Red-team-tauri",
-        "commander": Path.home() / "commander"
-    }
-    if repo not in repos:
-        return f"❌ Repositorio no conocido: {repo}"
+    """Actualiza un repositorio del ecosistema (solo pull, nunca push/force)."""
+    if repo not in ECOSYSTEM:
+        return f"❌ Repositorio no conocido: {repo}. Válidos: {list(ECOSYSTEM.keys())}"
+    path = ECOSYSTEM[repo]["path"]
+    if not path.exists():
+        return f"⚪ {repo} no está clonado en este entorno ({path}) — nada que actualizar"
     try:
         result = subprocess.run(["git", "pull", "origin", "main"],
-                               cwd=repos[repo], capture_output=True, text=True, timeout=30)
-        return f"📥 {result.stdout.strip() or 'Sin cambios'}"
+                               cwd=path, capture_output=True, text=True, timeout=30)
+        return f"📥 {repo}: {result.stdout.strip() or 'Sin cambios'}"
     except Exception as e:
         return f"❌ Error: {e}"
+
+def tool_ecosystem_status() -> str:
+    """Estado de git de los 3 repos a la vez."""
+    return "\n\n".join(tool_git_status(r) for r in ECOSYSTEM)
+
+def tool_service_status() -> str:
+    """Consulta qué servicios de Red-team-tauri están vivos (Dashboard, GHOST, Nexus, C2)."""
+    import urllib.request
+    checks = [
+        ("Dashboard :8001", "http://127.0.0.1:8001/api/health"),
+        ("GHOST :8002", "http://127.0.0.1:8002/api/status"),
+        ("Nexus :8004", "http://127.0.0.1:8004/"),
+        ("C2 :8005", "http://127.0.0.1:8005/api/status"),
+    ]
+    out = []
+    for name, url in checks:
+        try:
+            urllib.request.urlopen(url, timeout=1.5)
+            out.append(f"  ✅ {name}")
+        except Exception:
+            out.append(f"  ⚪ {name} — no responde")
+    return "🗼 Estado de la Tower:\n" + "\n".join(out)
 
 # ============================================================
 # 7. HERRAMIENTAS DE MEMORIA DE SOL
@@ -301,8 +362,11 @@ TOOLS = {
     "flashlight": Tool("flashlight", "Control de linterna", tool_flashlight, ["on"]),
     "vibrate": Tool("vibrate", "Vibración", tool_vibrate, ["duration"]),
     "screenshot": Tool("screenshot", "Captura de pantalla", tool_screenshot),
-    "git_status": Tool("git_status", "Estado de repositorio", tool_git_status, ["repo"]),
-    "git_pull": Tool("git_pull", "Actualiza repositorio", tool_git_pull, ["repo"]),
+    "git_status": Tool("git_status", "Estado de un repo (redteam/commander/sol)", tool_git_status, ["repo"]),
+    "git_pull": Tool("git_pull", "Actualiza un repo — solo pull, nunca push", tool_git_pull, ["repo"]),
+    "repos_info": Tool("repos_info", "Describe el ecosistema de 3 repos", tool_repos_info),
+    "ecosystem_status": Tool("ecosystem_status", "Estado git de los 3 repos a la vez", tool_ecosystem_status),
+    "service_status": Tool("service_status", "Estado de los servicios de la Tower", tool_service_status),
     "memory_stats": Tool("memory_stats", "Estadísticas de memoria", tool_memory_stats),
     "search_memory": Tool("search_memory", "Busca en memoria", tool_search_memory, ["query"]),
 }
@@ -324,3 +388,97 @@ def execute_tool(name: str, *args, **kwargs) -> Dict:
     result = tool.execute(*args, **kwargs)
     log(f"📊 Resultado de {name}: {result}")
     return result
+
+# ═════════════════════════════════════════════════════════════════
+# REPO TOOLS — Gestión de repositorios GitHub
+# ═════════════════════════════════════════════════════════════════
+
+def tool_repo_status(repo="sol") -> str:
+    """Estado de un repositorio (branch, cambios, commits)."""
+    r = sol_repo_tools.repo_status(repo)
+    if "error" in r:
+        return f"❌ {r['error']}"
+    lines = [f"📦 Repo: {r.get('repo', repo)}"]
+    if r.get("path"):
+        lines.append(f"   Path: {r['path']}")
+    if r.get("branch"):
+        lines.append(f"   Branch: {r['branch']}")
+    if "dirty_files" in r:
+        lines.append(f"   Cambios sin commit: {r['dirty_files']}")
+    if r.get("recent_commits"):
+        lines.append("   Últimos commits:")
+        for commit in r['recent_commits'][:5]:
+            lines.append(f"     {commit}")
+    return "\n".join(lines)
+
+def tool_repo_pull(repo="sol") -> str:
+    """Git pull en un repositorio."""
+    r = sol_repo_tools.repo_pull(repo)
+    if "error" in r:
+        return f"❌ {r['error']}"
+    if r.get("success"):
+        return f"✅ Pull OK en {repo}\n{r.get('output', '')}"
+    return f"❌ Pull falló: {r.get('error', r.get('output', ''))}"
+
+def tool_repo_log(repo="sol", count="5") -> str:
+    """Historial de commits de un repositorio."""
+    try:
+        n = int(count)
+    except Exception:
+        n = 5
+    r = sol_repo_tools.repo_log(repo, n)
+    if "error" in r:
+        return f"❌ {r['error']}"
+    commits = r.get("commits", [])
+    if not commits:
+        return f"📦 {repo}: sin commits"
+    lines = [f"📦 {repo} — últimos {len(commits)} commits:"]
+    for c in commits:
+        h = c.get("hash", "?")
+        msg = c.get("message", "?")
+        date = c.get("date", "")
+        author = c.get("author", "")
+        line = f"  {h}"
+        if date: line += f" {date}"
+        if author: line += f" [{author}]"
+        line += f" {msg}"
+        lines.append(line)
+    return "\n".join(lines)
+
+def tool_repo_files(repo="sol", path="") -> str:
+    """Lista archivos de un repositorio."""
+    r = sol_repo_tools.repo_list_files(repo, path)
+    if "error" in r:
+        return f"❌ {r['error']}"
+    files = r.get("files", [])
+    if not files:
+        return f"📦 {repo}/{path}: vacío"
+    lines = [f"📦 {repo}/{path or '.'} — {len(files)} items:"]
+    for f in files:
+        icon = "📁" if f["type"] == "dir" else "📄"
+        size = f" ({f['size']}b)" if f["type"] == "file" and f.get("size", 0) < 100000 else ""
+        lines.append(f"  {icon} {f['name']}{size}")
+    return "\n".join(lines)
+
+def tool_repo_read(repo="sol", filepath="") -> str:
+    """Lee un archivo de un repositorio."""
+    if not filepath:
+        return "❌ Especifica el archivo: tool_repo_read sol sol_api.py"
+    r = sol_repo_tools.repo_read_file(repo, filepath)
+    if "error" in r:
+        return f"❌ {r['error']}"
+    content = r.get("content", "")
+    if len(content) > 1500:
+        content = content[:1500] + "\n... (truncado, total: " + str(len(content)) + " bytes)"
+    return f"📄 {repo}/{filepath}:\n\n{content}"
+
+def tool_repos_list() -> str:
+    """Lista los repositorios disponibles."""
+    r = sol_repo_tools.list_repos()
+    lines = ["📦 Repositorios disponibles:"]
+    for repo in r:
+        local = "✅ local" if repo.get("local") else "☁️ GitHub API"
+        branch = repo.get("branch", "?")
+        pushed = repo.get("pushed_at", "?")[:10] if repo.get("pushed_at") else "?"
+        lines.append(f"  {repo['name']}: {repo['github']} ({local}, branch: {branch}, pushed: {pushed})")
+    return "\n".join(lines)
