@@ -26,7 +26,7 @@ _sol_pensar = None
 _sol_remember = None
 try:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from sol_core import generate_response as _p, remember as _r, CFG
+    from sol_core import generate_response as _p, remember as _r, CFG, proactive as _proactive, speak as _sol_speak
     _sol_pensar = _p
     _sol_remember = _r
 except Exception:
@@ -184,6 +184,16 @@ def main():
             while not EVENTS_Q.empty():
                 handle_event(EVENTS_Q.get_nowait())
             
+            # ── Sol v5: iniciativa (ella habla primero) ──
+            try:
+                _p_msg = _proactive()
+                if _p_msg:
+                    _sol_speak(_p_msg)
+                    _r("sol", _p_msg)
+                    log(f"☀️ Iniciativa: {_p_msg}")
+            except Exception:
+                pass
+
             time.sleep(30)
         except KeyboardInterrupt:
             on_signal(None, None)
