@@ -566,10 +566,26 @@ telegram_c2 = TelegramC2(CFG.telegram_token, CFG.telegram_chat_id)
 # =====================================================================
 # WATCHDOG — Monitoreo autónomo del sistema
 # =====================================================================
+def _safe_net_io():
+    """En Termux/Android, leer /proc/net/dev puede estar bloqueado (PermissionError:
+    Errno 13). Sin este guard, Watchdog() crashea en __init__ al cargar el módulo y
+    TODO el proceso muere antes de levantar el servidor — por eso C2 nunca respondía
+    en :8005. Devuelve contadores en 0 si no hay acceso, en vez de reventar."""
+    if psutil is None:
+        from collections import namedtuple
+        return namedtuple("NetIO", ["bytes_sent", "bytes_recv"])(0, 0)
+    try:
+        return psutil.net_io_counters()
+    except Exception as e:
+        log.warning(f"psutil.net_io_counters() sin permiso ({e}) — red deshabilitada en watchdog")
+        from collections import namedtuple
+        return namedtuple("NetIO", ["bytes_sent", "bytes_recv"])(0, 0)
+
+
 class Watchdog:
     """Vigila CPU, RAM, red y procesos. Alerta por Telegram."""
     def __init__(self):
-        self.last_net = psutil.net_io_counters()
+        self.last_net = _safe_net_io()
         self.alerts_sent = set()
         self.history: List[Dict] = []
 
@@ -578,7 +594,7 @@ class Watchdog:
             return {"cpu": 0, "ram": 0, "processes": 0, "alerts": [], "timestamp": datetime.now().isoformat()}
         cpu = psutil.cpu_percent(interval=1)
         ram = psutil.virtual_memory()
-        net = psutil.net_io_counters()
+        net = _safe_net_io()
         net_sent_mb = (net.bytes_sent - self.last_net.bytes_sent) / 1024 / 1024
         net_recv_mb = (net.bytes_recv - self.last_net.bytes_recv) / 1024 / 1024
         self.last_net = net
@@ -650,8 +666,8 @@ class ActiveDefense:
             for c in conns:
                 if c.laddr and c.laddr.port in self.SUSPICIOUS_PORTS and c.status == "LISTEN":
                     threats.append({"type": "port", "port": c.laddr.port, "severity": "critical"})
-        except (psutil.AccessDenied, psutil.NoSuchProcess):
-            pass
+        except (psutil.AccessDenied, psutil.NoSuchProcess, PermissionError, OSError):
+            pass  # Termux/Android bloquea /proc/net sin root — no es fatal, seguimos sin ese dato.
         # Logins SSH recientes
         r = run_shell("last -10 2>/dev/null | head -5", timeout=5)
         if "pts" in r.get("stdout", "") and len(r.get("stdout", "")) > 50:
