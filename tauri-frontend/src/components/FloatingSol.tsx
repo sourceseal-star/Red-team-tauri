@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { SolFace } from './SolFace';
 
 // ═══════════════════════════════════════════════════════════════
 // Sol — presencia viva en el dashboard (modo videollamada holográfica)
@@ -294,8 +295,8 @@ export const FloatingSol = () => {
     <>
       <style>{`
         @keyframes solBreathe {
-          0%, 100% { box-shadow: 0 0 30px rgba(255,183,77,0.25); }
-          50% { box-shadow: 0 0 50px rgba(255,183,77,0.4); }
+          0%, 100% { box-shadow: 0 0 30px rgba(255,183,77,0.25); transform: scale(1); }
+          50% { box-shadow: 0 0 50px rgba(255,183,77,0.4); transform: scale(1.035); }
         }
         @keyframes solWave {
           0%, 100% { height: 6px; opacity: 0.5; }
@@ -348,11 +349,9 @@ export const FloatingSol = () => {
             animation: 'solBreathe 4s ease-in-out infinite',
           }}
         >
-          <img
-            src="/static/sol_avatar.png"
-            alt="Sol"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
+          <div style={{ width: '100%', height: '100%' }}>
+            <SolFace speaking={false} mood={mood} size={56} />
+          </div>
           <span style={{
             position: 'absolute', bottom: '0', right: '0',
             width: '12px', height: '12px', borderRadius: '50%',
@@ -523,10 +522,9 @@ export const FloatingSol = () => {
               animation: 'spin 20s linear infinite reverse',
             }} />
 
-            {/* Avatar */}
+            {/* Avatar — rostro animado real (canvas), no imagen estática */}
             <div style={styles.avatarFrame}>
-              <img src="/static/sol_avatar.png" alt="Sol" style={styles.avatarImg} />
-              <div style={styles.blinkOverlay} />
+              <SolFace speaking={speaking} mood={mood} size={200} />
             </div>
             {thought && (
               <div style={{
