@@ -3269,6 +3269,7 @@ async def ai_history(limit: int = 20):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _SOL_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol.html")
+_SOL_AVATAR_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar.jpg")
 
 @app.get("/sol")
 async def sol_page():
@@ -3282,6 +3283,15 @@ async def sol_page():
 async def sol_page_alt():
     """Alias directo."""
     return await sol_page()
+
+@app.get("/sol_avatar.jpg")
+async def sol_avatar():
+    """Avatar de Sol — servido directo desde backend/static/, sin depender de que
+    Vite copie el archivo a dist/assets/ (esa ruta nunca funcionó: emptyOutDir:true
+    lo borra en cada build y nada lo restauraba ahí)."""
+    if os.path.isfile(_SOL_AVATAR_PATH):
+        return FileResponse(_SOL_AVATAR_PATH, media_type="image/jpeg")
+    raise HTTPException(404, "Avatar no encontrado en backend/static/sol_avatar.jpg")
 
 # ── SPA fallback — rutas del React Router (ej. /dashboard, /osint) que no son archivos ni API ──
 _SPA_EXCLUDED_PREFIXES = ("api/", "docs", "openapi.json", "redoc", "ws", "assets/", "sol")
