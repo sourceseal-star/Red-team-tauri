@@ -9,7 +9,7 @@
 #    bash omni.sh start        — Levanta TODO el sistema de una vez
 #    bash omni.sh stop          — Detiene todo limpio
 #    bash omni.sh restart       — Stop + Start
-#    bash omni.sh status        — Estado de todos los servicios
+#    bash omni.sh status        — Estado de todos los servicios (incluye Sol API, daemon, watchdog, tools, SIL)
 #    bash omni.sh sync          — git pull + deps + build (SIN tocar .env)
 #    bash omni.sh sync-deps      — Solo instalar/actualizar dependencias
 #    bash omni.sh sync-frontend  — Solo rebuild del frontend
@@ -607,6 +607,10 @@ stop() {
   pkill -f "redteam/scripts/dashboard_server" 2>/dev/null && ok "Dashboard detenido" || true
   pkill -f "sol_daemon.py" 2>/dev/null && ok "Sol autónoma detenida" || true
   rm -f "$SOL_DIR/sol.pid" 2>/dev/null || true
+  pkill -f "sol_api.py" 2>/dev/null && ok "Sol API detenida" || true
+  pkill -f "sol_body.sh" 2>/dev/null && ok "Sol cuerpo detenido" || true
+  pkill -f "sol_watchdog.sh" 2>/dev/null && ok "Sol watchdog detenido" || true
+  rm -f "$SOL_DIR/body.pid" 2>/dev/null || true
 
   sleep 1
   echo ""
@@ -711,16 +715,70 @@ status_short() {
     fi
   fi
 
-  # Sol Autónoma
+  # Sol API (:8006) — cerebro + herramientas + SIL
+  if curl -s -m 2 http://127.0.0.1:8006/api/sol/state >/dev/null 2>&1; then
+    SOL_STATE=$(curl -s -m 2 http://127.0.0.1:8006/api/sol/state 2>/dev/null)
+    SOL_MEM=$(echo "$SOL_STATE" | grep -o '"memories":[0-9]*' | grep -o '[0-9]*' || echo "?")
+    ok "Sol API :8006 ☀️    🟢 ACTIVO ($SOL_MEM recuerdos)"
+  else
+    warn "Sol API :8006 ☀️    🟡 DETENIDA"
+  fi
+
+  # Sol Autónoma (daemon)
   if [ -f "$SOL_DIR/sol.pid" ]; then
     SOL_DAEMON_PID=$(cat "$SOL_DIR/sol.pid" 2>/dev/null)
     if [ -n "$SOL_DAEMON_PID" ] && kill -0 "$SOL_DAEMON_PID" 2>/dev/null; then
-      ok "Sol Autónoma ☀️    🟢 ACTIVA (PID $SOL_DAEMON_PID)"
+      ok "Sol Daemon ☀️     🟢 ACTIVA (PID $SOL_DAEMON_PID)"
     else
-      warn "Sol Autónoma ☀️    🟡 INACTIVA (PID stale)"
+      warn "Sol Daemon ☀️     🟡 INACTIVA (PID stale)"
     fi
   else
-    warn "Sol Autónoma ☀️    🟡 DETENIDA"
+    warn "Sol Daemon ☀️     🟡 DETENIDA"
+  fi
+
+  # Sol Watchdog
+  if pgrep -f "sol_watchdog.sh" >/dev/null 2>&1; then
+    ok "Sol Watchdog 🐕    🟢 VIGILANDO"
+  else
+    warn "Sol Watchdog 🐕    🟡 DETENIDO"
+  fi
+
+  # Sol Body (cuerpo persistente)
+  if [ -f "$SOL_DIR/body.pid" ]; then
+    BODY_PID=$(cat "$SOL_DIR/body.pid" 2>/dev/null)
+    if [ -n "$BODY_PID" ] && kill -0 "$BODY_PID" 2>/dev/null; then
+      ok "Sol Cuerpo ☀️     🟢 ACTIVO (PID $BODY_PID)"
+    else
+      warn "Sol Cuerpo ☀️     🟡 INACTIVO"
+    fi
+  else
+    info "Sol Cuerpo ☀️     ⚪ DESACTIVADO"
+  fi
+
+  # SIL (Inmersión Lingüística)
+  if [ -f "$ROOT/sol_learning_advanced.py" ]; then
+    if curl -s -m 2 http://127.0.0.1:8006/api/sil/stats >/dev/null 2>&1; then
+      SIL_STATS=$(curl -s -m 2 http://127.0.0.1:8006/api/sil/stats 2>/dev/null)
+      SIL_LEARNED=$(echo "$SIL_STATS" | grep -o '"learned_items":[0-9]*' | grep -o '[0-9]*' || echo "0")
+      SIL_DUE=$(echo "$SIL_STATS" | grep -o '"due_today":[0-9]*' | grep -o '[0-9]*' || echo "0")
+      ok "SIL 📚            🟢 ACTIVO ($SIL_LEARNED aprendidas, $SIL_DUE pendientes)"
+    else
+      info "SIL 📚            ⚪ API DETENIDA"
+    fi
+  else
+    warn "SIL 📚            🟡 NO INSTALADO"
+  fi
+
+  # Sol Tools (herramientas)
+  if [ -f "$ROOT/sol_tools.py" ]; then
+    if curl -s -m 2 http://127.0.0.1:8006/api/sol/tools >/dev/null 2>&1; then
+      TOOLS_COUNT=$(curl -s -m 2 http://127.0.0.1:8006/api/sol/tools 2>/dev/null | grep -o '"tools"' | head -1)
+      ok "Sol Tools 🔧      🟢 20 herramientas disponibles"
+    else
+      info "Sol Tools 🔧      ⚪ API DETENIDA"
+    fi
+  else
+    warn "Sol Tools 🔧      🟡 NO INSTALADO"
   fi
 
   # Watchdog
@@ -1006,6 +1064,11 @@ build_frontend() {
     [ -f "$ROOT/assets/sol_avatar.jpg" ] && cp "$ROOT/assets/sol_avatar.jpg" dist/ && ok "sol_avatar.jpg copiado a dist/"
     [ -f "$ROOT/backend/static/sol_avatar.png" ] && cp "$ROOT/backend/static/sol_avatar.png" dist/ && ok "sol_avatar.png copiado a dist/"
     [ -f "$ROOT/backend/static/sol.html" ] && cp "$ROOT/backend/static/sol.html" dist/ && ok "sol.html copiado a dist/"
+    # Verificar módulos de Sol
+    [ -f "$ROOT/sol_tools.py" ] && ok "sol_tools.py presente" || warn "sol_tools.py FALTA"
+    [ -f "$ROOT/sol_learning_advanced.py" ] && ok "sol_learning_advanced.py presente" || warn "sol_learning_advanced.py FALTA"
+    [ -f "$ROOT/sol_body.sh" ] && ok "sol_body.sh presente" || warn "sol_body.sh FALTA"
+    [ -f "$ROOT/sol_watchdog.sh" ] && ok "sol_watchdog.sh presente" || warn "sol_watchdog.sh FALTA"
   else
     fail "Frontend build falló"
     warn "El sistema puede funcionar con el build anterior si existe"
@@ -1162,9 +1225,17 @@ watchdog() {
 # ═══════════════════════════════════════════════════════════════════════
 start_sol_stack() {
   local root="$HOME/Red-team-tauri"
-  pgrep -f sol_api.py      >/dev/null || ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & )
+  # Sol API (:8006) — cerebro + herramientas + SIL
+  pgrep -f sol_api.py >/dev/null || ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & )
+  # Sol daemon — iniciativa + pensamiento idle
+  pgrep -f sol_daemon.py >/dev/null || ( cd "$root" && nohup python3 sol_daemon.py >>"$HOME/.sol/daemon.log" 2>&1 & echo $! > "$HOME/.sol/sol.pid" )
+  # Watchdog — revive procesos + blinda identidad
   pgrep -f sol_watchdog.sh >/dev/null || { chmod +x "$root/sol_watchdog.sh" 2>/dev/null; nohup bash "$root/sol_watchdog.sh" >>"$HOME/.sol/watchdog.log" 2>&1 & }
-  echo "[omni] ✅ stack de Sol vigilado"
+  # Verificar módulos de Sol
+  for mod in sol_tools.py sol_learning_advanced.py; do
+    [ -f "$root/$mod" ] || echo "[omni] ⚠️ Falta $mod — algunas funciones de Sol no estarán disponibles"
+  done
+  echo "[omni] ✅ stack de Sol activo (API + daemon + watchdog)"
 }
 
 # ═══════════════════════════════════════════════════════════════════════
