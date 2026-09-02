@@ -563,7 +563,10 @@ function speakBrowser(text) {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text.replace(/[☀️🧠💭✨⚠️]/g, ''));
     const voices = speechSynthesis.getVoices();
-    const esVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('es'));
+    // Preferir voz de calidad (Google/red) antes que la primera voz local que aparezca
+    const esVoice = voices.find(v => /es/i.test(v.lang||'') && /google/i.test(v.name||''))
+      || voices.find(v => /es/i.test(v.lang||'') && !/compact|local/i.test(v.name||''))
+      || voices.find(v => /es/i.test(v.lang||''));
     if (esVoice) u.voice = esVoice;
     u.lang = 'es-ES';
     // Tono según ánimo real (-2..2): más cálido y alto si feliz, más suave y bajo si triste

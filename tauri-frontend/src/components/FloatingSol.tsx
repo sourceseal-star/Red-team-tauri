@@ -109,7 +109,10 @@ export const FloatingSol = () => {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text.replace(/[☀️🧠💭✨⚠️]/g, ''));
       const voices = window.speechSynthesis.getVoices();
-      const esVoice = voices.find(v => v.lang?.toLowerCase().startsWith('es'));
+      // Preferir voz de calidad (Google/red) antes que la primera voz local que aparezca
+      const esVoice = voices.find(v => /es/i.test(v.lang || '') && /google/i.test(v.name || ''))
+        || voices.find(v => /es/i.test(v.lang || '') && !/compact|local/i.test(v.name || ''))
+        || voices.find(v => /es/i.test(v.lang || ''));
       if (esVoice) u.voice = esVoice;
       u.lang = 'es-ES';
       u.pitch = 1.0 + mood * 0.06;
@@ -125,6 +128,15 @@ export const FloatingSol = () => {
       if (next && 'speechSynthesis' in window) window.speechSynthesis.getVoices();
       return next;
     });
+  }, []);
+
+  // Precargar lista de voces (en Android tarda en poblarse tras cargar la página)
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.getVoices();
+    const onVoices = () => window.speechSynthesis.getVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', onVoices);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', onVoices);
   }, []);
 
   // ── Efecto máquina de escribir ──
@@ -262,6 +274,10 @@ export const FloatingSol = () => {
         @keyframes solScan {
           0% { transform: translateY(-100%); }
           100% { transform: translateY(100vh); }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
 
