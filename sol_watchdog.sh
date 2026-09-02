@@ -1,5 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/env bash
-# sol_watchdog.sh v2 — revive procesos Y blinda la identidad de Sol.
+# sol_watchdog.sh v3 — revive procesos Y blinda la identidad de Sol.
+# v3: vigila backend/static/sol.html (fuente) en vez de dist/ (generado).
 set -u
 ROOT="${SOL_ROOT:-$HOME/Red-team-tauri}"
 SOL_HOME="$HOME/.sol"
@@ -11,10 +12,9 @@ touch "$LOG"
   export "$k=${v%\"}"
 done < "$ROOT/.env"
 
-SOL_HTML="$ROOT/tauri-frontend/dist/sol.html"
+SOL_HTML="$ROOT/backend/static/sol.html"
 BAK="$SOL_HOME/sol_canonical.html"
 HASHF="$SOL_HOME/.sol_html_hash"
-AVATAR="$ROOT/tauri-frontend/dist/sol_avatar.png"
 MEM="$SOL_HOME/memory.jsonl"
 FLAG="$SOL_HOME/.mem_alert"
 
@@ -46,20 +46,11 @@ check_identity(){
   if [ -z "$saved" ]; then
     echo "$cur" > "$HASHF"
     cp "$SOL_HTML" "$BAK"
-    log "📸 hash canónico guardado"
+    log "📸 hash canónico guardado (nueva versión)"
   elif [ "$cur" != "$saved" ]; then
     log "⚠️ sol.html modificado → restauro"
     [ -f "$BAK" ] && cp "$BAK" "$SOL_HTML"
     tg "sol.html fue modificado sin autorización. Restaurado."
-  fi
-  grep -q "sol_avatar.png" "$SOL_HTML" || sed -i 's|https://media.base44.com/[^"]*|sol_avatar.png|g' "$SOL_HTML"
-  if [ ! -s "$AVATAR" ]; then
-    if [ -s "$SOL_HOME/sol_avatar.png" ]; then
-      cp "$SOL_HOME/sol_avatar.png" "$AVATAR"
-      log "✅ avatar dist restaurado desde backup"
-    else
-      log "⚠️ avatar faltante; descárgalo desde la fuente original y colócalo en $AVATAR"
-    fi
   fi
 }
 
@@ -68,7 +59,7 @@ check_mem(){ [ -f "$MEM" ] && { rm -f "$FLAG"; return; }
   [ -f "$FLAG" ] || { tg "memoria de Sol perdida. Revisa YA."; touch "$FLAG"; }
 }
 
-log "▶️ watchdog v2 iniciado"
+log "▶️ watchdog v3 iniciado (vigilando backend/static/sol.html)"
 while true; do
   check_api
   check_daemon
