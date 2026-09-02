@@ -1044,37 +1044,84 @@ install_node_deps() {
 # ═══════════════════════════════════════════════════════════════════════
 build_frontend() {
   if [ ! -d "$ROOT/tauri-frontend" ]; then
-    warn "tauri-frontend no encontrado — saltando build"
-    return
+    fail "tauri-frontend no encontrado — no se puede construir el frontend"
+    return 1
   fi
 
   cd "$ROOT/tauri-frontend"
 
   # Instalar deps si node_modules no existe
   if [ ! -d "node_modules" ]; then
-    info "node_modules no existe — npm install..."
-    npm install --silent 2>>"$LOG_DIR/sync.log" || warn "npm install falló"
+    info "node_modules no existe — npm install (puede tardar)..."
+    if ! npm install 2>&1 | tee -a "$LOG_DIR/sync.log"; then
+      fail "npm install falló — revisa $LOG_DIR/sync.log"
+      cd "$ROOT"
+      return 1
+    fi
   fi
 
-  info "npm run build..."
-  if npm run build 2>>"$LOG_DIR/sync.log"; then
-    ok "Frontend compilado"
-
-    # Copiar assets post-build (npm limpia dist/)
-    [ -f "$ROOT/assets/sol_avatar.jpg" ] && cp "$ROOT/assets/sol_avatar.jpg" dist/ && ok "sol_avatar.jpg copiado a dist/"
-    [ -f "$ROOT/backend/static/sol_avatar.png" ] && cp "$ROOT/backend/static/sol_avatar.png" dist/ && ok "sol_avatar.png copiado a dist/"
-    [ -f "$ROOT/backend/static/sol.html" ] && cp "$ROOT/backend/static/sol.html" dist/ && ok "sol.html copiado a dist/"
-    # Verificar módulos de Sol
-    [ -f "$ROOT/sol_tools.py" ] && ok "sol_tools.py presente" || warn "sol_tools.py FALTA"
-    [ -f "$ROOT/sol_learning_advanced.py" ] && ok "sol_learning_advanced.py presente" || warn "sol_learning_advanced.py FALTA"
-    [ -f "$ROOT/sol_body.sh" ] && ok "sol_body.sh presente" || warn "sol_body.sh FALTA"
-    [ -f "$ROOT/sol_watchdog.sh" ] && ok "sol_watchdog.sh presente" || warn "sol_watchdog.sh FALTA"
-  else
-    fail "Frontend build falló"
-    warn "El sistema puede funcionar con el build anterior si existe"
+  info "Verificando que el codigo fuente tiene el avatar y microfono..."
+  if ! grep -q "SpeechRecognition" src/components/FloatingSol.tsx 2>/dev/null; then
+    warn "FloatingSol.tsx no tiene SpeechRecognition — codigo fuente posiblemente viejo"
+    warn "Verifica que git pull trajo los cambios. Continuando de todas formas..."
   fi
 
+  info "npm run build (mostrando errores completos)..."
+  BUILD_LOG="$LOG_DIR/frontend_build_$(date +%s).log"
+  BUILD_EXIT=0
+  npm run build 2>&1 | tee "$BUILD_LOG" || BUILD_EXIT=$?
+
+  if [ "$BUILD_EXIT" -eq 137 ] || [ "$BUILD_EXIT" -eq 134 ]; then
+    fail "Build murio por FALTA DE MEMORIA (codigo $BUILD_EXIT)"
+    info "Intentando build de baja memoria (NODE_OPTIONS=--max-old-space-size=256)..."
+    BUILD_EXIT=0
+    NODE_OPTIONS="--max-old-space-size=256" npm run build 2>&1 | tee "$BUILD_LOG" || BUILD_EXIT=$?
+  fi
+
+  if [ "$BUILD_EXIT" -ne 0 ]; then
+    fail "npm run build fallo (codigo $BUILD_EXIT)"
+    fail "Log completo: $BUILD_LOG"
+    fail "NO se va a usar un build viejo — Sol no va a funcionar con el"
+    fail "Si esto sigue pasando, cierra otras apps en el telefono y reintenta"
+    cd "$ROOT"
+    return 1
+  fi
+
+  ok "Frontend compilado"
+
+  # Verificar que el build NUEVO tiene el codigo del microfono
+  info "Verificando que el build tiene el microfono y avatar..."
+  local VERIFY_OK=1
+  for marker in "Hablar con Sol" "SpeechRecognition" "sol_avatar"; do
+    if grep -rl -- "$marker" dist/assets/*.js >/dev/null 2>&1; then
+      ok "Build contiene: $marker"
+    else
+      fail "Build NO contiene: $marker"
+      VERIFY_OK=0
+    fi
+  done
+
+  if [ "$VERIFY_OK" -ne 1 ]; then
+    fail "El build se genero pero NO contiene el codigo de Sol (microfono/avatar)"
+    fail "Probablemente el codigo fuente no se actualizo. Revisa: git log -1 --oneline"
+    cd "$ROOT"
+    return 1
+  fi
+
+  # Copiar assets post-build (npm limpia dist/)
+  [ -f "$ROOT/assets/sol_avatar.jpg" ] && cp "$ROOT/assets/sol_avatar.jpg" dist/ && ok "sol_avatar.jpg copiado a dist/"
+  [ -f "$ROOT/backend/static/sol_avatar.png" ] && cp "$ROOT/backend/static/sol_avatar.png" dist/ && ok "sol_avatar.png copiado a dist/"
+  [ -f "$ROOT/backend/static/sol.html" ] && cp "$ROOT/backend/static/sol.html" dist/ && ok "sol.html copiado a dist/"
+
+  # Verificar modulos de Sol
+  [ -f "$ROOT/sol_tools.py" ] && ok "sol_tools.py presente" || warn "sol_tools.py FALTA"
+  [ -f "$ROOT/sol_learning_advanced.py" ] && ok "sol_learning_advanced.py presente" || warn "sol_learning_advanced.py FALTA"
+  [ -f "$ROOT/sol_body.sh" ] && ok "sol_body.sh presente" || warn "sol_body.sh FALTA"
+  [ -f "$ROOT/sol_watchdog.sh" ] && ok "sol_watchdog.sh presente" || warn "sol_watchdog.sh FALTA"
+
+  ok "Build verificado: avatar holografico + microfono + voz + SIL listos"
   cd "$ROOT"
+  return 0
 }
 
 sync_frontend() {
