@@ -4062,7 +4062,10 @@ async def health():
 @app.get("/")
 async def root():
     index = DIST / "index.html"
-    if index.exists(): return FileResponse(index)
+    # no-store: el index.html de la SPA NUNCA debe quedar cacheado en el navegador
+    # del telefono. Los assets bajo /assets/ SI tienen hash en el nombre (Vite),
+    # esos si pueden cachear para siempre sin riesgo.
+    if index.exists(): return FileResponse(index, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"})
     return {
         "status": "ok", "backend": "red-team-tauri-unified", "version": "3.0-unified",
         "dist_built": False,
@@ -8133,12 +8136,14 @@ if DIST.exists() and DIST.is_dir():
 
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
+        # index.html: SIEMPRE no-cache (referencia los bundles con hash actuales)
         if not full_path:
             index = DIST / "index.html"
-            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
+            return FileResponse(index, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
         if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/", "leviathan/")):
             return JSONResponse({"error": "not found"}, status_code=404)
         if full_path.startswith("assets/"):
+            # /assets/*: nombres con hash de contenido (Vite) -> cachear fuerte es seguro
             candidate = DIST / full_path
             if candidate.exists() and candidate.is_file():
                 return FileResponse(candidate)
@@ -8146,8 +8151,9 @@ if DIST.exists() and DIST.is_dir():
         candidate = DIST / full_path
         if candidate.exists() and candidate.is_file():
             return FileResponse(candidate)
+        # Fallback SPA (rutas de React Router) -> también index.html, también no-cache
         index = DIST / "index.html"
-        return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
+        return FileResponse(index, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
 else:
     @app.get("/{full_path:path}")
     async def no_dist_fallback(full_path: str):
