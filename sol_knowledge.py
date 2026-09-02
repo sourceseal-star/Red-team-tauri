@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""sol_knowledge.py — Conocimiento de Red-team-tauri y Commander en chino.
+"""sol_knowledge.py — Conocimiento de los 3 repositorios de Harold, en chino.
 
-Extrae conocimiento de los repositorios de Harold y lo traduce al chino
-simplificado con pinyin. Usa Groq (si GROQ_API_KEY está configurada)
+Extrae conocimiento de los 3 repositorios reales de Harold y lo traduce
+al chino simplificado con pinyin. Usa Groq (si GROQ_API_KEY está configurada)
 para traducción + pinyin en una sola llamada. Sin dependencias externas.
 
+Los 3 repositorios (independientes, cada uno con su propio codigo):
+  1. redteam    → sourceseal-star/Red-team-tauri (dashboard, COM-LINK, War Room)
+  2. commander  → sourceseal-star/commander (COMMANDER v3.4.1, suite táctica
+                  STANDALONE — no confundir con el subdirectorio commander/
+                  que vive dentro de Red-team-tauri, es un repo aparte)
+  3. sol        → sourceseal-star/sol (el cerebro y cuerpo de Sol misma)
+
 Endpoints:
-  - build_knowledge_base(): extrae y traduce conocimiento de los repos
+  - build_knowledge_base(): extrae y traduce conocimiento de los 3 repos
   - search_knowledge(q): busca en la base de conocimiento
   - explain_topic(topic): explica un tema en chino con pinyin
   - get_knowledge_summary(): resumen del conocimiento disponible
@@ -31,7 +38,8 @@ KNOWLEDGE_DIR = SOL_HOME / "knowledge"
 KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
 
 REDTEAM_PATH = Path.home() / "Red-team-tauri"
-COMMANDER_PATH = Path.home() / "commander"
+COMMANDER_PATH = Path.home() / "commander"  # repo STANDALONE, no subdirectorio
+SOL_PATH = Path.home() / "sol"
 
 GROQ_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -41,8 +49,30 @@ GROQ_MODEL_CHINESE = "qwen/qwen3.8-27b"  # Especialista en chino + pinyin
 GITHUB_TOKEN = os.environ.get("GITHUB_ACCESS_TOKEN", "")
 GITHUB_REPOS = {
     "redteam": "sourceseal-star/Red-team-tauri",
-    "commander": "sourceseal-star/Red-team-tauri",  # commander es subdirectorio
+    "commander": "sourceseal-star/commander",  # repo standalone real, NO subdirectorio
     "sol": "sourceseal-star/sol",
+}
+
+# Archivos clave por repo — cada repo tiene su propia estructura real
+KEY_FILES_BY_REPO = {
+    "redteam": [
+        "README.md", "MANUAL_OPERACIONES.md", "MANUAL_DESPLIEGUE.md",
+        "GESTION_SECRETOS.md", "SISTEMA_CREDENCIALES.md", "GUIA_ARRANQUE.md",
+        ".env.example", "iniciar_unificado.sh", "omni.sh",
+        "sol_core.py", "sol_api.py", "sol_tools.py",
+    ],
+    "commander": [
+        "README.md", "MANUAL_UNIFICADO.md", "replit.md",
+        "commander.py", "commander_server.py", "ai_orchestrator.py",
+        "integration_config.py", "sourceseal_tactical.py",
+        "seal_ia_knowledge.py", "requirements.txt",
+    ],
+    "sol": [
+        "README.md", "LEEME_PRIMERO.md",
+        "sol_core.py", "sol_api.py", "sol_tools.py",
+        "sol_knowledge.py", "sol_repo_tools.py", "sil_advanced.py",
+        "sol_security.py",
+    ],
 }
 
 # ============================================================
@@ -140,63 +170,69 @@ def extract_text_from_repo_local(repo_path):
 
 
 def extract_text_from_repo_github(repo_name):
-    """Extrae texto de un repo via GitHub API."""
+    """Extrae texto de un repo via GitHub API. Usa los archivos clave
+    reales de CADA repo (son 3 codebases distintas, no una)."""
     gh_repo = GITHUB_REPOS.get(repo_name)
     if not gh_repo:
         return {}
 
     sources = {}
-    # Archivos clave a descargar
-    key_files = [
-        "README.md", "MANUAL_OPERACIONES.md", "MANUAL_DESPLIEGUE.md",
-        "GESTION_SECRETOS.md", "SISTEMA_CREDENCIALES.md", "GUIA_ARRANQUE.md",
-        ".env.example", "iniciar_unificado.sh",
-        "commander/README.md", "commander/MANUAL_UNIFICADO.md",
-        "redteam/README.md",
-    ]
+    key_files = KEY_FILES_BY_REPO.get(repo_name, ["README.md"])
 
     for path in key_files:
-        content = _api_get_file(gh_repo, path)
-        if content:
+        text = _api_get_file(gh_repo, path)
+        if text:
             key = path.replace("/", "_").replace(".", "_").replace("-", "_")
-            sources[key] = content[:3000]
+            sources[key] = text[:6000]  # más contexto por archivo
 
     # Listar raíz para estructura
     items = _api_list_dir(gh_repo)
     if items:
         structure = []
-        for name, ftype, fpath in items[:50]:
+        for name, ftype, fpath in items[:60]:
             icon = "DIR " if ftype == "dir" else "FILE"
             structure.append(f"{icon} {name}")
         sources["structure"] = "\n".join(structure)
+
+        # Bajar un nivel en subdirectorios de código relevantes para más
+        # profundidad real (no solo la raíz)
+        code_dirs = [name for name, ftype, _ in items
+                     if ftype == "dir" and name not in (".git", "node_modules", "__pycache__", "venv", ".agents")]
+        for dname in code_dirs[:5]:
+            subitems = _api_list_dir(gh_repo, dname)
+            if subitems:
+                sub_structure = [f"{'DIR ' if t=='dir' else 'FILE'} {dname}/{n}" for n, t, _ in subitems[:20]]
+                sources[f"structure_{dname}"] = "\n".join(sub_structure)
 
     return sources
 
 
 def extract_all_knowledge():
-    """Extrae conocimiento de ambos repositorios (local o GitHub API)."""
+    """Extrae conocimiento de los 3 repositorios REALES (local si están
+    clonados, si no via GitHub API). Cada repo es su propia fuente —
+    ya no se confunde el subdirectorio commander/ de Red-team-tauri con
+    el repo standalone sourceseal-star/commander."""
     knowledge = {}
 
-    # Red-team-tauri
+    # 1. Red-team-tauri (dashboard, COM-LINK, War Room, frontend)
     if REDTEAM_PATH.exists():
         knowledge["redteam"] = extract_text_from_repo_local(REDTEAM_PATH)
     else:
         knowledge["redteam"] = extract_text_from_repo_github("redteam")
 
-    # Commander (subdirectorio de Red-team-tauri)
-    cmd_path = REDTEAM_PATH / "commander"
-    if cmd_path.exists():
-        knowledge["commander"] = extract_text_from_repo_local(cmd_path)
+    # 2. Commander — repo STANDALONE (sourceseal-star/commander), no el
+    #    subdirectorio dentro de Red-team-tauri
+    if COMMANDER_PATH.exists():
+        knowledge["commander"] = extract_text_from_repo_local(COMMANDER_PATH)
     else:
-        # Extraer commander files via GitHub
-        sources = {}
-        for path in ["commander/README.md", "commander/MANUAL_UNIFICADO.md", "commander/commander.py"]:
-            content = _api_get_file(GITHUB_REPOS["redteam"], path)
-            if content:
-                key = path.replace("/", "_").replace(".", "_")
-                sources[key] = content[:3000]
-        if sources:
-            knowledge["commander"] = sources
+        knowledge["commander"] = extract_text_from_repo_github("commander")
+
+    # 3. Sol — el propio repo de Sol (su cerebro y cuerpo). Antes nunca
+    #    se leía, así que Sol no sabía nada de sí misma.
+    if SOL_PATH.exists():
+        knowledge["sol"] = extract_text_from_repo_local(SOL_PATH)
+    else:
+        knowledge["sol"] = extract_text_from_repo_github("sol")
 
     return knowledge
 
@@ -358,9 +394,22 @@ PREBUILT_KNOWLEDGE = {
     },
     "commander": {
         "modules": [
-            {"name": "Commander Server", "desc": "Servidor FastAPI del centro de mando. Expone endpoints REST para todas las operaciones.", "keywords": ["commander", "server", "fastapi", "api"]},
+            {"name": "Commander Server", "desc": "Servidor FastAPI del centro de mando standalone (sourceseal-star/commander). Expone endpoints REST para todas las operaciones tácticas.", "keywords": ["commander", "server", "fastapi", "api"]},
             {"name": "AI Orchestrator", "desc": "Orquestador con IA. Coordina módulos, toma decisiones automatizadas y aprende patrones.", "keywords": ["orchestrator", "ia", "ai", "coordinar"]},
             {"name": "Integration Config", "desc": "Configuración de integraciones. Telegram, SMTP, APIs externas, webhooks.", "keywords": ["integration", "config", "telegram", "smtp"]},
+            {"name": "SourceSeal Tactical", "desc": "Módulo táctico de SourceSeal. Blockchain anchoring, Fernet encryption, checkpoints atómicos por fase.", "keywords": ["sourceseal", "tactical", "blockchain", "fernet"]},
+            {"name": "SEAL IA Knowledge", "desc": "Base de conocimiento de IA para el sello SEAL. Usado por Commander para decisiones asistidas.", "keywords": ["seal", "ia", "knowledge", "conocimiento"]},
+        ],
+    },
+    "sol": {
+        "modules": [
+            {"name": "sol_core", "desc": "El cerebro de Sol. Memoria, personalidad, pensamiento e integridad emocional.", "keywords": ["sol_core", "cerebro", "memoria", "personalidad"]},
+            {"name": "sol_api", "desc": "Servidor FastAPI de Sol. Funciona en Termux (:8006) o Replit, independiente de React.", "keywords": ["sol_api", "servidor", "fastapi", "replit", "termux"]},
+            {"name": "sol_tools", "desc": "Herramientas que Sol puede ejecutar: buscar, calcular, consultar servicios locales.", "keywords": ["sol_tools", "herramientas", "tools"]},
+            {"name": "sol_knowledge", "desc": "Módulo de conocimiento de Sol. Extrae y traduce contenido de los 3 repos al chino.", "keywords": ["sol_knowledge", "conocimiento", "chino", "traduccion"]},
+            {"name": "sol_repo_tools", "desc": "Gestión de los 3 repositorios de Harold: sol, Red-team-tauri, commander. Status, pull, leer archivos, commits.", "keywords": ["sol_repo_tools", "repos", "github", "pull", "commit"]},
+            {"name": "sil_advanced", "desc": "Sistema de Inmersión Lingüística avanzado. HSK 3-5, modismos, gramática, vocabulario profesional y de ciberseguridad.", "keywords": ["sil", "inmersion", "hsk", "chino", "lecciones"]},
+            {"name": "sol_security", "desc": "Controlador de modo protegido/libre. SOL_API_KEY protege endpoints sensibles (pull, commit, run, toggle).", "keywords": ["sol_security", "seguridad", "api_key", "proteccion"]},
         ],
     },
 }
@@ -397,7 +446,7 @@ def build_knowledge_base(use_groq=True):
                             "context": f"{repo_name}/{section}",
                         }
                     processed.append(item)
-                    if len(processed) >= 30:  # Limitar para no agotar API
+                    if len(processed) >= 50:  # Limitar para no agotar API
                         break
             knowledge[repo_name][section] = processed
 
@@ -541,7 +590,7 @@ def get_knowledge_summary():
             summary["_prebuilt"] = {
                 "sections": len(sections),
                 "items": total,
-                "note": "Conocimiento preconstruido de Red-team-tauri y Commander"
+                "note": "Conocimiento preconstruido de Red-team-tauri, Commander y Sol"
             }
         else:
             total = sum(len(items) for items in sections.values())
@@ -565,7 +614,7 @@ def list_topics():
 
 
 def status():
-    """Estado del módulo de conocimiento."""
+    """Estado del módulo de conocimiento — de los 3 repos reales."""
     knowledge_file = KNOWLEDGE_DIR / "knowledge_full.json"
     return {
         "groq_available": bool(GROQ_KEY),
@@ -576,5 +625,7 @@ def status():
         "knowledge_path": str(knowledge_file),
         "prebuilt_topics": len(list_topics()),
         "redteam_local": REDTEAM_PATH.exists(),
-        "commander_local": (REDTEAM_PATH / "commander").exists(),
+        "commander_local": COMMANDER_PATH.exists(),
+        "sol_local": SOL_PATH.exists(),
+        "repos_tracked": list(GITHUB_REPOS.keys()),
     }
