@@ -232,3 +232,44 @@ falta algún id.
 2. Abrí el menú (☰) → tocá Seguridad, Repos, SIL+ — ahora deberían mostrar contenido.
 3. Si Memoria/Tools siguen vacíos, correr los comandos de diagnóstico de arriba
    y pegar el resultado en la próxima sesión — con eso se arregla en un tiro.
+
+## Sesión 2026-09-02 — Fix: conflicto de Telegram entre Sol y C2
+
+Harold reportó que el bot de Telegram @sol_amg_bot respondía "Comando no
+reconocido: hola" en vez de conversar como Sol.
+
+**Causa raíz:** `c2_unified_pro.py` Y `sol_telegram_bridge.py` (o
+`sol_telegram_bot.py`) leían las MISMAS variables `TELEGRAM_BOT_TOKEN` /
+`TELEGRAM_CHAT_ID`. `omni.sh` arranca ambos procesos, y ambos hacen
+`getUpdates` sobre el MISMO bot — compiten por los mismos mensajes. El
+poller de C2 (que solo entiende comandos `/slash`) le ganaba la carrera a
+Sol y respondía con su fallback de "comando no reconocido" a texto normal.
+
+**Fix aplicado:** `c2_unified_pro.py` ahora lee `C2_TELEGRAM_BOT_TOKEN` /
+`C2_TELEGRAM_CHAT_ID` (variables NUEVAS y PROPIAS, no las de Sol). Como
+estas no existen en `.env` todavía, C2 simplemente queda con Telegram
+desactivado ("C2_TELEGRAM_BOT_TOKEN no configurado — Telegram C2
+desactivado") y @sol_amg_bot queda 100% libre para que Sol conteste.
+
+**No se tocó `.env`** — el cambio es solo de qué nombre de variable lee el
+código. Si en el futuro Harold quiere que C2 también esté en Telegram (con
+SU PROPIO bot, no el de Sol), hay que:
+1. Crear un bot nuevo con @BotFather (ej. @sourceseal_c2_bot)
+2. Agregar a `.env`: `C2_TELEGRAM_BOT_TOKEN=...` y `C2_TELEGRAM_CHAT_ID=...`
+3. `bash omni.sh restart`
+
+**Pendiente (fuera de alcance de esta sesión, decisión de Harold):**
+Unificar el acceso a "Sol" desde el War Room (localhost:8001) para que use
+el sistema de expresiones REAL del repo `sol` (11 frames: idle, talk,
+talk_half, blink, happy, thinking, study, smile, listening, curious) en
+vez de la copia simplificada que vive en `backend/static/sol.html` /
+`tauri-frontend/public/sol.html` (solo 2 frames: boca abierta/cerrada).
+Opciones a evaluar en una próxima sesión:
+  (a) Reemplazar backend/static/sol.html con una copia sincronizada del
+      repo `sol` (requiere copiar también los 11 PNG/JPG y las rutas API
+      correspondientes en sol_api.py de este repo).
+  (b) Hacer que el War Room embeba vía iframe la app real desplegada en
+      Replit (sol--supermancareman.replit.app) en vez de servir su propia
+      copia — más simple pero depende de que ese Replit esté siempre "up".
+Harold pidió explícitamente dejar esto pendiente por ahora y priorizar
+los bugs concretos (frames/tools/sync), que ya quedaron resueltos.
