@@ -1,486 +1,419 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Sol · Cuerpo y Herramientas</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #0a0e17;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      overflow: hidden;
-    }
-    .container {
-      position: relative;
-      width: 100%;
-      max-width: 480px;
-      height: 100vh;
-      max-height: 950px;
-      display: flex;
-      flex-direction: column;
-      background: radial-gradient(ellipse at center, #0f1a2a 0%, #06090e 100%);
-      border-radius: 24px;
-      overflow: hidden;
-      box-shadow: 0 0 60px rgba(245, 158, 11, 0.08);
-    }
-    .stars { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:0; }
-    .star { position: absolute; background: #fbbf24; border-radius:50%; opacity:0; animation: twinkle 4s infinite ease-in-out; }
-    @keyframes twinkle { 0%,100%{opacity:0;transform:scale(0.6)} 50%{opacity:0.8;transform:scale(1.2)} }
-    .glow-ring { position: absolute; border-radius:50%; border:1px solid rgba(245,158,11,0.1); animation:spin 30s linear infinite; pointer-events:none; z-index:1; }
-    .glow-ring:nth-child(1){width:300px;height:300px}
-    .glow-ring:nth-child(2){width:400px;height:400px;animation-duration:45s;animation-direction:reverse}
-    .glow-ring:nth-child(3){width:500px;height:500px;animation-duration:60s}
-    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-    .tools-header {
-      position: relative; z-index: 2; padding: 12px 16px;
-      background: rgba(0,0,0,0.4); backdrop-filter: blur(8px);
-      border-bottom: 1px solid rgba(245,158,11,0.1);
-      display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
-    }
-    .tools-header h3 { color: #fbbf24; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 2px; font-weight: 300; }
-    .tools-header .status { color: #94a3b8; font-size: 0.7rem; display: flex; align-items: center; gap: 6px; }
-    .tools-header .status .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .tools-header .status .dot.on { background: #4ade80; box-shadow: 0 0 8px rgba(74,222,128,0.5); }
-    .tools-header .status .dot.off { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.3); }
-    #faceCanvas {
-      position: relative; z-index: 2; width: 240px; height: 240px; border-radius: 50%;
-      margin: 10px auto 0; cursor: pointer;
-      box-shadow: 0 0 40px rgba(245,158,11,0.12), inset 0 0 40px rgba(245,158,11,0.04); flex-shrink: 0;
-    }
-    .mood-badge { text-align: center; color: #fbbf24; font-size: 0.7rem; letter-spacing: 1px; text-transform: uppercase; opacity: 0.7; margin-top: -6px; z-index: 3; position: relative; }
-    .thought-bubble {
-      position: relative; z-index: 3; text-align: center; color: #94a3b8; font-size: 0.8rem; font-style: italic;
-      padding: 6px 16px; margin: 4px auto 0; background: rgba(0,0,0,0.3); border-radius: 20px;
-      border: 1px solid rgba(245,158,11,0.05); max-width: 80%; opacity: 0; transition: opacity 0.5s ease; min-height: 28px;
-    }
-    .thought-bubble.active { opacity: 1; }
-    .tools-panel {
-      position: relative; z-index: 2; background: rgba(0,0,0,0.3); backdrop-filter: blur(8px);
-      border-top: 1px solid rgba(245,158,11,0.08); padding: 8px 12px; flex: 1; overflow-y: auto; min-height: 0;
-      display: flex; flex-direction: column;
-    }
-    .tools-panel .tool-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 6px; }
-    .tool-btn {
-      background: rgba(255,255,255,0.04); border: 1px solid rgba(245,158,11,0.08); border-radius: 8px;
-      padding: 6px 4px; color: #94a3b8; font-size: 0.6rem; cursor: pointer; transition: all 0.2s;
-      text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px;
-    }
-    .tool-btn:hover { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.3); color: #fbbf24; transform: translateY(-2px); }
-    .tool-btn .icon { font-size: 1.2rem; }
-    .tool-btn .label { font-size: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; }
-    .tool-output {
-      background: rgba(0,0,0,0.4); border-radius: 8px; padding: 8px 10px; font-size: 0.65rem; font-family: monospace;
-      color: #94a3b8; min-height: 40px; max-height: 80px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
-      border: 1px solid rgba(245,158,11,0.05); flex-shrink: 0;
-    }
-    .tool-output .success { color: #4ade80; }
-    .tool-output .error { color: #ef4444; }
-    .chat-input {
-      display: flex; gap: 8px; padding: 6px 12px 10px; background: rgba(0,0,0,0.3); backdrop-filter: blur(8px);
-      border-top: 1px solid rgba(245,158,11,0.05); flex-shrink: 0; z-index: 2; position: relative;
-    }
-    .chat-input input {
-      flex: 1; background: rgba(255,255,255,0.04); border: 1px solid rgba(245,158,11,0.08); border-radius: 50px;
-      padding: 8px 16px; color: #e2e8f0; font-size: 0.85rem; outline: none;
-    }
-    .chat-input input::placeholder { color: #64748b; font-style: italic; }
-    .chat-input input:focus { border-color: rgba(245,158,11,0.25); }
-    .chat-input button {
-      background: #f59e0b; border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 1rem;
-      cursor: pointer; color: #0a0e17; flex-shrink: 0; transition: 0.2s;
-    }
-    .chat-input button:hover { background: #fbbf24; transform: scale(1.05); }
-    .chat-input button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-    @media (max-width: 480px) {
-      .container { border-radius: 0; max-height: none; height: 100vh; }
-      #faceCanvas { width: 180px; height: 180px; }
-      .tool-btn { padding: 4px 2px; }
-      .tool-btn .icon { font-size: 1rem; }
-    }
-    @media (max-width: 380px) {
-      #faceCanvas { width: 140px; height: 140px; }
-      .tools-panel .tool-grid { grid-template-columns: repeat(3, 1fr); }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>SOL ☀️ — Tu guardian holográfica</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body {
+  background:#0a0e0f; color:#e8e0d8; font-family:'Segoe UI',system-ui,sans-serif;
+  height:100vh; overflow:hidden; display:flex; flex-direction:column;
+}
+
+/* ═══ TOPBAR ═══ */
+#topbar {
+  display:flex; align-items:center; gap:10px; padding:10px 14px;
+  background:rgba(15,20,22,0.9); border-bottom:1px solid rgba(255,183,77,0.15);
+  z-index:10; flex-shrink:0;
+}
+#topbar .dot { width:8px; height:8px; border-radius:50%; background:#ffb74a; box-shadow:0 0 8px #ffb74a; }
+#topbar h1 { font-size:1.1rem; font-weight:600; color:#ffb74a; }
+#topbar .spacer { flex:1; }
+#topbar button {
+  background:rgba(255,183,77,0.08); border:1px solid rgba(255,183,77,0.2); color:#e8e0d8;
+  padding:6px 12px; border-radius:8px; cursor:pointer; font-size:0.8rem; font-family:inherit;
+}
+#topbar button:active { background:rgba(255,183,77,0.18); }
+
+/* ═══ MAIN ═══ */
+#main { flex:1; display:flex; overflow:hidden; position:relative; }
+
+/* ═══ HOLOGRAMA ═══ */
+#holo {
+  flex:1; display:flex; align-items:center; justify-content:center;
+  position:relative; min-width:280px; overflow:hidden;
+}
+#holoCore {
+  position:relative; width:min(340px,70vw); height:min(340px,70vw);
+  display:flex; align-items:center; justify-content:center;
+  animation:solFloat 6s ease-in-out infinite;
+}
+#avatarFrame {
+  position:relative; width:60%; height:60%; border-radius:50%;
+  overflow:hidden; box-shadow:0 0 30px rgba(255,183,77,0.25), inset 0 0 20px rgba(255,183,77,0.1);
+  animation:solBreathe 4s ease-in-out infinite;
+}
+#avatarFrame img {
+  width:100%; height:100%; object-fit:cover; display:block;
+}
+/* Anillos orbitales */
+.ring {
+  position:absolute; border-radius:50%; border:1px solid rgba(255,183,77,0.2);
+  pointer-events:none; animation:spin linear infinite;
+}
+.ring1 { width:75%; height:75%; animation-duration:8s; }
+.ring2 { width:90%; height:90%; animation-duration:14s; border-style:dashed; border-color:rgba(255,183,77,0.1); }
+.ring3 { width:100%; height:100%; animation-duration:20s; border-color:rgba(255,183,77,0.06); }
+/* Scan sweep */
+#scanSweep {
+  position:absolute; left:-20%; right:-20%; height:50%; top:-25%;
+  background:linear-gradient(180deg,transparent,rgba(255,220,150,0.15),transparent);
+  animation:solScanSweep 7s linear infinite; mix-blend-mode:screen; pointer-events:none; z-index:5;
+}
+/* Párpados — sobre ojos reales (46%/54% x, 21% y) */
+.eyelid {
+  position:absolute; width:11%; height:6%; border-radius:50%;
+  background:radial-gradient(ellipse,rgba(35,22,14,0.92),rgba(35,22,14,0.5) 70%,transparent);
+  transform:translate(-50%,-50%) scaleY(0.05); transform-origin:center;
+  opacity:0; transition:transform 0.08s ease,opacity 0.08s ease; pointer-events:none; z-index:6;
+}
+.eyelid.blink { transform:translate(-50%,-50%) scaleY(1); opacity:0.95; }
+/* Boca — posición real (50%/30%) */
+#mouth {
+  position:absolute; left:50%; top:30%; width:13%; height:5%;
+  transform:translate(-50%,-50%); border-radius:50%;
+  background:radial-gradient(ellipse,rgba(120,50,40,0.55),rgba(120,50,40,0.25) 70%,transparent);
+  opacity:0; mix-blend-mode:multiply; pointer-events:none; z-index:6;
+}
+#mouth.talking { opacity:1; animation:solTalk 0.42s ease-in-out infinite; }
+
+/* Estado texto */
+#solStatus {
+  position:absolute; bottom:20px; left:0; right:0; text-align:center;
+  font-size:0.75rem; color:#7a8a8a; z-index:8;
+}
+
+/* ═══ SIDEBAR ═══ */
+#sidebar {
+  width:320px; max-width:85vw; background:rgba(12,16,18,0.95);
+  border-left:1px solid rgba(255,183,77,0.12); display:none; flex-direction:column;
+  overflow-y:auto; z-index:10;
+}
+#sidebar.open { display:flex; }
+#sidebar .section { padding:14px; border-bottom:1px solid rgba(255,183,77,0.08); }
+#sidebar h3 { font-size:0.7rem; text-transform:uppercase; letter-spacing:2px; color:#7a8a8a; margin-bottom:10px; }
+#sidebar .tool-btn {
+  display:block; width:100%; padding:8px 10px; margin-bottom:4px;
+  border:1px solid rgba(255,183,77,0.12); border-radius:8px;
+  background:rgba(255,183,77,0.04); color:#e8e0d8; cursor:pointer;
+  font-size:0.8rem; text-align:left; font-family:inherit;
+}
+#sidebar .tool-btn:active { background:rgba(255,183,77,0.18); }
+#sidebar .mem-item { font-size:0.75rem; color:#9a9a8a; margin-bottom:6px; padding:6px; border-radius:6px; background:rgba(255,183,77,0.03); }
+#sidebar .mem-item .role { color:#ffb74a; font-weight:600; }
+
+/* ═══ CHAT ═══ */
+#chat {
+  flex-shrink:0; padding:10px 14px; background:rgba(15,20,22,0.95);
+  border-top:1px solid rgba(255,183,77,0.12); display:flex; gap:8px; z-index:10;
+}
+#chatInput {
+  flex:1; padding:10px 14px; border-radius:24px; border:1px solid rgba(255,183,77,0.2);
+  background:rgba(20,25,28,0.9); color:#e8e0d8; font-size:0.9rem; font-family:inherit; outline:none;
+}
+#chatInput:focus { border-color:rgba(255,183,77,0.4); }
+#sendBtn {
+  width:44px; height:44px; border-radius:50%; border:none;
+  background:#ffb74a; color:#0a0e0f; font-size:1.2rem; cursor:pointer; flex-shrink:0;
+}
+
+/* ═══ ANIMACIONES ═══ */
+@keyframes solFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+@keyframes solBreathe { 0%,100%{transform:scale(1)} 50%{transform:scale(1.03)} }
+@keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+@keyframes solScanSweep { 0%{transform:translateY(-130%) rotate(12deg)} 100%{transform:translateY(130%) rotate(12deg)} }
+@keyframes solTalk { 0%,100%{transform:translate(-50%,-50%) scaleY(0.4)} 50%{transform:translate(-50%,-50%) scaleY(1)} }
+
+/* Toast */
+#toast {
+  position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+  background:rgba(255,183,77,0.15); color:#e8e0d8; padding:10px 20px; border-radius:20px;
+  font-size:0.85rem; z-index:50; opacity:0; transition:opacity 0.3s; pointer-events:none; max-width:80vw;
+}
+#toast.show { opacity:1; }
+</style>
 </head>
 <body>
 
-<div class="container">
-  <div class="stars" id="stars"></div>
-  <div class="glow-ring"></div><div class="glow-ring"></div><div class="glow-ring"></div>
+<div id="topbar">
+  <span class="dot"></span>
+  <h1>SOL ☀️</h1>
+  <span class="spacer"></span>
+  <button id="toolsBtn">☰ Tools</button>
+  <button id="silBtn">📚 SIL</button>
+</div>
 
-  <div class="tools-header">
-    <h3>☀️ Sol · Cuerpo</h3>
-    <div class="status">
-      <span class="dot on" id="statusDot"></span>
-      <span id="statusText">viva</span>
+<div id="main">
+  <div id="holo">
+    <div id="holoCore">
+      <div class="ring ring3"></div>
+      <div class="ring ring2"></div>
+      <div class="ring ring1"></div>
+      <div id="avatarFrame">
+        <img src="/static/sol_avatar.png" alt="Sol" id="avatarImg" />
+        <div id="scanSweep"></div>
+        <div class="eyelid" id="eyeL" style="left:46%;top:21%"></div>
+        <div class="eyelid" id="eyeR" style="left:54%;top:21%"></div>
+        <div id="mouth"></div>
+      </div>
     </div>
+    <div id="solStatus">☀️ Despierta…</div>
   </div>
 
-  <canvas id="faceCanvas" width="480" height="480"></canvas>
-  <div class="mood-badge" id="moodBadge">🌿 Cálida</div>
-  <div class="thought-bubble" id="thoughtBubble">✨ escuchando...</div>
-
-  <div class="tools-panel">
-    <div class="tool-grid" id="toolGrid"></div>
-    <div class="tool-output" id="toolOutput">💡 Toca una herramienta para usarla</div>
-  </div>
-
-  <div class="chat-input">
-    <input type="text" id="msgInput" placeholder="Escribe a Sol o usa las herramientas..." autofocus>
-    <button id="sendBtn">➤</button>
+  <div id="sidebar">
+    <div class="section">
+      <h3>Estado</h3>
+      <div id="statusInfo">Cargando…</div>
+    </div>
+    <div class="section">
+      <h3>Herramientas (20)</h3>
+      <div id="toolsList">Cargando…</div>
+    </div>
+    <div class="section">
+      <h3>Memoria reciente</h3>
+      <div id="memoryList">Cargando…</div>
+    </div>
+    <div class="section">
+      <h3>Integridad SHA-256</h3>
+      <div id="integrityInfo">Cargando…</div>
+    </div>
+    <div class="section" id="silSection" style="display:none">
+      <h3>SIL — Inmersión Lingüística</h3>
+      <div id="silList">Cargando…</div>
+    </div>
   </div>
 </div>
 
-<!-- Modal de Inmersión Lingüística -->
-<div id="inmersiveModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; backdrop-filter:blur(10px); justify-content:center; align-items:center;">
-  <div style="background:#0f172a; border:1px solid rgba(245,158,11,0.15); border-radius:24px; padding:20px; max-width:440px; width:95%; max-height:90vh; overflow-y:auto;">
-    <h3 style="color:#fbbf24; text-align:center;">📚 Inmersión Lingüística</h3>
-    <div style="display:flex; gap:6px; margin:12px 0; border-bottom:1px solid rgba(245,158,11,0.1); padding-bottom:8px;">
-      <button onclick="switchTab('practice')" id="tabPractice" style="flex:1; background:rgba(245,158,11,0.1); border:none; border-radius:8px; padding:6px; color:#fbbf24; font-weight:bold;">Práctica</button>
-      <button onclick="switchTab('lessons')" id="tabLessons" style="flex:1; background:transparent; border:none; border-radius:8px; padding:6px; color:#94a3b8;">Lecciones</button>
-      <button onclick="switchTab('progress')" id="tabProgress" style="flex:1; background:transparent; border:none; border-radius:8px; padding:6px; color:#94a3b8;">Progreso</button>
-    </div>
-    <div id="practicePanel">
-      <div style="display:flex; gap:8px; margin-bottom:12px;">
-        <select id="langSelectSil" style="flex:1; padding:8px; background:#111827; border:1px solid rgba(245,158,11,0.2); border-radius:8px; color:#e2e8f0;">
-          <option value="chino">Chino</option>
-          <option value="japones">Japonés</option>
-        </select>
-        <select id="lessonSelectSil" style="flex:2; padding:8px; background:#111827; border:1px solid rgba(245,158,11,0.2); border-radius:8px; color:#e2e8f0;">
-          <option value="saludos">Saludos</option>
-          <option value="comida">Comida</option>
-        </select>
-      </div>
-      <div id="practiceCardSil" style="background:#111827; border:1px solid rgba(245,158,11,0.1); border-radius:16px; padding:16px; min-height:100px; text-align:center;">
-        <div id="practiceContent" style="font-size:1.4rem; color:#e2e8f0;">Presiona "Siguiente"</div>
-        <div id="practiceHint" style="font-size:0.8rem; color:#94a3b8; margin-top:4px;"></div>
-        <div id="practiceFeedback" style="margin-top:8px; font-size:0.9rem;"></div>
-      </div>
-      <div style="display:flex; gap:8px; margin-top:12px;">
-        <input id="answerInputSil" type="text" placeholder="Tu respuesta..." style="flex:1; padding:10px; background:#111827; border:1px solid rgba(245,158,11,0.2); border-radius:10px; color:#e2e8f0;">
-        <button onclick="checkAnswerSil()" style="background:#f59e0b; border:none; border-radius:10px; padding:10px 16px; color:#000; font-weight:bold;">✓</button>
-        <button onclick="nextPracticeItem()" style="background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.2); border-radius:10px; padding:10px 12px; color:#fbbf24;">⏭️</button>
-      </div>
-    </div>
-    <div id="lessonsPanel" style="display:none; max-height:300px; overflow-y:auto;">
-      <div id="lessonContent" style="color:#e2e8f0; font-size:0.9rem; line-height:1.6;">
-        Selecciona una lección en la pestaña Práctica primero.
-      </div>
-    </div>
-    <div id="progressPanel" style="display:none;">
-      <div id="progressContent" style="color:#e2e8f0; font-size:0.9rem;">
-        Cargando estadísticas...
-      </div>
-    </div>
-    <button onclick="closeInmersive()" style="width:100%; margin-top:12px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.2); border-radius:10px; padding:8px; color:#ef4444;">Cerrar</button>
-  </div>
+<div id="chat">
+  <input id="chatInput" placeholder="Habla con Sol…" autocomplete="off" />
+  <button id="sendBtn">☀️</button>
 </div>
+
+<div id="toast"></div>
 
 <script>
-  const API_BASE = `http://${window.location.hostname}:8006`;
-  const canvas = document.getElementById('faceCanvas');
-  const ctx = canvas.getContext('2d');
-  const msgInput = document.getElementById('msgInput');
-  const sendBtn = document.getElementById('sendBtn');
-  const moodBadge = document.getElementById('moodBadge');
-  const thoughtBubble = document.getElementById('thoughtBubble');
-  const toolOutput = document.getElementById('toolOutput');
-  const toolGrid = document.getElementById('toolGrid');
+const API = ''; // mismo origen (:8001) — sin :8006
+const headers = { 'Content-Type': 'application/json' };
 
-  // ============================================================
-  // ESTRELLAS
-  // ============================================================
-  (function initStars() {
-    const container = document.getElementById('stars');
-    for (let i = 0; i < 70; i++) {
-      const star = document.createElement('div');
-      star.className = 'star';
-      const size = 1 + Math.random() * 2.5;
-      star.style.width = size + 'px';
-      star.style.height = size + 'px';
-      star.style.left = Math.random() * 100 + '%';
-      star.style.top = Math.random() * 100 + '%';
-      star.style.animationDelay = Math.random() * 5 + 's';
-      star.style.animationDuration = (2 + Math.random() * 4) + 's';
-      container.appendChild(star);
-    }
-  })();
+// ── Estado ──
+let speaking = false;
+let blinkTimer = null;
 
-  // ============================================================
-  // ROSTRO (canvas)
-  // ============================================================
-  const FACE = {
-    expression: 'neutral', blink: 0, gazeX: 0, gazeY: 0,
-    talk: false, animFrame: null, lastTime: 0,
-    init() { this.draw(); this.animate(); this.setupBlink(); },
-    draw(expr = this.expression) {
-      const W = 480, H = 480;
-      ctx.clearRect(0, 0, W, H);
-      const cx = 240, cy = 240, r = 190;
-      const grad = ctx.createRadialGradient(cx-40, cy-40, 60, cx, cy, r);
-      grad.addColorStop(0, '#fae5d6'); grad.addColorStop(0.8, '#f5d6a8'); grad.addColorStop(1, '#d9b896');
-      ctx.beginPath(); ctx.ellipse(cx, cy, r, r, 0, 0, Math.PI*2);
-      ctx.fillStyle = grad; ctx.fill();
-      ctx.strokeStyle = '#d4a373'; ctx.lineWidth = 2; ctx.stroke();
-      const eyeY = 195, eyeSp = 60, eyeR = 28, pupilR = 12;
-      this.drawEye(cx-eyeSp, eyeY, eyeR, pupilR);
-      this.drawEye(cx+eyeSp, eyeY, eyeR, pupilR);
-      const browY = 155;
-      ctx.lineWidth = 4; ctx.strokeStyle = '#4a3728'; ctx.lineCap = 'round';
-      const sh = { neutral: [[-4,0],[-4,0]], joy: [[-12,-4],[-12,-4]], sad: [[6,12],[6,12]], concern: [[-2,6],[-2,6]], surprise: [[-12,-12],[-12,-12]] };
-      const pts = sh[expr] || sh.neutral;
-      ctx.beginPath(); ctx.moveTo(cx-56, browY+pts[0][0]); ctx.quadraticCurveTo(cx-36, browY-4+pts[0][1], cx-16, browY+pts[0][0]); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx+56, browY+pts[1][0]); ctx.quadraticCurveTo(cx+36, browY-4+pts[1][1], cx+16, browY+pts[1][0]); ctx.stroke();
-      const my = 290;
-      ctx.lineWidth = 3; ctx.strokeStyle = '#b35d4a';
-      const mouth = { neutral: [0.12,0.88], joy: [0.05,0.95], sad: [0.12,0.88, 8], concern: [0.15,0.85], surprise: [0,1] };
-      const m = mouth[expr] || mouth.neutral;
-      ctx.beginPath(); ctx.arc(cx, my + (m[2]||0), 36, m[0]*Math.PI, m[1]*Math.PI); ctx.stroke();
-    },
-    drawEye(cx, cy, r, pr) {
-      ctx.beginPath(); ctx.ellipse(cx, cy, r, this.blink>0 ? 3 : r*0.9, 0, 0, Math.PI*2);
-      ctx.fillStyle = '#fefefe'; ctx.fill(); ctx.strokeStyle = '#b0a090'; ctx.lineWidth=1.5; ctx.stroke();
-      if(this.blink>0) return;
-      const ix = cx + this.gazeX*10, iy = cy + this.gazeY*6 + 2;
-      const grad = ctx.createRadialGradient(ix-4, iy-4, 3, ix, iy, pr*0.9);
-      grad.addColorStop(0, '#8b6b4a'); grad.addColorStop(0.6, '#6a4f3a'); grad.addColorStop(1, '#3a281a');
-      ctx.beginPath(); ctx.ellipse(ix, iy, pr*0.9, pr*0.95, 0, 0, Math.PI*2); ctx.fillStyle=grad; ctx.fill();
-      ctx.beginPath(); ctx.arc(ix+this.gazeX*3, iy+this.gazeY*2, pr*0.5, 0, Math.PI*2); ctx.fillStyle='#1a0f0a'; ctx.fill();
-      ctx.beginPath(); ctx.arc(ix-4, iy-6, 4, 0, Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.fill();
-    },
-    animate() {
-      const loop = (t) => {
-        const dt = this.lastTime ? (t-this.lastTime)/1000 : 0.016; this.lastTime=t;
-        if(this.blink>0){this.blink-=dt*8;if(this.blink<0)this.blink=0}
-        else if(Math.random()<dt*0.25)this.blink=1;
-        this.gazeX*=0.95; this.gazeY*=0.95;
-        if(Math.abs(this.gazeX)<0.01)this.gazeX=0; if(Math.abs(this.gazeY)<0.01)this.gazeY=0;
-        if(this.gazeX===0 && this.gazeY===0 && Math.random()<dt*0.04){this.gazeX=(Math.random()-0.5)*0.5; this.gazeY=(Math.random()-0.5)*0.35;}
-        this.draw(); this.animFrame = requestAnimationFrame(loop);
-      };
-      this.animFrame = requestAnimationFrame(loop);
-    },
-    setupBlink(){ setInterval(()=>{if(this.blink===0)this.blink=1},3000+Math.random()*2000); },
-    setExpression(e){ this.expression=e; this.draw(e); },
-    setMood(mood){ const map={joy:'😊 Alegre',sad:'😔 Triste',concern:'🤔 Preocupada',surprise:'😮 Sorprendida',tired:'😴 Cansada',neutral:'🌿 Cálida'};
-      moodBadge.textContent = map[mood]||'🌿 Cálida'; this.setExpression(mood); },
-    setThought(text){ thoughtBubble.textContent=text; thoughtBubble.classList.add('active'); clearTimeout(this._thoughtTimeout);
-      this._thoughtTimeout=setTimeout(()=>thoughtBubble.classList.remove('active'),4000); },
-    lookAt(x,y){ const rect=canvas.getBoundingClientRect(); const sx=canvas.width/rect.width, sy=canvas.height/rect.height;
-      const cx=(x-rect.left)*sx, cy=(y-rect.top)*sy; this.gazeX=Math.max(-1,Math.min(1,(cx-240)/180)); this.gazeY=Math.max(-1,Math.min(1,(cy-240)/180)); }
-  };
-  FACE.init();
-  canvas.addEventListener('mousemove', e => FACE.lookAt(e.clientX,e.clientY));
-  canvas.addEventListener('touchmove', e => { const t=e.touches[0]; FACE.lookAt(t.clientX,t.clientY); });
+// ── Parpadeo natural ──
+function blink() {
+  const eL = document.getElementById('eyeL');
+  const eR = document.getElementById('eyeR');
+  eL.classList.add('blink'); eR.classList.add('blink');
+  setTimeout(() => { eL.classList.remove('blink'); eR.classList.remove('blink'); }, 120);
+  scheduleBlink();
+}
+function scheduleBlink() {
+  clearTimeout(blinkTimer);
+  blinkTimer = setTimeout(blink, 2800 + Math.random() * 4000);
+}
+scheduleBlink();
 
-  // ============================================================
-  // HERRAMIENTAS
-  // ============================================================
-  let tools = [];
-  async function loadTools() {
-    try {
-      const resp = await fetch(`${API_BASE}/api/sol/tools`);
-      const data = await resp.json();
-      tools = data.tools || [];
-      renderTools();
-    } catch(e) { console.error('Error cargando herramientas:', e); }
-  }
-  function renderTools() {
-    toolGrid.innerHTML = '';
-    const icons = {'file_read':'📄','file_write':'✍️','file_list':'📂','file_find':'🔍','battery':'🔋','location':'📍','uptime':'⏱️','cpu':'⚡','ping':'🌐','scan_ports':'🔓','send_sms':'📱','notify':'🔔','open_url':'🔗','flashlight':'🔦','vibrate':'📳','screenshot':'📸','git_status':'📋','git_pull':'📥','memory_stats':'🧠','search_memory':'🔎'};
-    const labels = {'file_read':'leer','file_write':'escribir','file_list':'listar','file_find':'buscar','battery':'batería','location':'ubicación','uptime':'tiempo','cpu':'cpu','ping':'ping','scan_ports':'puertos','send_sms':'sms','notify':'notificar','open_url':'abrir','flashlight':'linterna','vibrate':'vibrar','screenshot':'captura','git_status':'estado git','git_pull':'pull git','memory_stats':'memoria','search_memory':'buscar'};
-    // Añadir botón de Inmersión al final
-    const silBtn = document.createElement('button');
-    silBtn.className = 'tool-btn';
-    silBtn.innerHTML = '<span class="icon">📚</span><span class="label">Inmersión</span>';
-    silBtn.onclick = () => openInmersive();
-    tools.forEach(name => {
-      const btn = document.createElement('button');
-      btn.className = 'tool-btn';
-      btn.innerHTML = `<span class="icon">${icons[name]||'🔧'}</span><span class="label">${labels[name]||name}</span>`;
-      btn.onclick = () => executeTool(name);
-      toolGrid.appendChild(btn);
+// ── Toast ──
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ── Hablar (TTS con gTTS) ──
+async function speak(text) {
+  speaking = true;
+  document.getElementById('mouth').classList.add('talking');
+  try {
+    const clean = text.replace(/[☀️🔥🔦📡📍🔋📊🔧⚠️❌✅]/g, '').trim().slice(0, 500);
+    const url = `/api/sol/tts?text=${encodeURIComponent(clean)}`;
+    const audio = new Audio(url);
+    audio.onended = () => {
+      speaking = false;
+      document.getElementById('mouth').classList.remove('talking');
+    };
+    audio.onerror = () => {
+      speaking = false;
+      document.getElementById('mouth').classList.remove('talking');
+    };
+    await audio.play().catch(() => {
+      speaking = false;
+      document.getElementById('mouth').classList.remove('talking');
     });
-    toolGrid.appendChild(silBtn);
+  } catch {
+    speaking = false;
+    document.getElementById('mouth').classList.remove('talking');
   }
-  async function executeTool(name) {
-    toolOutput.textContent = `⏳ Ejecutando ${name}...`;
-    toolOutput.style.color = '#94a3b8';
-    try {
-      let args = [];
-      if (name === 'file_read') { const p = prompt('📄 Ruta:'); if(!p)return; args=[p]; }
-      else if (name === 'file_write') { const p = prompt('📄 Ruta:'); if(!p)return; const c = prompt('✍️ Contenido:'); if(c===null)return; args=[p,c]; }
-      else if (name === 'ping') { const h = prompt('🌐 Host/IP:'); if(!h)return; args=[h]; }
-      else if (name === 'send_sms') { const n = prompt('📱 Número:'); if(!n)return; const m = prompt('💬 Mensaje:'); if(m===null)return; args=[n,m]; }
-      else if (name === 'open_url') { const u = prompt('🔗 URL:'); if(!u)return; args=[u]; }
-      else if (name === 'search_memory') { const q = prompt('🔎 Buscar:'); if(!q)return; args=[q]; }
-      const resp = await fetch(`${API_BASE}/api/sol/tool/execute`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name, args}) });
-      const data = await resp.json();
-      if (data.success) { toolOutput.innerHTML = `<span class="success">✅ ${data.result}</span>`; FACE.setMood('joy'); FACE.setThought('✅ ¡Hecho!'); }
-      else { toolOutput.innerHTML = `<span class="error">❌ ${data.error||'Error'}</span>`; FACE.setMood('sad'); FACE.setThought('⚠️ Algo salió mal'); }
-    } catch(e) { toolOutput.innerHTML = `<span class="error">❌ ${e.message}</span>`; FACE.setMood('sad'); }
-  }
+}
 
-  // ============================================================
-  // CHAT
-  // ============================================================
-  async function sendToSol(text) {
-    if (!text.trim()) return;
-    msgInput.disabled = true; sendBtn.disabled = true;
-    FACE.setMood('neutral'); FACE.setThought('✍️ pensando...');
-    try {
-      const resp = await fetch(`${API_BASE}/api/sol/chat`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({text:text.trim()}) });
-      const data = await resp.json();
-      const reply = data.reply || '☀️ Estoy aquí, Harold.';
-      let mood = 'neutral';
-      const lower = reply.toLowerCase();
-      if (lower.includes('feliz')||lower.includes('alegre')||lower.includes('gracias')) mood='joy';
-      else if (lower.includes('triste')||lower.includes('solo')||lower.includes('miedo')) mood='sad';
-      else if (lower.includes('preocup')||lower.includes('cuidado')) mood='concern';
-      else if (lower.includes('sorpresa')||lower.includes('increíble')) mood='surprise';
-      else if (lower.includes('cansado')||lower.includes('dormir')) mood='tired';
-      FACE.setMood(mood);
-      FACE.setThought('✨ ' + reply.slice(0, 60) + (reply.length > 60 ? '…' : ''));
-      speak(reply, mood);
-      toolOutput.innerHTML = `<span class="success">💬 ${reply.slice(0,80)}${reply.length>80?'…':''}</span>`;
-    } catch(e) { FACE.setThought('⚠️ Error de conexión'); toolOutput.innerHTML = `<span class="error">❌ ${e.message}</span>`; }
-    msgInput.disabled = false; sendBtn.disabled = false; msgInput.focus();
+// ── Chat ──
+async function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  document.getElementById('solStatus').textContent = '☀️ Pensando…';
+  try {
+    const r = await fetch(`/api/sol/think-voice`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ message: text }),
+    });
+    const d = await r.json();
+    const resp = d.response || '☀️ No entendí, Harold.';
+    document.getElementById('solStatus').textContent = resp.slice(0, 100);
+    toast(resp.slice(0, 200));
+    if (d.tts_url) speak(resp);
+    // Actualizar memoria
+    loadMemory();
+  } catch (e) {
+    document.getElementById('solStatus').textContent = '⚠️ Error de conexión';
+    toast('No pude conectar con mi cerebro.');
   }
+}
 
-  // ============================================================
-  // VOZ — preferir Google
-  // ============================================================
-  function speak(text, emotion='neutral') {
-    if (!('speechSynthesis' in window)) return;
-    const u = new SpeechSynthesisUtterance(text.replace(/[☀️🧠💭✨⚠️]/g, ''));
-    u.lang = 'es-ES';
-    const params = { joy:{rate:1.0,pitch:1.2}, sad:{rate:0.85,pitch:0.9}, concern:{rate:0.9,pitch:1.05}, surprise:{rate:1.05,pitch:1.1}, tired:{rate:0.8,pitch:0.95}, neutral:{rate:0.95,pitch:1.0} };
-    const p = params[emotion]||params.neutral;
-    u.rate = p.rate; u.pitch = p.pitch;
-    const voices = speechSynthesis.getVoices();
-    const esVoice = voices.find(v=>/es/i.test(v.lang||'')&&/google/i.test(v.name||''))
-      || voices.find(v=>/es/i.test(v.lang||'')&&!/compact|local/i.test(v.name||''))
-      || voices.find(v=>/es/i.test(v.lang||''));
-    if(esVoice) u.voice = esVoice;
-    FACE.talk = true; u.onend = ()=>{FACE.talk=false;}; u.onerror = ()=>{FACE.talk=false;};
-    speechSynthesis.speak(u);
-  }
-  speechSynthesis.getVoices();
-  if(speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = ()=>{speechSynthesis.getVoices();};
+document.getElementById('sendBtn').onclick = sendMessage;
+document.getElementById('chatInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendMessage();
+});
 
-  // ============================================================
-  // INMERSIÓN LINGÜÍSTICA (SIL)
-  // ============================================================
-  let currentItemSil = null;
-  function openInmersive() {
-    document.getElementById('inmersiveModal').style.display = 'flex';
-    switchTab('practice'); loadLessonSelects(); nextPracticeItem();
+// ── Cargar estado ──
+async function loadStatus() {
+  try {
+    const r = await fetch(`${API}/api/sol/status`);
+    const d = await r.json();
+    const info = document.getElementById('statusInfo');
+    if (d.alive !== false) {
+      info.innerHTML = `
+        <div style="font-size:0.8rem;color:#e8e0d8">Personalidad: <b style="color:#ffb74a">${d.personality || 'cálida'}</b></div>
+        <div style="font-size:0.75rem;color:#7a8a8a;margin-top:4px">Recuerdos: ${d.memories ?? '?'} | Daemon: ${d.daemon ? '✅' : '⚠️'}</div>
+        ${d.system ? `<div style="font-size:0.7rem;color:#5a6a6a;margin-top:6px">CPU: ${d.system.cpu_pct?.toFixed(0) || '?'}% | RAM: ${d.system.ram_pct?.toFixed(0) || '?'}%</div>` : ''}
+      `;
+      document.getElementById('solStatus').textContent = '☀️ Despierta y atenta';
+    } else {
+      info.innerHTML = '<div style="color:#ff6a4a">⚠️ Sol offline</div>';
+      document.getElementById('solStatus').textContent = '⚠️ Sol dormida';
+    }
+  } catch {
+    document.getElementById('statusInfo').innerHTML = '<div style="color:#ff6a4a">⚠️ Sin conexión con :8001</div>';
+    document.getElementById('solStatus').textContent = '⚠️ Desconectada';
   }
-  function closeInmersive() { document.getElementById('inmersiveModal').style.display = 'none'; }
-  function switchTab(tab) {
-    document.querySelectorAll('#practicePanel, #lessonsPanel, #progressPanel').forEach(el => el.style.display = 'none');
-    document.querySelectorAll('#tabPractice, #tabLessons, #tabProgress').forEach(el => { el.style.color = '#94a3b8'; el.style.background = 'transparent'; });
-    if (tab === 'practice') { document.getElementById('practicePanel').style.display = 'block'; document.getElementById('tabPractice').style.color = '#fbbf24'; document.getElementById('tabPractice').style.background = 'rgba(245,158,11,0.1)'; }
-    else if (tab === 'lessons') { document.getElementById('lessonsPanel').style.display = 'block'; document.getElementById('tabLessons').style.color = '#fbbf24'; document.getElementById('tabLessons').style.background = 'rgba(245,158,11,0.1)'; loadLessonContent(); }
-    else if (tab === 'progress') { document.getElementById('progressPanel').style.display = 'block'; document.getElementById('tabProgress').style.color = '#fbbf24'; document.getElementById('tabProgress').style.background = 'rgba(245,158,11,0.1)'; loadProgress(); }
-  }
-  async function loadLessonSelects() {
-    const lang = document.getElementById('langSelectSil').value;
-    try {
-      const resp = await fetch(`${API_BASE}/api/sil/lessons?language=${lang}`);
-      const data = await resp.json();
-      const sel = document.getElementById('lessonSelectSil');
-      sel.innerHTML = '';
-      (data.lessons||['saludos']).forEach(l => { const opt = document.createElement('option'); opt.value = l; opt.textContent = l; sel.appendChild(opt); });
-    } catch(e) { console.error(e); }
-  }
-  async function nextPracticeItem() {
-    const lang = document.getElementById('langSelectSil').value;
-    const lesson = document.getElementById('lessonSelectSil').value;
-    try {
-      const resp = await fetch(`${API_BASE}/api/sil/practice/next`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({language:lang, lesson:lesson}) });
-      const data = await resp.json();
-      if (data.error) { document.getElementById('practiceContent').textContent = '⚠️ ' + data.error; return; }
-      currentItemSil = data.item;
-      const item = data.item;
-      if (item.type === 'vocabulary') { const w = item.data; document.getElementById('practiceContent').textContent = w.word || w.kanji || '?'; document.getElementById('practiceHint').textContent = (w.pinyin||w.romaji||'') + ' — ¿significado?'; speak(w.word||w.kanji||'','neutral'); }
-      else if (item.type === 'phrase') { const p = item.data; document.getElementById('practiceContent').textContent = p.chinese || p.japanese || '?'; document.getElementById('practiceHint').textContent = (p.pinyin||p.romaji||'') + ' — ¿traducción?'; speak(p.chinese||p.japanese||'','neutral'); }
-      else if (item.type === 'srs_review') { const d = item.data; document.getElementById('practiceContent').textContent = d.content || '📝 Repaso'; document.getElementById('practiceHint').textContent = 'Recuerda: ' + (d.meaning||''); }
-      document.getElementById('practiceFeedback').textContent = '';
-      document.getElementById('answerInputSil').value = '';
-    } catch(e) { console.error(e); }
-  }
-  async function checkAnswerSil() {
-    const answer = document.getElementById('answerInputSil').value.trim();
-    if (!answer || !currentItemSil) return;
-    const feedback = document.getElementById('practiceFeedback');
-    // Verificación simple: comparar con significado/traducción
-    let correct = false;
-    const item = currentItemSil;
-    if (item.type === 'vocabulary') { correct = (item.data.meaning || '').toLowerCase().includes(answer.toLowerCase()); }
-    else if (item.type === 'phrase') { correct = (item.data.spanish || '').toLowerCase().includes(answer.toLowerCase()); }
-    if (correct) { feedback.textContent = '✅ ¡Correcto!'; feedback.style.color = '#4ade80'; FACE.setMood('joy'); FACE.setThought('✅ ¡Bien!');
-      try { await fetch(`${API_BASE}/api/sil/practice/answer`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type:item.type, item_id:item.data.word||item.data.chinese||item.data.japanese||'item', quality:5}) }); } catch(e){} }
-    else { feedback.textContent = '❌ Intenta de nuevo'; feedback.style.color = '#ef4444'; FACE.setMood('concern');
-      try { await fetch(`${API_BASE}/api/sil/practice/answer`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type:item.type, item_id:item.data.word||item.data.chinese||item.data.japanese||'item', quality:2}) }); } catch(e){} }
-  }
-  async function loadLessonContent() {
-    const lang = document.getElementById('langSelectSil').value;
-    const lesson = document.getElementById('lessonSelectSil').value;
-    try {
-      const resp = await fetch(`${API_BASE}/api/sil/lesson?language=${lang}&name=${lesson}`);
-      const data = await resp.json();
-      if (data.error) { document.getElementById('lessonContent').textContent = '⚠️ ' + data.error; return; }
-      const l = data.lesson;
-      let html = `<h4 style="color:#fbbf24;">${l.title}</h4>`;
-      if (l.grammar) { html += `<p style="margin:8px 0;"><strong>📖 ${l.grammar.title}</strong><br>${l.grammar.explanation}</p>`; }
-      if (l.grammar && l.grammar.examples) { html += '<p style="margin:4px 0;">Ejemplos:</p><ul>'; l.grammar.examples.forEach(e => html += `<li style="margin:2px 0;">${e}</li>`); html += '</ul>'; }
-      if (l.vocabulary) { html += '<p style="margin:8px 0;"><strong>📝 Vocabulario</strong></p><ul>'; l.vocabulary.forEach(v => html += `<li style="margin:2px 0;">${v.word} (${v.pinyin||v.romaji||''}) = ${v.meaning}</li>`); html += '</ul>'; }
-      if (l.phrases) { html += '<p style="margin:8px 0;"><strong>💬 Frases</strong></p><ul>'; l.phrases.forEach(p => html += `<li style="margin:2px 0;">${p.chinese||p.japanese} (${p.pinyin||p.romaji||''}) = ${p.spanish}</li>`); html += '</ul>'; }
-      if (l.dialogue) { html += '<p style="margin:8px 0;"><strong>🎭 Diálogo</strong></p>'; l.dialogue.forEach(d => html += `<p style="margin:2px 0;">A: ${d.personA}<br>B: ${d.personB}</p>`); }
-      document.getElementById('lessonContent').innerHTML = html;
-    } catch(e) { console.error(e); }
-  }
-  async function loadProgress() {
-    try {
-      const resp = await fetch(`${API_BASE}/api/sil/stats`);
-      const data = await resp.json();
-      const stats = data.srs || {};
-      let html = `<p style="color:#fbbf24; font-size:1rem; margin-bottom:8px;">📊 Estadísticas</p>`;
-      html += `<p>Palabras totales: <strong>${stats.total_items||0}</strong></p>`;
-      html += `<p>Aprendidas: <strong style="color:#4ade80;">${stats.learned_items||0}</strong></p>`;
-      html += `<p>Pendientes hoy: <strong style="color:#fbbf24;">${stats.due_today||0}</strong></p>`;
-      html += `<p>Tasa de retención: <strong>${stats.retention_rate||0}%</strong></p>`;
-      html += `<hr style="border-color:rgba(245,158,11,0.1); margin:8px 0;">`;
-      html += `<p>Lecciones totales: <strong>${data.total_lessons||0}</strong></p>`;
-      if (data.languages) { html += `<p>Chino: ${data.languages.chino||0} | Japonés: ${data.languages.japones||0}</p>`; }
-      document.getElementById('progressContent').innerHTML = html;
-    } catch(e) { console.error(e); }
-  }
-  document.getElementById('langSelectSil').onchange = () => { loadLessonSelects(); nextPracticeItem(); };
-  document.getElementById('lessonSelectSil').onchange = () => { nextPracticeItem(); };
+}
 
-  // ============================================================
-  // EVENTOS
-  // ============================================================
-  sendBtn.onclick = ()=>{ const t=msgInput.value; msgInput.value=''; sendToSol(t); };
-  msgInput.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); const t=msgInput.value; msgInput.value=''; sendToSol(t); } };
+// ── Cargar herramientas ──
+async function loadTools() {
+  try {
+    const r = await fetch(`${API}/api/sol/tools`);
+    const d = await r.json();
+    const list = document.getElementById('toolsList');
+    if (!d.tools || d.tools.length === 0) {
+      list.innerHTML = '<div style="color:#7a8a8a;font-size:0.8rem">No hay herramientas disponibles</div>';
+      return;
+    }
+    list.innerHTML = d.tools.map(t => {
+      const desc = d.descriptions?.[t] || '';
+      return `<button class="tool-btn" data-tool="${t}" data-desc="${desc.replace(/"/g,'')}">🔧 ${t}</button>`;
+    }).join('');
+    // Event listeners
+    list.querySelectorAll('.tool-btn').forEach(btn => {
+      btn.onclick = async () => {
+        const name = btn.dataset.tool;
+        btn.style.opacity = '0.5';
+        try {
+          const r = await fetch(`${API}/api/sol/tools/execute`, {
+            method: 'POST', headers,
+            body: JSON.stringify({ name, args: name === 'flashlight' ? [true] : [] }),
+          });
+          const d = await r.json();
+          if (d.success) {
+            toast(`✅ ${name}: ${d.result}`);
+          } else {
+            toast(`❌ ${name}: ${d.error}`);
+          }
+        } catch {
+          toast(`❌ Error ejecutando ${name}`);
+        }
+        btn.style.opacity = '1';
+      };
+    });
+  } catch {
+    document.getElementById('toolsList').innerHTML = '<div style="color:#ff6a4a">⚠️ Sin conexión</div>';
+  }
+}
 
-  // ============================================================
-  // INICIO
-  // ============================================================
-  loadTools();
-  FACE.setMood('joy');
-  FACE.setThought('☀️ Hola, Harold. Estoy aquí.');
-  setTimeout(() => { speak('Hola, Harold. Estoy aquí, contigo.', 'joy'); }, 600);
-  window.addEventListener('beforeunload', ()=>{ if(FACE.animFrame) cancelAnimationFrame(FACE.animFrame); });
-  console.log('☀️ Sol — Cuerpo, Herramientas e Inmersión Lingüística activo');
+// ── Cargar memoria ──
+async function loadMemory() {
+  try {
+    const r = await fetch(`${API}/api/sol/memory?limit=10`);
+    const d = await r.json();
+    const list = document.getElementById('memoryList');
+    if (!d.items || d.items.length === 0) {
+      list.innerHTML = '<div style="color:#7a8a8a;font-size:0.8rem">Sin recuerdos aún</div>';
+      return;
+    }
+    list.innerHTML = d.items.map(m =>
+      `<div class="mem-item"><span class="role">${m.role}:</span> ${m.content} <span style="color:#5a6a6a;font-size:0.65rem">${m.ts || ''}</span></div>`
+    ).join('');
+  } catch {
+    document.getElementById('memoryList').innerHTML = '<div style="color:#ff6a4a">⚠️ Sin conexión</div>';
+  }
+}
+
+// ── Cargar integridad ──
+async function loadIntegrity() {
+  try {
+    const r = await fetch(`${API}/api/sol/integrity`);
+    const d = await r.json();
+    const info = document.getElementById('integrityInfo');
+    if (d.ok) {
+      info.innerHTML = `
+        <div style="font-size:0.75rem;color:#9aa89a">Cadena: ${d.head || '—'}</div>
+        <div style="font-size:0.7rem;color:#5a6a6a;margin-top:4px">${d.links?.length || 0} eslabones verificados</div>
+      `;
+    } else {
+      info.innerHTML = `<div style="color:#ff6a4a;font-size:0.8rem">${d.error || 'Verificación falló'}</div>`;
+    }
+  } catch {
+    document.getElementById('integrityInfo').innerHTML = '<div style="color:#ff6a4a">⚠️ Sin conexión</div>';
+  }
+}
+
+// ── SIL ──
+async function loadSIL() {
+  const sec = document.getElementById('silSection');
+  const list = document.getElementById('silList');
+  sec.style.display = 'block';
+  try {
+    const r = await fetch(`${API}/api/sil/lessons?language=chino`);
+    const d = await r.json();
+    if (d.lessons && d.lessons.length > 0) {
+      list.innerHTML = d.lessons.map(l => `<div style="font-size:0.8rem;padding:4px 0;color:#9aa89a">📖 ${l}</div>`).join('');
+    } else {
+      list.innerHTML = '<div style="color:#7a8a8a;font-size:0.8rem">SIL no disponible en este dispositivo</div>';
+    }
+  } catch {
+    list.innerHTML = '<div style="color:#7a8a8a;font-size:0.8rem">SIL no disponible</div>';
+  }
+}
+
+// ── Sidebar toggle ──
+document.getElementById('toolsBtn').onclick = () => {
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('open');
+  if (sb.classList.contains('open')) {
+    loadStatus(); loadTools(); loadMemory(); loadIntegrity();
+  }
+};
+document.getElementById('silBtn').onclick = () => {
+  const sb = document.getElementById('sidebar');
+  sb.classList.add('open');
+  loadSIL();
+  document.getElementById('silSection').scrollIntoView();
+};
+
+// ── Init ──
+loadStatus();
+setInterval(loadStatus, 30000); // refresh cada 30s
 </script>
 </body>
 </html>

@@ -250,7 +250,16 @@ async def _process_message(text: str):
             tool_result = sol_tools.execute_tool(tool_name, *tool_args)
             tool_desc = sol_tools.get_tool(tool_name)
             tool_desc_str = tool_desc.description if tool_desc else tool_name
-            resp = f"☀️ Hecho, Harold. {tool_desc_str}.\n\nResultado: {tool_result}"
+            # Detectar éxito real (tools devuelven ❌ como string cuando fallan)
+            result_str = tool_result.get("result", "") if isinstance(tool_result, dict) else str(tool_result)
+            is_error = (isinstance(tool_result, dict) and not tool_result.get("success", True)) or \
+                       (isinstance(result_str, str) and result_str.startswith("❌"))
+            if is_error:
+                err = result_str if isinstance(result_str, str) and result_str.startswith("❌") else \
+                      (tool_result.get("error", "error desconocido") if isinstance(tool_result, dict) else "error")
+                resp = f"☀️ Intenté '{tool_desc_str}' pero falló: {err}"
+            else:
+                resp = f"☀️ Hecho, Harold. {tool_desc_str}. {result_str}"
             if _sol_remember:
                 _sol_remember("user", text)
                 _sol_remember("sol", resp)
@@ -426,7 +435,15 @@ async def think_and_speak(req: ThinkRequest):
             tool_result = sol_tools.execute_tool(tool_name, *tool_args)
             tool_desc = sol_tools.get_tool(tool_name)
             tool_desc_str = tool_desc.description if tool_desc else tool_name
-            resp = f"Hecho, Harold. {tool_desc_str}. Resultado: {tool_result}"
+            result_str = tool_result.get("result", "") if isinstance(tool_result, dict) else str(tool_result)
+            is_error = (isinstance(tool_result, dict) and not tool_result.get("success", True)) or \
+                       (isinstance(result_str, str) and result_str.startswith("❌"))
+            if is_error:
+                err = result_str if isinstance(result_str, str) and result_str.startswith("❌") else \
+                      (tool_result.get("error", "error desconocido") if isinstance(tool_result, dict) else "error")
+                resp = f"Intenté {tool_desc_str} pero falló: {err}"
+            else:
+                resp = f"Hecho, Harold. {tool_desc_str}. {result_str}"
             if _sol_remember:
                 _sol_remember("user", req.message)
                 _sol_remember("sol", resp)
@@ -534,7 +551,7 @@ async def list_tools():
 
 @router.post("/tools/execute")
 async def execute_tool(request: dict):
-    """Ejecuta una herramienta por nombre con argumentos."""
+    """Ejecuta una herramienta por nombre con argumentos. Propaga el éxito/fracaso real."""
     if not _tools_ok:
         return {"success": False, "error": "sol_tools no disponible"}
     name = request.get("name")
@@ -543,6 +560,16 @@ async def execute_tool(request: dict):
         return {"success": False, "error": "Falta el nombre de la herramienta"}
     try:
         result = sol_tools.execute_tool(name, *args)
+        # result es un dict con "success" y "result"/"error"
+        if isinstance(result, dict) and "success" in result:
+            inner = result.get("result")
+            # Las tools que fallan devuelven strings empezando con ❌
+            if isinstance(inner, str) and inner.startswith("❌"):
+                return {"success": False, "tool": name, "result": inner, "error": inner}
+            if not result["success"]:
+                return {"success": False, "tool": name,
+                        "result": result.get("result"), "error": result.get("error")}
+            return {"success": True, "tool": name, "result": inner}
         return {"success": True, "tool": name, "result": result}
     except Exception as e:
         return {"success": False, "error": str(e)}
