@@ -1305,7 +1305,7 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 # Endpoints PÚBLICOS (no requieren API key):
 #   /api/health, /health, /healthz  → health checks
 #   /canary/callback               → intruso phone-home (debe ser accesible)
-PUBLIC_PATHS = {"/api/health", "/api/healthz", "/health", "/healthz", "/canary/callback", "/api/phantom/alert", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json"}
+PUBLIC_PATHS = {"/api/health", "/api/healthz", "/health", "/healthz", "/canary/callback", "/api/phantom/alert", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json", "/api/sol/status", "/api/sol/think", "/api/sol/tts", "/api/sol/think-voice", "/api/sol/memory", "/api/sol/identity", "/api/sol/integrity", "/api/sol/services", "/api/sol/personality", "/api/sol/last-message", "/api/sol/speak"}
 
 # ── CORS lockdown ───────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
@@ -8103,12 +8103,18 @@ async def monitor_stop():
 #  SOL — Página standalone de Sol (antes del catch-all SPA)
 # ═════════════════════════════════════════════════════════════════════════════
 _SOL_HTML = BASE.parent / "backend" / "static" / "sol.html"
+_SOL_LIVE = BASE.parent / "sol-live.html"
 if _SOL_HTML.exists():
     from fastapi.responses import HTMLResponse
     @app.get("/sol.html")
     async def sol_standalone():
         return HTMLResponse(_SOL_HTML.read_text(encoding="utf-8"))
     print(f"[SOL] /sol.html servido desde {_SOL_HTML}", flush=True)
+if _SOL_LIVE.exists():
+    @app.get("/sol-live.html")
+    async def sol_live_page():
+        return HTMLResponse(_SOL_LIVE.read_text(encoding="utf-8"))
+    print(f"[SOL] /sol-live.html servido desde {_SOL_LIVE}", flush=True)
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  FRONTEND ESTÁTICO — SPA
