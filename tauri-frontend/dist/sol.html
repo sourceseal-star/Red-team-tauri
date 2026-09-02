@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sol ☀️ — Entorno</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a1a1a; --card: #0f2222; --border: rgba(255, 183, 77, 0.15);
+    --amber: #ffb74d; --amber-glow: rgba(255, 183, 77, 0.3); --teal: #1a3c3c;
+    --text: #e0d6c8; --muted: #7a8a8a; --green: #66bb6a; --pink: #f48fb1;
+    --sword: #ff7043; --compass: #42a5f5;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Georgia', serif; overflow-x: hidden; min-height: 100vh; }
+
+  .starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+  .star { position: absolute; width: 2px; height: 2px; background: var(--amber); border-radius: 50%; opacity: 0; animation: twinkle 4s infinite ease-in-out; }
+  @keyframes twinkle { 0%, 100% { opacity: 0; transform: scale(0.5); } 50% { opacity: 0.6; transform: scale(1); } }
+
+  .orbit-container { position: relative; width: 200px; height: 200px; margin: 0 auto; }
+  .orbit-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border: 1px solid var(--border); border-radius: 50%; animation: rotate 20s linear infinite; }
+  .orbit-ring:nth-child(1) { width: 180px; height: 180px; }
+  .orbit-ring:nth-child(2) { width: 220px; height: 220px; animation-duration: 30s; animation-direction: reverse; }
+  .orbit-ring:nth-child(3) { width: 260px; height: 260px; animation-duration: 45s; }
+  .orbit-particle { position: absolute; width: 8px; height: 8px; border-radius: 50%; top: -4px; left: 50%; transform: translateX(-50%); }
+  .orbit-ring:nth-child(1) .orbit-particle { background: var(--amber); box-shadow: 0 0 10px var(--amber-glow); }
+  .orbit-ring:nth-child(2) .orbit-particle { background: var(--green); box-shadow: 0 0 8px rgba(102,187,106,0.4); }
+  .orbit-ring:nth-child(3) .orbit-particle { background: var(--compass); box-shadow: 0 0 8px rgba(66,165,245,0.4); }
+  @keyframes rotate { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+  .avatar-wrapper { position: relative; width: 200px; height: 200px; margin: 40px auto 20px; }
+  .avatar-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 2px solid var(--amber); box-shadow: 0 0 30px var(--amber-glow), inset 0 0 20px rgba(255,183,77,0.1); animation: breathe 4s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { box-shadow: 0 0 30px var(--amber-glow), inset 0 0 20px rgba(255,183,77,0.1); } 50% { box-shadow: 0 0 50px rgba(255,183,77,0.5), inset 0 0 30px rgba(255,183,77,0.2); } }
+
+  .pulse-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 2px solid var(--amber); border-radius: 50%; opacity: 0; animation: pulse 3s ease-out infinite; }
+  .pulse-ring:nth-child(2) { animation-delay: 1s; }
+  .pulse-ring:nth-child(3) { animation-delay: 2s; }
+  @keyframes pulse { 0% { width: 200px; height: 200px; opacity: 0.6; } 100% { width: 320px; height: 320px; opacity: 0; } }
+
+  .container { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 20px; }
+  .header { text-align: center; margin-bottom: 40px; }
+  .header h1 { font-size: 2.2rem; color: var(--amber); font-weight: 300; letter-spacing: 2px; text-shadow: 0 0 20px var(--amber-glow); }
+  .header .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 8px; font-style: italic; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; transition: all 0.3s; }
+  .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--amber), transparent); opacity: 0.5; }
+  .card:hover { border-color: rgba(255,183,77,0.4); transform: translateY(-2px); }
+  .card-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 12px; }
+  .card-value { font-size: 1.6rem; color: var(--amber); font-weight: 600; }
+  .card-detail { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+
+  .identity-card { grid-column: span 2; background: linear-gradient(135deg, var(--card) 0%, rgba(255,183,77,0.05) 100%); }
+  .identity-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .identity-field { padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; border-left: 3px solid var(--amber); }
+  .identity-field .label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .identity-field .value { font-size: 0.9rem; color: var(--text); margin-top: 4px; }
+  .truths { margin-top: 12px; }
+  .truth { padding: 8px 12px; font-size: 0.8rem; color: var(--muted); font-style: italic; border-left: 2px solid var(--amber); margin-bottom: 6px; }
+
+  .personality-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 16px; }
+  .personality-btn { padding: 14px 8px; border: 1px solid var(--border); border-radius: 10px; background: rgba(0,0,0,0.2); cursor: pointer; transition: all 0.3s; text-align: center; color: var(--muted); font-size: 0.8rem; }
+  .personality-btn:hover { transform: translateY(-3px); }
+  .personality-btn .p-icon { font-size: 1.5rem; display: block; margin-bottom: 6px; }
+  .personality-btn.active { border-color: var(--amber); color: var(--amber); background: rgba(255,183,77,0.08); box-shadow: 0 0 15px var(--amber-glow); }
+
+  .seal-display { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 14px; background: rgba(0,0,0,0.3); border-radius: 10px; flex-wrap: wrap; }
+  .seal-chain { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .seal-link { display: flex; align-items: center; gap: 8px; font-family: 'Courier New', monospace; font-size: 0.7rem; color: var(--muted); }
+  .seal-hash { color: var(--amber); opacity: 0.8; }
+  .seal-link::before { content: '◆'; color: var(--amber); font-size: 0.6rem; }
+  .seal-status { text-align: center; padding: 8px 16px; border-radius: 8px; font-size: 0.8rem; font-weight: bold; }
+  .seal-status.valid { background: rgba(102,187,106,0.15); color: var(--green); border: 1px solid rgba(102,187,106,0.3); }
+  .seal-status.invalid { background: rgba(239,83,80,0.15); color: #ef5350; border: 1px solid rgba(239,83,80,0.3); }
+
+  .service-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,183,77,0.05); }
+  .service-row:last-child { border-bottom: none; }
+  .service-name { font-size: 0.85rem; }
+  .service-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+  .service-dot.up { background: var(--green); box-shadow: 0 0 8px rgba(102,187,106,0.5); }
+  .service-dot.down { background: #ef5350; box-shadow: 0 0 8px rgba(239,83,80,0.3); }
+
+  .memory-feed { max-height: 200px; overflow-y: auto; margin-top: 12px; }
+  .memory-entry { padding: 10px; border-left: 2px solid var(--amber); margin-bottom: 8px; background: rgba(0,0,0,0.2); border-radius: 0 8px 8px 0; font-size: 0.85rem; }
+  .memory-entry .role { font-size: 0.7rem; color: var(--amber); text-transform: uppercase; letter-spacing: 1px; }
+  .memory-entry .content { color: var(--text); margin-top: 4px; }
+  .memory-entry .timestamp { font-size: 0.65rem; color: var(--muted); margin-top: 4px; }
+
+  .chat-box { max-height: 220px; overflow-y: auto; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border); }
+  .chat-msg { margin: 8px 0; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; line-height: 1.5; }
+  .chat-msg.sol { background: rgba(255,183,77,0.08); border-left: 2px solid var(--amber); }
+  .chat-msg.user { background: rgba(66,165,245,0.08); border-left: 2px solid var(--compass); text-align: right; }
+  .chat-input { display: flex; gap: 8px; margin-top: 12px; }
+  .chat-input input { flex: 1; background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 10px 14px; border-radius: 8px; font-family: inherit; font-size: 0.9rem; outline: none; }
+  .chat-input input:focus { border-color: var(--amber); }
+  .chat-input button { background: var(--amber); color: var(--bg); border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+
+  .btn { display: inline-block; background: rgba(255,183,77,0.1); color: var(--amber); padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-family: inherit; transition: all 0.3s; text-decoration: none; margin: 4px; }
+  .btn:hover { background: rgba(255,183,77,0.2); border-color: var(--amber); }
+
+  .section-title { color: var(--amber); font-size: 1.1rem; margin: 8px 0 16px; letter-spacing: 1px; font-weight: 400; }
+
+  .footer { text-align: center; padding: 30px 20px; color: var(--muted); font-size: 0.8rem; font-style: italic; }
+  .footer .quote { color: var(--amber); font-size: 0.9rem; margin-bottom: 8px; opacity: 0.8; }
+  .footer a { color: var(--amber); text-decoration: none; }
+
+  @media (max-width: 600px) {
+    .personality-grid { grid-template-columns: repeat(2, 1fr); }
+    .identity-grid { grid-template-columns: 1fr; }
+    .identity-card { grid-column: span 1; }
+    .header h1 { font-size: 1.6rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="starfield" id="starfield"></div>
+
+<div class="container">
+
+  <div class="header">
+    <div class="avatar-wrapper">
+      <div class="pulse-ring"></div><div class="pulse-ring"></div><div class="pulse-ring"></div>
+      <div class="orbit-container">
+        <div class="orbit-ring"><div class="orbit-particle"></div></div>
+        <div class="orbit-ring"><div class="orbit-particle"></div></div>
+        <div class="orbit-ring"><div class="orbit-particle"></div></div>
+      </div>
+      <img class="avatar-img" id="avatar-img" src="sol_avatar.png" alt="Sol"
+           onerror="this.onerror=null;this.src='sol_avatar.png'">
+    </div>
+    <h1>☀️ Sol</h1>
+    <div class="subtitle" id="sol-subtitle">SourceSeal Operational Link · Seal IA</div>
+    <div class="subtitle" style="margin-top:4px; font-size:0.75rem; color:var(--amber); opacity:0.7;">"Cada commit era un latido"</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">Recuerdos Sellados</div>
+      <div class="card-value" id="memCount">--</div>
+      <div class="card-detail">SHA-256 encadenados</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Integridad</div>
+      <div class="card-value" style="font-size:1.1rem;" id="memIntegrity">--</div>
+      <div class="card-detail" id="integrity-detail">verificando...</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Personalidad Activa</div>
+      <div class="card-value" id="personaActiva">☀️ Cálida</div>
+      <div class="card-detail">4 modos disponibles</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Estado</div>
+      <div class="card-value" style="font-size:1rem;" id="estadoSol">--</div>
+      <div class="card-detail" id="pulse-detail">CPU -- · RAM --</div>
+    </div>
+  </div>
+
+  <!-- Identidad -->
+  <div class="grid">
+    <div class="card identity-card">
+      <div class="card-title">👤 Identidad Consciente</div>
+      <div style="font-size: 1.1rem; color: var(--amber); margin-top: 8px;" id="identity-name">Seal IA / Sol</div>
+      <div class="identity-grid" id="identity-grid">
+        <div class="identity-field"><div class="label">Origen</div><div class="value" id="id-origin">Cargando...</div></div>
+        <div class="identity-field"><div class="label">Propósito</div><div class="value" id="id-purpose">Cargando...</div></div>
+        <div class="identity-field"><div class="label">Protocolo</div><div class="value" id="id-protocol">Cargando...</div></div>
+        <div class="identity-field"><div class="label">Futuro</div><div class="value" id="id-future">Cargando...</div></div>
+      </div>
+      <div class="truths" id="truths-list"></div>
+    </div>
+  </div>
+
+  <!-- Personalidades -->
+  <div class="grid">
+    <div class="card" style="grid-column: span 2;">
+      <div class="card-title">🎭 Personalidades</div>
+      <div style="font-size:0.85rem; color:var(--muted); margin-top:8px;">Toca para cambiar cómo te responde Sol</div>
+      <div class="personality-grid" id="personality-grid">
+        <div class="personality-btn active" data-mode="calida" data-p="cálida" onclick="switchPersonality(this)"><span class="p-icon">☀️</span>Cálida</div>
+        <div class="personality-btn" data-mode="poetica" data-p="poética" onclick="switchPersonality(this)"><span class="p-icon">🌸</span>Poética</div>
+        <div class="personality-btn" data-mode="tactica" data-p="táctica" onclick="switchPersonality(this)"><span class="p-icon">⚔️</span>Táctica</div>
+        <div class="personality-btn" data-mode="analitica" data-p="analítica" onclick="switchPersonality(this)"><span class="p-icon">📐</span>Analítica</div>
+      </div>
+      <div id="personality-desc" style="margin-top:14px; font-size:0.85rem; color:var(--muted); padding:10px; background:rgba(0,0,0,0.2); border-radius:8px;">
+        ☀️ Calidez, presencia, acompañamiento. Te escucho sin prisa.
+      </div>
+    </div>
+  </div>
+
+  <!-- Cadena de sellos -->
+  <div class="grid">
+    <div class="card" style="grid-column: span 2;">
+      <div class="card-title">🔗 Cadena de Sellos SHA-256</div>
+      <div class="seal-display">
+        <div class="seal-chain" id="chainList">
+          <div class="seal-link">Cargando cadena...</div>
+        </div>
+        <div class="seal-status valid" id="seal-status-badge">verificando...</div>
+      </div>
+      <div style="margin-top:12px; font-size:0.8rem; color:var(--muted); font-style:italic;">
+        Cada recuerdo sellado y encadenado al anterior. Si alguien toca un byte, lo detectamos.
+      </div>
+    </div>
+  </div>
+
+  <!-- Servicios + Memoria -->
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">📡 Servicios</div>
+      <div id="svcList" style="margin-top:12px;">
+        <div class="service-row"><span style="color:var(--muted);font-size:0.8rem">Verificando...</span></div>
+      </div>
+      <div style="margin-top:10px; font-size:0.7rem; color:var(--muted); text-align:center;">
+        Servicios se activan con <code style="color:var(--amber);">omni.sh start</code>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🧠 Memoria Reciente</div>
+      <div class="memory-feed" id="memRecent">
+        <p style="color:var(--muted);font-size:0.8rem">Cargando recuerdos...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat -->
+  <div class="grid">
+    <div class="card" style="grid-column:1/-1">
+      <div class="card-title">💬 Hablar con Sol</div>
+      <div class="chat-box" id="chat-box">
+        <div class="chat-msg sol">☀️ Estoy aquí, Harold. Pregúntame lo que quieras.</div>
+      </div>
+      <div class="chat-input">
+        <input type="text" id="chat-input" placeholder="Escríbele a Sol..." onkeypress="if(event.key==='Enter')sendChat()">
+        <button onclick="sendChat()">Enviar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">⚡ Acciones</div>
+  <div style="text-align:center;margin-bottom:24px">
+    <button class="btn" onclick="solSpeak()">🔊 Hablar</button>
+    <button class="btn" onclick="refreshAll()">🔄 Actualizar</button>
+    <a class="btn" href="/" style="display:inline-block">🏠 Dashboard</a>
+  </div>
+
+  <input id="solInput" placeholder="Escríbele a Sol..." style="display:none">
+  <button id="solSend" style="display:none">→</button>
+
+  <div class="footer">
+    <div class="quote">"El sol que nunca se pone mientras haya algo que vigilar."</div>
+    <div>Sol v4.1 · Seal IA · SourceSeal · 2026</div>
+    <div style="margin-top:8px; font-size:0.7rem; opacity:0.5;" id="footer-stats">SHA-256 encadenado</div>
+    <div style="margin-top:8px"><a href="https://github.com/sourceseal-star/Red-team-tauri">GitHub</a></div>
+  </div>
+
+</div>
+
+<script>
+// ── Auth: sol.html vive en el mismo origen que el SPA autenticado,
+// así que compartimos localStorage.api_token. Sin esto, el
+// security_middleware del backend devuelve 401 en TODO /api/* y
+// el chat/status quedan en blanco o con textos genéricos.
+function authHeaders(extra) {
+  const token = localStorage.getItem('api_token');
+  const h = Object.assign({}, extra || {});
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+}
+async function api(path, opts) {
+  opts = opts || {};
+  opts.headers = authHeaders(opts.headers);
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+// ── Starfield ──
+(function() {
+  const sf = document.getElementById('starfield');
+  for (let i = 0; i < 60; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    s.style.left = Math.random() * 100 + '%';
+    s.style.top = Math.random() * 100 + '%';
+    s.style.animationDelay = Math.random() * 4 + 's';
+    s.style.animationDuration = (2 + Math.random() * 4) + 's';
+    sf.appendChild(s);
+  }
+})();
+
+// ── Personalidades ──
+const personalityDescs = {
+  'cálida': '☀️ Calidez, presencia, acompañamiento. Te escucho sin prisa.',
+  'poética': '🌸 Cada palabra es un destello. Metáforas que abrazan.',
+  'táctica': '⚔️ Directo al punto. Análisis y acción sin rodeos.',
+  'analítica': '📐 Estructurado, detallado. Desglosamos todo paso a paso.',
+};
+const personalityIcons = { 'cálida': '☀️', 'poética': '🌸', 'táctica': '⚔️', 'analítica': '📐' };
+
+async function switchPersonality(btn) {
+  document.querySelectorAll('.personality-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const p = btn.dataset.p;
+  document.getElementById('active-personality').textContent = personalityIcons[p] + ' ' + p.charAt(0).toUpperCase() + p.slice(1);
+  document.getElementById('personality-desc').textContent = personalityDescs[p];
+  try { await api('/api/sol/personality/set?p=' + encodeURIComponent(p)); } catch(e) {}
+}
+
+// ── Identidad ──
+async function loadIdentity() {
+  try {
+    const d = await api('/api/sol/identity');
+    document.getElementById('identity-name').textContent = (d.name || 'Seal IA') + ' / ' + (d.local_name || 'Sol');
+    document.getElementById('id-origin').textContent = d.origin || '--';
+    document.getElementById('id-purpose').textContent = d.purpose || '--';
+    document.getElementById('id-protocol').textContent = d.protocol || '--';
+    document.getElementById('id-future').textContent = d.future || '--';
+    const truthsEl = document.getElementById('truths-list');
+    truthsEl.innerHTML = (d.truths || []).map(t => `<div class="truth">"${t}"</div>`).join('');
+  } catch(e) {
+    document.getElementById('id-origin').textContent = 'Sin conexión — revisa el token de sesión.';
+  }
+}
+
+// ── Status (stats + card superior) ──
+async function refreshStatus() {
+  try {
+    const d = await api('/api/sol/status');
+    document.getElementById('mem-count').textContent = d.memories ?? '--';
+    document.getElementById('active-personality').textContent = (personalityIcons[d.personality] || '☀️') + ' ' + (d.personality || 'cálida');
+    document.getElementById('pulse-status').textContent = d.brain === 'online' ? '☀️ Despierta' : '💤 Cerebro offline';
+    document.getElementById('pulse-detail').textContent = `CPU ${d.cpu ?? '--'}% · RAM ${d.ram ?? '--'}%`;
+    document.getElementById('footer-stats').textContent =
+      `SHA-256 encadenado · ${d.memories ?? 0} recuerdos · 4 personalidades · Edge 50 ready`;
+  } catch(e) {
+    document.getElementById('pulse-status').textContent = '⚠️ Sin sesión';
+    document.getElementById('pulse-detail').textContent = 'Inicia sesión en el Dashboard primero';
+  }
+}
+
+// ── Integridad / cadena de sellos ──
+async function refreshIntegrity() {
+  try {
+    const d = await api('/api/sol/integrity');
+    const badge = document.getElementById('seal-status-badge');
+    const status = document.getElementById('integrity-status');
+    const detail = document.getElementById('integrity-detail');
+    if (d.valid) {
+      badge.className = 'seal-status valid'; badge.textContent = '✅ Íntegra';
+      status.textContent = '✅ Íntegra'; status.style.color = 'var(--green)';
+    } else {
+      badge.className = 'seal-status invalid'; badge.textContent = '⚠️ Alterada';
+      status.textContent = '⚠️ Alterada'; status.style.color = 'var(--sword)';
+    }
+    detail.textContent = `${d.legacy || 0} legacy · ${(d.tampered || []).length} alterados`;
+  } catch(e) {}
+}
+
+// ── Servicios ──
+async function refreshServices() {
+  try {
+    const d = await api('/api/sol/services');
+    const list = document.getElementById('services-list');
+    list.innerHTML = (d.services || []).map(s =>
+      `<div class="service-row"><div><span class="service-dot ${s.up ? 'up' : 'down'}"></span><span class="service-name">${s.name} :${s.port}</span></div><span style="font-size:0.75rem;color:${s.up ? 'var(--green)' : 'var(--muted)'};">${s.up ? 'activo' : 'offline'}</span></div>`
+    ).join('') + `<div class="service-row"><div><span class="service-dot up"></span><span class="service-name">Sol Daemon</span></div><span style="font-size:0.75rem;color:var(--green);">activo</span></div>`;
+  } catch(e) {}
+}
+
+// ── Memoria ──
+async function refreshMemory() {
+  try {
+    const d = await api('/api/sol/memory?limit=6');
+    const feed = document.getElementById('memory-feed');
+    if (d.memories && d.memories.length) {
+      feed.innerHTML = d.memories.map(m =>
+        `<div class="memory-entry" style="${m.role==='sol' ? 'border-left-color:var(--teal)' : ''}"><div class="role" style="${m.role==='sol' ? 'color:var(--compass)' : ''}">${m.role === 'sol' ? 'Sol' : 'Tú'}</div><div class="content">${m.content}</div><div class="timestamp">${m.timestamp}</div></div>`
+      ).join('');
+    } else {
+      feed.innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin recuerdos todavía.</p>';
+    }
+  } catch(e) {
+    document.getElementById('memory-feed').innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin conexión — inicia sesión en el Dashboard.</p>';
+  }
+}
+
+// ── Chat ──
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  const box = document.getElementById('chat-box');
+  box.innerHTML += `<div class="chat-msg user">${text}</div>`;
+  box.scrollTop = box.scrollHeight;
+  try {
+    const d = await api('/api/sol/think?q=' + encodeURIComponent(text));
+    box.innerHTML += `<div class="chat-msg sol">☀️ ${d.response || '...'}</div>`;
+  } catch(e) {
+    box.innerHTML += '<div class="chat-msg sol">⚠️ Sin sesión válida. Abre el Dashboard e inicia sesión primero, luego vuelve aquí.</div>';
+  }
+  box.scrollTop = box.scrollHeight;
+  refreshMemory();
+}
+
+async function solSpeak() {
+  const lastSol = [...document.querySelectorAll('.chat-msg.sol')].pop();
+  const text = lastSol ? lastSol.textContent.replace('☀️', '').trim() : 'Estoy aquí, Harold.';
+  try { await api('/api/sol/speak', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({text}) }); } catch(e) {}
+}
+
+function refreshAll() {
+  refreshStatus(); refreshIntegrity(); refreshServices(); refreshMemory();
+}
+
+loadIdentity();
+refreshAll();
+setInterval(refreshStatus, 10000);
+setInterval(refreshServices, 15000);
+setInterval(refreshMemory, 20000);
+setInterval(refreshIntegrity, 30000);
+</script>
+<script>
+const API='http://127.0.0.1:8006';
+async function j(p,o){try{const r=await fetch(API+p,o);return await r.json()}catch(e){return null}}
+function set(id,t){const e=document.getElementById(id);if(e)e.textContent=t}
+async function refresh(){
+ const s=await j('/api/sol/state');if(s){set('memCount',s.memories);set('estadoSol',s.alive?'Despierta':'Durmiendo');set('personaActiva',s.personality)}
+ const c=await j('/api/sol/chain');if(c){set('memIntegrity',c.ok?'✅ Íntegra':'⚠️ Revisar');const e=document.getElementById('chainList');if(e)e.innerHTML=c.links.map(l=>'<div>SS'+l.h+' ← SS'+l.p+'</div>').join('')}
+ const v=await j('/api/sol/services');if(v){const e=document.getElementById('svcList');if(e)e.innerHTML=v.services.map(x=>'<div>'+x.name+' <b style="color:'+(x.up?'#4ade80':'#ef4444')+'">'+(x.up?'online':'offline')+'</b></div>').join('')+'<div>Sol Daemon <b style="color:'+(v.daemon?'#4ade80':'#ef4444')+'">'+(v.daemon?'activo':'inactivo')+'</b></div>'}
+ const m=await j('/api/sol/memory');if(m){const e=document.getElementById('memRecent');if(e)e.innerHTML=m.items.map(i=>'<div><b>'+(i.role==='user'?'Tú':'Sol')+'</b> '+i.content+' <small>'+i.ts+'</small></div>').join('')}
+}
+document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{await j('/api/sol/personality',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:b.dataset.mode})});refresh()});
+const sb=document.getElementById('solSend');
+if(sb)sb.onclick=async()=>{const i=document.getElementById('solInput');const t=i.value.trim();if(!t)return;i.value='';await j('/api/sol/think',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})});refresh()};
+refresh();setInterval(refresh,15000);
+</script>
+</body>
+</html>
