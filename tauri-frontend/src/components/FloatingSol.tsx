@@ -69,6 +69,13 @@ export const FloatingSol = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // ── Escuchar evento del sidebar para abrir videollamada ──
+  useEffect(() => {
+    const handler = () => setExpanded(true);
+    window.addEventListener('sol-expand', handler);
+    return () => window.removeEventListener('sol-expand', handler);
+  }, []);
+
   // ── Polling: mensaje proactivo de Sol ──
   useEffect(() => {
     let lastMsg = '';
@@ -502,7 +509,7 @@ export const FloatingSol = () => {
           }}
         >
           <img
-            src="/static/sol_avatar.png"
+            src="/assets/sol_avatar_official.jpg" onError={(e) => { (e.target as HTMLImageElement).src = "/sol_avatar.jpg"; }}
             alt="Sol"
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
@@ -791,7 +798,7 @@ export const FloatingSol = () => {
 
             {/* Avatar — imagen holográfica real + parpadeo y habla en las posiciones reales de ojos/boca (detectadas con OpenCV) */}
             <div style={styles.avatarFrame}>
-              <img src="/static/sol_avatar.png" alt="Sol" style={styles.avatarImg} />
+              <img src="/assets/sol_avatar_official.jpg" onError={(e) => { (e.target as HTMLImageElement).src = "/sol_avatar.jpg"; }} alt="Sol" style={styles.avatarImg} />
 
               {/* Barrido de luz — sensación de escaneo holográfico */}
               <div style={{

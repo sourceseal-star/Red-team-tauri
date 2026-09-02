@@ -37,7 +37,6 @@ import OperationsPanel from './components/OperationsPanel';
 import IntegratedPanel from './components/IntegratedPanel';
 import TacticalPanel from './components/TacticalPanel';
 import { FloatingSol } from './components/FloatingSol';
-import { SolFullPage } from './components/SolFullPage';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -83,7 +82,6 @@ function App() {
       {module === 'operations' && <OperationsPanel />}
       {module === 'android' && <AndroidFieldPanel />}
       {module === 'tactical' && <TacticalPanel />}
-      {module === 'sol' && <SolFullPage />}
     </AppShell>
     <FloatingSol />
     </ARTOProvider>
