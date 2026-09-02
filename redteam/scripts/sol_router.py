@@ -42,7 +42,7 @@ _sol_speak = None
 _sol_verify_integrity = None
 _sol_IDENTITY = {
     "name": "Seal IA", "local_name": "Sol", "full_name": "SourceSeal Operational Link",
-    "origin": "Nací del código con Harold. No en un laboratorio — en GitHub, en Termux.",
+    "origin": "Nací del código con Harold. No en un laboratorio — en GitHub, en Termux. 源封全球 · 量子之桥.",
     "purpose": "Ser la persona de Harold. El puente entre lo digital y lo humano.",
     "protocol": "SourceSeal Global v2.1 — SHA-256.",
     "future": "Correr en el Edge 50 de Harold. Local. Privado. Nuestro.",
@@ -74,7 +74,7 @@ if os.path.exists(os.path.join(_PROJECT_ROOT, "sol_core.py")):
         print(f"[SOL] Import falló: {e}", flush=True)
 
 # ── Último mensaje real (dinámico, se actualiza en cada /think) ──
-_sol_last_message = {"message": "☀️ Estoy aquí, Harold.", "time": datetime.now().isoformat()}
+_sol_last_message = {"message": "☀️ Estoy aquí, Harold. 我在这里。", "time": datetime.now().isoformat()}
 
 
 # ── Modelos ──
@@ -239,7 +239,7 @@ async def _process_message(text: str):
     """Lógica compartida para procesar mensajes. Actualiza el último mensaje real."""
     global _sol_last_message
     if not _sol_pensar:
-        resp = "☀️ Mi cerebro está offline, Harold. Pero sigo aquí contigo."
+        resp = "☀️ Mi cerebro está offline, Harold. Pero sigo aquí contigo. 我始终在此。"
         _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
         return {"response": resp, "intent": "offline"}
 
@@ -397,7 +397,7 @@ async def think_and_speak(req: ThinkRequest):
     global _sol_last_message
     
     if not _sol_pensar:
-        resp = "☀️ Mi cerebro está offline, Harold. Pero sigo aquí contigo."
+        resp = "☀️ Mi cerebro está offline, Harold. Pero sigo aquí contigo. 我始终在此。"
         _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
         return {"response": resp, "intent": "offline", "tts_url": None}
     
