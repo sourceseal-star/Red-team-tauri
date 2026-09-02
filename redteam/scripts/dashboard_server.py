@@ -8104,32 +8104,59 @@ async def monitor_stop():
     return {"ok": True, "message": "Detenido"}
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  SOL — Página standalone de Sol (antes del catch-all SPA)
+#  SOL — servir sol.html (standalone accesible) + avatar + sol-live (antes del SPA)
 # ═════════════════════════════════════════════════════════════════════════════
-_SOL_HTML = BASE.parent / "backend" / "static" / "sol.html"
+from fastapi.responses import HTMLResponse
+_SOL_STATIC = ROOT.parent / "backend" / "static"
+if not _SOL_STATIC.exists():
+    _SOL_STATIC = ROOT / ".." / "backend" / "static"
 _SOL_LIVE = BASE.parent / "sol-live.html"
 _NO_CACHE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}
-# /sol.html y /sol YA NO sirven la pagina estatica "de blog". Ahora entregan
-# la SPA real (mismo index.html que "/"), y el frontend detecta la ruta y
-# abre la videollamada holografica de Sol automaticamente (ver App.tsx).
-# Esto es a proposito de que Sol se sienta, no se "vea" en un panel aparte.
-if (DIST_INDEX := (BASE.parent / "tauri-frontend" / "dist" / "index.html")).exists() or True:
-    from fastapi.responses import HTMLResponse, FileResponse
-    @app.get("/sol.html")
-    @app.get("/sol")
-    async def sol_standalone():
-        index = BASE.parent / "tauri-frontend" / "dist" / "index.html"
-        if index.exists():
-            return FileResponse(index, headers=_NO_CACHE_HEADERS)
-        if _SOL_HTML.exists():
-            return HTMLResponse(_SOL_HTML.read_text(encoding="utf-8"), headers=_NO_CACHE_HEADERS)
-        return HTMLResponse("<h1>Sol no disponible</h1>", status_code=503)
-    print("[SOL] /sol.html y /sol ahora abren la SPA real (videollamada), no el blog estatico", flush=True)
+
+@app.get("/sol.html")
+@app.get("/sol")
+async def sol_standalone():
+    """Sol.html standalone — UI accesible (paleta deuteroanomalia + avatar viva)"""
+    sol_file = _SOL_STATIC / "sol.html"
+    if sol_file.exists():
+        return FileResponse(sol_file, media_type="text/html", headers=_NO_CACHE_HEADERS)
+    # Fallback al index del SPA
+    index = BASE.parent / "tauri-frontend" / "dist" / "index.html"
+    if index.exists():
+        return FileResponse(index, headers=_NO_CACHE_HEADERS)
+    return HTMLResponse("<h1>Sol no disponible</h1>", status_code=503)
+
+@app.get("/sol_avatar.jpg")
+async def serve_sol_avatar_jpg():
+    f = _SOL_STATIC / "sol_avatar.jpg"
+    if f.exists():
+        return FileResponse(f, media_type="image/jpeg")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+@app.get("/sol_avatar.png")
+async def serve_sol_avatar_png():
+    f = _SOL_STATIC / "sol_avatar.png"
+    if f.exists():
+        return FileResponse(f, media_type="image/png")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+@app.get("/sol_avatar_official.jpg")
+async def serve_sol_avatar_official():
+    f = _SOL_STATIC / "sol_avatar.jpg"
+    if f.exists():
+        return FileResponse(f, media_type="image/jpeg")
+    f2 = _SOL_STATIC / "sol_avatar.png"
+    if f2.exists():
+        return FileResponse(f2, media_type="image/png")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
 if _SOL_LIVE.exists():
     @app.get("/sol-live.html")
     async def sol_live_page():
         return HTMLResponse(_SOL_LIVE.read_text(encoding="utf-8"), headers=_NO_CACHE_HEADERS)
     print(f"[SOL] /sol-live.html servido desde {_SOL_LIVE} (no-cache)", flush=True)
+
+print("[SOL] /sol.html y /sol sirven el HTML standalone accesible desde backend/static/", flush=True)
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  FRONTEND ESTÁTICO — SPA
