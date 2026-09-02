@@ -193,6 +193,22 @@ body {
 <div id="toast"></div>
 
 <script>
+
+// Auth: leer token del localStorage (mismo origen que el SPA)
+function authHeaders(extra) {
+  const token = localStorage.getItem('api_token');
+  const h = Object.assign({}, extra || {});
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+}
+async function api(path, opts) {
+  opts = opts || {};
+  opts.headers = authHeaders(opts.headers);
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
 const API = ''; // mismo origen (:8001) — sin :8006
 const headers = { 'Content-Type': 'application/json' };
 
@@ -384,7 +400,7 @@ async function loadSIL() {
   const list = document.getElementById('silList');
   sec.style.display = 'block';
   try {
-    const r = await fetch(`${API}/api/sil/lessons?language=chino`);
+    const r = await fetch(`${API}/api/sol/sil/lessons?language=chino`);
     const d = await r.json();
     if (d.lessons && d.lessons.length > 0) {
       list.innerHTML = d.lessons.map(l => `<div style="font-size:0.8rem;padding:4px 0;color:#9aa89a">📖 ${l}</div>`).join('');
