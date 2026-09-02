@@ -81,10 +81,15 @@
     position: relative;
     width: 280px; height: 280px;
     perspective: 800px;
+    animation: holoGlow 4s ease-in-out infinite;
+  }
+  @keyframes holoGlow {
+    0%, 100% { filter: drop-shadow(0 0 20px rgba(255,183,77,0.15)); }
+    50% { filter: drop-shadow(0 0 35px rgba(255,183,77,0.3)); }
   }
   .holo-ring-outer {
     position: absolute; inset: -40px;
-    border: 1px solid var(--border);
+    border: 2px solid rgba(255,183,77,0.25);
     border-radius: 50%;
     animation: spin 30s linear infinite;
   }
@@ -96,7 +101,7 @@
   }
   .holo-ring-mid {
     position: absolute; inset: -20px;
-    border: 1px dashed rgba(255,183,77,0.08);
+    border: 1px dashed rgba(255,183,77,0.18);
     border-radius: 50%;
     animation: spin 20s linear infinite reverse;
   }
@@ -132,13 +137,24 @@
   }
   @keyframes breathe {
     0%, 100% { box-shadow: 0 0 40px var(--amber-glow), 0 0 80px rgba(255,183,77,0.15), inset 0 0 30px rgba(255,183,77,0.08); }
-    50% { box-shadow: 0 0 60px rgba(255,183,77,0.5), 0 0 120px rgba(255,183,77,0.2), inset 0 0 50px rgba(255,183,77,0.15); }
+    50% { box-shadow: 0 0 70px rgba(255,183,77,0.6), 0 0 140px rgba(255,183,77,0.25), inset 0 0 50px rgba(255,183,77,0.2); }
   }
   .avatar-img {
     width: 100%; height: 100%; object-fit: cover;
     border-radius: 50%;
     filter: brightness(1.05) contrast(1.1) saturate(1.15);
     transition: filter 0.3s;
+    animation: avatarBreathe 4s ease-in-out infinite, avatarFloat 6s ease-in-out infinite;
+  }
+  @keyframes avatarBreathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.04); }
+  }
+  @keyframes avatarFloat {
+    0%, 100% { translate: 0 0; }
+    25% { translate: 0 -4px; }
+    50% { translate: 2px 2px; }
+    75% { translate: -2px -2px; }
   }
   
   /* Pulso de vida */
@@ -146,6 +162,7 @@
     position: absolute; inset: 0; border-radius: 50%;
     border: 2px solid var(--amber); opacity: 0;
     animation: pulseRing 3s ease-out infinite;
+    box-shadow: 0 0 15px var(--amber-glow);
   }
   .pulse-ring:nth-child(2) { animation-delay: 1s; }
   .pulse-ring:nth-child(3) { animation-delay: 2s; }
@@ -156,12 +173,12 @@
   
   /* ═══ PARPADEO (overlay sutil sobre la imagen, NO la toca) ═══ */
   .blink-overlay {
-    position: absolute; left: 22%; right: 22%; top: 35%; height: 9%;
+    position: absolute; left: 18%; right: 18%; top: 30%; height: 14%;
     border-radius: 50%; background: rgba(10, 8, 4, 0.0);
     z-index: 4; pointer-events: none;
-    transition: background 0.09s ease;
+    transition: background 0.12s ease;
   }
-  .blink-overlay.blinking { background: rgba(10, 8, 4, 0.4); }
+  .blink-overlay.blinking { background: rgba(10, 8, 4, 0.55); }
 
   /* ═══ GLOW REACTIVO AL ÁNIMO REAL (solo cambia color/intensidad, no la imagen) ═══ */
   .holo-container[data-mood="up"] .avatar-frame::before {
