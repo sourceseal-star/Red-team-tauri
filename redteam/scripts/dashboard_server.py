@@ -8109,15 +8109,22 @@ async def monitor_stop():
 _SOL_HTML = BASE.parent / "backend" / "static" / "sol.html"
 _SOL_LIVE = BASE.parent / "sol-live.html"
 _NO_CACHE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}
-if _SOL_HTML.exists():
-    from fastapi.responses import HTMLResponse
+# /sol.html y /sol YA NO sirven la pagina estatica "de blog". Ahora entregan
+# la SPA real (mismo index.html que "/"), y el frontend detecta la ruta y
+# abre la videollamada holografica de Sol automaticamente (ver App.tsx).
+# Esto es a proposito de que Sol se sienta, no se "vea" en un panel aparte.
+if (DIST_INDEX := (BASE.parent / "tauri-frontend" / "dist" / "index.html")).exists() or True:
+    from fastapi.responses import HTMLResponse, FileResponse
     @app.get("/sol.html")
     @app.get("/sol")
     async def sol_standalone():
-        # no-store: el navegador del telefono no debe cachear versiones viejas
-        # mientras iteramos sobre el holograma de Sol.
-        return HTMLResponse(_SOL_HTML.read_text(encoding="utf-8"), headers=_NO_CACHE_HEADERS)
-    print(f"[SOL] /sol.html servido desde {_SOL_HTML} (no-cache)", flush=True)
+        index = BASE.parent / "tauri-frontend" / "dist" / "index.html"
+        if index.exists():
+            return FileResponse(index, headers=_NO_CACHE_HEADERS)
+        if _SOL_HTML.exists():
+            return HTMLResponse(_SOL_HTML.read_text(encoding="utf-8"), headers=_NO_CACHE_HEADERS)
+        return HTMLResponse("<h1>Sol no disponible</h1>", status_code=503)
+    print("[SOL] /sol.html y /sol ahora abren la SPA real (videollamada), no el blog estatico", flush=True)
 if _SOL_LIVE.exists():
     @app.get("/sol-live.html")
     async def sol_live_page():

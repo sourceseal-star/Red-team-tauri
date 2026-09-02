@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 // El import de api.ts activa el interceptor global de fetch (injecta Bearer token)
 import './lib/api';
 import AppShell from './components/AppShell';
@@ -41,6 +41,19 @@ import { FloatingSol } from './components/FloatingSol';
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
   const [module, setModule] = useState('warroom');
+
+  // Si nos llegaron directo por /sol.html o /sol (link viejo, marcador,
+  // sidebar cacheado), abrimos la videollamada de Sol automaticamente
+  // en vez de mostrar el War Room. No hay pagina de Sol aparte -- Sol
+  // vive encima de todo el dashboard vía FloatingSol.
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path === '/sol.html' || path === '/sol') {
+      window.history.replaceState({}, '', '/');
+      const fire = () => window.dispatchEvent(new CustomEvent('sol-expand'));
+      setTimeout(fire, 300);
+    }
+  }, []);
 
   if (!token) return <BiometricLogin onLogin={setToken} />;
 
