@@ -42,7 +42,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
+    print("⚠️ psutil no instalado — watchdog y defense limitados")
 import requests
 import uvicorn
 from fastapi import (
@@ -391,6 +395,8 @@ class TelegramC2:
 
     # ── Comandos ──
     def _cmd_status(self, args: str) -> str:
+        if psutil is None:
+            return {"cpu": 0, "ram": 0, "processes": 0, "alerts": [], "timestamp": datetime.now().isoformat()}
         cpu = psutil.cpu_percent(interval=1)
         ram = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
@@ -568,6 +574,8 @@ class Watchdog:
         self.history: List[Dict] = []
 
     def check(self) -> Dict:
+        if psutil is None:
+            return {"cpu": 0, "ram": 0, "processes": 0, "alerts": [], "timestamp": datetime.now().isoformat()}
         cpu = psutil.cpu_percent(interval=1)
         ram = psutil.virtual_memory()
         net = psutil.net_io_counters()
@@ -607,7 +615,12 @@ class Watchdog:
         return status
 
     def latest(self) -> Dict:
-        return self.history[-1] if self.history else {"status": "no data"}
+        if not self.history:
+            if psutil is not None:
+                return {"cpu": psutil.cpu_percent(interval=0.5), "ram": psutil.virtual_memory().percent,
+                        "processes": len(psutil.pids()), "alerts": [], "timestamp": datetime.now().isoformat()}
+            return {"status": "no data", "cpu": 0, "ram": 0, "processes": 0}
+        return self.history[-1]
 
     def history_list(self) -> List[Dict]:
         return self.history
@@ -625,6 +638,8 @@ class ActiveDefense:
     def scan(self) -> Dict:
         threats = []
         # Procesos sospechosos
+        if psutil is None:
+            return {"threats": [], "count": 0, "timestamp": datetime.now().isoformat()}
         for p in psutil.process_iter(['pid', 'name', 'cmdline']):
             name = (p.info.get('name') or '').lower()
             if name in self.SUSPICIOUS_PROCESSES:
@@ -974,9 +989,14 @@ async def startup():
     asyncio.create_task(defense_loop())
     log.info("✅ C2 UNIFIED PRO v5.0 — Todos los módulos activos.")
 
-@app.on_event("startup")
-async def on_startup():
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     await startup()
+    yield
+
+app.router.lifespan_context = lifespan
 
 if __name__ == "__main__":
     print("=" * 60)

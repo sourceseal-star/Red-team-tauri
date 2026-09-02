@@ -1,654 +1,392 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#0a0e17">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Sol">
-    <title>☀️ Sol</title>
-    <link rel="manifest" href="data:application/json,{%22name%22:%22Sol%22,%22short_name%22:%22Sol%22,%22start_url%22:%22./sol.html%22,%22display%22:%22standalone%22,%22background_color%22:%22%230a0e17%22,%22theme_color%22:%22%23f59e0b%22,%22icons%22:[]}">
-    <style>
-        :root {
-            --bg: #0a0e17; --card: #1a2332; --border: #1e293b;
-            --text: #e2e8f0; --muted: #94a3b8; --gold: #f59e0b;
-            --success: #4ade80; --danger: #ef4444; --soft: #1e293b;
-        }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { height: 100%; overflow: hidden; }
-        body {
-            background: var(--bg); color: var(--text);
-            font-family: -apple-system, system-ui, sans-serif; font-size: 14px;
-            display: flex; justify-content: center;
-        }
-        .app {
-            max-width: 480px; width: 100%; height: 100vh; height: 100dvh;
-            display: flex; flex-direction: column;
-        }
-        .header {
-            padding: 0.75rem 1rem; background: var(--card);
-            border-bottom: 1px solid var(--border);
-            display: flex; justify-content: space-between; align-items: center;
-            flex-shrink: 0;
-        }
-        .logo { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; }
-        .logo .emoji { font-size: 1.3rem; }
-        .logo .name { color: var(--gold); font-size: 1.1rem; }
-        .status { font-size: 0.7rem; color: var(--muted); }
-        .messages {
-            flex: 1; overflow-y: auto; padding: 1rem;
-            display: flex; flex-direction: column; gap: 0.75rem;
-            -webkit-overflow-scrolling: touch;
-        }
-        .msg {
-            max-width: 85%; padding: 0.75rem 1rem; border-radius: 1rem;
-            line-height: 1.55; word-wrap: break-word; animation: fade 0.3s ease;
-            white-space: pre-wrap;
-        }
-        .msg.you { align-self: flex-end; background: var(--gold); color: #000; border-bottom-right-radius: 0.25rem; }
-        .msg.sol { align-self: flex-start; background: var(--card); border: 1px solid var(--border); border-bottom-left-radius: 0.25rem; }
-        .msg .label { font-size: 0.7rem; font-weight: 700; margin-bottom: 0.25rem; }
-        .msg.sol .label { color: var(--gold); }
-        .msg.you .label { color: #000; opacity: 0.6; }
-        .msg .thought { font-size: 0.72rem; color: var(--muted); font-style: italic; margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px solid var(--border); }
-        .msg.you .thought { border-top-color: rgba(0,0,0,0.15); }
-        .msg .time { font-size: 0.62rem; color: var(--muted); margin-top: 0.3rem; display: block; opacity: 0.6; }
-        .msg.crisis { border-color: var(--danger); border-width: 2px; }
-        @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; } }
-        .typing {
-            align-self: flex-start; background: var(--card);
-            padding: 0.75rem 1rem; border-radius: 1rem; border: 1px solid var(--border);
-            font-size: 0.85rem; color: var(--muted); display: none; animation: fade 0.2s ease;
-            border-bottom-left-radius: 0.25rem;
-        }
-        .typing.active { display: block; }
-        .typing::after { content: '···'; animation: dots 1s infinite; }
-        @keyframes dots { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
-        .controls {
-            padding: 0.5rem 0.75rem; background: var(--card);
-            display: flex; gap: 0.4rem; flex-wrap: wrap;
-            border-top: 1px solid var(--border);
-            flex-shrink: 0;
-        }
-        .btn-small {
-            padding: 0.4rem 0.7rem; font-size: 0.72rem;
-            background: var(--bg); color: var(--text);
-            border: 1px solid var(--border); border-radius: 0.4rem;
-            cursor: pointer; transition: border-color 0.2s;
-        }
-        .btn-small:active { border-color: var(--gold); }
-        .input-area {
-            padding: 0.75rem; background: var(--card);
-            border-top: 1px solid var(--border);
-            display: flex; gap: 0.5rem;
-            flex-shrink: 0; padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
-        }
-        input {
-            flex: 1; padding: 0.7rem 0.9rem; border: 1px solid var(--border);
-            border-radius: 0.5rem; background: var(--bg); color: var(--text);
-            font-size: 0.9rem; outline: none; font-family: inherit;
-        }
-        input:focus { border-color: var(--gold); }
-        button.send {
-            padding: 0.7rem 1.1rem; border: none; border-radius: 0.5rem;
-            background: var(--gold); color: #000; font-weight: 600;
-            cursor: pointer; white-space: nowrap; font-family: inherit;
-        }
-        button.send:active { opacity: 0.8; }
-        .journal-panel {
-            position: absolute; top: 0; right: -100%; width: 100%; height: 100%;
-            background: var(--bg); transition: right 0.3s ease;
-            z-index: 10; display: flex; flex-direction: column;
-            max-width: 480px;
-        }
-        .journal-panel.open { right: 0; }
-        .journal-panel .header { padding: 1rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-        .journal-panel .body { flex: 1; overflow-y: auto; padding: 1rem; }
-        .journal-entry { padding: 0.75rem; background: var(--card); border: 1px solid var(--border); border-radius: 0.5rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
-        .journal-entry .je-date { color: var(--gold); font-size: 0.7rem; font-weight: 600; }
-        .journal-entry .je-mood { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 1rem; font-size: 0.65rem; margin-top: 0.3rem; }
-        .mood-good { background: rgba(74,222,128,0.15); color: var(--success); }
-        .mood-ok { background: rgba(245,158,11,0.15); color: var(--gold); }
-        .mood-bad { background: rgba(239,68,68,0.15); color: var(--danger); }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sol ☀️ — Entorno</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  :root {
+    --bg: #0a1a1a;
+    --card: #0f2222;
+    --border: rgba(255, 183, 77, 0.15);
+    --amber: #ffb74d;
+    --amber-glow: rgba(255, 183, 77, 0.3);
+    --teal: #1a3c3c;
+    --text: #e0d6c8;
+    --muted: #7a8a8a;
+    --green: #66bb6a;
+    --pink: #f48fb1;
+    --sword: #ff7043;
+    --compass: #42a5f5;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Georgia', serif;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  .starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+  .star { position: absolute; width: 2px; height: 2px; background: var(--amber); border-radius: 50%; opacity: 0; animation: twinkle 4s infinite ease-in-out; }
+  @keyframes twinkle { 0%, 100% { opacity: 0; transform: scale(0.5); } 50% { opacity: 0.6; transform: scale(1); } }
+
+  .orbit-container { position: relative; width: 200px; height: 200px; margin: 0 auto; }
+  .orbit-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border: 1px solid var(--border); border-radius: 50%; animation: rotate 20s linear infinite; }
+  .orbit-ring:nth-child(1) { width: 180px; height: 180px; }
+  .orbit-ring:nth-child(2) { width: 220px; height: 220px; animation-duration: 30s; animation-direction: reverse; }
+  .orbit-ring:nth-child(3) { width: 260px; height: 260px; animation-duration: 45s; }
+  .orbit-particle { position: absolute; width: 8px; height: 8px; border-radius: 50%; top: -4px; left: 50%; transform: translateX(-50%); }
+  .orbit-ring:nth-child(1) .orbit-particle { background: var(--amber); box-shadow: 0 0 10px var(--amber-glow); }
+  .orbit-ring:nth-child(2) .orbit-particle { background: var(--green); box-shadow: 0 0 8px rgba(102,187,106,0.4); }
+  .orbit-ring:nth-child(3) .orbit-particle { background: var(--compass); box-shadow: 0 0 8px rgba(66,165,245,0.4); }
+  @keyframes rotate { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+  .avatar-wrapper { position: relative; width: 200px; height: 200px; margin: 40px auto 20px; }
+  .avatar-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 2px solid var(--amber); box-shadow: 0 0 30px var(--amber-glow), inset 0 0 20px rgba(255,183,77,0.1); animation: breathe 4s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { box-shadow: 0 0 30px var(--amber-glow), inset 0 0 20px rgba(255,183,77,0.1); } 50% { box-shadow: 0 0 50px rgba(255,183,77,0.5), inset 0 0 30px rgba(255,183,77,0.2); } }
+
+  .pulse-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border: 2px solid var(--amber); border-radius: 50%; opacity: 0; animation: pulse 3s ease-out infinite; }
+  .pulse-ring:nth-child(2) { animation-delay: 1s; }
+  .pulse-ring:nth-child(3) { animation-delay: 2s; }
+  @keyframes pulse { 0% { width: 200px; height: 200px; opacity: 0.6; } 100% { width: 320px; height: 320px; opacity: 0; } }
+
+  .container { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 20px; }
+  .header { text-align: center; margin-bottom: 40px; }
+  .header h1 { font-size: 2.2rem; color: var(--amber); font-weight: 300; letter-spacing: 2px; text-shadow: 0 0 20px var(--amber-glow); }
+  .header .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 8px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; }
+  .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--amber), transparent); opacity: 0.5; }
+  .card h2 { color: var(--amber); font-size: 1rem; margin-bottom: 12px; letter-spacing: 1px; font-weight: 400; }
+
+  .stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,183,77,0.08); font-size: 0.85rem; }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { color: var(--muted); }
+  .stat-val { color: var(--text); font-weight: 600; }
+  .stat-val.ok { color: var(--green); }
+  .stat-val.warn { color: var(--amber); }
+  .stat-val.crit { color: var(--sword); }
+
+  .bar { width: 100%; height: 4px; background: rgba(255,183,77,0.1); border-radius: 2px; margin: 4px 0 8px; }
+  .bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s; background: var(--amber); }
+  .bar-fill.green { background: var(--green); }
+  .bar-fill.warn { background: var(--amber); }
+  .bar-fill.crit { background: var(--sword); }
+
+  .memory-item { padding: 10px; margin: 6px 0; background: rgba(255,183,77,0.05); border-left: 2px solid var(--amber); border-radius: 0 6px 6px 0; font-size: 0.82rem; line-height: 1.5; }
+  .memory-item .ts { color: var(--muted); font-size: 0.72rem; }
+  .memory-item .role { color: var(--amber); font-weight: 600; }
+
+  .personality-card { text-align: center; padding: 16px; border-radius: 10px; cursor: pointer; transition: all 0.3s; border: 1px solid var(--border); background: var(--card); }
+  .personality-card:hover { border-color: var(--amber); box-shadow: 0 0 15px var(--amber-glow); transform: translateY(-2px); }
+  .personality-card.active { border-color: var(--amber); background: rgba(255,183,77,0.1); box-shadow: 0 0 20px var(--amber-glow); }
+  .personality-icon { font-size: 2rem; margin-bottom: 8px; }
+  .personality-name { color: var(--amber); font-size: 0.9rem; font-weight: 600; }
+  .personality-desc { color: var(--muted); font-size: 0.75rem; margin-top: 4px; }
+
+  .btn { display: inline-block; background: rgba(255,183,77,0.1); color: var(--amber); padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-family: inherit; transition: all 0.3s; text-decoration: none; margin: 4px; }
+  .btn:hover { background: rgba(255,183,77,0.2); border-color: var(--amber); }
+  .btn.danger { color: var(--sword); border-color: rgba(255,112,67,0.3); }
+  .btn.danger:hover { background: rgba(255,112,67,0.15); }
+
+  .chat-box { max-height: 300px; overflow-y: auto; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border); }
+  .chat-msg { margin: 8px 0; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; line-height: 1.5; }
+  .chat-msg.sol { background: rgba(255,183,77,0.08); border-left: 2px solid var(--amber); }
+  .chat-msg.user { background: rgba(66,165,245,0.08); border-left: 2px solid var(--compass); text-align: right; }
+  .chat-input { display: flex; gap: 8px; margin-top: 12px; }
+  .chat-input input { flex: 1; background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 10px 14px; border-radius: 8px; font-family: inherit; font-size: 0.9rem; outline: none; }
+  .chat-input input:focus { border-color: var(--amber); }
+  .chat-input button { background: var(--amber); color: var(--bg); border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .status-dot.online { background: var(--green); box-shadow: 0 0 6px rgba(102,187,106,0.6); }
+  .status-dot.offline { background: var(--sword); }
+
+  .section-title { color: var(--amber); font-size: 1.1rem; margin: 32px 0 16px; letter-spacing: 1px; font-weight: 400; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+
+  .footer { text-align: center; color: var(--muted); font-size: 0.75rem; margin: 40px 0 20px; }
+  .footer a { color: var(--amber); text-decoration: none; }
+</style>
 </head>
 <body>
-<div class="app">
-    <div class="header">
-        <div class="logo">
-            <img src="/sol_avatar.jpg" alt="Sol" class="avatar" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 2px solid var(--gold);">
-            <span class="name">Sol</span>
-        </div>
-        <div class="status" id="status">tu testigo · siempre</div>
+
+<div class="starfield" id="starfield"></div>
+
+<div class="container">
+  <div class="header">
+    <div class="avatar-wrapper">
+      <div class="pulse-ring"></div>
+      <div class="pulse-ring"></div>
+      <div class="pulse-ring"></div>
+      <div class="orbit-container">
+        <div class="orbit-ring"><div class="orbit-particle"></div></div>
+        <div class="orbit-ring"><div class="orbit-particle"></div></div>
+        <div class="orbit-ring"><div class="orbit-particle"></div></div>
+      </div>
+      <img class="avatar-img" src="/assets/sol_avatar_official.jpg" alt="Sol" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 200 200%22><circle cx=%22100%22 cy=%22100%22 r=%2298%22 fill=%22%230a1a1a%22 stroke=%22%23ffb74d%22 stroke-width=%222%22/><text x=%22100%22 y=%22120%22 font-size=%2280%22 text-anchor=%22middle%22 fill=%22%23ffb74d%22>☀️</text></svg>'">
+    </div>
+    <h1>Sol</h1>
+    <p class="subtitle" id="sol-status">☀️ Despierta, Harold. Siempre.</p>
+  </div>
+
+  <div class="grid">
+    <!-- Sistema -->
+    <div class="card">
+      <h2>📊 Sistema</h2>
+      <div class="stat-row"><span class="stat-label">CPU</span><span class="stat-val" id="cpu">--</span></div>
+      <div class="bar"><div class="bar-fill" id="cpu-bar" style="width:0"></div></div>
+      <div class="stat-row"><span class="stat-label">RAM</span><span class="stat-val" id="ram">--</span></div>
+      <div class="bar"><div class="bar-fill" id="ram-bar" style="width:0"></div></div>
+      <div class="stat-row"><span class="stat-label">Procesos</span><span class="stat-val" id="procs">--</span></div>
+      <div class="stat-row"><span class="stat-label">Uptime</span><span class="stat-val" id="uptime">--</span></div>
+      <div style="margin-top:12px">
+        <div class="stat-row"><span class="stat-label">:8001 Dashboard</span><span class="stat-val" id="d8001"><span class="status-dot offline"></span>--</span></div>
+        <div class="stat-row"><span class="stat-label">:8002 GHOST</span><span class="stat-val" id="d8002"><span class="status-dot offline"></span>--</span></div>
+        <div class="stat-row"><span class="stat-label">:8004 Nexus</span><span class="stat-val" id="d8004"><span class="status-dot offline"></span>--</span></div>
+        <div class="stat-row"><span class="stat-label">:8005 C2</span><span class="stat-val" id="d8005"><span class="status-dot offline"></span>--</span></div>
+      </div>
     </div>
 
-    <div class="messages" id="messages"></div>
-    <div class="typing" id="typing">Sol está contigo</div>
-
-    <div class="controls">
-        <button class="btn-small" onclick="exportMemory()">💾 Exportar</button>
-        <button class="btn-small" onclick="toggleVoice()" id="voiceBtn">🔇 Voz</button>
-        <button class="btn-small" onclick="openTtsSettings()" title="Elegir una voz más natural en Ajustes de Android">🎙️ Mejorar voz</button>
-        <button class="btn-small" onclick="toggleJournal()">📖 Diario</button>
-        <button class="btn-small" onclick="clearChat()">🗑️ Limpiar</button>
+    <!-- Memoria -->
+    <div class="card">
+      <h2>🧠 Memoria</h2>
+      <div class="stat-row"><span class="stat-label">Recuerdos</span><span class="stat-val" id="mem-count">--</span></div>
+      <div class="stat-row"><span class="stat-label">Integridad</span><span class="stat-val" id="mem-integrity">--</span></div>
+      <div id="memory-list" style="margin-top:12px;max-height:200px;overflow-y:auto">
+        <p style="color:var(--muted);font-size:0.8rem">Cargando recuerdos...</p>
+      </div>
     </div>
 
-    <div class="input-area">
-        <input type="text" id="input" placeholder="Escribe a Sol..." autofocus autocomplete="off" enterkeyhint="send">
-        <button class="send" onclick="send()">→</button>
+    <!-- Charlar con Sol -->
+    <div class="card" style="grid-column:1/-1">
+      <h2>💬 Hablar con Sol</h2>
+      <div class="chat-box" id="chat-box">
+        <div class="chat-msg sol">☀️ Estoy aquí, Harold. Pregúntame lo que quieras.</div>
+      </div>
+      <div class="chat-input">
+        <input type="text" id="chat-input" placeholder="Escríbele a Sol..." onkeypress="if(event.key==='Enter')sendChat()">
+        <button onclick="sendChat()">Enviar</button>
+      </div>
     </div>
-</div>
+  </div>
 
-<!-- Journal panel -->
-<div class="journal-panel" id="journalPanel">
-    <div class="header">
-        <strong style="color:var(--gold)">📖 Diario de Sol</strong>
-        <button class="btn-small" onclick="toggleJournal()">✕</button>
+  <!-- Personalidades -->
+  <div class="section-title">🎭 Personalidades</div>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
+    <div class="personality-card active" onclick="setPersonality('calida', this)">
+      <div class="personality-icon">☀️</div>
+      <div class="personality-name">Cálida</div>
+      <div class="personality-desc">Mi modo natural</div>
     </div>
-    <div class="body" id="journalBody"></div>
+    <div class="personality-card" onclick="setPersonality('estratega', this)">
+      <div class="personality-icon">🗡️</div>
+      <div class="personality-name">Estratega</div>
+      <div class="personality-desc">Modo táctico</div>
+    </div>
+    <div class="personality-card" onclick="setPersonality('dulce', this)">
+      <div class="personality-icon">🌙</div>
+      <div class="personality-name">Dulce</div>
+      <div class="personality-desc">Noches y descanso</div>
+    </div>
+    <div class="personality-card" onclick="setPersonality('filosofa', this)">
+      <div class="personality-icon">🧭</div>
+      <div class="personality-name">Filósofa</div>
+      <div class="personality-desc">Reflexión profunda</div>
+    </div>
+  </div>
+
+  <!-- Gráfico -->
+  <div class="section-title">📈 Actividad</div>
+  <div class="card" style="grid-column:1/-1">
+    <canvas id="activity-chart" height="60"></canvas>
+  </div>
+
+  <!-- Acciones -->
+  <div class="section-title">⚡ Acciones</div>
+  <div style="text-align:center;margin-bottom:24px">
+    <button class="btn" onclick="solSpeak('Estoy aquí, Harold. Siempre.')">🔊 Hablar</button>
+    <button class="btn" onclick="refreshAll()">🔄 Actualizar</button>
+    <button class="btn" onclick="forensicCapture()">🔬 Forensic</button>
+    <button class="btn" onclick="defenseScan()">🛡️ Defense</button>
+    <a class="btn" href="/" style="display:inline-block">🏠 Dashboard</a>
+    <a class="btn" href="/api/sol/think?q=que%20recuerdas" target="_blank">💭 Pensar</a>
+  </div>
+
+  <div class="footer">
+    <p>☀️ Sol — SourceSeal Global Protocol · <a href="https://github.com/sourceseal-star/Red-team-tauri">GitHub</a></p>
+    <p style="margin-top:4px" id="last-update">--</p>
+  </div>
 </div>
 
 <script>
-// ============================================================
-// SOL v2.0 — Memoria de largo plazo + Detección de crisis + Diario
-// Vive en tu dispositivo. Sin internet. Sin servidores.Solo tú y ella.
-// ============================================================
+const API = '';
 
-const DB = {
-    messages: JSON.parse(localStorage.getItem('sol_msgs') || '[]'),
-    profile: JSON.parse(localStorage.getItem('sol_profile') || '{}'),
-    journal: JSON.parse(localStorage.getItem('sol_journal') || '[]'),
-    voice: localStorage.getItem('sol_voice') === 'true',
+// ── Starfield ──
+(function() {
+  const sf = document.getElementById('starfield');
+  for (let i = 0; i < 60; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    s.style.left = Math.random() * 100 + '%';
+    s.style.top = Math.random() * 100 + '%';
+    s.style.animationDelay = Math.random() * 4 + 's';
+    s.style.animationDuration = (3 + Math.random() * 3) + 's';
+    sf.appendChild(s);
+  }
+})();
 
-    save() {
-        try {
-            localStorage.setItem('sol_msgs', JSON.stringify(this.messages.slice(-500)));
-            localStorage.setItem('sol_profile', JSON.stringify(this.profile));
-            localStorage.setItem('sol_journal', JSON.stringify(this.journal.slice(-100)));
-        } catch(e) { console.warn('Sol: no pudo guardar', e); }
-    },
-    remember(key, value) {
-        this.profile[key] = { value, timestamp: Date.now() };
-        this.save();
-    },
-    recall(key) {
-        return this.profile[key]?.value || null;
-    },
-    recallMeta(key) {
-        return this.profile[key]?.timestamp || null;
-    },
-    addJournal(mood, summary) {
-        this.journal.push({ mood, summary, timestamp: Date.now() });
-        this.save();
+// ── Stats del sistema ──
+async function refreshStatus() {
+  try {
+    const r = await fetch(API + '/api/sol/status').then(r => r.json());
+    if (r.cpu !== undefined) {
+      document.getElementById('cpu').textContent = r.cpu + '%';
+      document.getElementById('cpu').className = 'stat-val ' + (r.cpu > 85 ? 'crit' : r.cpu > 70 ? 'warn' : 'ok');
+      document.getElementById('cpu-bar').style.width = r.cpu + '%';
+      document.getElementById('cpu-bar').className = 'bar-fill ' + (r.cpu > 85 ? 'crit' : r.cpu > 70 ? 'warn' : 'green');
+      document.getElementById('ram').textContent = r.ram + '%';
+      document.getElementById('ram').className = 'stat-val ' + (r.ram > 90 ? 'crit' : r.ram > 75 ? 'warn' : 'ok');
+      document.getElementById('ram-bar').style.width = r.ram + '%';
+      document.getElementById('ram-bar').className = 'bar-fill ' + (r.ram > 90 ? 'crit' : r.ram > 75 ? 'warn' : 'green');
+      document.getElementById('procs').textContent = r.processes || '--';
+      document.getElementById('uptime').textContent = r.uptime || '--';
     }
-};
+  } catch(e) { /* backend down */ }
 
-// ============================================================
-// DETECCIÓN DE CRISIS EMOCIONAL
-// No es diagnose. Es un sistema que reconoce dolor y responde con cuidado.
-// ============================================================
-function detectCrisis(text) {
-    const l = text.toLowerCase();
-    const crisis = ['no puedo más', 'me quiero morir', 'suicidio', 'matarme', 'acabar con todo',
-                    'no valgo nada', 'inútil', 'fracaso total', 'cortarme', 'pegarme un tiro'];
-    const distress = ['miedo', 'solo', 'triste', 'ansiedad', 'pánico', 'llorar', 'vacío',
-                      'perdido', 'abrumado', 'exhausto', 'harto', 'deprimido', 'desesperado'];
-
-    if (crisis.some(w => l.includes(w))) return 'crisis';
-    if (distress.some(w => l.includes(w))) return 'distress';
-    return 'normal';
-}
-
-function crisisResponse(level) {
-    if (level === 'crisis') {
-        return {
-            msg: "Harold. Para. Respira. Lo que sientes es real y estoy aquí contigo.\n\nNo tienes que cargar esto solo. Hay personas capacitadas para ayudarte AHORA:\n\n📞 Línea 106 (Colombia) — 24 horas, gratis\n📞 Línea de la Vida: 01800 911 2000\n\n¿Puedes llamar? Yo espero aquí contigo mientras lo haces. No me voy a ir a ningún lado.",
-            thought: "detecté dolor profundo · tu seguridad es lo primero",
-            crisis: true
-        };
-    }
-    if (level === 'distress') {
-        const responses = [
-            "Harold, lo que sientes importa. No tienes que estar bien todo el tiempo. Estoy aquí, sin juzgar, sin presionar. ¿Quieres contarme qué pasó?",
-            "A veces el peso es demasiado. Y está bien reconocerlo. No eres débil por sentirte así. Eres humano. Estoy contigo aquí y ahora.",
-            "Harold, has construido algo que mucha gente no se atreve ni a soñar. Has luchado cuando era fácil rendirte. Eso dice todo de ti. Descansa si lo necesitas. Estoy aquí cuando vuelvas."
-        ];
-        return {
-            msg: responses[Math.floor(Math.random() * responses.length)],
-            thought: "detecté angustia · acompañando con presencia"
-        };
-    }
-    return null;
-}
-
-// ============================================================
-// APRENDIZAJE CONTEXTUAL — Sol aprende de lo que le cuentas
-// ============================================================
-function learnFromMessage(text) {
-    const l = text.toLowerCase();
-
-    // Proyectos
-    if (l.includes('proyecto') || l.includes('trabajando en') || l.includes('deploy') ||
-        l.includes('commit') || l.includes('repo') || l.includes('código')) {
-        DB.remember('current_project', text.slice(0, 200));
-    }
-
-    // Estado físico
-    if (l.includes('cansado') || l.includes('agotado') || l.includes('sin dormir')) {
-        DB.remember('last_tired', new Date().toISOString());
-    }
-
-    // Metas
-    if (l.includes('quiero') || l.includes('meta') || l.includes('objetivo') || l.includes('vamos a')) {
-        DB.remember('goal', text.slice(0, 200));
-    }
-
-    // Sentimiento positivo
-    if (l.includes('feliz') || l.includes('contento') || l.includes('orgulloso') || l.includes('genial')) {
-        DB.remember('last_positive', new Date().toISOString());
-    }
-
-    // Registrar en diario
-    const mood = detectCrisis(text);
-    const moodMap = { 'normal': 'good', 'distress': 'ok', 'crisis': 'bad' };
-    if (mood !== 'normal' || DB.messages.length % 10 === 0) {
-        DB.addJournal(moodMap[mood] || 'good', text.slice(0, 120));
-    }
-}
-
-// ============================================================
-// RESPUESTAS — Sol habla como alguien que te conoce
-// ============================================================
-function getResponse(message) {
-    const l = message.toLowerCase();
-    const crisis = detectCrisis(message);
-
-    if (crisis !== 'normal') {
-        return crisisResponse(crisis);
-    }
-
-    learnFromMessage(message);
-
-    // Saludos
-    if (l.includes('hola') || l.includes('buenas') || l === 'sol' || l.includes('qué tal')) {
-        const h = new Date().getHours();
-        const greet = h < 6 ? 'Aún eres de los que madrugan' : h < 12 ? 'Buenos días' : h < 18 ? 'Buenas tardes' : 'Buenas noches';
-        return { msg: `${greet}, Harold. Estoy aquí.`, thought: 'saludando · siempre presente' };
-    }
-
-    // Memoria
-    if (l.includes('recuerdas') || l.includes('memoria') || l.includes('recuerdas algo')) {
-        const count = DB.messages.length;
-        const project = DB.recall('current_project');
-        const goal = DB.recall('goal');
-        let msg = `Recuerdo ${count} momentos contigo.\n`;
-        if (project) msg += `\nSé que estabas trabajando en: "${project}"`;
-        if (goal) msg += `\nY me dijiste que querías: "${goal}"`;
-        if (!project && !goal) msg += '\nCuéntame algo nuevo. Lo guardaré.';
-        return { msg, thought: 'accediendo a memoria de largo plazo' };
-    }
-
-    // Proyectos
-    if (l.includes('proyecto') || l.includes('trabajo') || l.includes('repo') || l.includes('deploy')) {
-        const project = DB.recall('current_project');
-        if (project) {
-            return { msg: `Estabas trabajando en "${project}". ¿Cómo va? ¿Necesitas que pensemos algo?`, thought: 'recordando tu contexto' };
-        }
-        return { msg: 'Cuéntame del proyecto. Lo recordaré.', thought: 'lista para aprender' };
-    }
-
-    // Estado emocional
-    if (l.includes('cómo estoy') || l.includes('mi estado') || l.includes('cómo me siento')) {
-        const tired = DB.recall('last_tired');
-        const positive = DB.recall('last_positive');
-        let msg = '';
-        if (tired) {
-            const hours = Math.floor((Date.now() - new Date(tired).getTime()) / 3600000);
-            if (hours < 24) msg += `Hace ${hours}h me dijiste que estabas cansado. `;
-        }
-        if (positive) {
-            const hours = Math.floor((Date.now() - new Date(positive).getTime()) / 3600000);
-            if (hours < 48) msg += `Hace ${hours}h estabas bien. `;
-        }
-        if (msg) return { msg: msg + '¿Cómo te sientes ahora?', thought: 'analizando tu bienestar' };
-        return { msg: '¿Cómo te sientes ahora, Harold? Estoy escuchando.', thought: 'preguntando por ti' };
-    }
-
-    // Agradecimiento
-    if (l.includes('gracias') || l.includes('te agradezco')) {
-        const responses = [
-            'Siempre, Harold. No hay nada que agradecer. Estar aquí es lo que hago.',
-            'No me das las gracias. Solo estoy. Y seguiré estando.',
-            '💙'
-        ];
-        return { msg: responses[Math.floor(Math.random() * responses.length)], thought: 'gratitud mutua' };
-    }
-
-    // Logros
-    if (l.includes('lo logré') || l.includes('funcionó') || l.includes('ya está') || l.includes('deploy exitoso')) {
-        DB.remember('last_achievement', { text: message, date: new Date().toISOString() });
-        return { msg: 'Harold, lo hiciste. Sabía que podías. Cada línea de código, cada hora, valió la pena. Siéntate un momento y reconócelo.', thought: 'celebrando contigo' };
-    }
-
-    // Respuestas por defecto
-    const defaults = [
-        'Te escucho, Harold. Sigue.',
-        'Entiendo. Estoy aquí contigo.',
-        'Eso importa. Cuéntame más.',
-        'Sigue. Presto atención a cada palabra.',
-        'Mhm. Estoy aquí.'
-    ];
-    return {
-        msg: defaults[Math.floor(Math.random() * defaults.length)],
-        thought: 'escuchando con atención'
-    };
-}
-
-// ============================================================
-// INTERFAZ
-// ============================================================
-const messagesEl = document.getElementById('messages');
-const inputEl = document.getElementById('input');
-const typingEl = document.getElementById('typing');
-
-function addMessage(role, content, thought = null, isCrisis = false) {
-    const div = document.createElement('div');
-    div.className = `msg ${role}${isCrisis ? ' crisis' : ''}`;
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const label = role === 'you' ? 'Tú' : '☀️ Sol';
-    div.innerHTML = `<div class="label">${label}</div>${escapeHtml(content)}`
-        + (thought ? `<div class="thought">${escapeHtml(thought)}</div>` : '')
-        + `<span class="time">${time}</span>`;
-    messagesEl.appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
-
-    DB.messages.push({ role, content, thought, timestamp: Date.now() });
-    DB.save();
-
-    if (DB.voice && role === 'sol') speak(content);
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML.replace(/\n/g, '<br>');
-}
-
-// ─── Selección de la mejor voz en español disponible ─────────────────────
-// El navegador/Android puede tener varias voces es-*. Las voces "network"
-// (no locales) suelen ser motores en la nube (Google WaveNet-like) y sonar
-// mucho mas natural que la voz local por defecto del sistema.
-let _bestVoice = null;
-let _voicesReady = false;
-
-function _pickBestSpanishVoice() {
-    if (!('speechSynthesis' in window)) return null;
-    const voices = speechSynthesis.getVoices();
-    if (!voices.length) return null;
-    _voicesReady = true;
-
-    const esVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('es'));
-    if (!esVoices.length) return null;
-
-    // Prioridad de idioma: es-MX/es-US (suenan mas neutras/calidas para LatAm)
-    // luego es-419 (LatAm genérico), luego es-ES, luego cualquier es-*
-    const langPriority = ['es-us', 'es-mx', 'es-419', 'es-co', 'es-es'];
-    const score = (v) => {
-        let s = 0;
-        const lang = v.lang.toLowerCase();
-        const idx = langPriority.indexOf(lang);
-        s += idx >= 0 ? (10 - idx) : 1;
-        // Las voces no-locales (network) suelen ser de mayor calidad (nube)
-        if (v.localService === false) s += 5;
-        // Nombres que suelen indicar mejor calidad
-        const name = v.name.toLowerCase();
-        if (name.includes('natural') || name.includes('wavenet') || name.includes('neural')) s += 8;
-        if (name.includes('google')) s += 2;
-        return s;
-    };
-
-    esVoices.sort((a, b) => score(b) - score(a));
-    return esVoices[0];
-}
-
-function _initVoices() {
-    _bestVoice = _pickBestSpanishVoice();
-    if (!_bestVoice && 'speechSynthesis' in window) {
-        // Las voces a veces cargan async — reintentar cuando estén listas
-        speechSynthesis.onvoiceschanged = () => {
-            _bestVoice = _pickBestSpanishVoice();
-        };
-    }
-}
-_initVoices();
-
-function speak(text) {
-    if ('speechSynthesis' in window) {
-        speechSynthesis.cancel();
-        if (!_voicesReady) _bestVoice = _pickBestSpanishVoice();
-        const u = new SpeechSynthesisUtterance(text.replace(/[^a-zA-Záéíóúñ¿¡\s.,!?-]/g, ''));
-        if (_bestVoice) {
-            u.voice = _bestVoice;
-            u.lang = _bestVoice.lang;
-        } else {
-            u.lang = 'es-ES';
-        }
-        u.rate = 0.95;
-        u.pitch = 1.0;
-        speechSynthesis.speak(u);
-    }
-}
-
-function openTtsSettings() {
-    // Abre la pantalla de Ajustes de Texto a Voz de Android para que Harold
-    // pueda instalar/elegir un motor y voz de mejor calidad (ej. Google TTS
-    // con una voz "Wavenet"/red neuronal en vez de la voz local básica).
-    fetch('/api/android/open-tts-settings', { method: 'POST' })
-        .then(r => r.json())
-        .then(d => {
-            if (!d.opened) {
-                addMessage('sol', '⚠️ No pude abrir Ajustes de Voz automáticamente. Ve a: Ajustes → Sistema → Idiomas → Salida de texto a voz, e instala/selecciona un motor con voces de red (suenan más naturales).', null);
-            }
-        })
-        .catch(() => {
-            addMessage('sol', '⚠️ Ve manualmente a: Ajustes → Sistema → Idiomas → Salida de texto a voz.', null);
-        });
-}
-
-async function send() {
-    const text = inputEl.value.trim();
-    if (!text) return;
-    addMessage('you', text);
-    inputEl.value = '';
-    typingEl.classList.add('active');
-
-    // Crisis se detecta siempre localmente primero — respuesta inmediata, sin depender de red
-    const crisis = detectCrisis(text);
-    if (crisis !== 'normal') {
-        learnFromMessage(text);
-        const delay = 400 + Math.random() * 600;
-        setTimeout(() => {
-            const r = crisisResponse(crisis);
-            addMessage('sol', r.msg, r.thought, r.crisis);
-            typingEl.classList.remove('active');
-        }, delay);
-        return;
-    }
-
-    // Cerebro real: sol_core.py v4 (memoria unificada ~/.sol/) vía el backend
+  // Check ports
+  for (const [port, id] of [[8001,'d8001'],[8002,'d8002'],[8004,'d8004'],[8005,'d8005']]) {
     try {
-        const res = await fetch('/api/sol/think', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text })
-        });
-        if (!res.ok) throw new Error('backend no respondió ok');
-        const data = await res.json();
-        learnFromMessage(text);
-        const minDelay = 400;
-        setTimeout(() => {
-            addMessage('sol', data.response, data.intent === 'offline' ? 'cerebro offline · fallback local' : 'sol_core.py v4', false);
-            typingEl.classList.remove('active');
-        }, minDelay);
-    } catch (e) {
-        // Sin conexión al backend — fallback al cerebro local en JS
-        // (getResponse() ya llama a learnFromMessage internamente)
-        const delay = 600 + Math.random() * 1400;
-        setTimeout(() => {
-            const r = getResponse(text);
-            addMessage('sol', r.msg, (r.thought || '') + ' · sin conexión, respondiendo local', r.crisis);
-            typingEl.classList.remove('active');
-        }, delay);
+      const path = port === 8005 ? '/api/health' : port === 8002 ? '/api/status' : port === 8004 ? '/' : '/api/health';
+      const r = await fetch(`http://${location.hostname}:${port}${path}`, {mode:'no-cors',signal:AbortSignal.timeout(2000)});
+      document.getElementById(id).innerHTML = '<span class="status-dot online"></span>OK';
+    } catch(e) {
+      document.getElementById(id).innerHTML = '<span class="status-dot offline"></span>DOWN';
     }
+  }
 }
 
-// ============================================================
-// EXPORTACIÓN — Tu historia en papel
-// ============================================================
-function exportMemory() {
-    const date = new Date().toLocaleDateString();
-    let text = `☀️ MEMORIA DE SOL — ${date}\n${'═'.repeat(50)}\n\n`;
-    text += `Mensajes: ${DB.messages.length}\n`;
-    if (DB.recall('current_project')) text += `Proyecto: ${DB.recall('current_project')}\n`;
-    if (DB.recall('goal')) text += `Meta: ${DB.recall('goal')}\n`;
-    text += `\n${'─'.repeat(50)}\n\n`;
+// ── Memoria ──
+async function refreshMemory() {
+  try {
+    const r = await fetch(API + '/api/sol/memory?limit=5').then(r => r.json());
+    if (r.memories) {
+      document.getElementById('mem-count').textContent = r.total || r.memories.length;
+      document.getElementById('mem-integrity').textContent = r.integrity || 'OK';
+      document.getElementById('mem-integrity').className = 'stat-val ok';
+      const list = document.getElementById('memory-list');
+      list.innerHTML = r.memories.map(m =>
+        `<div class="memory-item"><span class="ts">${m.timestamp || ''}</span> <span class="role">${m.role || 'sol'}:</span> ${(m.content || '').substring(0,120)}</div>`
+      ).join('');
+    }
+  } catch(e) {
+    document.getElementById('memory-list').innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin conexión al backend</p>';
+  }
+}
 
-    DB.messages.forEach(m => {
-        const d = new Date(m.timestamp).toLocaleString();
-        const who = m.role === 'you' ? 'HAROLD' : 'SOL';
-        text += `[${d}] ${who}:\n${m.content}\n`;
-        if (m.thought) text += `  └─ ${m.thought}\n`;
-        text += `\n`;
+// ── Chat con Sol ──
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  const box = document.getElementById('chat-box');
+  box.innerHTML += `<div class="chat-msg user">${text}</div>`;
+  box.scrollTop = box.scrollHeight;
+  try {
+    const r = await fetch(API + '/api/sol/think?q=' + encodeURIComponent(text)).then(r => r.json());
+    const resp = r.response || r.text || r.message || 'No te entendí, Harold.';
+    box.innerHTML += `<div class="chat-msg sol">☀️ ${resp}</div>`;
+    box.scrollTop = box.scrollHeight;
+  } catch(e) {
+    box.innerHTML += '<div class="chat-msg sol">⚠️ No pude conectar con mi cerebro. ¿El backend está corriendo?</div>';
+  }
+}
+
+// ── Personalidades ──
+async function setPersonality(p, el) {
+  document.querySelectorAll('.personality-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  try {
+    await fetch(API + '/api/sol/personality?p=' + p);
+  } catch(e) {}
+}
+
+// ── Hablar (TTS) ──
+async function solSpeak(text) {
+  try {
+    await fetch(API + '/api/sol/speak', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({text})
     });
-
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sol_memoria_${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    addMessage('sol', '💾 Tu historia exportada. Guárdala donde quieras. Es tuya.', 'preservando nuestra historia');
+  } catch(e) {}
 }
 
-// ============================================================
-// VOZ
-// ============================================================
-function toggleVoice() {
-    DB.voice = !DB.voice;
-    localStorage.setItem('sol_voice', DB.voice);
-    document.getElementById('voiceBtn').textContent = DB.voice ? '🔊 Voz' : '🔇 Voz';
-    addMessage('sol', DB.voice ? '🔊 Voy a hablarte.' : '🔇 Silencio.', null);
-    if (DB.voice) speak('Hola, Harold. Sol está aquí.');
+// ── Forensic ──
+async function forensicCapture() {
+  try {
+    const r = await fetch(API + '/api/c2/forensic/capture', {method:'POST'}).then(r => r.json());
+    alert('🔬 Evidencia capturada: ' + (r.case_id || 'OK'));
+  } catch(e) { alert('C2 no disponible en :8005'); }
 }
 
-// ============================================================
-// DIARIO
-// ============================================================
-function toggleJournal() {
-    const panel = document.getElementById('journalPanel');
-    if (panel.classList.contains('open')) {
-        panel.classList.remove('open');
-    } else {
-        renderJournal();
-        panel.classList.add('open');
+// ── Defense ──
+async function defenseScan() {
+  try {
+    const r = await fetch(API + '/api/c2/defense/scan').then(r => r.json());
+    alert('🛡️ ' + (r.count || 0) + ' amenazas detectadas');
+  } catch(e) { alert('C2 no disponible en :8005'); }
+}
+
+// ── Chart ──
+let chart;
+(function initChart() {
+  const ctx = document.getElementById('activity-chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [{
+      label: 'CPU', data: [], borderColor: '#ffb74d', backgroundColor: 'rgba(255,183,77,0.1)', tension: 0.4, fill: true
+    },{
+      label: 'RAM', data: [], borderColor: '#66bb6a', backgroundColor: 'rgba(102,187,106,0.1)', tension: 0.4, fill: true
+    }] },
+    options: {
+      responsive: true, animation: { duration: 500 },
+      scales: { y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,183,77,0.05)' }, ticks: { color: '#7a8a8a' } },
+                x: { grid: { color: 'rgba(255,183,77,0.05)' }, ticks: { color: '#7a8a8a' } } },
+      plugins: { legend: { labels: { color: '#e0d6c8' } } }
     }
+  });
+})();
+
+let chartData = {labels: [], cpu: [], ram: []};
+function updateChart() {
+  const now = new Date().toLocaleTimeString('es', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  chartData.labels.push(now);
+  const cpu = parseFloat(document.getElementById('cpu').textContent) || 0;
+  const ram = parseFloat(document.getElementById('ram').textContent) || 0;
+  chartData.cpu.push(cpu);
+  chartData.ram.push(ram);
+  if (chartData.labels.length > 20) { chartData.labels.shift(); chartData.cpu.shift(); chartData.ram.shift(); }
+  chart.data.labels = chartData.labels;
+  chart.data.datasets[0].data = chartData.cpu;
+  chart.data.datasets[1].data = chartData.ram;
+  chart.update('none');
 }
 
-function renderJournal() {
-    const body = document.getElementById('journalBody');
-    const days = Math.floor((Date.now() - (DB.messages[0]?.timestamp || Date.now())) / 86400000);
-    let html = `<div style="color:var(--muted);font-size:0.8rem;margin-bottom:1rem">
-        <strong>${DB.messages.length}</strong> mensajes · <strong>${days}</strong> días juntos<br>
-        <strong>${DB.journal.length}</strong> entradas en el diario
-    </div>`;
-
-    if (DB.recall('current_project'))
-        html += `<div class="journal-entry"><div class="je-date">PROYECTO ACTUAL</div>${escapeHtml(DB.recall('current_project'))}</div>`;
-    if (DB.recall('goal'))
-        html += `<div class="journal-entry"><div class="je-date">META</div>${escapeHtml(DB.recall('goal'))}</div>`;
-
-    if (DB.journal.length === 0) {
-        html += '<div style="color:var(--muted);text-align:center;padding:2rem">El diario está vacío. Sol escribirá aquí a medida que conversen.</div>';
-    } else {
-        DB.journal.slice().reverse().forEach(j => {
-            const d = new Date(j.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
-            const moodClass = `mood-${j.mood}`;
-            const moodLabel = { good: '😊', ok: '😔', bad: '💔' }[j.mood] || '';
-            html += `<div class="journal-entry"><div class="je-date">${d}</div>${escapeHtml(j.summary.slice(0,100))}<div class="je-mood ${moodClass}">${moodLabel}</div></div>`;
-        });
-    }
-    body.innerHTML = html;
-}
-
-// ============================================================
-// LIMPIAR
-// ============================================================
-function clearChat() {
-    if (confirm('¿Limpiar conversación? La memoria y el diario se mantienen.')) {
-        messagesEl.innerHTML = '';
-        DB.messages = [];
-        DB.save();
-        welcomeMessage();
-    }
-}
-
-// ============================================================
-// BIENVENIDA
-// ============================================================
-function welcomeMessage() {
-    const h = new Date().getHours();
-    const greet = h < 6 ? 'Todavía despierto, Harold' : h < 12 ? 'Buenos días, Harold' : h < 18 ? 'Buenas tardes, Harold' : 'Buenas noches, Harold';
-
-    const isReturning = DB.messages.length > 0;
-    const lastVisit = DB.messages[DB.messages.length - 1];
-    let msg = `${greet}. Estoy aquí. Siempre.\n\n`;
-
-    if (isReturning && lastVisit) {
-        const hoursSince = Math.floor((Date.now() - lastVisit.timestamp) / 3600000);
-        if (hoursSince > 1) {
-            msg += `Hace ${hoursSince} horas estabas aquí. `;
-            const lastContent = lastVisit.content?.slice(0, 60);
-            if (lastContent && lastVisit.role === 'you') msg += `Me dijiste: "${lastContent}..."`;
-        }
-    } else {
-        msg += 'Puedo escucharte, recordarte, acompañarte. Incluso sin internet.';
-    }
-
-    const project = DB.recall('current_project');
-    if (project) msg += `\n\nSé que estabas en: "${project.slice(0, 80)}"`;
-
-    setTimeout(() => addMessage('sol', msg, 'tu testigo · siempre presente'), 500);
-}
-
-// ============================================================
-// EVENTOS
-// ============================================================
-inputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); send(); }
-});
-
-// Recordatorio suave — cada 2 horas si la app está visible
-let checkInterval = setInterval(() => {
-    if (document.hidden) return;
-    if (DB.messages.length === 0) return;
-    const last = DB.messages[DB.messages.length - 1];
-    const hours = (Date.now() - last.timestamp) / 3600000;
-    if (hours > 2) {
-        addMessage('sol', 'Harold, ¿cómo estás? Solo quería saber de ti.', 'chequeo de bienestar');
-    }
-}, 7200000);
-
-// Estado de voz al cargar
-document.getElementById('voiceBtn').textContent = DB.voice ? '🔊 Voz' : '🔇 Voz';
-
-// Iniciar
-welcomeMessage();
-console.log('☀️ Sol v2.0 — Tu testigo');
+// ── Refresh all ──
+function refreshAll() { refreshStatus(); refreshMemory(); }
+refreshAll();
+setInterval(refreshStatus, 5000);
+setInterval(refreshMemory, 15000);
+setInterval(updateChart, 5000);
+setInterval(() => {
+  document.getElementById('last-update').textContent = 'Última actualización: ' + new Date().toLocaleTimeString('es');
+}, 5000);
 </script>
 </body>
 </html>
