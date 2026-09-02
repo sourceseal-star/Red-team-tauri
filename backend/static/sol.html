@@ -154,6 +154,52 @@
     100% { opacity: 0; transform: scale(1.5); }
   }
   
+  /* ═══ PARPADEO (overlay sutil sobre la imagen, NO la toca) ═══ */
+  .blink-overlay {
+    position: absolute; left: 22%; right: 22%; top: 35%; height: 9%;
+    border-radius: 50%; background: rgba(10, 8, 4, 0.0);
+    z-index: 4; pointer-events: none;
+    transition: background 0.09s ease;
+  }
+  .blink-overlay.blinking { background: rgba(10, 8, 4, 0.4); }
+
+  /* ═══ GLOW REACTIVO AL ÁNIMO REAL (solo cambia color/intensidad, no la imagen) ═══ */
+  .holo-container[data-mood="up"] .avatar-frame::before {
+    box-shadow: 0 0 55px rgba(255, 200, 100, 0.55), 0 0 100px rgba(255,183,77,0.22), inset 0 0 35px rgba(255,200,100,0.12);
+  }
+  .holo-container[data-mood="down"] .avatar-frame::before {
+    box-shadow: 0 0 35px rgba(120, 170, 220, 0.3), 0 0 70px rgba(120,170,220,0.12), inset 0 0 25px rgba(120,170,220,0.08);
+  }
+  .holo-container[data-mood="down"] .holo-ring-outer,
+  .holo-container[data-mood="down"] .holo-ring-outer::before {
+    border-color: rgba(120,170,220,0.15);
+  }
+
+  /* ═══ BURBUJA DE PENSAMIENTO ═══ */
+  .thought-bubble {
+    position: absolute; top: -38px; left: 50%; transform: translateX(-50%);
+    z-index: 7; white-space: nowrap;
+    background: rgba(0,0,0,0.55); backdrop-filter: blur(8px);
+    padding: 6px 14px; border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--muted); font-size: 0.75rem; font-style: italic;
+    opacity: 0; transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+  .thought-bubble.visible { opacity: 1; }
+
+  /* ═══ BOTÓN DE VOZ (opcional, navegador) ═══ */
+  .voice-btn {
+    position: fixed; top: 16px; right: 64px; z-index: 11;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(10px);
+    border: 1px solid var(--border); color: var(--muted);
+    cursor: pointer; font-size: 1rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .voice-btn.active { color: var(--amber); border-color: var(--amber); }
+
   /* ═══ ESTADO (badge videollamada) ═══ */
   .call-status {
     position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
@@ -368,6 +414,7 @@
 
 <!-- Botón panel -->
 <button class="panel-btn" id="panelBtn" title="Recuerdos">☰</button>
+<button class="voice-btn" id="voiceBtn" title="Voz en el navegador">🔇</button>
 
 <!-- Panel lateral -->
 <div class="side-panel" id="sidePanel">
@@ -390,9 +437,11 @@
     <div class="pulse-ring"></div>
     <div class="pulse-ring"></div>
     <div class="pulse-ring"></div>
+    <div class="thought-bubble" id="thoughtBubble"></div>
     <div class="avatar-frame" id="avatarFrame">
       <img class="avatar-img" id="avatar" src="/static/sol_avatar.png" alt="Sol">
       <div class="holo-lines"></div>
+      <div class="blink-overlay" id="blinkOverlay"></div>
     </div>
     <div class="wave-container" id="waveContainer">
       <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
@@ -434,6 +483,9 @@ const sendBtn = $('sendBtn');
 const liveDot = $('liveDot');
 const callStatus = $('callStatus');
 const callTimer = $('callTimer');
+const blinkOverlay = $('blinkOverlay');
+const thoughtBubble = $('thoughtBubble');
+const voiceBtn = $('voiceBtn');
 
 const token = localStorage.getItem('api_token');
 const headers = { 'Content-Type': 'application/json' };
@@ -456,6 +508,70 @@ function createParticles() {
   }
 }
 createParticles();
+
+// ═══ Parpadeo — vida sobre la imagen existente, nunca la modifica ═══
+function scheduleBlink() {
+  const delay = 2800 + Math.random() * 4000;
+  setTimeout(() => {
+    blinkOverlay.classList.add('blinking');
+    setTimeout(() => blinkOverlay.classList.remove('blinking'), 140);
+    // A veces parpadea dos veces seguidas, como una persona real
+    if (Math.random() < 0.15) {
+      setTimeout(() => {
+        blinkOverlay.classList.add('blinking');
+        setTimeout(() => blinkOverlay.classList.remove('blinking'), 140);
+      }, 260);
+    }
+    scheduleBlink();
+  }, delay);
+}
+scheduleBlink();
+
+// ═══ Burbuja de pensamiento ═══
+let thoughtTimer = null;
+function showThought(text, ms) {
+  clearTimeout(thoughtTimer);
+  thoughtBubble.textContent = text;
+  thoughtBubble.classList.add('visible');
+  if (ms) thoughtTimer = setTimeout(() => thoughtBubble.classList.remove('visible'), ms);
+}
+function hideThought() {
+  clearTimeout(thoughtTimer);
+  thoughtBubble.classList.remove('visible');
+}
+
+// ═══ Voz opcional en el navegador (tono según ánimo real de Sol) ═══
+let voiceEnabled = localStorage.getItem('sol_voice') === '1';
+let currentMood = 0;
+function updateVoiceBtn() {
+  voiceBtn.textContent = voiceEnabled ? '🔊' : '🔇';
+  voiceBtn.classList.toggle('active', voiceEnabled);
+}
+updateVoiceBtn();
+voiceBtn.onclick = () => {
+  voiceEnabled = !voiceEnabled;
+  localStorage.setItem('sol_voice', voiceEnabled ? '1' : '0');
+  updateVoiceBtn();
+  if (voiceEnabled && 'speechSynthesis' in window) {
+    // "despertar" las voces del navegador (a veces tardan en cargar)
+    speechSynthesis.getVoices();
+  }
+};
+function speakBrowser(text) {
+  if (!voiceEnabled || !('speechSynthesis' in window)) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/[☀️🧠💭✨⚠️]/g, ''));
+    const voices = speechSynthesis.getVoices();
+    const esVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('es'));
+    if (esVoice) u.voice = esVoice;
+    u.lang = 'es-ES';
+    // Tono según ánimo real (-2..2): más cálido y alto si feliz, más suave y bajo si triste
+    u.pitch = 1.0 + (currentMood * 0.06);
+    u.rate = currentMood < 0 ? 0.88 : 0.95;
+    speechSynthesis.speak(u);
+  } catch {}
+}
 
 // ═══ Efecto 3D: inclinar avatar según mouse ═══
 document.addEventListener('mousemove', e => {
@@ -494,8 +610,14 @@ async function pollStatus() {
       const online = d.brain === 'online';
       liveDot.classList.toggle('offline', !online);
       callStatus.textContent = online ? 'En vivo' : 'Cerebro offline';
+
+      // Ánimo real (viene de sol_core.ST, no inventado) — solo cambia el glow, nunca la imagen
+      currentMood = typeof d.mood === 'number' ? d.mood : 0;
+      holo.dataset.mood = currentMood >= 1 ? 'up' : (currentMood <= -1 ? 'down' : 'neutral');
+
+      const estadoTxt = d.estado ? ` · ${d.estado}` : '';
       $('solSubtitle').textContent = online 
-        ? `🧠 ${d.memories || 0} recuerdos · ${d.personality || 'cálida'}`
+        ? `🧠 ${d.memories || 0} recuerdos · ${d.personality || 'cálida'}${estadoTxt}`
         : 'Modo offline — sigo aquí';
     }
   } catch {}
@@ -522,6 +644,7 @@ setInterval(pollProactive, 5000);
 
 // ═══ Mostrar subtítulos (efecto escritura) ═══
 async function showSubtitles(text) {
+  hideThought();
   subText.classList.remove('visible');
   await new Promise(r => setTimeout(r, 200));
   subText.textContent = '';
@@ -530,6 +653,7 @@ async function showSubtitles(text) {
   speaking = true;
   holo.classList.add('speaking');
   waves.classList.add('speaking');
+  speakBrowser(text);
   
   // Efecto máquina de escribir
   const words = text.split(' ');
@@ -560,6 +684,7 @@ async function send() {
   await new Promise(r => setTimeout(r, 150));
   subText.textContent = `Tú: ${text}`;
   subText.classList.add('visible');
+  showThought('💭 pensando…');
   
   try {
     const r = await fetch(`/api/sol/think?q=${encodeURIComponent(text)}`, { headers });
@@ -666,6 +791,18 @@ setTimeout(async () => {
 
 // ═══ Keep alive: tocar input para mantener foco en móvil ═══
 input.addEventListener('touchstart', () => input.focus());
+
+// ═══ Burbuja "escuchando…" mientras el usuario escribe ═══
+let listenTimer = null;
+input.addEventListener('input', () => {
+  if (input.value.trim().length > 0) {
+    showThought('✨ escuchando…');
+    clearTimeout(listenTimer);
+    listenTimer = setTimeout(hideThought, 1500);
+  } else {
+    hideThought();
+  }
+});
 
 </script>
 </body>

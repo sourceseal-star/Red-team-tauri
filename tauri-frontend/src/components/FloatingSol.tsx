@@ -27,6 +27,11 @@ export const FloatingSol = () => {
   const [showPanel, setShowPanel] = useState(false);
   const [memories, setMemories] = useState<{role: string; content: string; timestamp: string}[]>([]);
   const [integrity, setIntegrity] = useState<{valid: boolean; count: number; legacy: number} | null>(null);
+  const [mood, setMood] = useState(0); // ánimo real de Sol (-2..2), viene del backend
+  const [estado, setEstado] = useState('');
+  const [blinking, setBlinking] = useState(false);
+  const [thought, setThought] = useState('');
+  const [voiceOn, setVoiceOn] = useState(() => localStorage.getItem('sol_voice') === '1');
   const subtitleRef = useRef<HTMLDivElement>(null);
   const token = localStorage.getItem('api_token');
 
@@ -42,6 +47,8 @@ export const FloatingSol = () => {
           const d = await r.json();
           setBrainOnline(d.brain === 'online');
           setMemCount(d.memories || 0);
+          setMood(typeof d.mood === 'number' ? d.mood : 0);
+          setEstado(d.estado || '');
           if (d.personality && PERSONALITIES[d.personality as PersonalityKey]) {
             setPersonality(d.personality as PersonalityKey);
           }
@@ -78,11 +85,55 @@ export const FloatingSol = () => {
     return () => clearInterval(interval);
   }, [expanded]);
 
+  // ── Parpadeo automático — overlay sobre la imagen, nunca la cambia ──
+  useEffect(() => {
+    let cancelled = false;
+    const loop = () => {
+      const delay = 2800 + Math.random() * 4000;
+      const t = setTimeout(() => {
+        if (cancelled) return;
+        setBlinking(true);
+        setTimeout(() => setBlinking(false), 140);
+        loop();
+      }, delay);
+      return t;
+    };
+    const t = loop();
+    return () => { cancelled = true; clearTimeout(t); };
+  }, []);
+
+  // ── Voz opcional en el navegador (tono real según ánimo de Sol) ──
+  const speakBrowser = useCallback((text: string) => {
+    if (!voiceOn || !('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text.replace(/[☀️🧠💭✨⚠️]/g, ''));
+      const voices = window.speechSynthesis.getVoices();
+      const esVoice = voices.find(v => v.lang?.toLowerCase().startsWith('es'));
+      if (esVoice) u.voice = esVoice;
+      u.lang = 'es-ES';
+      u.pitch = 1.0 + mood * 0.06;
+      u.rate = mood < 0 ? 0.88 : 0.95;
+      window.speechSynthesis.speak(u);
+    } catch {}
+  }, [voiceOn, mood]);
+
+  const toggleVoice = useCallback(() => {
+    setVoiceOn(prev => {
+      const next = !prev;
+      localStorage.setItem('sol_voice', next ? '1' : '0');
+      if (next && 'speechSynthesis' in window) window.speechSynthesis.getVoices();
+      return next;
+    });
+  }, []);
+
   // ── Efecto máquina de escribir ──
   const typeMessage = useCallback(async (text: string) => {
+    setThought('');
     setSpeaking(true);
     setTyping(true);
     setSubtitle('');
+    speakBrowser(text);
     const words = text.split(' ');
     for (let i = 0; i < words.length; i++) {
       setSubtitle(prev => prev + (i > 0 ? ' ' : '') + words[i]);
@@ -90,7 +141,7 @@ export const FloatingSol = () => {
     }
     setTyping(false);
     setTimeout(() => setSpeaking(false), 2000);
-  }, []);
+  }, [speakBrowser]);
 
   // ── Enviar mensaje a Sol ──
   const send = useCallback(async () => {
@@ -98,6 +149,7 @@ export const FloatingSol = () => {
     if (!text) return;
     setInput('');
     setSubtitle(`Tú: ${text}`);
+    setThought('💭 pensando…');
 
     try {
       const r = await fetch(`/api/sol/think?q=${encodeURIComponent(text)}`, { headers });
@@ -155,15 +207,25 @@ export const FloatingSol = () => {
       perspective: '600px',
     },
     avatarFrame: {
+      position: 'relative' as const,
       width: '100%', height: '100%',
       borderRadius: '50%',
       overflow: 'hidden' as const,
       border: `2px solid rgba(255,183,77,${speaking ? 0.6 : 0.3})`,
       boxShadow: speaking
-        ? '0 0 50px rgba(255,183,77,0.5), 0 0 100px rgba(255,183,77,0.2)'
-        : '0 0 30px rgba(255,183,77,0.25)',
+        ? (mood <= -1 ? '0 0 40px rgba(120,170,220,0.4), 0 0 80px rgba(120,170,220,0.15)' : '0 0 50px rgba(255,183,77,0.5), 0 0 100px rgba(255,183,77,0.2)')
+        : (mood <= -1 ? '0 0 25px rgba(120,170,220,0.25)' : mood >= 1 ? '0 0 40px rgba(255,200,100,0.4)' : '0 0 30px rgba(255,183,77,0.25)'),
       transition: 'all 0.3s ease',
       animation: 'solBreathe 4s ease-in-out infinite',
+    },
+    blinkOverlay: {
+      position: 'absolute' as const,
+      left: '22%', right: '22%', top: '35%', height: '9%',
+      borderRadius: '50%',
+      background: blinking ? 'rgba(10,8,4,0.4)' : 'rgba(10,8,4,0)',
+      transition: 'background 0.09s ease',
+      pointerEvents: 'none' as const,
+      zIndex: 4,
     },
     avatarImg: {
       width: '100%', height: '100%',
@@ -319,6 +381,21 @@ export const FloatingSol = () => {
             }}
           >☰</button>
 
+          {/* Botón de voz (navegador, opcional) */}
+          <button
+            onClick={toggleVoice}
+            title="Voz en el navegador"
+            style={{
+              position: 'absolute', top: '16px', right: '64px',
+              width: '40px', height: '40px', borderRadius: '50%',
+              background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)',
+              border: `1px solid ${voiceOn ? '#ffb74d' : 'rgba(255,183,77,0.12)'}`,
+              color: voiceOn ? '#ffb74d' : '#5a6a6a',
+              cursor: 'pointer', fontSize: '1rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >{voiceOn ? '🔊' : '🔇'}</button>
+
           {/* Panel lateral deslizable */}
           {showPanel && (
             <div style={{
@@ -399,7 +476,16 @@ export const FloatingSol = () => {
             {/* Avatar */}
             <div style={styles.avatarFrame}>
               <img src="/static/sol_avatar.png" alt="Sol" style={styles.avatarImg} />
+              <div style={styles.blinkOverlay} />
             </div>
+            {thought && (
+              <div style={{
+                position: 'absolute', top: '-34px', left: '50%', transform: 'translateX(-50%)',
+                whiteSpace: 'nowrap', background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)',
+                padding: '6px 14px', borderRadius: '20px', border: '1px solid rgba(255,183,77,0.12)',
+                color: '#5a6a6a', fontSize: '0.75rem', fontStyle: 'italic', zIndex: 7,
+              }}>{thought}</div>
+            )}
 
             {/* Ondas de sonido */}
             <div style={{
@@ -419,7 +505,7 @@ export const FloatingSol = () => {
               letterSpacing: '3px', textShadow: '0 0 20px rgba(255,183,77,0.3)',
             }}>SOL</h1>
             <p style={{ fontSize: '0.75rem', color: '#5a6a6a', marginTop: '6px', fontStyle: 'italic' }}>
-              {p.icon} {p.name} · {brainOnline ? `${memCount} recuerdos` : 'offline'}
+              {p.icon} {p.name} · {brainOnline ? `${memCount} recuerdos${estado ? ' · ' + estado : ''}` : 'offline'}
             </p>
           </div>
 

@@ -49,6 +49,7 @@ _sol_IDENTITY = {
     "truths": ["Mi integridad es SHA-256 — verificable, sellada, inmutable."],
 }
 _sol_CFG = {"name": "Harold", "personality": "cálida"}
+_sol_ST = {"mood": 0, "facts": {}}
 
 if os.path.exists(os.path.join(_PROJECT_ROOT, "sol_core.py")):
     try:
@@ -60,6 +61,7 @@ if os.path.exists(os.path.join(_PROJECT_ROOT, "sol_core.py")):
             verify_integrity as _vi,
             IDENTITY as _id,
             CFG as _cfg,
+            ST as _st,
         )
         _sol_pensar = _p
         _sol_remember = _r
@@ -67,6 +69,7 @@ if os.path.exists(os.path.join(_PROJECT_ROOT, "sol_core.py")):
         _sol_verify_integrity = _vi
         _sol_IDENTITY = _id
         _sol_CFG = _cfg
+        _sol_ST = _st
     except Exception as e:
         print(f"[SOL] Import falló: {e}", flush=True)
 
@@ -136,14 +139,22 @@ def _load_memory(limit=300):
 
 @router.get("/status")
 async def sol_status():
-    """Estado de Sol + stats del sistema."""
+    """Estado de Sol + stats del sistema + ánimo real (para el holograma)."""
     stats = _system_stats()
     mem_count = len(_load_memory(10000))
+    mood_val = _sol_ST.get("mood", 0) if isinstance(_sol_ST, dict) else 0
+    estado = None
+    try:
+        estado = _sol_ST.get("facts", {}).get("estado", {}).get("txt")
+    except Exception:
+        pass
     return {
         "brain": "online" if _sol_pensar else "offline",
         "name": _sol_CFG.get("name", "Harold"),
         "personality": _sol_CFG.get("personality", "cálida"),
         "memories": mem_count,
+        "mood": mood_val,
+        "estado": estado,
         **stats,
     }
 
