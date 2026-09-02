@@ -8214,6 +8214,38 @@ if _SOL_LIVE.exists():
 
 print("[SOL] /sol.html y /sol sirven el HTML standalone accesible desde backend/static/", flush=True)
 
+# ── SOL API PROXY — endpoints que sol_router NO cubre → sol_api.py :8006 ──────
+# sol_router (montado arriba, in-process) atiende el núcleo: think, memory,
+# tools, sil básico. Pero la UI (sol.html) también llama groq, knowledge/*,
+# repos, security y sil/advanced — que NO existen en el router y caían en el
+# 404 del SPA. Este catch-all reenvía SOLO los no-atendidos al sol_api.py real
+# (omni.sh lo levanta en :8006). Al registrarse DESPUÉS del include de
+# sol_router, las rutas específicas ganan primero (orden de match en FastAPI).
+# El middleware de auth ya exime /api/sol/* — la key x-sol-key la valida
+# sol_api en el otro extremo (se reenvía intacta).
+_SOL_PROXY_BASE = os.environ.get("SOL_API_BASE", "http://127.0.0.1:8006")
+
+@app.api_route("/api/sol/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def sol_api_fallback_proxy(rest: str, request: Request):
+    url = f"{_SOL_PROXY_BASE}/api/sol/{rest}"
+    body = await request.body()
+    headers = {k: request.headers[k] for k in ("x-sol-key", "content-type", "accept", "authorization")
+               if k in request.headers}
+    try:
+        async with httpx.AsyncClient(timeout=float(os.environ.get("SOL_PROXY_TIMEOUT", "20"))) as client:
+            resp = await client.request(request.method, url, content=body,
+                                        headers=headers, params=dict(request.query_params))
+        return Response(content=resp.content, status_code=resp.status_code,
+                        media_type=resp.headers.get("content-type", "application/json"))
+    except httpx.ConnectError:
+        return JSONResponse({"error": f"Sol no está corriendo en {_SOL_PROXY_BASE}. "
+                                      f"Arranca con: bash omni.sh up (o sol_start.sh) y recarga."},
+                            status_code=502)
+    except Exception as e:
+        return JSONResponse({"error": f"Proxy Sol falló: {e}"}, status_code=502)
+
+print(f"[SOL] Proxy fallback /api/sol/* → {_SOL_PROXY_BASE} (para groq/knowledge/repos/security/sil-advanced)", flush=True)
+
 # ═════════════════════════════════════════════════════════════════════════════
 #  FRONTEND ESTÁTICO — SPA
 # ═════════════════════════════════════════════════════════════════════════════

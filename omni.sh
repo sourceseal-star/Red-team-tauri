@@ -929,10 +929,16 @@ sync() {
   done
   # Sincronizar archivos de Sol desde ~/sol si existen (sus versiones pueden ser más nuevas)
   if [ -d "$SOL_REPO_DIR" ]; then
-    for _f in sol_api.py sol_core.py sol_tools.py sol_knowledge.py sol_repo_tools.py sol_security.py sil_advanced.py; do
-      if [ -f "$SOL_REPO_DIR/$_f" ] && [ -f "$ROOT/$_f" ]; then
-        if ! diff -q "$SOL_REPO_DIR/$_f" "$ROOT/$_f" >/dev/null 2>&1; then
-          info "Copiando $_f desde ~/sol (más nuevo)..."
+    # Lista completa de módulos de Sol (antes solo 7 — sol_telegram_bot,
+    # sol_groq, sol_daemon, sol_learning_advanced y sol_tutor nunca se
+    # propagaban de ~/sol y quedaban viejos en la raíz)
+    for _f in sol_api.py sol_core.py sol_tools.py sol_knowledge.py sol_repo_tools.py \
+              sol_security.py sol_groq.py sol_daemon.py sol_tutor.py \
+              sol_learning_advanced.py sol_telegram_bot.py sol_telegram_bridge.py \
+              sil_advanced.py; do
+      if [ -f "$SOL_REPO_DIR/$_f" ]; then
+        if [ ! -f "$ROOT/$_f" ] || ! diff -q "$SOL_REPO_DIR/$_f" "$ROOT/$_f" >/dev/null 2>&1; then
+          info "Copiando $_f desde ~/sol..."
           cp "$SOL_REPO_DIR/$_f" "$ROOT/$_f" && ok "$_f sincronizado"
         fi
       fi
