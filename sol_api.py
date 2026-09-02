@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""sol_api.py v3 — cerebro único de Sol (:8006). Una memoria, un cerebro + herramientas."""
+"""sol_api.py v4 — cerebro de Sol (:8006). Memoria + herramientas + SIL (inmersión lingüística)."""
 import json, subprocess, hashlib, sys, urllib.request
 from pathlib import Path
 from fastapi import FastAPI
@@ -63,7 +63,7 @@ def personality(d:dict):
     return {"ok":True}
 
 # ============================================================
-# INTEGRACIÓN DE HERRAMIENTAS — sol_tools
+# HERRAMIENTAS — sol_tools
 # ============================================================
 try:
     import sol_tools
@@ -74,37 +74,81 @@ except Exception as e:
 
 @app.get("/api/sol/tools")
 def list_tools():
-    """Lista todas las herramientas disponibles."""
-    if not _tools_ok:
-        return {"error": "sol_tools no disponible", "tools": []}
+    if not _tools_ok: return {"error": "sol_tools no disponible", "tools": []}
     return {"tools": sol_tools.list_tools(), "descriptions": sol_tools.tool_descriptions()}
 
 @app.post("/api/sol/tool/execute")
 def execute_tool(request: dict):
-    """Ejecuta una herramienta por nombre."""
-    if not _tools_ok:
-        return {"success": False, "error": "sol_tools no disponible"}
+    if not _tools_ok: return {"success": False, "error": "sol_tools no disponible"}
     name = request.get("name")
     args = request.get("args", [])
     kwargs = request.get("kwargs", {})
-    if not name:
-        return {"success": False, "error": "Falta el nombre de la herramienta"}
-    result = sol_tools.execute_tool(name, *args, **kwargs)
-    return result
+    if not name: return {"success": False, "error": "Falta el nombre de la herramienta"}
+    return sol_tools.execute_tool(name, *args, **kwargs)
 
 @app.get("/api/sol/tool/{name}")
 def tool_info(name: str):
-    """Información de una herramienta específica."""
-    if not _tools_ok:
-        return {"error": "sol_tools no disponible"}
+    if not _tools_ok: return {"error": "sol_tools no disponible"}
     tool = sol_tools.get_tool(name)
-    if not tool:
-        return {"error": f"Herramienta no encontrada: {name}"}
-    return {
-        "name": tool.name,
-        "description": tool.description,
-        "parameters": tool.parameters
-    }
+    if not tool: return {"error": f"Herramienta no encontrada: {name}"}
+    return {"name": tool.name, "description": tool.description, "parameters": tool.parameters}
+
+# ============================================================
+# INMERSIÓN LINGÜÍSTICA (SIL) — sol_learning_advanced
+# ============================================================
+try:
+    import sol_learning_advanced as sil
+    _sil_ok = True
+except Exception as e:
+    print(f"[SOL] sol_learning_advanced no disponible: {e}", flush=True)
+    _sil_ok = False
+
+@app.get("/api/sil/lessons")
+def sil_lessons(language: str = "chino"):
+    """Lista las lecciones disponibles para un idioma."""
+    if not _sil_ok: return {"error": "SIL no disponible", "lessons": []}
+    return {"lessons": sil.list_lessons(language)}
+
+@app.get("/api/sil/lesson")
+def sil_lesson(language: str = "chino", name: str = "saludos"):
+    """Obtiene una lección completa."""
+    if not _sil_ok: return {"error": "SIL no disponible"}
+    lesson = sil.get_lesson(language, name)
+    if not lesson: return {"error": "Lección no encontrada"}
+    return {"lesson": lesson}
+
+@app.post("/api/sil/practice/next")
+def sil_practice_next(request: dict):
+    """Obtiene el siguiente elemento para practicar."""
+    if not _sil_ok: return {"error": "SIL no disponible"}
+    language = request.get("language", "chino")
+    lesson = request.get("lesson", "saludos")
+    item = sil.get_next_practice_item(language, lesson)
+    if not item: return {"error": "No hay elementos para practicar"}
+    return {"item": item}
+
+@app.post("/api/sil/practice/answer")
+def sil_practice_answer(request: dict):
+    """Procesa una respuesta de práctica."""
+    if not _sil_ok: return {"error": "SIL no disponible"}
+    item_type = request.get("type")
+    item_id = request.get("item_id")
+    quality = request.get("quality", 3)
+    if not item_type or not item_id: return {"error": "Faltan parámetros"}
+    sil.process_practice_answer(item_type, item_id, quality)
+    return {"status": "ok"}
+
+@app.get("/api/sil/stats")
+def sil_stats():
+    """Estadísticas de aprendizaje."""
+    if not _sil_ok: return {"error": "SIL no disponible"}
+    return sil.get_learning_stats()
+
+@app.get("/api/sil/export")
+def sil_export():
+    """Exporta todo el progreso."""
+    if not _sil_ok: return {"error": "SIL no disponible"}
+    return sil.export_progress()
 
 if __name__=="__main__":
     import uvicorn; uvicorn.run(app,host="127.0.0.1",port=8006)
