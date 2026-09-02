@@ -554,6 +554,25 @@ start() {
     info "Sol daemon no encontrado — saltando (usa 'bash ~/sol.sh start' manualmente)"
   fi
 
+  # ── 9. Sol API (cerebro de datos para sol.html) ──
+  if [ -f "$ROOT/sol_api.py" ] && [ -f "$ROOT/sol_core.py" ]; then
+    if pgrep -f "sol_api.py" >/dev/null 2>&1; then
+      ok "Sol API ☀️ ya corriendo (:8006)"
+    else
+      info "Sol API ☀️ — arrancando en :8006..."
+      cd "$ROOT"
+      nohup python3 sol_api.py >> "$LOG_DIR/sol_api.log" 2>&1 &
+      sleep 2
+      if pgrep -f "sol_api.py" >/dev/null 2>&1; then
+        ok "Sol API ☀️ activo en http://127.0.0.1:8006"
+      else
+        warn "Sol API ☀️ no arrancó — ver $LOG_DIR/sol_api.log"
+      fi
+    fi
+  else
+    info "Sol API no encontrado — saltando"
+  fi
+
   cd "$ROOT"
   echo ""
   echo -e "${G}╔═══════════════════════════════════════════════════════╗${N}"
