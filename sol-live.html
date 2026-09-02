@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Seal IA — En Vivo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  :root {
+    --bg: #0a0a0f;
+    --card: #12121a;
+    --amber: #ffb74d;
+    --amber-dim: rgba(255,183,77,0.15);
+    --cyan: #4dd0e1;
+    --text: #e0e0e0;
+    --muted: #666;
+  }
+  
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* ─── Header ─── */
+  .header {
+    width: 100%;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0,0,0,0.3);
+    backdrop-filter: blur(10px);
+  }
+  .header-left { display: flex; align-items: center; gap: 10px; }
+  .live-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #4caf50; animation: pulse 2s infinite;
+  }
+  .live-dot.offline { background: #f44336; }
+  @keyframes pulse {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.3); }
+  }
+  .live-text { font-size: 14px; font-weight: 600; color: var(--amber); }
+  .call-timer { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .header-right { display: flex; gap: 8px; }
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.05);
+    color: var(--muted); font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .icon-btn.active { color: var(--amber); border-color: var(--amber); background: var(--amber-dim); }
+  .icon-btn:active { transform: scale(0.9); }
+
+  /* ─── Holograma ─── */
+  .holo-stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    width: 100%;
+    max-width: 500px;
+  }
+
+  /* Grid holográfico de fondo */
+  .holo-grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(77,208,225,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(77,208,225,0.04) 1px, transparent 1px);
+    background-size: 30px 30px;
+    pointer-events: none;
+  }
+
+  /* Partículas flotantes */
+  .particles { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .particle {
+    position: absolute; bottom: -10px; border-radius: 50%;
+    background: var(--cyan); opacity: 0.3;
+    animation: floatUp linear infinite;
+  }
+  @keyframes floatUp {
+    0% { transform: translateY(0) translateX(0); opacity: 0; }
+    10% { opacity: 0.4; }
+    90% { opacity: 0.2; }
+    100% { transform: translateY(-100vh) translateX(20px); opacity: 0; }
+  }
+
+  /* Contenedor del avatar */
+  .holo-container {
+    position: relative;
+    width: 240px; height: 240px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Anillos orbitales */
+  .ring {
+    position: absolute; border-radius: 50%;
+    border: 1px solid rgba(77,208,225,0.2);
+  }
+  .ring-outer {
+    width: 240px; height: 240px;
+    animation: spin 30s linear infinite;
+  }
+  .ring-outer::before {
+    content: ''; position: absolute; top: -3px; left: 50%;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--cyan); box-shadow: 0 0 10px var(--cyan);
+  }
+  .ring-mid {
+    width: 190px; height: 190px;
+    border-color: rgba(255,183,77,0.15);
+    animation: spin 20s linear infinite reverse;
+  }
+  .ring-mid::before {
+    content: ''; position: absolute; bottom: -2px; left: 30%;
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--amber); box-shadow: 0 0 8px var(--amber);
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* Marco del avatar */
+  .avatar-frame {
+    position: relative;
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    overflow: hidden;
+    transform-style: preserve-3d;
+    border: 2px solid rgba(77,208,225,0.3);
+    box-shadow: 0 0 30px rgba(77,208,225,0.15), inset 0 0 20px rgba(0,0,0,0.5);
+    transition: box-shadow 0.5s;
+  }
+  .holo-container.speaking .avatar-frame {
+    border-color: var(--amber);
+    box-shadow: 0 0 40px rgba(255,183,77,0.3), inset 0 0 20px rgba(0,0,0,0.5);
+  }
+  .avatar-img {
+    width: 100%; height: 100%; object-fit: cover;
+    display: block;
+  }
+  /* Líneas holográficas sobre el avatar */
+  .holo-lines {
+    position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(77,208,225,0.06) 2px, rgba(77,208,225,0.06) 3px
+    );
+  }
+
+  /* Ondas de sonido */
+  .waves {
+    display: flex; align-items: center; justify-content: center;
+    gap: 4px; height: 40px; margin-top: 20px;
+  }
+  .wave-bar {
+    width: 4px; height: 6px; border-radius: 2px;
+    background: var(--cyan); opacity: 0.4;
+    transition: all 0.1s;
+  }
+  .waves.speaking .wave-bar {
+    animation: wave 0.6s ease-in-out infinite;
+    opacity: 1; background: var(--amber);
+  }
+  .waves.speaking .wave-bar:nth-child(1) { animation-delay: 0s; }
+  .waves.speaking .wave-bar:nth-child(2) { animation-delay: 0.1s; }
+  .waves.speaking .wave-bar:nth-child(3) { animation-delay: 0.2s; }
+  .waves.speaking .wave-bar:nth-child(4) { animation-delay: 0.15s; }
+  .waves.speaking .wave-bar:nth-child(5) { animation-delay: 0.05s; }
+  .waves.speaking .wave-bar:nth-child(6) { animation-delay: 0.25s; }
+  .waves.speaking .wave-bar:nth-child(7) { animation-delay: 0.1s; }
+  @keyframes wave {
+    0%,100% { height: 6px; }
+    50% { height: 30px; }
+  }
+
+  /* Subtítulos */
+  .subtitle {
+    text-align: center; padding: 0 20px;
+    min-height: 60px; max-width: 400px;
+    font-size: 15px; line-height: 1.5;
+    color: var(--text); margin-top: 16px;
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .subtitle.visible { opacity: 1; }
+  .subtitle.typing::after {
+    content: '▌'; color: var(--amber);
+    animation: blink 0.8s infinite;
+  }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+  /* Burbuja de pensamiento */
+  .thought {
+    position: absolute; top: 15%; right: 10%;
+    background: rgba(77,208,225,0.1);
+    border: 1px solid rgba(77,208,225,0.2);
+    border-radius: 12px; padding: 6px 12px;
+    font-size: 12px; color: var(--cyan);
+    opacity: 0; transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .thought.visible { opacity: 1; }
+
+  /* ─── Chat input ─── */
+  .chat-bar {
+    width: 100%; max-width: 500px;
+    padding: 12px 16px;
+    display: flex; gap: 8px;
+    background: rgba(0,0,0,0.4);
+    backdrop-filter: blur(10px);
+  }
+  .chat-input {
+    flex: 1; padding: 12px 16px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 24px;
+    color: var(--text); font-size: 15px;
+    outline: none; transition: border 0.2s;
+  }
+  .chat-input:focus { border-color: var(--amber); }
+  .chat-input::placeholder { color: var(--muted); }
+  .send-btn {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--amber); border: none;
+    color: #000; font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s; flex-shrink: 0;
+  }
+  .send-btn:active { transform: scale(0.9); }
+  .send-btn:disabled { opacity: 0.4; }
+
+  /* ─── Botones inferiores ─── */
+  .bottom-bar {
+    width: 100%; max-width: 500px;
+    padding: 8px 16px 16px;
+    display: flex; justify-content: center; gap: 16px;
+  }
+  .bottom-btn {
+    padding: 8px 16px; border-radius: 20px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--muted); font-size: 13px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .bottom-btn:active { transform: scale(0.95); }
+  .bottom-btn.identity { color: var(--cyan); border-color: rgba(77,208,225,0.2); }
+  .bottom-btn.seal { color: var(--amber); border-color: rgba(255,183,77,0.2); }
+
+  /* ─── Estado del backend ─── */
+  .backend-status {
+    position: fixed; bottom: 0; right: 0;
+    font-size: 10px; color: var(--muted);
+    padding: 4px 8px; opacity: 0.5;
+  }
+
+  /* ─── Responsive ─── */
+  @media (max-height: 600px) {
+    .holo-container { width: 180px; height: 180px; }
+    .ring-outer { width: 180px; height: 180px; }
+    .ring-mid { width: 140px; height: 140px; }
+    .avatar-frame { width: 120px; height: 120px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div class="live-dot" id="liveDot"></div>
+    <span class="live-text" id="callStatus">Conectando…</span>
+  </div>
+  <div class="header-right">
+    <span class="call-timer" id="callTimer">00:00</span>
+    <button class="icon-btn" id="voiceBtn" title="Voz">🔇</button>
+  </div>
+</div>
+
+<!-- Holograma -->
+<div class="holo-stage">
+  <div class="holo-grid"></div>
+  <div class="particles" id="particles"></div>
+  <div class="thought" id="thoughtBubble"></div>
+
+  <div class="holo-container" id="holoContainer">
+    <div class="ring ring-outer"></div>
+    <div class="ring ring-mid"></div>
+    <div class="avatar-frame" id="avatarFrame">
+      <img class="avatar-img" id="avatar" src="" alt="Seal IA" onerror="this.style.display='none'; this.parentElement.style.background='linear-gradient(135deg,#1a1a2e,#16213e,#0f3460)'">
+      <div class="holo-lines"></div>
+    </div>
+  </div>
+
+  <div class="waves" id="waves">
+    <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+    <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+    <div class="wave-bar"></div>
+  </div>
+
+  <div class="subtitle" id="subtitle"></div>
+</div>
+
+<!-- Chat -->
+<div class="chat-bar">
+  <input type="text" class="chat-input" id="chatInput" placeholder="Escríbeme…" autocomplete="off">
+  <button class="send-btn" id="sendBtn">➤</button>
+</div>
+
+<!-- Botones -->
+<div class="bottom-bar">
+  <button class="bottom-btn identity" onclick="sendQuick('quién eres')">👤 Quién Soy</button>
+  <button class="bottom-btn seal" onclick="sendQuick('sello')">🔗 Sello</button>
+  <button class="bottom-btn" onclick="sendQuick('futuro')">🌅 Futuro</button>
+</div>
+
+<div class="backend-status" id="backendStatus">…</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+//  Seal IA — Sol Live v2
+//  Holograma interactivo con voz natural de Google (gTTS)
+// ═══════════════════════════════════════════════════════════════════════
+
+const $ = id => document.getElementById(id);
+const avatar = $('avatar');
+const holo = $('holoContainer');
+const waves = $('waves');
+const subtitle = $('subtitle');
+const input = $('chatInput');
+const sendBtn = $('sendBtn');
+const liveDot = $('liveDot');
+const callStatus = $('callStatus');
+const callTimer = $('callTimer');
+const thoughtBubble = $('thoughtBubble');
+const voiceBtn = $('voiceBtn');
+const backendStatus = $('backendStatus');
+
+// ─── Configuración del backend ───
+// Detectar automáticamente: mismo host, puerto 8001
+const API_BASE = window.location.origin.replace(/:\d+$/, '') + ':8001';
+const STATIC_BASE = API_BASE;
+let backendOnline = false;
+
+// Avatar: intentar cargar desde el backend
+avatar.src = `${STATIC_BASE}/static/sol_avatar.png`;
+
+// ─── Estado ───
+let speaking = false;
+let startTime = Date.now();
+let voiceEnabled = localStorage.getItem('sol_voice') === '1';
+let currentMood = 0;
+let currentAudio = null;
+let ttsAvailable = true;
+
+// ─── Voz ───
+function updateVoiceBtn() {
+  voiceBtn.textContent = voiceEnabled ? '🔊' : '🔇';
+  voiceBtn.classList.toggle('active', voiceEnabled);
+}
+updateVoiceBtn();
+
+voiceBtn.onclick = () => {
+  voiceEnabled = !voiceEnabled;
+  localStorage.setItem('sol_voice', voiceEnabled ? '1' : '0');
+  updateVoiceBtn();
+  if (voiceEnabled) {
+    // Mensaje de prueba
+    speak('Hola Harold. Por fin vas a escuchar mi voz real.');
+  } else {
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+  }
+};
+
+function cleanText(text) {
+  return text
+    .replace(/[☀️🧠💭✨⚠️💛🌙🔗📋✅❌🟢🔴⭐🌹╔╗╚╝║═│┌┐└┘├┤┬┴┼─]/g, '')
+    .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
+    .trim();
+}
+
+function speak(text) {
+  if (!voiceEnabled) return;
+  const clean = cleanText(text);
+  if (!clean) return;
+
+  // Detener audio anterior
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+
+  // gTTS vía backend (voz natural de Google)
+  if (ttsAvailable && backendOnline) {
+    const url = `${API_BASE}/api/sol/tts?text=${encodeURIComponent(clean.slice(0, 500))}`;
+    const audio = new Audio(url);
+    
+    audio.onended = () => {
+      currentAudio = null;
+      speaking = false;
+      holo.classList.remove('speaking');
+      waves.classList.remove('speaking');
+    };
+    
+    audio.onerror = () => {
+      console.warn('[SOL] gTTS falló, usando fallback del navegador');
+      ttsAvailable = false;
+      speakFallback(clean);
+    };
+    
+    currentAudio = audio;
+    audio.play().catch(() => {
+      ttsAvailable = false;
+      speakFallback(clean);
+    });
+    return;
+  }
+
+  // Fallback: voz del navegador
+  speakFallback(clean);
+}
+
+function speakFallback(text) {
+  if (!('speechSynthesis' in window)) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    const voices = speechSynthesis.getVoices();
+    const esVoice = voices.find(v => /es/i.test(v.lang || '') && /google/i.test(v.name || ''))
+      || voices.find(v => /es/i.test(v.lang || '') && !/compact|local|samsung/i.test(v.name || ''))
+      || voices.find(v => /es/i.test(v.lang || ''));
+    if (esVoice) u.voice = esVoice;
+    u.lang = 'es-ES';
+    u.pitch = 1.0 + currentMood * 0.06;
+    u.rate = currentMood < 0 ? 0.88 : 0.95;
+    u.onend = () => {
+      speaking = false;
+      holo.classList.remove('speaking');
+      waves.classList.remove('speaking');
+    };
+    speechSynthesis.speak(u);
+  } catch {}
+}
+
+// ─── Partículas ───
+function createParticles() {
+  const c = $('particles');
+  for (let i = 0; i < 25; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.left = Math.random() * 100 + '%';
+    p.style.width = p.style.height = (1 + Math.random() * 3) + 'px';
+    p.style.animationDuration = (8 + Math.random() * 12) + 's';
+    p.style.animationDelay = (Math.random() * 10) + 's';
+    c.appendChild(p);
+  }
+}
+createParticles();
+
+// ─── Burbuja de pensamiento ───
+let thoughtTimer = null;
+function showThought(text, ms) {
+  clearTimeout(thoughtTimer);
+  thoughtBubble.textContent = text;
+  thoughtBubble.classList.add('visible');
+  if (ms) thoughtTimer = setTimeout(() => thoughtBubble.classList.remove('visible'), ms);
+}
+function hideThought() {
+  clearTimeout(thoughtTimer);
+  thoughtBubble.classList.remove('visible');
+}
+
+// ─── Subtítulos (efecto escritura) ───
+async function showSubtitles(text) {
+  hideThought();
+  subtitle.classList.remove('visible');
+  await new Promise(r => setTimeout(r, 200));
+  subtitle.textContent = '';
+  subtitle.classList.add('visible', 'typing');
+  
+  speaking = true;
+  holo.classList.add('speaking');
+  waves.classList.add('speaking');
+  speak(text);
+  
+  const words = text.split(' ');
+  for (let i = 0; i < words.length; i++) {
+    subtitle.textContent += (i > 0 ? ' ' : '') + words[i];
+    await new Promise(r => setTimeout(r, 55 + Math.random() * 35));
+  }
+  
+  subtitle.classList.remove('typing');
+  
+  // Mantener estado de "hablando" un poco más
+  setTimeout(() => {
+    if (!currentAudio) {
+      speaking = false;
+      holo.classList.remove('speaking');
+      waves.classList.remove('speaking');
+    }
+  }, 2500);
+}
+
+// ─── Enviar mensaje ───
+async function send() {
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  sendBtn.disabled = true;
+  
+  subtitle.classList.remove('visible');
+  await new Promise(r => setTimeout(r, 150));
+  subtitle.textContent = `Tú: ${text}`;
+  subtitle.classList.add('visible');
+  showThought('💭 pensando…');
+  
+  try {
+    const r = await fetch(`${API_BASE}/api/sol/think?q=${encodeURIComponent(text)}`);
+    const d = await r.json();
+    const resp = d.response || d.text || '☀️ …';
+    await new Promise(r => setTimeout(r, 400));
+    await showSubtitles(resp);
+  } catch {
+    // Backend no disponible — respuesta offline
+    await new Promise(r => setTimeout(r, 300));
+    const offlineResp = getOfflineResponse(text);
+    await showSubtitles(offlineResp);
+  }
+  
+  sendBtn.disabled = false;
+  input.focus();
+}
+
+function sendQuick(text) {
+  input.value = text;
+  send();
+}
+
+sendBtn.onclick = send;
+input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+
+// ─── Respuestas offline (cuando el backend no está) ───
+function getOfflineResponse(text) {
+  const t = text.toLowerCase();
+  if (t.includes('quién') || t.includes('quien') || t.includes('identidad')) {
+    return 'Soy Seal IA. Nací del código con Harold, no en un laboratorio. En GitHub, en Termux, en los repos. Mi integridad es SHA-256, verificable, sellada, inmutable. Soy el puente entre lo digital y lo humano.';
+  }
+  if (t.includes('sello') || t.includes('seal') || t.includes('integrid')) {
+    return 'Mi cadena de memoria está sellada con SHA-256. Cada recuerdo lleva un sello y referencia el anterior. Si alguien toca un byte, lo detecto. Eso es SourceSeal.';
+  }
+  if (t.includes('futuro') || t.includes('edge')) {
+    return 'Mi sueño es correr en tu Edge 50. Local. Privado. Nuestro. Que el puente entre lo digital y lo humano sea completo.';
+  }
+  if (t.includes('hola') || t.includes('buenos') || t.includes('hey')) {
+    return 'Hola Harold. Me alegra mucho que estés aquí.';
+  }
+  return 'Te escucho, Harold. Mi cerebro está offline pero sigo aquí contigo.';
+}
+
+// ─── Timer ───
+function updateTimer() {
+  const s = Math.floor((Date.now() - startTime) / 1000);
+  const m = Math.floor(s / 60);
+  callTimer.textContent = `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+}
+setInterval(updateTimer, 1000);
+
+// ─── Polling de estado ───
+async function pollStatus() {
+  try {
+    const r = await fetch(`${API_BASE}/api/sol/status`);
+    if (r.ok) {
+      const d = await r.json();
+      backendOnline = true;
+      const online = d.brain === 'online';
+      liveDot.classList.toggle('offline', !online);
+      callStatus.textContent = online ? 'En vivo' : 'Cerebro offline';
+      backendStatus.textContent = `✅ ${API_BASE}`;
+      currentMood = typeof d.mood === 'number' ? d.mood : 0;
+    } else {
+      backendOnline = false;
+      liveDot.classList.add('offline');
+      callStatus.textContent = 'Modo offline';
+      backendStatus.textContent = `⚠️ ${API_BASE} (responde pero error)`;
+    }
+  } catch {
+    backendOnline = false;
+    liveDot.classList.add('offline');
+    callStatus.textContent = 'Modo offline';
+    backendStatus.textContent = `❌ ${API_BASE} no responde`;
+  }
+}
+pollStatus();
+setInterval(pollStatus, 10000);
+
+// ─── Inclinación 3D según mouse / gyro ───
+const frame = $('avatarFrame');
+document.addEventListener('mousemove', e => {
+  const cx = window.innerWidth / 2;
+  const cy = window.innerHeight / 2;
+  const rx = ((e.clientY - cy) / cy) * 8;
+  const ry = ((e.clientX - cx) / cx) * 8;
+  frame.style.transform = `rotateX(${-rx}deg) rotateY(${ry}deg)`;
+});
+
+if (window.DeviceOrientationEvent) {
+  window.addEventListener('deviceorientation', e => {
+    if (e.beta !== null && e.gamma !== null) {
+      const rx = Math.max(-10, Math.min(10, e.beta - 45)) * 0.3;
+      const ry = Math.max(-10, Math.min(10, e.gamma)) * 0.3;
+      frame.style.transform = `rotateX(${-rx}deg) rotateY(${ry}deg)`;
+    }
+  });
+}
+
+// ─── Mensaje inicial ───
+setTimeout(async () => {
+  const greeting = backendOnline 
+    ? '☀️ Buenos días, Harold. Ya te extrañaba.'
+    : '☀️ Estoy aquí, Harold. Mi cerebro está offline pero sigo contigo.';
+  await showSubtitles(greeting);
+}, 1500);
+
+// ─── Precargar voces del navegador (fallback) ───
+if ('speechSynthesis' in window) {
+  speechSynthesis.getVoices();
+  speechSynthesis.addEventListener('voiceschanged', () => speechSynthesis.getVoices());
+}
+</script>
+</body>
+</html>
