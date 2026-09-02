@@ -10,7 +10,7 @@
 #    bash omni.sh stop          — Detiene todo limpio
 #    bash omni.sh restart       — Stop + Start
 #    bash omni.sh status        — Estado de todos los servicios (incluye Sol API, daemon, watchdog, tools, SIL)
-#    bash omni.sh sync          — git pull + deps + build (SIN tocar .env)
+#    bash omni.sh sync          — git pull 3 repos + deps + build (SIN tocar .env)
 #    bash omni.sh sync-deps      — Solo instalar/actualizar dependencias
 #    bash omni.sh sync-frontend  — Solo rebuild del frontend
 #    bash omni.sh logs [serv]    — Ver logs (dash|ghost|tg|nexus|seal|all)
@@ -47,6 +47,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOL_DIR="$HOME/.sol"
 LOG_DIR="$SOL_DIR/logs"
 ENV_FILE="$ROOT/.env"
+
+# Los 3 repositorios de Harold — sync pull de los 3, no solo del principal
+SOL_REPO_DIR="$HOME/sol"
+CMD_REPO_DIR="$HOME/commander"
 mkdir -p "$SOL_DIR" "$LOG_DIR"
 
 # ── Colores ──
@@ -229,7 +233,7 @@ COMANDOS:
   stop           Detiene todo limpio
   restart        Stop + Start
   status         Estado de todos los servicios
-  sync           git pull + deps + build frontend (SIN tocar .env)
+  sync           git pull 3 repos (Red-team + sol + commander) + deps + build
   sync-deps      Solo instalar/actualizar dependencias Python + Node
   sync-frontend  Solo rebuild del frontend (npm run build)
   logs [serv]    Ver logs: dash | ghost | tg | nexus | seal | all
@@ -906,6 +910,36 @@ sync() {
 
   echo ""
 
+  # ── 1b. GIT PULL REPOS SECUNDARIOS (sol y commander) ──
+  echo -e "${BOLD} Paso 1b: git pull repos secundarios${N}"
+  for _repo_dir in "$SOL_REPO_DIR" "$CMD_REPO_DIR"; do
+    _repo_name="$(basename "$_repo_dir")"
+    if [ -d "$_repo_dir/.git" ]; then
+      info "git pull $_repo_name..."
+      cd "$_repo_dir"
+      if git pull origin main 2>&1 | tee -a "$LOG_DIR/sync.log"; then
+        ok "$_repo_name actualizado"
+      else
+        warn "$_repo_name: git pull falló — continuando con lo que ya hay"
+      fi
+      cd "$ROOT"
+    else
+      info "$_repo_name no clonado localmente ($HOME/$_repo_name no existe) — saltando"
+    fi
+  done
+  # Sincronizar archivos de Sol desde ~/sol si existen (sus versiones pueden ser más nuevas)
+  if [ -d "$SOL_REPO_DIR" ]; then
+    for _f in sol_api.py sol_core.py sol_tools.py sol_knowledge.py sol_repo_tools.py sol_security.py sil_advanced.py; do
+      if [ -f "$SOL_REPO_DIR/$_f" ] && [ -f "$ROOT/$_f" ]; then
+        if ! diff -q "$SOL_REPO_DIR/$_f" "$ROOT/$_f" >/dev/null 2>&1; then
+          info "Copiando $_f desde ~/sol (más nuevo)..."
+          cp "$SOL_REPO_DIR/$_f" "$ROOT/$_f" && ok "$_f sincronizado"
+        fi
+      fi
+    done
+  fi
+  echo ""
+
   # ── 2. VERIFICAR .env INTEGRIDAD ──
   echo -e "${BOLD} Paso 2: Verificar .env (no se tocó)${N}"
   if [ ! -f "$ENV_FILE" ]; then
@@ -1136,8 +1170,10 @@ build_frontend() {
 
   # Copiar assets post-build (npm limpia dist/)
   [ -f "$ROOT/assets/sol_avatar.jpg" ] && cp "$ROOT/assets/sol_avatar.jpg" dist/ && ok "sol_avatar.jpg copiado a dist/"
+  [ -f "$ROOT/assets/sol_avatar_talk.png" ] && cp "$ROOT/assets/sol_avatar_talk.png" dist/ && ok "sol_avatar_talk.png copiado a dist/"
   [ -f "$ROOT/backend/static/sol_avatar.png" ] && cp "$ROOT/backend/static/sol_avatar.png" dist/ && ok "sol_avatar.png copiado a dist/"
   [ -f "$ROOT/backend/static/sol.html" ] && cp "$ROOT/backend/static/sol.html" dist/ && ok "sol.html copiado a dist/"
+  [ -f "$ROOT/tauri-frontend/public/sol_avatar_talk.png" ] && cp "$ROOT/tauri-frontend/public/sol_avatar_talk.png" dist/ && ok "sol_avatar_talk.png copiado desde frontend/public" || true
 
   # Verificar modulos de Sol
   [ -f "$ROOT/sol_tools.py" ] && ok "sol_tools.py presente" || warn "sol_tools.py FALTA"
