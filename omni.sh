@@ -24,7 +24,7 @@
 #    :8004  Nexus Omni-Sentient
 #    :8005  C2 UNIFIED PRO (si existe)
 #    ☀️    Sol Autónoma (daemon que vigila y habla proactivamente)
-#    ☀️    Puente Telegram (@sol_amg_bot)
+#    ☀️    Telegram: NO se arranca aquí — vive en repo 'sol' (Replit)
 #    🐕    Watchdog (vigila y reinicia caídos)
 #    🦭    Seal IA Orquestador (si SEAL_ENABLED=1)
 #
@@ -247,7 +247,7 @@ SERVICIOS:
   :8002  GHOST PHANTOM Master + Node
   :8004  Nexus Omni-Sentient
   :8005  C2 UNIFIED PRO
-  ☀️     Puente Telegram
+  ☀️     Telegram (gestionado por repo 'sol' en Replit)
   🐕     Watchdog (auto-restart)
 
 SEGURIDAD DE CREDENCIALES:
@@ -654,23 +654,11 @@ status_short() {
   fi
   fi
 
-  # Telegram (puente legacy)
-  if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
-    ok "TG Puente ☀️       🟢 ACTIVO"
+  # Telegram — gestionado por repo 'sol' en Replit (no localmente)
+  if pgrep -f "sol_telegram_bot.py" >/dev/null 2>&1 || pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
+    warn "Telegram ☀️        🟡 PROCEO LOCAL DETECTADO — debería vivir solo en Replit"
   else
-    warn "TG Puente ☀️       🟡 INACTIVO"
-  fi
-
-  # Telegram (miniapp con botones)
-  if [ -f "$SOL_DIR/tg_bot.pid" ]; then
-    TG_BOT_PID=$(cat "$SOL_DIR/tg_bot.pid" 2>/dev/null)
-    if [ -n "$TG_BOT_PID" ] && kill -0 "$TG_BOT_PID" 2>/dev/null; then
-      ok "TG Miniapp ☀️      🟢 ACTIVA (PID $TG_BOT_PID)"
-    else
-      warn "TG Miniapp ☀️      🟡 INACTIVA"
-    fi
-  else
-    warn "TG Miniapp ☀️      🟡 DETENIDA"
+    ok "Telegram ☀️        🟢 GESTIONADO EN REPLIT (sin proceso local)"
   fi
 
   # Seal IA
