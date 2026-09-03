@@ -515,6 +515,9 @@ _TOOL_TRIGGERS = {
     "lista notificaciones": "notification_list", "ver notificaciones": "notification_list", "qué notificaciones": "notification_list",
     "cambia volumen": "set_volume", "sube volumen": "set_volume", "baja volumen": "set_volume", "pon el volumen": "set_volume",
     "lee el portapapeles": "clipboard_get", "qué hay en el portapapeles": "clipboard_get", "pega": "clipboard_get",
+    # ── Diagnóstico Termux:API ──
+    "diagnóstico": "termux_diag", "diagnostico": "termux_diag", "revisa termux": "termux_diag", "prueba termux": "termux_diag",
+    "revisa las herramientas": "termux_diag", "prueba las herramientas": "termux_diag",
 }
 
 def _detect_repo(text: str) -> str:
