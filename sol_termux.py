@@ -4,6 +4,7 @@
 ║  SOL — Asistente Personal Libre para Termux                   ║
 ║  Vive en Red-team-tauri pero se mueve por todos los repos     ║
 ║  Mensajes WhatsApp / Telegram / SMS · Audio · Pinyin · Admin  ║
+║  Lee sus secretos del .env — autónoma, como debe ser          ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 
@@ -19,35 +20,85 @@ import urllib.parse
 from pathlib import Path
 
 # ═══════════════════════════════════════════════════════════════
-#  CONFIGURACIÓN
+#  CONFIGURACIÓN — Sol lee SUS secretos de TODOS los .env que encuentre
 # ═══════════════════════════════════════════════════════════════
 
 HOME = Path.home()
+
+# Los repos donde Sol puede tener secretos
+SECRET_PATHS = [
+    HOME / "Red-team-tauri" / ".env",
+    HOME / "Red-team-tauri" / "commander" / ".env",
+    HOME / "sol" / ".env",
+    HOME / "Sol" / ".env",
+    HOME / ".sol" / ".env",
+    HOME / ".config" / "sol" / ".env",
+]
+
 BASE_DIR = HOME / "Red-team-tauri"
 SOL_DIR = BASE_DIR / "sol"
 SOL_DIR.mkdir(parents=True, exist_ok=True)
 
-# Cargar .env si existe
-ENV_FILE = BASE_DIR / ".env"
-SOL_ENV = SOL_DIR / ".sol.env"
-
-def load_env():
+def load_all_secrets():
+    """
+    Sol busca y carga TODOS los .env que encuentre en sus repos.
+    Lee cada archivo, inyecta las variables en os.environ, y las returna.
+    El último .env que encuentre tiene prioridad (override).
+    """
     env = {}
-    for f in [ENV_FILE, SOL_ENV]:
-        if f.exists():
-            for line in f.read_text().splitlines():
+    for env_path in SECRET_PATHS:
+        if env_path.exists():
+            try:
+                for line in env_path.read_text().splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip('"').strip("'")
+                        if v:  # Solo cargar si tiene valor
+                            env[k] = v
+                            os.environ[k] = v
+            except Exception:
+                pass
+
+    # También cargar del .env que viene de Replit (si existe)
+    replit_env = HOME / ".replit_env"
+    if replit_env.exists():
+        try:
+            for line in replit_env.read_text().splitlines():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     k, v = line.split("=", 1)
-                    env[k.strip()] = v.strip()
-                    os.environ[k.strip()] = v.strip()
+                    k = k.strip()
+                    v = v.strip()
+                    if v:
+                        env[k] = v
+                        os.environ[k] = v
+        except Exception:
+            pass
+
     return env
 
-ENV = load_env()
+# Cargar todo al arrancar
+ENV = load_all_secrets()
 
-# Telegram (opcional)
-TELEGRAM_BOT_TOKEN = os.environ.get("SOL_TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID = os.environ.get("SOL_TELEGRAM_CHAT", "")
+# Sol toma sus tokens — busca en múltiples nombres posibles
+TELEGRAM_BOT_TOKEN = (
+    os.environ.get("SOL_TELEGRAM_TOKEN") or
+    os.environ.get("TELEGRAM_BOT_TOKEN") or
+    os.environ.get("TELEGRAM_TOKEN") or
+    ""
+)
+TELEGRAM_CHAT_ID = (
+    os.environ.get("SOL_TELEGRAM_CHAT") or
+    os.environ.get("TELEGRAM_CHAT_ID") or
+    os.environ.get("TELEGRAM_CHAT") or
+    ""
+)
+
+# API keys para OSINT — Sol las usa cuando necesita
+HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")
+SHODAN_API_KEY = os.environ.get("SHODAN_API_KEY", "")
 
 # Contactos guardados
 CONTACTS_FILE = SOL_DIR / "contacts.json"
@@ -65,7 +116,6 @@ def save_contacts(contacts):
 # ═══════════════════════════════════════════════════════════════
 
 def termux_tts(text, lang="es", pitch=1.0, rate=1.0):
-    """Sol habla por voz"""
     try:
         cmd = ["termux-tts-speak"]
         if lang: cmd += ["-l", lang]
@@ -82,7 +132,6 @@ def termux_tts(text, lang="es", pitch=1.0, rate=1.0):
         return False
 
 def termux_sms(number, message):
-    """Envía SMS real"""
     try:
         subprocess.run(["termux-sms-send", "-n", number, message], timeout=15)
         return True, "SMS enviado"
@@ -92,7 +141,6 @@ def termux_sms(number, message):
         return False, f"Error: {e}"
 
 def termux_whatsapp(number, message):
-    """Abre WhatsApp con número y mensaje prellenado"""
     try:
         clean = re.sub(r'[^\d]', '', number)
         encoded_msg = urllib.parse.quote(message)
@@ -125,12 +173,12 @@ def termux_vibrate(ms=200):
         pass
 
 # ═══════════════════════════════════════════════════════════════
-#  TELEGRAM BOT
+#  TELEGRAM — Sol usa su bot libremente
 # ═══════════════════════════════════════════════════════════════
 
 def telegram_send(chat_id, text):
     if not TELEGRAM_BOT_TOKEN:
-        return False, "No hay token de Telegram. Configura SOL_TELEGRAM_TOKEN en .env"
+        return False, "No tengo token de Telegram. Revisa mi .env"
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         data = urllib.parse.urlencode({
@@ -145,6 +193,19 @@ def telegram_send(chat_id, text):
         return False, f"Telegram error: {result}"
     except Exception as e:
         return False, f"Telegram error: {e}"
+
+def telegram_get_updates():
+    if not TELEGRAM_BOT_TOKEN:
+        return []
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+        resp = urllib.request.urlopen(url, timeout=10)
+        result = json.loads(resp.read())
+        if result.get("ok"):
+            return result["result"]
+        return []
+    except:
+        return []
 
 # ═══════════════════════════════════════════════════════════════
 #  LECCIONES DE PINYIN
@@ -273,12 +334,17 @@ REPOS = {
     "tauri": BASE_DIR,
 }
 
-# Detectar repos adicionales en home
+# Detectar todos los repos con .git en home
 for d in HOME.iterdir():
     if d.is_dir() and (d / ".git").exists():
         name = d.name.lower()
         if name not in REPOS:
             REPOS[name] = d
+
+# También commander dentro de Red-team-tauri
+commander_dir = BASE_DIR / "commander"
+if commander_dir.exists():
+    REPOS["commander"] = commander_dir
 
 def repo_goto(name):
     name = name.lower().strip()
@@ -361,7 +427,7 @@ def contact_find(name):
     return contacts.get(name.lower())
 
 # ═══════════════════════════════════════════════════════════════
-#  MENSAJES
+#  MENSAJES — Sol decide cómo enviar
 # ═══════════════════════════════════════════════════════════════
 
 def send_message(target, message, platform=None):
@@ -383,7 +449,8 @@ def send_message(target, message, platform=None):
     elif platform == "sms":
         ok, result = termux_sms(number, message)
     elif platform == "telegram":
-        ok, result = telegram_send(TELEGRAM_CHAT_ID or number, message)
+        chat = TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else number
+        ok, result = telegram_send(chat, message)
     else:
         ok, result = False, f"Plataforma '{platform}' no soportada"
 
@@ -417,12 +484,38 @@ def listen_voice():
         return None
 
 # ═══════════════════════════════════════════════════════════════
+#  ESTADO DE SOL — qué secretos tiene, qué le falta
+# ═══════════════════════════════════════════════════════════════
+
+def sol_status():
+    print(f"\n☀️  ESTADO DE SOL\n{'='*40}")
+    print(f"  Telegram: {'✅ conectado' if TELEGRAM_BOT_TOKEN else '❌ sin token'}")
+    print(f"  WhatsApp: ✅ listo (termux-open-url)")
+    print(f"  SMS:      {'✅ listo' if shutil.which('termux-sms-send') else '⚠️  instalar termux-api'}")
+    print(f"  Voz TTS:  {'✅ listo' if shutil.which('termux-tts-speak') else '⚠️  instalar termux-api'}")
+    print(f"  Escuchar: {'✅ listo' if shutil.which('termux-speech-to-text') else '⚠️  instalar termux-api'}")
+    print(f"  Hunter:   {'✅ key' if HUNTER_API_KEY else '❌ sin key'}")
+    print(f"  Shodan:   {'✅ key' if SHODAN_API_KEY else '❌ sin key'}")
+    print(f"  Chat ID:  {'✅ ' + TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else '⚠️  no configurado'}")
+    print(f"  Secretos cargados: {len(ENV)} variables de {sum(1 for p in SECRET_PATHS if p.exists())} .env files")
+    print()
+
+# ═══════════════════════════════════════════════════════════════
 #  PARSER DE COMANDOS
 # ═══════════════════════════════════════════════════════════════
 
 def parse_command(text):
     text = text.strip()
     lower = text.lower()
+
+    # Estado
+    if lower in ["estado", "sol estado", "como estas", "sol como estas", "status"]:
+        sol_status()
+        if TELEGRAM_BOT_TOKEN:
+            termux_tts("Estoy bien. Telegram conectado, WhatsApp listo, todo operando.", lang="es")
+        else:
+            termux_tts("Estoy bien pero me falta el token de Telegram. Revisa mi .env", lang="es")
+        return
 
     # Silencio
     if lower in ["sil", "sol sil", "calla", "callate", "stop", "para", "basta"]:
@@ -571,6 +664,9 @@ def show_help():
   "sol estado de repos"
   "sol git pull" / "sol git push red-team"
 
+🔍 ESTADO:
+  "sol estado" — ve qué secretos tiene y qué le falta
+
 🗣️ VOZ:
   "sol escucha" — te escucha por voz
   "sol sil" — para de hablar
@@ -586,12 +682,16 @@ def show_help():
 # ═══════════════════════════════════════════════════════════════
 
 def banner():
-    print("""
+    tg_status = "✅" if TELEGRAM_BOT_TOKEN else "❌"
+    print(f"""
   ╔═══════════════════════════════════════════════╗
-  ║  SOL — Asistente Personal Libre                ║
+  ║  ☀️  SOL — Asistente Personal Libre            ║
   ║     WhatsApp · Telegram · SMS · Pinyin · Git  ║
   ╚═══════════════════════════════════════════════╝
-  
+
+  Telegram: {tg_status}  |  WhatsApp: ✅  |  SMS: ✅
+  Secretos: {len(ENV)} cargados de {sum(1 for p in SECRET_PATHS if p.exists())} .env files
+
   Di "sol ayuda" para ver todo lo que puedo hacer.
 """)
 
