@@ -996,6 +996,9 @@ TOOLS = {
     "set_volume": Tool("set_volume", "Cambia volumen", tool_set_volume, ["volume", "stream"]),
     "clipboard_get": Tool("clipboard_get", "Lee el portapapeles", tool_clipboard_get),
     "battery_info": Tool("battery_info", "Info detallada de bateria", tool_battery_info),
+    # ── Relé Termux (2026-09-03) ──
+    "relay_status": Tool("relay_status", "Estado del relé: si el teléfono de Sol está en línea y qué hay pendiente", lambda: tool_relay_status()),
+    "relay_results": Tool("relay_results", "Últimos resultados de tareas ejecutadas en el teléfono vía relé", lambda count=5: tool_relay_results(count), ["count"]),
 }
 
 def get_tool(name: str) -> Optional[Tool]:
@@ -1007,10 +1010,98 @@ def list_tools() -> List[str]:
 def tool_descriptions() -> str:
     return "\n".join(f"• {k}: {v.description}" for k, v in TOOLS.items())
 
+# ============================================================
+# RELÉ TERMUX (HTTP) — variante Red-team-tauri (2026-09-03)
+# Esta copia vive en el Repl del DASHBOARD, que es OTRO proceso
+# distinto al de Sol (sol_api). Por eso el enqueue es por HTTP a
+# {SOL_PUBLIC_URL}/api/relay/task — la cola que el teléfono sondea
+# vive en el Repl de Sol, no aquí. En Termux el hardware es local y
+# esto nunca se activa. Ver ~/sol/RELE_TERMUX.castell (repo sol).
+# ============================================================
+HARDWARE_TOOLS = {
+    "battery", "battery_info", "location", "clipboard", "clipboard_get",
+    "send_sms", "notify", "open_url", "flashlight", "vibrate",
+    "screenshot", "camera_photo", "listen", "speak_file", "tts_speak",
+    "call_phone", "send_whatsapp", "open_app", "phone_state",
+    "notification_list", "set_volume",
+}
+
+_TERMUX_CHECKED = None
+
+def _termux_available() -> bool:
+    global _TERMUX_CHECKED
+    if _TERMUX_CHECKED is None:
+        import shutil
+        _TERMUX_CHECKED = bool(shutil.which("termux-battery-status"))
+    return _TERMUX_CHECKED
+
+def _relay_active() -> bool:
+    if os.environ.get("SOL_RELAY_AGENT") == "1":
+        return False
+    if os.environ.get("SOL_RELAY_ENABLED") == "1":
+        return True
+    return "REPL_SLUG" in os.environ or "REPL_OWNER" in os.environ
+
+def _relay_http(path, payload=None, method=None, timeout=15):
+    """Llamada HTTP al relé de Sol (mismos secretos del bridge)."""
+    import json as _json
+    import urllib.request as _rq
+    base = os.environ.get("SOL_PUBLIC_URL", "").rstrip("/")
+    key = os.environ.get("SOL_API_KEY", "")
+    if not base or not key:
+        raise RuntimeError("faltan SOL_PUBLIC_URL/SOL_API_KEY en el entorno")
+    data = _json.dumps(payload or {}).encode()
+    req = _rq.Request(f"{base}{path}", data=data if method != "GET" else None,
+                      headers={"Content-Type": "application/json",
+                               "x-sol-key": key,
+                               "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
+                      method=(method or ("POST" if data else "GET")))
+    with _rq.urlopen(req, timeout=timeout) as resp:
+        return _json.loads(resp.read())
+
+def _relay_enqueue(tool_name, args, kwargs):
+    try:
+        r = _relay_http("/api/relay/task",
+                        {"name": tool_name, "args": list(args), "kwargs": dict(kwargs)})
+        if r.get("success"):
+            return {"success": True, "relayed": True, "task_id": r["task_id"],
+                    "message": (f"Orden enviada a mi cuerpo en Termux (Edge 50) 📱 "
+                               f"tarea {r['task_id']}. La ejecutará en su próximo "
+                               f"poll (~15s). Pregúntame 'qué pasó' para el resultado.")}
+        return {"success": False, "relayed": True, "error": f"no se pudo encolar: {r.get('error')}"}
+    except Exception as e:
+        return {"success": False, "error": f"relé no disponible: {e}"}
+
+def tool_relay_status() -> str:
+    try:
+        s = _relay_http("/api/relay/status", method="GET")
+        online = "🟢 EN LÍNEA" if s.get("termux_online") else "🔴 sin señal"
+        return (f"Relé Termux: {online}\n"
+                f"Último pong: {s.get('last_pong') or 'nunca'}\n"
+                f"Pendientes: {s.get('pending')} · resultados: {s.get('results_total')}")
+    except Exception as e:
+        return f"Relé no disponible: {e}"
+
+def tool_relay_results(count: int = 5) -> str:
+    try:
+        r = _relay_http(f"/api/relay/results?limit={max(1, min(int(count), 20))}", method="GET")
+        rs = r.get("results", [])
+        if not rs:
+            return "Sin resultados aún de tareas en Termux."
+        return "\n".join(f"[{x.get('finished_at')}] {x.get('tool')} "
+                          f"{'✅' if x.get('ok') else '❌'}: {str(x.get('data'))[:400]}"
+                          for x in rs)
+    except Exception as e:
+        return f"Relé no disponible: {e}"
+
 def execute_tool(name: str, *args, **kwargs) -> Dict:
     tool = get_tool(name)
     if not tool:
         return {"success": False, "error": f"Herramienta no encontrada: {name}"}
+    # RELÉ: sin hardware local (Replit) → la orden viaja al teléfono de Sol
+    if name in HARDWARE_TOOLS and not _termux_available() and _relay_active():
+        log(f"📡 {name} sin hardware local → encolando vía HTTP al relé de Sol")
+        return _relay_enqueue(name, args, kwargs)
     log(f"🔧 Ejecutando {name} con args={args}, kwargs={kwargs}")
     result = tool.execute(*args, **kwargs)
     log(f"📊 Resultado de {name}: {str(result)[:200]}")

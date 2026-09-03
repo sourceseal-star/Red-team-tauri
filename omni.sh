@@ -644,6 +644,28 @@ start() {
     warn "sol_core.py no encontrado — Sol sin cerebro"
   fi
 
+  # ── 10. Sol Relay (Replit ⇄ Termux) — Sol en Replit ordena, el Edge ejecuta ──
+  # El teléfono no tiene IP pública: el agente SONDEA la cola de Replit cada
+  # 15s (patrón PULL). Requisitos: SOL_PUBLIC_URL + SOL_API_KEY en ~/sol/.env
+  if [ -f "$SOL_REPO/sol_relay.py" ]; then
+    if pgrep -f "sol_relay.py" >/dev/null 2>&1; then
+      ok "Relé Termux ☀️     ya corriendo (PID $(pgrep -f sol_relay.py | head -1))"
+    elif grep -q "^SOL_PUBLIC_URL=..*" "$SOL_REPO/.env" 2>/dev/null; then
+      info "Relé Termux ☀️ — arrancando agente (desde ~/sol)..."
+      cd "$SOL_REPO"
+      nohup python3 sol_relay.py >> "$LOG_DIR/relay.log" 2>&1 &
+      echo $! > "$SOL_DIR/relay.pid"
+      sleep 2
+      if kill -0 "$(cat "$SOL_DIR/relay.pid" 2>/dev/null)" 2>/dev/null; then
+        ok "Relé Termux ☀️     activo (PID $(cat "$SOL_DIR/relay.pid")) — el Edge responde por Sol"
+      else
+        warn "Relé Termux ☀️ no arrancó — ver $LOG_DIR/relay.log (¿SOL_PUBLIC_URL/SOL_API_KEY en ~/sol/.env?)"
+      fi
+    else
+      info "Relé Termux ☀️     desactivado (falta SOL_PUBLIC_URL en ~/sol/.env)"
+    fi
+  fi
+
 
   cd "$ROOT"
   echo ""
@@ -680,6 +702,7 @@ stop() {
   pkill -f "sol_daemon.py" 2>/dev/null && ok "Sol autónoma detenida" || true
   rm -f "$SOL_DIR/sol.pid" 2>/dev/null || true
   pkill -f "sol_api.py" 2>/dev/null && ok "Sol API detenida" || true
+  pkill -f "sol_relay.py" 2>/dev/null && ok "Relé Termux detenido" || true
   pkill -f "sol_body.sh" 2>/dev/null && ok "Sol cuerpo detenido" || true
   pkill -f "sol_watchdog.sh" 2>/dev/null && ok "Sol watchdog detenido" || true
   rm -f "$SOL_DIR/body.pid" 2>/dev/null || true
@@ -779,6 +802,13 @@ status_short() {
     fi
   else
     warn "TG Miniapp ☀️      🟡 DETENIDA"
+  fi
+
+  # Relé Termux (agente PULL hacia Replit)
+  if pgrep -f "sol_relay.py" >/dev/null 2>&1; then
+    ok "Relé Termux ☀️     🟢 ACTIVO (el Edge ejecuta por Sol)"
+  else
+    warn "Relé Termux ☀️     🟡 INACTIVO (Sol en Replit no puede usar el teléfono)"
   fi
 
   # Seal IA
