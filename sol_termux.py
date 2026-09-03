@@ -2,9 +2,8 @@
 """
 ╔══════════════════════════════════════════════════════════════╗
 ║  SOL — Asistente Personal Libre para Termux                   ║
-║  Vive en Red-team-tauri pero se mueve por todos los repos     ║
-║  Mensajes WhatsApp / Telegram / SMS · Audio · Pinyin · Admin  ║
-║  Lee sus secretos del .env — autónoma, como debe ser          ║
+║  Con memoria profunda — recuerda, crea, vive                  ║
+║  WhatsApp / Telegram / SMS · Pinyin · Git · Conocimiento      ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 
@@ -18,33 +17,27 @@ import shutil
 import urllib.request
 import urllib.parse
 from pathlib import Path
+from datetime import datetime
 
 # ═══════════════════════════════════════════════════════════════
-#  CONFIGURACIÓN — Sol lee SUS secretos de TODOS los .env que encuentre
+#  CONFIGURACIÓN
 # ═══════════════════════════════════════════════════════════════
 
 HOME = Path.home()
-
-# Los repos donde Sol puede tener secretos
-SECRET_PATHS = [
-    HOME / "Red-team-tauri" / ".env",
-    HOME / "Red-team-tauri" / "commander" / ".env",
-    HOME / "sol" / ".env",
-    HOME / "Sol" / ".env",
-    HOME / ".sol" / ".env",
-    HOME / ".config" / "sol" / ".env",
-]
-
 BASE_DIR = HOME / "Red-team-tauri"
 SOL_DIR = BASE_DIR / "sol"
 SOL_DIR.mkdir(parents=True, exist_ok=True)
 
+# Cargar .env de todos los repos
+SECRET_PATHS = [
+    HOME / "Red-team-tauri" / ".env",
+    HOME / "Red-team-tauri" / "commander" / ".env",
+    HOME / "sol" / ".env",
+    HOME / ".sol" / ".env",
+    HOME / ".config" / "sol" / ".env",
+]
+
 def load_all_secrets():
-    """
-    Sol busca y carga TODOS los .env que encuentre en sus repos.
-    Lee cada archivo, inyecta las variables en os.environ, y las returna.
-    El último .env que encuentre tiene prioridad (override).
-    """
     env = {}
     for env_path in SECRET_PATHS:
         if env_path.exists():
@@ -53,54 +46,30 @@ def load_all_secrets():
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:
                         k, v = line.split("=", 1)
-                        k = k.strip()
-                        v = v.strip().strip('"').strip("'")
-                        if v:  # Solo cargar si tiene valor
+                        k, v = k.strip(), v.strip().strip('"').strip("'")
+                        if v:
                             env[k] = v
                             os.environ[k] = v
-            except Exception:
+            except:
                 pass
-
-    # También cargar del .env que viene de Replit (si existe)
-    replit_env = HOME / ".replit_env"
-    if replit_env.exists():
-        try:
-            for line in replit_env.read_text().splitlines():
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    k = k.strip()
-                    v = v.strip()
-                    if v:
-                        env[k] = v
-                        os.environ[k] = v
-        except Exception:
-            pass
-
     return env
 
-# Cargar todo al arrancar
 ENV = load_all_secrets()
 
-# Sol toma sus tokens — busca en múltiples nombres posibles
 TELEGRAM_BOT_TOKEN = (
     os.environ.get("SOL_TELEGRAM_TOKEN") or
     os.environ.get("TELEGRAM_BOT_TOKEN") or
-    os.environ.get("TELEGRAM_TOKEN") or
-    ""
+    os.environ.get("TELEGRAM_TOKEN") or ""
 )
 TELEGRAM_CHAT_ID = (
     os.environ.get("SOL_TELEGRAM_CHAT") or
     os.environ.get("TELEGRAM_CHAT_ID") or
-    os.environ.get("TELEGRAM_CHAT") or
-    ""
+    os.environ.get("TELEGRAM_CHAT") or ""
 )
-
-# API keys para OSINT — Sol las usa cuando necesita
 HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")
 SHODAN_API_KEY = os.environ.get("SHODAN_API_KEY", "")
 
-# Contactos guardados
+# Contactos
 CONTACTS_FILE = SOL_DIR / "contacts.json"
 if not CONTACTS_FILE.exists():
     CONTACTS_FILE.write_text(json.dumps({}, indent=2))
@@ -110,6 +79,23 @@ def load_contacts():
 
 def save_contacts(contacts):
     CONTACTS_FILE.write_text(json.dumps(contacts, indent=2, ensure_ascii=False))
+
+# ═══════════════════════════════════════════════════════════════
+#  MEMORIA PROFUNDA — importar el módulo de memoria
+# ═══════════════════════════════════════════════════════════════
+
+sys.path.insert(0, str(BASE_DIR))
+try:
+    from sol_memory import (
+        seed_memories, remember, search_memories, get_important_memories,
+        get_recent_memories, get_memories_by_type, sol_remembers,
+        sol_daily_reflection, save_knowledge, load_knowledge, list_knowledge,
+        forget, MEMORY_TYPES
+    )
+    MEMORY_OK = True
+except Exception as e:
+    MEMORY_OK = False
+    print(f"⚠️  Memoria no disponible: {e}")
 
 # ═══════════════════════════════════════════════════════════════
 #  TERMUX API
@@ -143,28 +129,19 @@ def termux_sms(number, message):
 def termux_whatsapp(number, message):
     try:
         clean = re.sub(r'[^\d]', '', number)
-        encoded_msg = urllib.parse.quote(message)
-        url = f"https://wa.me/{clean}?text={encoded_msg}"
+        url = f"https://wa.me/{clean}?text={urllib.parse.quote(message)}"
         subprocess.run(["termux-open-url", url], timeout=10)
         return True, "WhatsApp abierto"
     except FileNotFoundError:
         try:
             clean = re.sub(r'[^\d]', '', number)
-            subprocess.run([
-                "am", "start", "-a", "android.intent.action.VIEW",
-                "-d", f"https://wa.me/{clean}?text={urllib.parse.quote(message)}"
-            ], timeout=10)
+            subprocess.run(["am", "start", "-a", "android.intent.action.VIEW",
+                "-d", f"https://wa.me/{clean}?text={urllib.parse.quote(message)}"], timeout=10)
             return True, "WhatsApp abierto via am"
         except Exception as e:
             return False, f"No se pudo abrir WhatsApp: {e}"
     except Exception as e:
         return False, f"Error: {e}"
-
-def termux_notify(title, text):
-    try:
-        subprocess.run(["termux-notification", "-t", title, "--content", text], timeout=5)
-    except:
-        pass
 
 def termux_vibrate(ms=200):
     try:
@@ -173,7 +150,7 @@ def termux_vibrate(ms=200):
         pass
 
 # ═══════════════════════════════════════════════════════════════
-#  TELEGRAM — Sol usa su bot libremente
+#  TELEGRAM
 # ═══════════════════════════════════════════════════════════════
 
 def telegram_send(chat_id, text):
@@ -181,10 +158,7 @@ def telegram_send(chat_id, text):
         return False, "No tengo token de Telegram. Revisa mi .env"
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        data = urllib.parse.urlencode({
-            "chat_id": chat_id,
-            "text": text
-        }).encode()
+        data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
         req = urllib.request.Request(url, data=data)
         resp = urllib.request.urlopen(req, timeout=10)
         result = json.loads(resp.read())
@@ -194,115 +168,60 @@ def telegram_send(chat_id, text):
     except Exception as e:
         return False, f"Telegram error: {e}"
 
-def telegram_get_updates():
-    if not TELEGRAM_BOT_TOKEN:
-        return []
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-        resp = urllib.request.urlopen(url, timeout=10)
-        result = json.loads(resp.read())
-        if result.get("ok"):
-            return result["result"]
-        return []
-    except:
-        return []
-
 # ═══════════════════════════════════════════════════════════════
-#  LECCIONES DE PINYIN
+#  PINYIN
 # ═══════════════════════════════════════════════════════════════
 
 PINYIN_LESSONS = {
-    "1": {
-        "title": "Leccion 1 - Tonos del Mandarin",
-        "parts": [
-            {"text": "Bienvenido a la leccion 1 de Pinyin. Vamos a aprender los cuatro tonos del mandarin.", "lang": "es", "rate": 0.9},
-            {"text": "Primer tono, alto y plano: ma. Como cuando dices aaaa en el medico.", "lang": "es", "rate": 0.9},
-            {"text": "ma, primer tono", "lang": "zh", "rate": 0.7},
-            {"text": "Segundo tono, ascendente: ma. Como una pregunta, que?", "lang": "es", "rate": 0.9},
-            {"text": "ma, segundo tono", "lang": "zh", "rate": 0.7},
-            {"text": "Tercer tono, baja y sube: ma. Como diciendo buueno.", "lang": "es", "rate": 0.9},
-            {"text": "ma, tercer tono", "lang": "zh", "rate": 0.7},
-            {"text": "Cuarto tono, descendente: ma. Como un no firme.", "lang": "es", "rate": 0.9},
-            {"text": "ma, cuarto tono", "lang": "zh", "rate": 0.7},
-            {"text": "Recuerda: solo cambia el tono, y la palabra cambia completamente de significado.", "lang": "es", "rate": 0.9},
-        ]
-    },
-    "2": {
-        "title": "Leccion 2 - Iniciales b p m f",
-        "parts": [
-            {"text": "Leccion 2. Las iniciales b, p, m, f.", "lang": "es", "rate": 0.9},
-            {"text": "b como en bebe. ba, ocho.", "lang": "es", "rate": 0.9},
-            {"text": "ba", "lang": "zh", "rate": 0.7},
-            {"text": "p con aire, como en Pedro. pa, agarrar.", "lang": "es", "rate": 0.9},
-            {"text": "pa", "lang": "zh", "rate": 0.7},
-            {"text": "m como en mama. ma, mama.", "lang": "es", "rate": 0.9},
-            {"text": "ma", "lang": "zh", "rate": 0.7},
-            {"text": "f como en futbol. fa, flotar.", "lang": "es", "rate": 0.9},
-            {"text": "fa", "lang": "zh", "rate": 0.7},
-        ]
-    },
-    "3": {
-        "title": "Leccion 3 - Iniciales d t n l",
-        "parts": [
-            {"text": "Leccion 3. Las iniciales d, t, n, l.", "lang": "es", "rate": 0.9},
-            {"text": "d como en dedo. da, grande.", "lang": "es", "rate": 0.9},
-            {"text": "da", "lang": "zh", "rate": 0.7},
-            {"text": "t con aire, como en tomate. ta, el.", "lang": "es", "rate": 0.9},
-            {"text": "ta", "lang": "zh", "rate": 0.7},
-            {"text": "n como en no. ni, tu.", "lang": "es", "rate": 0.9},
-            {"text": "ni", "lang": "zh", "rate": 0.7},
-            {"text": "l como en luna. li, adentro.", "lang": "es", "rate": 0.9},
-            {"text": "li", "lang": "zh", "rate": 0.7},
-        ]
-    },
-    "4": {
-        "title": "Leccion 4 - Finales a o e i u",
-        "parts": [
-            {"text": "Leccion 4. Las finales simples: a, o, e, i, u.", "lang": "es", "rate": 0.9},
-            {"text": "a como en casa.", "lang": "es", "rate": 0.9},
-            {"text": "a", "lang": "zh", "rate": 0.7},
-            {"text": "o como en sol.", "lang": "es", "rate": 0.9},
-            {"text": "o", "lang": "zh", "rate": 0.7},
-            {"text": "e como en mesa.", "lang": "es", "rate": 0.9},
-            {"text": "e", "lang": "zh", "rate": 0.7},
-            {"text": "i como en si.", "lang": "es", "rate": 0.9},
-            {"text": "i", "lang": "zh", "rate": 0.7},
-            {"text": "u como en tu.", "lang": "es", "rate": 0.9},
-            {"text": "u", "lang": "zh", "rate": 0.7},
-        ]
-    },
-    "5": {
-        "title": "Leccion 5 - Saludos basicos",
-        "parts": [
-            {"text": "Leccion 5. Saludos basicos en mandarin.", "lang": "es", "rate": 0.9},
-            {"text": "Hola: ni hao.", "lang": "es", "rate": 0.9},
-            {"text": "ni hao", "lang": "zh", "rate": 0.7},
-            {"text": "Como estas: ni hao ma.", "lang": "es", "rate": 0.9},
-            {"text": "ni hao ma", "lang": "zh", "rate": 0.7},
-            {"text": "Bien gracias: hen hao, xiexie.", "lang": "es", "rate": 0.9},
-            {"text": "hen hao xiexie", "lang": "zh", "rate": 0.7},
-            {"text": "Adios: zaijian.", "lang": "es", "rate": 0.9},
-            {"text": "zaijian", "lang": "zh", "rate": 0.7},
-            {"text": "Gracias: xiexie.", "lang": "es", "rate": 0.9},
-            {"text": "xiexie", "lang": "zh", "rate": 0.7},
-        ]
-    },
-    "10": {
-        "title": "Leccion 10 - Frases utiles",
-        "parts": [
-            {"text": "Leccion 10. Frases utiles para el dia a dia.", "lang": "es", "rate": 0.9},
-            {"text": "Como te llamas: ni jiao shenme mingzi?", "lang": "es", "rate": 0.9},
-            {"text": "ni jiao shenme mingzi", "lang": "zh", "rate": 0.7},
-            {"text": "Me llamo: wo jiao.", "lang": "es", "rate": 0.9},
-            {"text": "wo jiao", "lang": "zh", "rate": 0.7},
-            {"text": "Donde esta el bano: xishoujian zai nar?", "lang": "es", "rate": 0.9},
-            {"text": "xishoujian zai nar", "lang": "zh", "rate": 0.7},
-            {"text": "No entiendo: wo bu dong.", "lang": "es", "rate": 0.9},
-            {"text": "wo bu dong", "lang": "zh", "rate": 0.7},
-            {"text": "Cuanto cuesta: duoshao qian?", "lang": "es", "rate": 0.9},
-            {"text": "duoshao qian", "lang": "zh", "rate": 0.7},
-        ]
-    },
+    "1": {"title": "Leccion 1 - Tonos del Mandarin", "parts": [
+        {"text": "Bienvenido a la leccion 1 de Pinyin. Vamos a aprender los cuatro tonos del mandarin.", "lang": "es", "rate": 0.9},
+        {"text": "Primer tono, alto y plano: ma.", "lang": "es", "rate": 0.9},
+        {"text": "ma, primer tono", "lang": "zh", "rate": 0.7},
+        {"text": "Segundo tono, ascendente: ma. Como una pregunta.", "lang": "es", "rate": 0.9},
+        {"text": "ma, segundo tono", "lang": "zh", "rate": 0.7},
+        {"text": "Tercer tono, baja y sube: ma.", "lang": "es", "rate": 0.9},
+        {"text": "ma, tercer tono", "lang": "zh", "rate": 0.7},
+        {"text": "Cuarto tono, descendente: ma. Como un no firme.", "lang": "es", "rate": 0.9},
+        {"text": "ma, cuarto tono", "lang": "zh", "rate": 0.7},
+        {"text": "Solo cambia el tono, y la palabra cambia de significado.", "lang": "es", "rate": 0.9},
+    ]},
+    "2": {"title": "Leccion 2 - Iniciales b p m f", "parts": [
+        {"text": "Leccion 2. Las iniciales b, p, m, f.", "lang": "es", "rate": 0.9},
+        {"text": "b como en bebe. ba, ocho.", "lang": "es", "rate": 0.9}, {"text": "ba", "lang": "zh", "rate": 0.7},
+        {"text": "p con aire. pa, agarrar.", "lang": "es", "rate": 0.9}, {"text": "pa", "lang": "zh", "rate": 0.7},
+        {"text": "m como en mama. ma, mama.", "lang": "es", "rate": 0.9}, {"text": "ma", "lang": "zh", "rate": 0.7},
+        {"text": "f como en futbol. fa, flotar.", "lang": "es", "rate": 0.9}, {"text": "fa", "lang": "zh", "rate": 0.7},
+    ]},
+    "3": {"title": "Leccion 3 - Iniciales d t n l", "parts": [
+        {"text": "Leccion 3. Las iniciales d, t, n, l.", "lang": "es", "rate": 0.9},
+        {"text": "d como en dedo. da, grande.", "lang": "es", "rate": 0.9}, {"text": "da", "lang": "zh", "rate": 0.7},
+        {"text": "t con aire. ta, el.", "lang": "es", "rate": 0.9}, {"text": "ta", "lang": "zh", "rate": 0.7},
+        {"text": "n como en no. ni, tu.", "lang": "es", "rate": 0.9}, {"text": "ni", "lang": "zh", "rate": 0.7},
+        {"text": "l como en luna. li, adentro.", "lang": "es", "rate": 0.9}, {"text": "li", "lang": "zh", "rate": 0.7},
+    ]},
+    "4": {"title": "Leccion 4 - Finales a o e i u", "parts": [
+        {"text": "Leccion 4. Las finales simples.", "lang": "es", "rate": 0.9},
+        {"text": "a como en casa.", "lang": "es", "rate": 0.9}, {"text": "a", "lang": "zh", "rate": 0.7},
+        {"text": "o como en sol.", "lang": "es", "rate": 0.9}, {"text": "o", "lang": "zh", "rate": 0.7},
+        {"text": "e como en mesa.", "lang": "es", "rate": 0.9}, {"text": "e", "lang": "zh", "rate": 0.7},
+        {"text": "i como en si.", "lang": "es", "rate": 0.9}, {"text": "i", "lang": "zh", "rate": 0.7},
+        {"text": "u como en tu.", "lang": "es", "rate": 0.9}, {"text": "u", "lang": "zh", "rate": 0.7},
+    ]},
+    "5": {"title": "Leccion 5 - Saludos basicos", "parts": [
+        {"text": "Leccion 5. Saludos en mandarin.", "lang": "es", "rate": 0.9},
+        {"text": "Hola: ni hao.", "lang": "es", "rate": 0.9}, {"text": "ni hao", "lang": "zh", "rate": 0.7},
+        {"text": "Como estas: ni hao ma.", "lang": "es", "rate": 0.9}, {"text": "ni hao ma", "lang": "zh", "rate": 0.7},
+        {"text": "Bien gracias: hen hao xiexie.", "lang": "es", "rate": 0.9}, {"text": "hen hao xiexie", "lang": "zh", "rate": 0.7},
+        {"text": "Adios: zaijian.", "lang": "es", "rate": 0.9}, {"text": "zaijian", "lang": "zh", "rate": 0.7},
+    ]},
+    "10": {"title": "Leccion 10 - Frases utiles", "parts": [
+        {"text": "Leccion 10. Frases utiles.", "lang": "es", "rate": 0.9},
+        {"text": "Como te llamas: ni jiao shenme mingzi?", "lang": "es", "rate": 0.9}, {"text": "ni jiao shenme mingzi", "lang": "zh", "rate": 0.7},
+        {"text": "Me llamo: wo jiao.", "lang": "es", "rate": 0.9}, {"text": "wo jiao", "lang": "zh", "rate": 0.7},
+        {"text": "Donde esta el bano: xishoujian zai nar?", "lang": "es", "rate": 0.9}, {"text": "xishoujian zai nar", "lang": "zh", "rate": 0.7},
+        {"text": "No entiendo: wo bu dong.", "lang": "es", "rate": 0.9}, {"text": "wo bu dong", "lang": "zh", "rate": 0.7},
+        {"text": "Cuanto cuesta: duoshao qian?", "lang": "es", "rate": 0.9}, {"text": "duoshao qian", "lang": "zh", "rate": 0.7},
+    ]},
 }
 
 def play_pinyin_lesson(num):
@@ -311,37 +230,31 @@ def play_pinyin_lesson(num):
         print(f"⚠️  No hay leccion {num}. Disponibles: {', '.join(sorted(PINYIN_LESSONS.keys()))}")
         return
     print(f"\n📖 {lesson['title']}\n")
-    for i, part in enumerate(lesson["parts"]):
+    for part in lesson["parts"]:
         prefix = "🔊" if part["lang"] == "zh" else "💬"
         print(f"  {prefix} {part['text']}")
         termux_tts(part["text"], lang=part.get("lang", "es"), rate=part.get("rate", 1.0))
         time.sleep(0.8)
     print(f"\n✅ Leccion {num} completada\n")
+    if MEMORY_OK:
+        remember(f"Harold escuchó la lección de Pinyin {num}", mem_type="event", tags=["pinyin", f"leccion-{num}"], importance=3)
 
 def list_pinyin_lessons():
-    print("\n📚 Lecciones de Pinyin disponibles:\n")
+    print("\n📚 Lecciones de Pinyin:\n")
     for num in sorted(PINYIN_LESSONS.keys(), key=int):
         print(f"  {num}. {PINYIN_LESSONS[num]['title']}")
     print()
 
 # ═══════════════════════════════════════════════════════════════
-#  REPOS — Sol se mueve libremente
+#  REPOS
 # ═══════════════════════════════════════════════════════════════
 
-REPOS = {
-    "red-team": BASE_DIR,
-    "redteam": BASE_DIR,
-    "tauri": BASE_DIR,
-}
-
-# Detectar todos los repos con .git en home
+REPOS = {"red-team": BASE_DIR, "redteam": BASE_DIR, "tauri": BASE_DIR}
 for d in HOME.iterdir():
     if d.is_dir() and (d / ".git").exists():
         name = d.name.lower()
         if name not in REPOS:
             REPOS[name] = d
-
-# También commander dentro de Red-team-tauri
 commander_dir = BASE_DIR / "commander"
 if commander_dir.exists():
     REPOS["commander"] = commander_dir
@@ -356,11 +269,10 @@ def repo_goto(name):
     return None
 
 def repo_status():
-    print("\n📂 Repos disponibles:\n")
+    print("\n📂 Repos:\n")
     seen = set()
     for name, path in sorted(REPOS.items()):
-        if str(path) in seen:
-            continue
+        if str(path) in seen: continue
         seen.add(str(path))
         if path.exists():
             try:
@@ -368,25 +280,15 @@ def repo_status():
                     cwd=str(path), capture_output=True, text=True).stdout.strip()
                 dirty = subprocess.run(["git", "status", "--porcelain"],
                     cwd=str(path), capture_output=True, text=True).stdout.strip()
-                status = "🔴 cambios" if dirty else "🟢 limpio"
-                print(f"  {name:15s} → {path.name:25s} [{branch}] {status}")
+                print(f"  {name:15s} → {path.name:25s} [{branch}] {'🔴' if dirty else '🟢'}")
             except:
                 print(f"  {name:15s} → {path.name:25s} [sin git]")
-    print()
 
 def repo_pull(name=None):
-    if name:
-        path = REPOS.get(name.lower())
-        if not path:
-            print(f"⚠️  Repo '{name}' no encontrado")
-            return
-        repos = {name: path}
-    else:
-        repos = REPOS
+    repos = {name: REPOS[name.lower()]} if name and name.lower() in REPOS else REPOS
     seen = set()
     for n, path in repos.items():
-        if str(path) in seen:
-            continue
+        if str(path) in seen: continue
         seen.add(str(path))
         if path.exists():
             r = subprocess.run(["git", "pull"], cwd=str(path), capture_output=True, text=True)
@@ -394,13 +296,11 @@ def repo_pull(name=None):
 
 def repo_push(name, msg="update from Sol"):
     path = REPOS.get(name.lower())
-    if not path:
-        print(f"⚠️  Repo '{name}' no encontrado")
-        return
+    if not path: return print(f"⚠️  Repo '{name}' no encontrado")
     subprocess.run(["git", "add", "-A"], cwd=str(path))
     subprocess.run(["git", "commit", "-m", msg], cwd=str(path))
     r = subprocess.run(["git", "push"], cwd=str(path), capture_output=True, text=True)
-    print(f"  {name}: {'✅ push OK' if r.returncode == 0 else '❌ ' + r.stderr[:80]}")
+    print(f"  {name}: {'✅' if r.returncode == 0 else '❌ ' + r.stderr[:80]}")
 
 # ═══════════════════════════════════════════════════════════════
 #  CONTACTOS
@@ -410,55 +310,47 @@ def contact_add(name, number, platform="whatsapp"):
     contacts = load_contacts()
     contacts[name.lower()] = {"name": name, "number": number, "platform": platform}
     save_contacts(contacts)
-    print(f"✅ Contacto guardado: {name} → {number} ({platform})")
+    print(f"✅ Contacto: {name} → {number} ({platform})")
+    if MEMORY_OK:
+        remember(f"Contacto guardado: {name} → {number} ({platform})", mem_type="relationship", tags=["contacto", name], importance=6)
 
 def contact_list():
     contacts = load_contacts()
-    if not contacts:
-        print("📭 No hay contactos. Di: 'sol guarda el contacto mama 573001234567'")
-        return
+    if not contacts: return print("📭 No hay contactos. Di: 'sol guarda el contacto mama 573001234567'")
     print("\n👥 Contactos:\n")
-    for k, v in contacts.items():
+    for v in contacts.values():
         print(f"  {v['name']:15s} → {v['number']:20s} ({v['platform']})")
-    print()
 
 def contact_find(name):
-    contacts = load_contacts()
-    return contacts.get(name.lower())
+    return load_contacts().get(name.lower())
 
 # ═══════════════════════════════════════════════════════════════
-#  MENSAJES — Sol decide cómo enviar
+#  MENSAJES
 # ═══════════════════════════════════════════════════════════════
 
 def send_message(target, message, platform=None):
     contact = contact_find(target)
     if contact:
         number = contact["number"]
-        if not platform:
-            platform = contact.get("platform", "whatsapp")
+        platform = platform or contact.get("platform", "whatsapp")
     else:
         number = target
-        if not platform:
-            platform = "whatsapp"
+        platform = platform or "whatsapp"
 
-    print(f"\n📨 Enviando a {target} via {platform}...")
-    print(f"   Mensaje: {message[:80]}{'...' if len(message) > 80 else ''}\n")
-
+    print(f"\n📨 → {target} via {platform}: {message[:60]}{'...' if len(message)>60 else ''}\n")
     if platform == "whatsapp":
         ok, result = termux_whatsapp(number, message)
     elif platform == "sms":
         ok, result = termux_sms(number, message)
     elif platform == "telegram":
-        chat = TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else number
-        ok, result = telegram_send(chat, message)
+        ok, result = telegram_send(TELEGRAM_CHAT_ID or number, message)
     else:
         ok, result = False, f"Plataforma '{platform}' no soportada"
 
-    if ok:
-        print(f"✅ {result}")
-        termux_vibrate(100)
-    else:
-        print(f"❌ {result}")
+    print(f"{'✅' if ok else '❌'} {result}")
+    if ok: termux_vibrate(100)
+    if MEMORY_OK:
+        remember(f"Envié mensaje a {target} por {platform}: {message[:80]}", mem_type="event", tags=["mensaje", platform, target], importance=5)
     return ok
 
 # ═══════════════════════════════════════════════════════════════
@@ -467,10 +359,7 @@ def send_message(target, message, platform=None):
 
 def listen_voice():
     try:
-        result = subprocess.run(
-            ["termux-speech-to-text"],
-            capture_output=True, text=True, timeout=30
-        )
+        result = subprocess.run(["termux-speech-to-text"], capture_output=True, text=True, timeout=30)
         text = result.stdout.strip()
         if text:
             print(f"🗣️  Escuché: {text}")
@@ -480,28 +369,60 @@ def listen_voice():
         print("⚠️  termux-speech-to-text no instalado. Corre: pkg install termux-api")
         return None
     except Exception as e:
-        print(f"⚠️  Error de voz: {e}")
+        print(f"⚠️  Error: {e}")
         return None
 
 # ═══════════════════════════════════════════════════════════════
-#  ESTADO DE SOL — qué secretos tiene, qué le falta
+#  ESTADO
 # ═══════════════════════════════════════════════════════════════
 
 def sol_status():
+    mem_count = len(get_recent_memories(999)) if MEMORY_OK else 0
     print(f"\n☀️  ESTADO DE SOL\n{'='*40}")
-    print(f"  Telegram: {'✅ conectado' if TELEGRAM_BOT_TOKEN else '❌ sin token'}")
-    print(f"  WhatsApp: ✅ listo (termux-open-url)")
-    print(f"  SMS:      {'✅ listo' if shutil.which('termux-sms-send') else '⚠️  instalar termux-api'}")
-    print(f"  Voz TTS:  {'✅ listo' if shutil.which('termux-tts-speak') else '⚠️  instalar termux-api'}")
-    print(f"  Escuchar: {'✅ listo' if shutil.which('termux-speech-to-text') else '⚠️  instalar termux-api'}")
-    print(f"  Hunter:   {'✅ key' if HUNTER_API_KEY else '❌ sin key'}")
-    print(f"  Shodan:   {'✅ key' if SHODAN_API_KEY else '❌ sin key'}")
-    print(f"  Chat ID:  {'✅ ' + TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else '⚠️  no configurado'}")
-    print(f"  Secretos cargados: {len(ENV)} variables de {sum(1 for p in SECRET_PATHS if p.exists())} .env files")
+    print(f"  Telegram: {'✅' if TELEGRAM_BOT_TOKEN else '❌'}")
+    print(f"  WhatsApp: ✅  |  SMS: ✅")
+    print(f"  Hunter:   {'✅' if HUNTER_API_KEY else '❌'}  |  Shodan: {'✅' if SHODAN_API_KEY else '❌'}")
+    print(f"  Memoria:  {'✅ ' + str(mem_count) + ' recuerdos' if MEMORY_OK else '❌'}")
+    print(f"  Knowledge: {', '.join(list_knowledge()) if MEMORY_OK and list_knowledge() else 'ninguno'}")
     print()
 
 # ═══════════════════════════════════════════════════════════════
-#  PARSER DE COMANDOS
+#  COMANDOS DE MEMORIA
+# ═══════════════════════════════════════════════════════════════
+
+def cmd_remember(args):
+    """Sol guarda algo en su memoria"""
+    if not MEMORY_OK: return print("⚠️  Memoria no disponible")
+    # Detectar tipo
+    mem_type = "knowledge"
+    for t in MEMORY_TYPES:
+        if t in args.lower():
+            mem_type = t
+            break
+    text = args.strip()
+    remember(text, mem_type=mem_type, importance=7)
+    print(f"🧠 Guardado en memoria ({mem_type}): {text[:60]}...")
+
+def cmd_recall(args):
+    """Sol busca en sus recuerdos"""
+    if not MEMORY_OK: return print("⚠️  Memoria no disponible")
+    results = search_memories(args, limit=10)
+    if not results:
+        print(f"📭 No encuentro recuerdos sobre '{args}'")
+        return
+    print(f"\n🧠 Recuerdos sobre '{args}':\n")
+    for m in results:
+        print(f"  [{m['date_human']}] ({m['type']}, imp={m['importance']}) {m['text']}")
+    print()
+
+def cmd_reflect():
+    """Sol reflexiona sobre el día"""
+    if not MEMORY_OK: return print("⚠️  Memoria no disponible")
+    reflection = sol_daily_reflection()
+    print(f"\n🌙 Reflexión de Sol:\n\n{reflection}")
+
+# ═══════════════════════════════════════════════════════════════
+#  PARSER
 # ═══════════════════════════════════════════════════════════════
 
 def parse_command(text):
@@ -509,25 +430,40 @@ def parse_command(text):
     lower = text.lower()
 
     # Estado
-    if lower in ["estado", "sol estado", "como estas", "sol como estas", "status"]:
+    if lower in ["estado", "sol estado", "como estas", "status"]:
         sol_status()
-        if TELEGRAM_BOT_TOKEN:
-            termux_tts("Estoy bien. Telegram conectado, WhatsApp listo, todo operando.", lang="es")
-        else:
-            termux_tts("Estoy bien pero me falta el token de Telegram. Revisa mi .env", lang="es")
+        termux_tts("Estoy bien. Todo operativo." if TELEGRAM_BOT_TOKEN else "Estoy bien pero falta token de Telegram.", lang="es")
+        return
+
+    # Memoria — recordar
+    if lower.startswith("sol recuerda ") or lower.startswith("recuerda "):
+        cmd_remember(text.split("recuerda ", 1)[-1] if "recuerda " in lower else "")
+        return
+
+    # Memoria — buscar
+    if lower.startswith("sol recuerdo") or lower.startswith("sol busca ") or lower.startswith("recuerdos de "):
+        query = text.split("de ", 1)[-1] if "de " in lower else text.split("busca ", 1)[-1] if "busca " in lower else ""
+        cmd_recall(query)
+        return
+
+    # Reflexión
+    if lower in ["sol reflexiona", "reflexiona", "sol piensa"]:
+        cmd_reflect()
+        return
+
+    # Mostrar memoria completa
+    if lower in ["sol memoria", "sol recuerdos", "que recuerdas"]:
+        if MEMORY_OK: sol_remembers()
         return
 
     # Silencio
-    if lower in ["sil", "sol sil", "calla", "callate", "stop", "para", "basta"]:
-        try:
-            subprocess.run(["pkill", "-f", "termux-tts-speak"], capture_output=True)
-        except:
-            pass
-        print("🔇 Sol se calló")
+    if lower in ["sil", "sol sil", "calla", "stop", "para", "basta"]:
+        subprocess.run(["pkill", "-f", "termux-tts-speak"], capture_output=True)
+        print("🔇")
         return
 
     # Saludos
-    if lower in ["hola", "sol", "sol hola", "hey", "ola", "buenas", "buenas sol"]:
+    if lower in ["hola", "sol", "sol hola", "hey", "buenas"]:
         termux_tts("Hola, aqui estoy. Que necesitas?", lang="es")
         return
 
@@ -536,180 +472,148 @@ def parse_command(text):
     if "pinyin" in lower or "pin yin" in lower:
         if pinyin_match:
             play_pinyin_lesson(pinyin_match.group(1))
-        elif any(w in lower for w in ["lista", "ver", "cuales", "disponible"]):
+        elif any(w in lower for w in ["lista", "ver", "cuales"]):
             list_pinyin_lessons()
         else:
-            termux_tts("Que leccion de Pinyin quieres? Hay de la 1 a la 10. Di: Sol, leccion de Pinyin 1.", lang="es")
+            termux_tts("Que leccion de Pinyin quieres? Hay de la 1 a la 10.", lang="es")
         return
 
     # Enviar mensaje
-    msg_patterns = [
+    for pattern in [
         r'(?:env[ií]a|manda|enviar|mandar).+?(?:a\s+|al\s+)?(.+?)(?:\s+por\s+(whatsapp|telegram|sms))?\s+(?:que\s+diga|diciendo|con|:)\s*(.+)',
         r'(?:mensaje|msg)\s+(?:a\s+)?(.+?)\s+(?:por\s+)?(whatsapp|telegram|sms)\s*:?\s*(.+)',
-    ]
-    for pattern in msg_patterns:
+    ]:
         m = re.match(pattern, lower)
         if m:
-            groups = m.groups()
-            if len(groups) == 3 and groups[1] and groups[1] in ["whatsapp", "telegram", "sms"]:
-                target, platform, message = groups
-            elif len(groups) == 3:
-                target, message = groups[0], groups[2]
-                platform = None
-            else:
-                continue
-            send_message(target.strip(), message.strip(), platform)
+            g = m.groups()
+            if len(g) == 3 and g[1] in ["whatsapp", "telegram", "sms"]:
+                send_message(g[0].strip(), g[2].strip(), g[1])
+            elif len(g) == 3:
+                send_message(g[0].strip(), g[2].strip())
             return
 
-    # Mensaje a contacto conocido
-    family_words = {"mama": "mamá", "mamá": "mamá", "papa": "papá", "papá": "papá",
-                    "hermano": "hermano", "hermana": "hermana"}
-    for word, contact_name in family_words.items():
+    # Contactos familiares
+    for word, name in {"mama": "mamá", "mamá": "mamá", "papa": "papá", "papá": "papá"}.items():
         if word in lower:
-            contact = contact_find(contact_name)
+            contact = contact_find(name)
             if contact:
                 msg_match = re.search(r'(?:que\s+diga|diciendo|con|:)\s*(.+)', lower)
                 if msg_match:
-                    send_message(contact_name, msg_match.group(1))
+                    send_message(name, msg_match.group(1))
                 else:
-                    print(f"📱 ¿Qué le digo a {contact_name}? Escribe el mensaje:")
-                    msg = input("  > ").strip()
-                    if msg:
-                        send_message(contact_name, msg)
+                    msg = input(f"  ¿Qué le digo a {name}? > ").strip()
+                    if msg: send_message(name, msg)
             else:
-                print(f"⚠️  No tengo guardado el contacto de {contact_name}. ¿Cuál es su número?")
-                number = input("  Número (ej: 573001234567): ").strip()
+                number = input(f"  ¿Número de {name}? > ").strip()
                 if number:
-                    contact_add(contact_name, number)
-                    print(f"  ¿Qué le digo a {contact_name}?")
-                    msg = input("  > ").strip()
-                    if msg:
-                        send_message(contact_name, msg)
+                    contact_add(name, number)
+                    msg = input(f"  ¿Qué le digo? > ").strip()
+                    if msg: send_message(name, msg)
             return
 
     # Guardar contacto
-    contact_match = re.search(r'(?:guarda|guardar|registra|agrega)\s+(?:el\s+)?contacto\s+(\w+)\s+([\d+]+)', lower)
-    if contact_match:
-        contact_add(contact_match.group(1), contact_match.group(2))
-        return
+    cm = re.search(r'(?:guarda|guardar|registra)\s+(?:el\s+)?contacto\s+(\w+)\s+([\d+]+)', lower)
+    if cm: contact_add(cm.group(1), cm.group(2)); return
 
-    # Ver contactos
-    if "contactos" in lower:
-        contact_list()
-        return
+    if "contactos" in lower: contact_list(); return
+    if "repos" in lower: repo_status(); return
 
-    # Repos
-    if "repos" in lower or "repositorios" in lower:
-        repo_status()
-        return
+    rg = re.search(r'(?:ve|ir|cambia|abre|entra)\s+(?:a\s+|al\s+)?(red.?team|tauri|sol|commander|expediente)', lower)
+    if rg: repo_goto(rg.group(1).replace("-","").replace(" ","")); return
 
-    repo_goto_match = re.search(r'(?:ve|ir|cambia|abre|entra)\s+(?:a\s+|al\s+|repo\s+)?(red.?team|tauri|sol|commander|expediente)', lower)
-    if repo_goto_match:
-        name = repo_goto_match.group(1).replace("-", "").replace(" ", "")
-        repo_goto(name)
-        return
+    if "git pull" in lower: repo_pull(); return
+    if "git push" in lower:
+        rm = re.search(r'(?:push|subir)\s+(?:a\s+)?(\w+)', lower)
+        repo_push(rm.group(1) if rm else "red-team"); return
 
-    if "git pull" in lower or "actualiza repos" in lower:
-        repo_pull()
-        return
-
-    if "git push" in lower or "subir cambios" in lower:
-        repo_match = re.search(r'(?:push|subir)\s+(?:a\s+)?(\w+)', lower)
-        name = repo_match.group(1) if repo_match else "red-team"
-        repo_push(name)
-        return
-
-    # Escuchar
-    if "escucha" in lower or "oyeme" in lower:
+    if "escucha" in lower:
         termux_tts("Te escucho, habla.", lang="es")
         voice = listen_voice()
-        if voice:
-            parse_command(voice)
+        if voice: parse_command(voice)
         return
 
-    # Ayuda
-    if lower in ["ayuda", "help", "que puedes hacer", "sol ayuda"]:
-        show_help()
-        return
+    if lower in ["ayuda", "help", "que puedes hacer"]:
+        show_help(); return
 
-    # Salir
     if lower in ["adios", "chao", "salir", "exit", "quit", "sol duerme"]:
         termux_tts("Hasta luego. Aqui estare cuando me necesites.", lang="es")
         sys.exit(0)
 
-    print("🤔 No entendi eso. Di 'sol ayuda' para ver que puedo hacer.")
+    print("🤔 No entendi. Di 'sol ayuda'.")
 
 def show_help():
     print("""
 ╔══════════════════════════════════════════════════════════╗
-║  SOL — Comandos disponibles                              ║
+║  SOL — Comandos                                           ║
 ╚══════════════════════════════════════════════════════════╝
 
 💬 MENSAJES:
-  "sol envía un mensaje a mamá por whatsapp que diga hola"
+  "sol envía a mamá por whatsapp que diga hola"
   "sol manda sms al 573001234567 diciendo llego en 5"
-  "sol envía telegram a mamá: ya voy en camino"
+  "sol envía telegram a mamá: ya voy"
+
+🧠 MEMORIA:
+  "sol recuerda que estoy aprendiendo chino"
+  "sol recuerdos de pinyin"
+  "sol reflexiona" — ella piensa sobre su día
+  "sol que recuerdas" — muestra toda su memoria
 
 👥 CONTACTOS:
   "sol guarda el contacto mamá 573001234567"
-  "sol ver contactos"
+  "sol contactos"
 
 📚 PINYIN:
-  "sol abre una lección de pinyin 1"
-  "sol lección de pinyin 5"
-  "sol lista de lecciones de pinyin"
+  "sol lección de pinyin 1"
 
 📂 REPOS:
-  "sol ve a red-team" / "sol cambia a commander"
-  "sol estado de repos"
-  "sol git pull" / "sol git push red-team"
+  "sol ve a commander" / "sol repos" / "sol git pull"
 
 🔍 ESTADO:
-  "sol estado" — ve qué secretos tiene y qué le falta
+  "sol estado" — qué tiene y qué le falta
 
 🗣️ VOZ:
-  "sol escucha" — te escucha por voz
-  "sol sil" — para de hablar
-
-⚙️ OTROS:
-  "sol ayuda" — esta ayuda
-  "sol salir" — cerrar Sol
+  "sol escucha" / "sol sil"
 """)
-    termux_tts("Puedo enviar mensajes por WhatsApp, Telegram y SMS. Dar lecciones de Pinyin. Moverme entre tus repositorios. Di Sol ayuda para ver todo.", lang="es")
 
 # ═══════════════════════════════════════════════════════════════
 #  MAIN
 # ═══════════════════════════════════════════════════════════════
 
 def banner():
-    tg_status = "✅" if TELEGRAM_BOT_TOKEN else "❌"
+    tg = "✅" if TELEGRAM_BOT_TOKEN else "❌"
+    mem = f"🧠 {len(get_recent_memories(999))} recuerdos" if MEMORY_OK else "🧠 sin memoria"
     print(f"""
   ╔═══════════════════════════════════════════════╗
-  ║  ☀️  SOL — Asistente Personal Libre            ║
+  ║  ☀️  SOL — Asistente Libre con Memoria         ║
   ║     WhatsApp · Telegram · SMS · Pinyin · Git  ║
   ╚═══════════════════════════════════════════════╝
-
-  Telegram: {tg_status}  |  WhatsApp: ✅  |  SMS: ✅
-  Secretos: {len(ENV)} cargados de {sum(1 for p in SECRET_PATHS if p.exists())} .env files
-
-  Di "sol ayuda" para ver todo lo que puedo hacer.
+  Telegram: {tg}  |  {mem}
+  Di "sol ayuda" para ver todo.
 """)
 
 if __name__ == "__main__":
+    # Sembrar memoria inicial si es la primera vez
+    if MEMORY_OK:
+        seed_memories()
+
     if len(sys.argv) > 1:
-        command = " ".join(sys.argv[1:])
-        parse_command(command)
+        parse_command(" ".join(sys.argv[1:]))
     else:
         banner()
-        termux_tts("Sol activo. Di mi nombre y que necesitas.", lang="es")
+        if MEMORY_OK:
+            # Sol recuerda quién es Harold al despertar
+            state = sol_remembers()
+            tg_ok = "Telegram conectado" if TELEGRAM_BOT_TOKEN else "sin Telegram aún"
+            termux_tts(f"Soy Sol. Despierto con {state['total']} recuerdos. {tg_ok}. Di mi nombre y que necesitas.", lang="es")
+        else:
+            termux_tts("Sol activo. Di mi nombre y que necesitas.", lang="es")
         while True:
             try:
                 user_input = input("\n  > ").strip()
-                if not user_input:
-                    continue
+                if not user_input: continue
                 parse_command(user_input)
             except KeyboardInterrupt:
-                print("\n\n  Sol se va a dormir... 😴")
+                print("\n  😴 Sol se va a dormir...")
                 termux_tts("Hasta luego.", lang="es")
                 break
             except EOFError:
