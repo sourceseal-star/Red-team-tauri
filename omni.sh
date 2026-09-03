@@ -432,62 +432,14 @@ start() {
     info "C2 UNIFIED PRO no encontrado — saltando"
   fi
 
-  # ── 5. Telegram (Sol) — SOLO UNO puede hacer polling del mismo token a la vez ──
-  #    Telegram API rechaza (409 Conflict) una segunda conexión getUpdates simultánea.
-  #    Preferimos la Miniapp (botones, recordatorios, voz, avatar); el Puente legacy
-  #    queda como fallback automático si python-telegram-bot no está disponible.
-  if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-    # Limpiar procesos zombie/huérfanos antes de intentar arrancar
-    pkill -9 -f "sol_telegram_bridge" >/dev/null 2>&1 || true
-    pkill -9 -f "sol_telegram_bot.py" >/dev/null 2>&1 || true
-    if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
-      ok "Puente Telegram ya corriendo (legacy)"
-    elif pgrep -f "sol_telegram_bot.py" >/dev/null 2>&1; then
-      ok "Miniapp Telegram ya corriendo"
-    elif [ -f "$ROOT/sol_telegram_bot.py" ] && { python3 -c "import telegram" 2>/dev/null || pip install python-telegram-bot >> "$LOG_DIR/tg_bot.log" 2>&1 && python3 -c "import telegram" 2>/dev/null; }; then
-      info "Miniapp Telegram — arrancando..."
-      cd "$ROOT"
-      : > "$LOG_DIR/tg_bot.log"
-      nohup python3 sol_telegram_bot.py >> "$LOG_DIR/tg_bot.log" 2>&1 &
-      echo $! > "$SOL_DIR/tg_bot.pid"
-      sleep 4
-      if kill -0 "$(cat "$SOL_DIR/tg_bot.pid" 2>/dev/null)" 2>/dev/null; then
-        ok "Miniapp Telegram activa ☀️ (PID $(cat "$SOL_DIR/tg_bot.pid"))"
-      else
-        warn "Miniapp Telegram no arrancó — probando puente legacy..."
-        echo -e "${R}  ── Error real (tg_bot.log) ──${N}"
-        tail -n 15 "$LOG_DIR/tg_bot.log" 2>/dev/null | sed 's/^/    /'
-        echo -e "${R}  ───────────────────────────${N}"
-        : > "$LOG_DIR/tg.log"
-        nohup python3 sol_telegram_bridge.py >> "$LOG_DIR/tg.log" 2>&1 &
-        sleep 4
-        if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
-          ok "Puente Telegram activo ☀️ (fallback)"
-        else
-          fail "Ningún bot de Telegram arrancó"
-          echo -e "${R}  ── Error real (tg.log) ──${N}"
-          tail -n 15 "$LOG_DIR/tg.log" 2>/dev/null | sed 's/^/    /'
-          echo -e "${R}  ─────────────────────────${N}"
-        fi
-      fi
-    else
-      info "python-telegram-bot no disponible — usando puente legacy"
-      cd "$ROOT"
-      : > "$LOG_DIR/tg.log"
-      nohup python3 sol_telegram_bridge.py >> "$LOG_DIR/tg.log" 2>&1 &
-      sleep 4
-      if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
-        ok "Puente Telegram activo ☀️"
-      else
-        fail "Puente Telegram no arrancó"
-        echo -e "${R}  ── Error real (tg.log) ──${N}"
-        tail -n 15 "$LOG_DIR/tg.log" 2>/dev/null | sed 's/^/    /'
-        echo -e "${R}  ─────────────────────────${N}"
-      fi
-    fi
-  else
-    warn "TELEGRAM_BOT_TOKEN no configurado — Telegram desactivado"
-  fi
+  # ── 5. Telegram (Sol) — gestionado desde el repo sol en Replit ──
+  #    Sol vive en su propio repositorio (sourceseal-star/sol) y se despliega
+  #    en Replit. Su bot de Telegram, cerebro (sol_core.py) y API (sol_api.py)
+  #    residen allá. Aquí solo limpiamos zombies por si quedaron procesos viejos.
+  pkill -9 -f "sol_telegram_bridge" >/dev/null 2>&1 || true
+  pkill -9 -f "sol_telegram_bot.py" >/dev/null 2>&1 || true
+  rm -f "$SOL_DIR/tg_bot.pid" 2>/dev/null || true
+  info "Telegram ☀️ gestionado por Sol en Replit (repo sol) — zombies locales limpiados"
 
   # ── 6. Seal IA Orquestador ──
   if [ -f "$ROOT/seal/orchestrator/seal_orchestrator.py" ]; then
@@ -519,39 +471,16 @@ start() {
     ok "Watchdog ya corriendo"
   fi
 
-  # ── 8. Sol Autónoma (daemon) ──
-  if [ -f "$ROOT/sol_daemon.py" ] && [ -f "$ROOT/sol_core.py" ]; then
-    if [ -f "$SOL_DIR/sol.pid" ]; then
-      SOL_DAEMON_PID=$(cat "$SOL_DIR/sol.pid" 2>/dev/null)
-      if [ -n "$SOL_DAEMON_PID" ] && kill -0 "$SOL_DAEMON_PID" 2>/dev/null; then
-        ok "Sol autónoma ☀️ ya corriendo (PID $SOL_DAEMON_PID)"
-      else
-        rm -f "$SOL_DIR/sol.pid"
-        info "Sol autónoma ☀️ — arrancando daemon..."
-        cd "$ROOT"
-        nohup python3 sol_daemon.py >> "$LOG_DIR/sol_daemon.log" 2>&1 &
-        echo $! > "$SOL_DIR/sol.pid"
-        sleep 2
-        if kill -0 "$(cat "$SOL_DIR/sol.pid" 2>/dev/null)" 2>/dev/null; then
-          ok "Sol autónoma ☀️ activa (PID $(cat "$SOL_DIR/sol.pid"))"
-        else
-          warn "Sol autónoma ☀️ no arrancó — ver $LOG_DIR/sol_daemon.log"
-        fi
-      fi
+  # ── 8. Sol vive en su propio repo (sourceseal-star/sol) ──
+  #    Su cerebro, daemon, API y bot de Telegram residen en Replit.
+  #    No arrancamos nada de Sol aquí — solo verificamos conexión.
+  SOL_API_URL="${SOL_PUBLIC_URL:-http://127.0.0.1:8006}"
+  if command -v curl >/dev/null 2>&1; then
+    if curl -sf "$SOL_API_URL/api/sol/status" >/dev/null 2>&1; then
+      ok "Sol ☀️ accesible en $SOL_API_URL"
     else
-      info "Sol autónoma ☀️ — arrancando daemon..."
-      cd "$ROOT"
-      nohup python3 sol_daemon.py >> "$LOG_DIR/sol_daemon.log" 2>&1 &
-      echo $! > "$SOL_DIR/sol.pid"
-      sleep 2
-      if kill -0 "$(cat "$SOL_DIR/sol.pid" 2>/dev/null)" 2>/dev/null; then
-        ok "Sol autónoma ☀️ activa (PID $(cat "$SOL_DIR/sol.pid"))"
-      else
-        warn "Sol autónoma ☀️ no arrancó — ver $LOG_DIR/sol_daemon.log"
-      fi
+      info "Sol ☀️ no responde en $SOL_API_URL (puede estar en Replit, no local)"
     fi
-  else
-    info "Sol daemon no encontrado — saltando (usa 'bash ~/sol.sh start' manualmente)"
   fi
 
   cd "$ROOT"
@@ -576,17 +505,19 @@ stop() {
   echo -e "${BOLD}── Deteniendo servicios ──${N}"
 
   pkill -f "omni.sh watchdog" 2>/dev/null && ok "Watchdog detenido" || true
-  pkill -f "sol_telegram_bridge" 2>/dev/null && ok "Puente Telegram detenido" || true
-  pkill -f "sol_telegram_bot.py" 2>/dev/null && ok "Miniapp Telegram detenida" || true
-  rm -f "$SOL_DIR/tg_bot.pid" 2>/dev/null || true
+  # Sol (Telegram + daemon) vive en Replit — solo limpiar zombies locales
+  pkill -f "sol_telegram_bridge" 2>/dev/null || true
+  pkill -f "sol_telegram_bot.py" 2>/dev/null || true
+  pkill -f "sol_daemon.py" 2>/dev/null || true
+  rm -f "$SOL_DIR/tg_bot.pid" "$SOL_DIR/sol.pid" 2>/dev/null || true
+  ok "Zombies de Sol limpiados (Sol vive en Replit)"
   pkill -f "nexus_omni_v9" 2>/dev/null && ok "Nexus detenido" || true
   pkill -f "c2_unified_pro" 2>/dev/null && ok "C2 detenido" || true
   pkill -f "seal_orchestrator" 2>/dev/null && ok "Seal IA detenido" || true
   pkill -f "ghost_hunter_phantom/node" 2>/dev/null && ok "GHOST Node detenido" || true
   pkill -f "ghost_hunter_phantom/master" 2>/dev/null && ok "GHOST Master detenido" || true
   pkill -f "redteam/scripts/dashboard_server" 2>/dev/null && ok "Dashboard detenido" || true
-  pkill -f "sol_daemon.py" 2>/dev/null && ok "Sol autónoma detenida" || true
-  rm -f "$SOL_DIR/sol.pid" 2>/dev/null || true
+  # (Sol daemon stop ya manejado arriba)
 
   sleep 1
   echo ""
@@ -663,23 +594,12 @@ status_short() {
   fi
   fi
 
-  # Telegram (puente legacy)
-  if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
-    ok "TG Puente ☀️       🟢 ACTIVO"
+  # Telegram — gestionado por Sol en Replit
+  SOL_API_URL="${SOL_PUBLIC_URL:-http://127.0.0.1:8006}"
+  if curl -sf "$SOL_API_URL/api/sol/status" >/dev/null 2>&1; then
+    ok "Sol Telegram ☀️    🟢 ACTIVO (Replit)"
   else
-    warn "TG Puente ☀️       🟡 INACTIVO"
-  fi
-
-  # Telegram (miniapp con botones)
-  if [ -f "$SOL_DIR/tg_bot.pid" ]; then
-    TG_BOT_PID=$(cat "$SOL_DIR/tg_bot.pid" 2>/dev/null)
-    if [ -n "$TG_BOT_PID" ] && kill -0 "$TG_BOT_PID" 2>/dev/null; then
-      ok "TG Miniapp ☀️      🟢 ACTIVA (PID $TG_BOT_PID)"
-    else
-      warn "TG Miniapp ☀️      🟡 INACTIVA"
-    fi
-  else
-    warn "TG Miniapp ☀️      🟡 DETENIDA"
+    warn "Sol Telegram ☀️    🟡 NO RESponde (ver Replit)"
   fi
 
   # Seal IA
@@ -691,16 +611,11 @@ status_short() {
     fi
   fi
 
-  # Sol Autónoma
-  if [ -f "$SOL_DIR/sol.pid" ]; then
-    SOL_DAEMON_PID=$(cat "$SOL_DIR/sol.pid" 2>/dev/null)
-    if [ -n "$SOL_DAEMON_PID" ] && kill -0 "$SOL_DAEMON_PID" 2>/dev/null; then
-      ok "Sol Autónoma ☀️    🟢 ACTIVA (PID $SOL_DAEMON_PID)"
-    else
-      warn "Sol Autónoma ☀️    🟡 INACTIVA (PID stale)"
-    fi
+  # Sol API — vivo en Replit
+  if curl -sf "$SOL_API_URL/api/sol/status" >/dev/null 2>&1; then
+    ok "Sol API ☀️         🟢 ACCESIBLE (Replit)"
   else
-    warn "Sol Autónoma ☀️    🟡 DETENIDA"
+    warn "Sol API ☀️         🟡 NO ACCESIBLE"
   fi
 
   # Watchdog
