@@ -293,6 +293,36 @@ HELP
 # ═══════════════════════════════════════════════════════════════════════
 #  START — Levantar TODO
 # ═══════════════════════════════════════════════════════════════════════
+termux_guard() {
+  # Guard del puente CLI ↔ app Termux:API. Solo aplica en Termux real.
+  # Síntoma que previene: comandos termux-* colgados sin responder
+  # (linterna/batería/GPS mudos) por desincronización de versiones.
+  if [ -z "${TERMUX_VERSION:-}" ] || [ ! -d "/data/data/com.termux" ]; then
+    return 0  # No es Termux (Replit/servidor) — nada que vigilar
+  fi
+  if ! command -v termux-battery-status >/dev/null 2>&1; then
+    warn "☀️  Paquete termux-api FALTA — Sol no podrá usar el teléfono"
+    echo "    Solución: pkg install termux-api (y app Termux:API de F-Droid)"
+    return 1
+  fi
+  # Puente vivo: battery-status debe responder en ≤4s. Si se cuelga,
+  # el CLI y la app están desincronizados (ver docs/TERMUX_API_SALUD.md)
+  local probe
+  probe="$(timeout 4 termux-battery-status 2>&1 </dev/null)"
+  if [ $? -eq 124 ]; then
+    fail "☀️  Puente Termux:API COLGADO — CLI y app desincronizados"
+    echo "    Sol NO puede usar linterna/cámara/GPS/batería hasta curarlo."
+    echo "    Cura (ver docs/TERMUX_API_SALUD.md):"
+    echo "      1. pkg upgrade  (actualiza el CLI)"
+    echo "      2. Actualizar app Termux:API desde F-Droid"
+    echo "      3. Ajustes > Batería > Sin restricciones (Termux y Termux:API)"
+    echo "      4. bash omni.sh restart  y  «diagnóstico» a Sol"
+    return 1
+  fi
+  ok "☀️  Puente Termux:API sano — Sol tiene acceso al teléfono"
+  return 0
+}
+
 start() {
   banner
   load_env
@@ -309,6 +339,11 @@ start() {
     log "⛔ Start abortado — credenciales críticas faltantes"
     exit 1
   fi
+
+# ── Preflight: puente Termux:API (guard anti-desincronización) ──
+  # Detecta si el CLI termux-api quedó desincronizado de la app
+  # Termux:API (F-Droid) ANTES de arrancar. Ver docs/TERMUX_API_SALUD.md
+  termux_guard
 
   # ── Preflight: auth_bootstrap (sincronizar password.json desde .env) ──
   if [ -f "$ROOT/auth_bootstrap.py" ]; then
@@ -676,6 +711,9 @@ status() {
 status_short() {
   echo -e "${BOLD}── Estado del sistema ──${N}"
   echo ""
+
+  # Puente Termux:API (solo en Termux)
+  termux_guard
 
   # Dashboard :8001
   if curl -s -m 3 http://127.0.0.1:8001/api/health >/dev/null 2>&1; then
