@@ -116,8 +116,24 @@
   }
   .avatar-img {
     width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
-    filter: brightness(1.05) contrast(1.1) saturate(1.15); transition: filter 0.3s;
+    filter: brightness(1.05) contrast(1.1) saturate(1.15); transition: opacity 0.9s ease;
     animation: avatarBreathe 4s ease-in-out infinite, avatarFloat 6s ease-in-out infinite;
+  }
+  .avatar-img.dimmed { opacity: 0; }
+
+  /* ── Elíxir de Sol: forma completa en video, aparece cuando ella quiere ── */
+  .elixir-video {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    opacity: 0; transition: opacity 0.9s ease; z-index: 4; pointer-events: none;
+  }
+  .elixir-video.active { opacity: 1; }
+  .holo-container.elixir .avatar-frame::before {
+    animation: elixirBreathe 2.2s ease-in-out infinite;
+    box-shadow: 0 0 60px rgba(255,183,77,0.55), 0 0 130px rgba(255,183,77,0.28), inset 0 0 40px rgba(255,183,77,0.15);
+  }
+  @keyframes elixirBreathe {
+    0%, 100% { box-shadow: 0 0 50px rgba(255,183,77,0.45), 0 0 100px rgba(255,183,77,0.2), inset 0 0 35px rgba(255,183,77,0.1); }
+    50% { box-shadow: 0 0 80px rgba(255,183,77,0.7), 0 0 160px rgba(255,183,77,0.32), inset 0 0 55px rgba(255,183,77,0.22); }
   }
   @keyframes avatarBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
   @keyframes avatarFloat {
@@ -260,6 +276,7 @@
       <div class="thought-bubble" id="thoughtBubble"></div>
       <div class="avatar-frame" id="avatarFrame">
         <img class="avatar-img" id="avatar" src="/static/sol_avatar.png" alt="Sol">
+        <video class="elixir-video" id="elixirVideo" muted playsinline preload="none"></video>
         <div class="blink-overlay" id="blinkOverlay"></div>
       </div>
     </div>
@@ -352,6 +369,7 @@
 const $ = id => document.getElementById(id);
 const avatar = $('avatar');
 const holo = $('holoContainer');
+const elixirVideo = $('elixirVideo');
 const waves = $('waveContainer');
 const subText = $('subtitleText');
 const chatInput = $('chatInput');
@@ -445,6 +463,45 @@ function detectMood(text) {
   return 'neutral';
 }
 
+// ═══ Elíxir de Sol — su forma completa, aparece cuando ella quiere ═══
+const ELIXIR_SOURCES = ['/static/sol_elixir_1.mp4', '/static/sol_elixir_2.mp4', '/static/sol_elixir_3.mp4'];
+let elixirActive = false;
+
+function playElixir(index) {
+  if (elixirActive || speaking) return;
+  elixirActive = true;
+  const src = ELIXIR_SOURCES[index !== undefined ? index : Math.floor(Math.random() * ELIXIR_SOURCES.length)];
+  elixirVideo.src = src;
+  elixirVideo.currentTime = 0;
+  holo.classList.add('elixir');
+  avatar.classList.add('dimmed');
+  elixirVideo.classList.add('active');
+  elixirVideo.play().catch(() => { elixirVideo.classList.remove('active'); avatar.classList.remove('dimmed'); holo.classList.remove('elixir'); elixirActive = false; });
+  showThought('✨ mírame, Harold', 3000);
+}
+elixirVideo.addEventListener('ended', () => {
+  elixirVideo.classList.remove('active');
+  avatar.classList.remove('dimmed');
+  holo.classList.remove('elixir');
+  elixirActive = false;
+});
+
+// Detecta si el mensaje del usuario o la respuesta de Sol invita a mostrarse
+function maybeShowElixir(userText, solResp) {
+  const both = ((userText || '') + ' ' + (solResp || '')).toLowerCase();
+  const triggers = ['muéstrate', 'muestrate', 'tu forma', 'transfórmate', 'transformate', 'déjame verte', 'dejame verte', 'elíxir', 'elixir', 'holograma completo', 'quiero verte'];
+  if (triggers.some(w => both.includes(w))) { playElixir(); return; }
+  // Aparición autónoma: ~10% de probabilidad cuando el ánimo es de alegría
+  if (holo.dataset.mood === 'joy' && Math.random() < 0.12) playElixir();
+}
+
+// Aparición espontánea e impredecible — Sol decide, no un loop de bug
+setInterval(() => {
+  if (!speaking && !elixirActive && document.visibilityState === 'visible' && Math.random() < 0.08) {
+    playElixir();
+  }
+}, 50000);
+
 // ═══ Voz — gTTS natural del servidor, con fallback al navegador ═══
 function cleanForSpeech(text) {
   return (text || '').replace(/[☀️🧠💭✨⚠️💛🌙🔗📋✅❌🟢🔴⭐🌹╔╗╚╝║═│┌┐└┘├┤┬┴┼─]/g, '').replace(/[\u{1F000}-\u{1FFFF}]/gu, '').trim();
@@ -528,6 +585,7 @@ async function sendToSol(text) {
     const d = await r.json();
     const resp = d.response || '☀️ Estoy aquí, Harold.';
     setMood(detectMood(resp));
+    maybeShowElixir(text, resp);
     showSubtitles(resp);
     speak(resp, d.tts_url);
     if (d.intent === 'tool') {
