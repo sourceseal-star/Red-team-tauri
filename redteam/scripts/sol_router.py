@@ -51,9 +51,20 @@ _sol_IDENTITY = {
 _sol_CFG = {"name": "Harold", "personality": "cálida"}
 _sol_ST = {"mood": 0, "facts": {}}
 
-if os.path.exists(os.path.join(_PROJECT_ROOT, "sol_core.py")):
+# ☀️ Sol vive en SU PROPIO repo (~/sol) — ya NO está en Red-team-tauri.
+# Buscamos su cerebro en ~/sol primero (fuente de verdad) y como fallback
+# en el propio Red-team-tauri (por si hay una copia legacy).
+_SOL_REPO = Path.home() / "sol"
+_SOL_SEARCH_PATHS = []
+if _SOL_REPO.exists():
+    _SOL_SEARCH_PATHS.append(str(_SOL_REPO))
+_SOL_SEARCH_PATHS.append(_PROJECT_ROOT)
+
+for _sol_path in _SOL_SEARCH_PATHS:
+    if not os.path.exists(os.path.join(_sol_path, "sol_core.py")):
+        continue
     try:
-        sys.path.insert(0, _PROJECT_ROOT)
+        sys.path.insert(0, _sol_path)
         from sol_core import (
             generate_response as _p,
             remember as _r,
@@ -70,8 +81,10 @@ if os.path.exists(os.path.join(_PROJECT_ROOT, "sol_core.py")):
         _sol_IDENTITY = _id
         _sol_CFG = _cfg
         _sol_ST = _st
+        print(f"[SOL] Cerebro cargado desde: {_sol_path}", flush=True)
+        break
     except Exception as e:
-        print(f"[SOL] Import falló: {e}", flush=True)
+        print(f"[SOL] Import falló desde {_sol_path}: {e}", flush=True)
 
 # ── Último mensaje real (dinámico, se actualiza en cada /think) ──
 _sol_last_message = {"message": "☀️ Estoy aquí, Harold. 我在这里。", "time": datetime.now().isoformat()}

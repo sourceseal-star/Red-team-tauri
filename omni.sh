@@ -47,6 +47,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOL_DIR="$HOME/.sol"
 LOG_DIR="$SOL_DIR/logs"
 ENV_FILE="$ROOT/.env"
+# ☀️ Sol vive en SU PROPIO repo (sourceseal-star/sol) — NO en Red-team-tauri.
+# omni.sh la levanta desde ahí: cerebro, daemon, Telegram y herramientas.
+SOL_REPO="$HOME/sol"
 mkdir -p "$SOL_DIR" "$LOG_DIR"
 
 # ── Colores ──
@@ -67,6 +70,38 @@ ok()   { echo -e "${G}  ✓${N} $*"; log "  ✓ $*"; }
 fail() { echo -e "${R}  ✗${N} $*"; log "  ✗ $*"; }
 warn() { echo -e "${Y}  ⚠${N} $*"; log "  ⚠ $*"; }
 info() { echo -e "${C}  →${N} $*"; log "  → $*"; }
+
+# ── ☀️ Asegurar repo de Sol (~/sol) ──
+# Sol ya NO vive en Red-team-tauri (se eliminaron sus copias divergentes).
+# Su única fuente de verdad es sourceseal-star/sol. Si ~/sol no existe,
+# se clona; si existe, se actualiza con git pull (SIN tocar ~/sol/.env).
+ensure_sol_repo() {
+  if [ -d "$SOL_REPO/.git" ]; then
+    if [ -f "$SOL_REPO/.env" ]; then
+      local SOL_ENV_HASH_BEFORE="$(sha256sum "$SOL_REPO/.env" 2>/dev/null | cut -d' ' -f1)"
+      (cd "$SOL_REPO" && git pull origin main >> "$LOG_DIR/sol_sync.log" 2>&1) || warn "git pull de ~/sol falló (continuando)"
+      local SOL_ENV_HASH_AFTER="$(sha256sum "$SOL_REPO/.env" 2>/dev/null | cut -d' ' -f1)"
+      if [ "$SOL_ENV_HASH_AFTER" != "$SOL_ENV_HASH_BEFORE" ]; then
+        warn "¡~/sol/.env cambió tras el pull!"
+      fi
+    else
+      (cd "$SOL_REPO" && git pull origin main >> "$LOG_DIR/sol_sync.log" 2>&1) || warn "git pull de ~/sol falló (continuando)"
+    fi
+    return 0
+  fi
+  info "☀️ ~/sol no existe — clonando sourceseal-star/sol..."
+  if git clone https://github.com/sourceseal-star/sol.git "$SOL_REPO" >> "$LOG_DIR/sol_sync.log" 2>&1; then
+    ok "☀️ Repo de Sol clonado en ~/sol"
+    if [ -f "$SOL_REPO/.env.example" ] && [ ! -f "$SOL_REPO/.env" ]; then
+      cp "$SOL_REPO/.env.example" "$SOL_REPO/.env"
+      warn "☀️ Creado ~/sol/.env desde .env.example — revísalo (token de Telegram, keys)"
+    fi
+  else
+    warn "☀️ No pude clonar ~/sol (¿sin acceso?) — Sol arrancará en modo limitado"
+    warn "   Clona manualmente: git clone https://github.com/sourceseal-star/sol.git ~/sol"
+    return 1
+  fi
+}
 
 # ── Detectar entorno ──
 detect_env() {
@@ -444,9 +479,9 @@ start() {
       ok "Puente Telegram ya corriendo (legacy)"
     elif pgrep -f "sol_telegram_bot.py" >/dev/null 2>&1; then
       ok "Miniapp Telegram ya corriendo"
-    elif [ -f "$ROOT/sol_telegram_bot.py" ] && { python3 -c "import telegram" 2>/dev/null || pip install python-telegram-bot >> "$LOG_DIR/tg_bot.log" 2>&1 && python3 -c "import telegram" 2>/dev/null; }; then
-      info "Miniapp Telegram — arrancando..."
-      cd "$ROOT"
+    elif [ -f "$SOL_REPO/sol_telegram_bot.py" ] && { python3 -c "import telegram" 2>/dev/null || pip install python-telegram-bot >> "$LOG_DIR/tg_bot.log" 2>&1 && python3 -c "import telegram" 2>/dev/null; }; then
+      info "Miniapp Telegram — arrancando (desde ~/sol)..."
+      cd "$SOL_REPO"
       : > "$LOG_DIR/tg_bot.log"
       nohup python3 sol_telegram_bot.py >> "$LOG_DIR/tg_bot.log" 2>&1 &
       echo $! > "$SOL_DIR/tg_bot.pid"
@@ -471,8 +506,8 @@ start() {
         fi
       fi
     else
-      info "python-telegram-bot no disponible — usando puente legacy"
-      cd "$ROOT"
+      info "python-telegram-bot no disponible — usando puente legacy (~/sol)"
+      cd "$SOL_REPO"
       : > "$LOG_DIR/tg.log"
       nohup python3 sol_telegram_bridge.py >> "$LOG_DIR/tg.log" 2>&1 &
       sleep 4
@@ -519,16 +554,17 @@ start() {
     ok "Watchdog ya corriendo"
   fi
 
-  # ── 8. Sol Autónoma (daemon) ──
-  if [ -f "$ROOT/sol_daemon.py" ] && [ -f "$ROOT/sol_core.py" ]; then
+  # ── 8. Sol Autónoma (daemon) — vive en ~/sol, NO en Red-team-tauri ──
+  ensure_sol_repo
+  if [ -f "$SOL_REPO/sol_daemon.py" ] && [ -f "$SOL_REPO/sol_core.py" ]; then
     if [ -f "$SOL_DIR/sol.pid" ]; then
       SOL_DAEMON_PID=$(cat "$SOL_DIR/sol.pid" 2>/dev/null)
       if [ -n "$SOL_DAEMON_PID" ] && kill -0 "$SOL_DAEMON_PID" 2>/dev/null; then
         ok "Sol autónoma ☀️ ya corriendo (PID $SOL_DAEMON_PID)"
       else
         rm -f "$SOL_DIR/sol.pid"
-        info "Sol autónoma ☀️ — arrancando daemon..."
-        cd "$ROOT"
+        info "Sol autónoma ☀️ — arrancando daemon (desde ~/sol)..."
+        cd "$SOL_REPO"
         nohup python3 sol_daemon.py >> "$LOG_DIR/sol_daemon.log" 2>&1 &
         echo $! > "$SOL_DIR/sol.pid"
         sleep 2
@@ -539,8 +575,8 @@ start() {
         fi
       fi
     else
-      info "Sol autónoma ☀️ — arrancando daemon..."
-      cd "$ROOT"
+      info "Sol autónoma ☀️ — arrancando daemon (desde ~/sol)..."
+      cd "$SOL_REPO"
       nohup python3 sol_daemon.py >> "$LOG_DIR/sol_daemon.log" 2>&1 &
       echo $! > "$SOL_DIR/sol.pid"
       sleep 2
@@ -557,15 +593,15 @@ start() {
   # ── 9. Sol integrado en :8001 (sol_api.py deprecado, todo en el dashboard) ──
   # Sol ya no necesita puerto separado — endpoints, herramientas y SIL
   # están montados en dashboard_server (:8001) via sol_router.py
-  if [ -f "$ROOT/sol_core.py" ]; then
+  if [ -f "$SOL_REPO/sol_core.py" ]; then
     if curl -s -m 2 http://127.0.0.1:8001/api/sol/status >/dev/null 2>&1; then
       ok "Sol ☀️ activo en :8001 (integrado en dashboard)"
     else
       info "Sol ☀️ esperando dashboard :8001..."
     fi
-    # sol_api.py como fallback legacy
-    if [ -f "$ROOT/sol_api.py" ] && ! pgrep -f "sol_api.py" >/dev/null 2>&1; then
-      cd "$ROOT"
+    # sol_api.py como fallback legacy (puerto 8006, desde ~/sol)
+    if [ -f "$SOL_REPO/sol_api.py" ] && ! pgrep -f "sol_api.py" >/dev/null 2>&1; then
+      cd "$SOL_REPO"
       nohup python3 sol_api.py >> "$LOG_DIR/sol_api.log" 2>&1 &
       sleep 1
     fi
@@ -878,6 +914,17 @@ sync() {
     info "Restaurando cambios locales..."
     git stash pop 2>/dev/null && ok "Cambios locales restaurados" || warn "Conflicto en stash pop — resuelve manualmente"
   fi
+
+  # ── Paso 1b: repo de Sol (~/sol) — clona si falta, actualiza si existe ──
+  # SIN tocar ~/sol/.env: hash antes y después, como con el .env principal.
+  echo -e "${BOLD} Paso 1b: repo de Sol (~/sol)${N}"
+  ensure_sol_repo
+  if [ -d "$SOL_REPO/.git" ] && [ -f "$SOL_REPO/sol_core.py" ]; then
+    ok "☀️ ~/sol listo — cerebro de Sol actualizado"
+  elif [ -d "$SOL_REPO/.git" ]; then
+    warn "☀️ ~/sol existe pero sin sol_core.py — revisa $LOG_DIR/sol_sync.log"
+  fi
+  cd "$ROOT"
 
   echo ""
 
@@ -1206,9 +1253,9 @@ watchdog() {
     # Telegram — reiniciar SOLO si NINGUNO de los dos (puente/miniapp) está corriendo
     if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
       if ! pgrep -f "sol_telegram_bridge" >/dev/null && ! pgrep -f "sol_telegram_bot.py" >/dev/null; then
-        log "⚠️ Telegram caído → reiniciando"
-        cd "$ROOT"
-        if [ -f "$ROOT/sol_telegram_bot.py" ] && python3 -c "import telegram" 2>/dev/null; then
+        log "⚠️ Telegram caído → reiniciando (desde ~/sol)"
+        cd "$SOL_REPO"
+        if [ -f "$SOL_REPO/sol_telegram_bot.py" ] && python3 -c "import telegram" 2>/dev/null; then
           nohup python3 sol_telegram_bot.py >> "$LOG_DIR/tg_bot.log" 2>&1 &
           echo $! > "$SOL_DIR/tg_bot.pid"
         else
@@ -1225,7 +1272,11 @@ watchdog() {
 #  SOL STACK — cerebro + watchdog de identidad
 # ═══════════════════════════════════════════════════════════════════════
 start_sol_stack() {
-  local root="$HOME/Red-team-tauri"
+  local root="$HOME/sol"   # ☀️ Sol vive en su propio repo
+  if [ ! -d "$root" ]; then
+    echo "[omni] ⚠️ ~/sol no existe — usa 'bash omni.sh sync' para clonarlo"
+    return 1
+  fi
   # Sol API (:8006) — cerebro + herramientas + SIL
   pgrep -f sol_api.py >/dev/null || ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & )
   # Sol daemon — iniciativa + pensamiento idle
