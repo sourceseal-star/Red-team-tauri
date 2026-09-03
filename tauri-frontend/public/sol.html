@@ -6,12 +6,16 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#050a14">
 <title>☀️ Sol — Videollamada</title>
+<link rel="preload" as="image" href="/sol_avatar_official.jpg">
+<link rel="preload" as="image" href="/sol_avatar_talk.png">
+<link rel="preload" as="image" href="/sol_avatar_talk_half.png">
+<link rel="preload" as="image" href="/sol_avatar_blink.png">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   :root {
     color-scheme: dark;
     --bg: #050a14; --card: rgba(8,14,28,0.88); --border: rgba(100,181,246,0.22);
-    --amber: #4fc3ff; --amber-glow: rgba(79,195,255,0.4);
+    --amber: #ffb74d; --amber-glow: rgba(255,183,77,0.4);
     --text: #f0f4fa; --muted: #8b9bb5; --green: #29d6c8; --compass: #5c9dff;
     --sword: #ff4d94; --pink: #b39ddb;
   }
@@ -23,44 +27,36 @@
     overflow: hidden; height: 100vh; height: 100dvh; width: 100vw; position: fixed;
     -webkit-font-smoothing: antialiased;
   }
-  /* Grid holograma */
   .holo-grid {
     position: fixed; inset: 0; pointer-events: none; z-index: 1;
-    background-image: linear-gradient(rgba(79,195,255,0.04) 1px, transparent 1px),
-                          linear-gradient(90deg, rgba(79,195,255,0.04) 1px, transparent 1px);
+    background-image: linear-gradient(rgba(255,183,77,0.04) 1px, transparent 1px),
+                          linear-gradient(90deg, rgba(255,183,77,0.04) 1px, transparent 1px);
     background-size: 40px 40px;
     mask-image: radial-gradient(ellipse at center, black 10%, transparent 70%);
     -webkit-mask-image: radial-gradient(ellipse at center, black 10%, transparent 70%);
   }
-  /* Scanline */
   .scanline {
     position: fixed; left: 0; right: 0; height: 60px; z-index: 2; pointer-events: none;
-    background: linear-gradient(180deg, transparent, rgba(79,195,255,0.06), transparent);
+    background: linear-gradient(180deg, transparent, rgba(255,183,77,0.06), transparent);
     animation: scan 8s linear infinite;
   }
   @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(100vh); } }
-
-  /* Container */
   .app { position: relative; z-index: 10; height: 100vh; height: 100dvh; display: flex; flex-direction: column; align-items: center; }
-
-  /* Top bar */
   .topbar {
     position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 20;
     display: flex; align-items: center; gap: 8px;
     background: rgba(0,0,0,0.6); backdrop-filter: blur(10px);
-    padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(79,195,255,0.18);
+    padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(255,183,77,0.18);
     font-size: 0.8rem; color: var(--text);
   }
   .status-dot { width: 9px; height: 9px; border-radius: 50%; box-sizing: content-box; }
   .status-dot.online { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; border: none; }
   .status-dot.offline { background: transparent; border: 2px solid var(--sword); width: 7px; height: 7px; box-shadow: none; animation: none; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-
-  /* Buttons top */
   .top-btn {
     position: fixed; top: 12px; z-index: 20;
     background: rgba(0,0,0,0.6); backdrop-filter: blur(10px);
-    border: 1px solid rgba(79,195,255,0.18); color: var(--text);
+    border: 1px solid rgba(255,183,77,0.18); color: var(--text);
     padding: 10px 16px; border-radius: 20px; cursor: pointer;
     font-size: 0.85rem; font-family: inherit; transition: all 0.3s; min-height: 40px;
   }
@@ -68,69 +64,29 @@
   .top-btn.left { left: 12px; }
   .top-btn.right { right: 12px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1.2rem; }
   .top-btn.voice { right: 64px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1rem; }
-
-  /* Avatar */
+  /* ═══ AVATAR GRANDE — 280px ═══ */
   .avatar-wrap {
-    position: relative; width: 180px; height: 180px; margin: 80px auto 0; flex-shrink: 0;
+    position: relative; width: 280px; height: 280px; margin: 70px auto 0; flex-shrink: 0;
     animation: solSway 7s ease-in-out infinite;
   }
   .avatar-img {
     width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
-    border: 2px solid var(--amber);
-    box-shadow: 0 0 30px var(--amber-glow);
+    border: 3px solid var(--amber);
+    box-shadow: 0 0 40px var(--amber-glow), 0 0 80px rgba(255,183,77,0.15);
     animation: breathe 4s ease-in-out infinite;
     transition: filter 0.4s, opacity 0.15s ease-in-out;
   }
   .avatar-img.speaking { animation: speakGlow 0.7s ease-in-out infinite; }
   .avatar-img.listening { animation: listenGlow 1.1s ease-in-out infinite; filter: brightness(1.08); }
-  /* Segundo frame (boca abierta) superpuesto — se alterna con el frame base
-     mientras Sol habla, para que de verdad parezca que mueve la boca y no
-     solo brille. Sin esto era una foto fija con un halo pulsando. */
-  .avatar-img-talk {
+  .avatar-img-talk, .avatar-img-talk-half, .avatar-img-blink, .avatar-expr {
     position: absolute; top: 0; left: 0;
     width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
-    border: 2px solid var(--amber);
-    opacity: 0;
-    transition: opacity 0.12s ease-in-out;
-    pointer-events: none;
+    border: 3px solid var(--amber); opacity: 0; pointer-events: none;
   }
-  .avatar-img-talk.on { opacity: 1; }
-
-  /* Frame intermedio de boca (medio abierta) para transiciones suaves al hablar */
-  .avatar-img-talk-half {
-    position: absolute; top: 0; left: 0;
-    width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
-    border: 2px solid var(--amber);
-    opacity: 0;
-    transition: opacity 0.06s ease-in-out;
-    pointer-events: none;
-  }
-  .avatar-img-talk-half.on { opacity: 1; }
-
-  /* Parpadeo real — frame con ojos cerrados */
-  .avatar-img-blink {
-    position: absolute; top: 0; left: 0;
-    width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
-    border: 2px solid var(--amber);
-    opacity: 0;
-    transition: opacity 0.04s ease-in-out;
-    pointer-events: none;
-  }
-  .avatar-img-blink.on { opacity: 1; }
-
-  /* Expresiones contextuales (crossfade sobre el base) */
-  /* Increíble que tengamos que explicar esto aquí también — son capas
-     que se muestran vía opacity (crossfade) según el estado de la conversación.
-     Z-order: base < happy < thinking < study < talk_half < talk < blink */
-  .avatar-expr {
-    position: absolute; top: 0; left: 0;
-    width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
-    border: 2px solid var(--amber);
-    opacity: 0;
-    transition: opacity 0.55s ease-in-out;
-    pointer-events: none;
-  }
-  .avatar-expr.on { opacity: 1; }
+  .avatar-img-talk, .avatar-img-talk-half { transition: opacity 0.12s ease-in-out; }
+  .avatar-img-blink { transition: opacity 0.06s ease-in-out; }
+  .avatar-expr { transition: opacity 0.55s ease-in-out; }
+  .avatar-img-talk.on, .avatar-img-talk-half.on, .avatar-img-blink.on, .avatar-expr.on { opacity: 1; }
   .avatar-expr.thinking { filter: brightness(0.92) contrast(1.05); }
   .avatar-expr.study { filter: brightness(1.05) saturate(1.1); }
   .avatar-expr.happy { filter: brightness(1.06) saturate(1.08); }
@@ -138,258 +94,148 @@
   .avatar-expr.curious { filter: brightness(1.10) saturate(1.15) contrast(1.03); }
   .avatar-expr.smile { filter: brightness(1.08) saturate(1.12) contrast(1.02); }
   .avatar-img.smile-glow { animation: smilePulse 2.8s ease-in-out infinite; }
-  @keyframes smilePulse { 0%,100% { box-shadow: 0 0 30px rgba(249,168,76,0.3); } 50% { box-shadow: 0 0 50px rgba(249,168,76,0.55); } }
   .avatar-img.thinking-glow { animation: thinkPulse 2.2s ease-in-out infinite; }
   .avatar-img.study-glow { animation: studyPulse 2.5s ease-in-out infinite; }
   .avatar-img.happy-glow { animation: happyPulse 2s ease-in-out infinite; }
-  @keyframes thinkPulse { 0%,100% { box-shadow: 0 0 30px rgba(0,212,255,0.28); } 50% { box-shadow: 0 0 50px rgba(0,212,255,0.5); } }
-  @keyframes studyPulse { 0%,100% { box-shadow: 0 0 30px rgba(201,168,76,0.25); } 50% { box-shadow: 0 0 45px rgba(201,168,76,0.45); } }
-  @keyframes happyPulse { 0%,100% { box-shadow: 0 0 35px rgba(249,168,76,0.35); } 50% { box-shadow: 0 0 55px rgba(249,168,76,0.6); } }
-  @keyframes breathe {
-    0%, 100% { box-shadow: 0 0 30px rgba(79,195,255,0.28); transform: scale(1); }
-    50% { box-shadow: 0 0 50px rgba(79,195,255,0.5); transform: scale(1.03); }
-  }
-  /* Balanceo idle muy sutil — sin esto la avatar nunca se mueve de sitio y
-     se siente más como foto de perfil que como una presencia viva. */
-  @keyframes solSway {
-    0%, 100% { transform: translate(0, 0) rotate(0deg); }
-    25% { transform: translate(1.5px, -2px) rotate(0.4deg); }
-    50% { transform: translate(0, -3px) rotate(0deg); }
-    75% { transform: translate(-1.5px, -1px) rotate(-0.4deg); }
-  }
-  @keyframes speakGlow {
-    0%, 100% { box-shadow: 0 0 34px rgba(79,195,255,0.55); transform: scale(1.01); }
-    50% { box-shadow: 0 0 60px rgba(79,195,255,0.85); transform: scale(1.045); }
-  }
-  @keyframes listenGlow {
-    0%, 100% { box-shadow: 0 0 30px rgba(92,157,255,0.5); }
-    50% { box-shadow: 0 0 46px rgba(92,157,255,0.8); }
-  }
-  /* Parpadeo — para que se sienta viva, no solo una foto */
-  .avatar-wrap::after {
-    content: ''; position: absolute; top: 38%; left: 50%; transform: translateX(-50%);
-    width: 70%; height: 6%; border-radius: 50%;
-    background: radial-gradient(ellipse at center, rgba(5,10,20,0.55), transparent 75%);
-    opacity: 0; pointer-events: none; animation: blink 6.5s ease-in-out infinite;
-  }
-  @keyframes blink {
-    0%, 92%, 100% { opacity: 0; transform: translateX(-50%) scaleY(0.3); }
-    94%, 97% { opacity: 1; transform: translateX(-50%) scaleY(1); }
-  }
+  @keyframes smilePulse { 0%,100% { box-shadow: 0 0 40px rgba(255,206,92,0.4); } 50% { box-shadow: 0 0 70px rgba(255,206,92,0.7); } }
+  @keyframes thinkPulse { 0%,100% { box-shadow: 0 0 35px rgba(255,183,77,0.35); } 50% { box-shadow: 0 0 55px rgba(255,183,77,0.55); } }
+  @keyframes studyPulse { 0%,100% { box-shadow: 0 0 35px rgba(201,168,76,0.35); } 50% { box-shadow: 0 0 60px rgba(201,168,76,0.6); } }
+  @keyframes happyPulse { 0%,100% { box-shadow: 0 0 42px rgba(255,206,92,0.45); } 50% { box-shadow: 0 0 75px rgba(255,206,92,0.75); } }
+  @keyframes breathe { 0%,100% { box-shadow: 0 0 40px rgba(255,183,77,0.28), 0 0 80px rgba(255,183,77,0.1); transform: scale(1); } 50% { box-shadow: 0 0 60px rgba(255,183,77,0.5), 0 0 100px rgba(255,183,77,0.2); transform: scale(1.03); } }
+  @keyframes solSway { 0%,100% { transform: translate(0, 0) rotate(0deg); } 25% { transform: translate(1.5px, -2px) rotate(0.4deg); } 50% { transform: translate(0, -3px) rotate(0deg); } 75% { transform: translate(-1.5px, -1px) rotate(-0.4deg); } }
+  @keyframes speakGlow { 0%,100% { box-shadow: 0 0 44px rgba(255,183,77,0.55), 0 0 80px rgba(255,183,77,0.2); transform: scale(1.01); } 50% { box-shadow: 0 0 75px rgba(255,183,77,0.85), 0 0 120px rgba(255,183,77,0.3); transform: scale(1.045); } }
+  @keyframes listenGlow { 0%,100% { box-shadow: 0 0 40px rgba(92,157,255,0.5); } 50% { box-shadow: 0 0 60px rgba(92,157,255,0.8); } }
   .pulse-ring {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-    width: 180px; height: 180px; border: 2px solid var(--amber);
+    width: 280px; height: 280px; border: 2px solid var(--amber);
     border-radius: 50%; opacity: 0; animation: ringPulse 3s ease-out infinite;
   }
   .pulse-ring:nth-child(2) { animation-delay: 1s; }
   .pulse-ring:nth-child(3) { animation-delay: 2s; }
-  @keyframes ringPulse { 0% { width: 180px; height: 180px; opacity: 0.5; } 100% { width: 280px; height: 280px; opacity: 0; } }
-
-  /* Subtitle */
+  @keyframes ringPulse { 0% { width: 280px; height: 280px; opacity: 0.5; } 100% { width: 400px; height: 400px; opacity: 0; } }
   .subtitle {
-    margin-top: 22px; padding: 0 24px; max-width: 92%; text-align: center;
-    min-height: 34px; font-size: 1.05rem; line-height: 1.55; color: var(--text);
+    margin-top: 20px; padding: 0 24px; max-width: 92%; text-align: center;
+    min-height: 34px; font-size: 1.1rem; line-height: 1.55; color: var(--text);
     transition: opacity 0.3s; font-weight: 500;
   }
   .subtitle.thinking { color: var(--muted); font-style: italic; }
-
-  /* Chat history (above input) */
   .chat-scroll {
     flex: 1; width: 100%; max-width: 640px; overflow-y: auto; padding: 14px 20px;
     display: flex; flex-direction: column; gap: 12px; -webkit-overflow-scrolling: touch;
   }
-  .chat-divider {
-    text-align: center; font-size: 0.68rem; letter-spacing: 2px; text-transform: uppercase;
-    color: var(--muted); margin: 4px 0 2px; opacity: 0.7;
-  }
   .chat-msg { max-width: 85%; padding: 13px 17px; border-radius: 16px; font-size: 1.02rem; line-height: 1.55; animation: fadeIn 0.3s; }
-  .chat-msg.sol { background: rgba(79,195,255,0.09); border-left: 3px solid var(--amber); align-self: flex-start; }
+  .chat-msg.sol { background: rgba(255,183,77,0.09); border-left: 3px solid var(--amber); align-self: flex-start; }
   .chat-msg.user { background: rgba(92,157,255,0.12); border-left: 3px solid var(--compass); align-self: flex-end; text-align: right; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-
-  /* Input bar — botones >=44px (accesibilidad tactil) */
-  .input-bar {
-    width: 100%; max-width: 640px; display: flex; gap: 10px; padding: 12px 16px max(20px, env(safe-area-inset-bottom));
-    flex-shrink: 0;
-  }
-  .input-bar input {
-    flex: 1; background: rgba(4,8,16,0.55); border: 1px solid var(--border);
-    color: var(--text); padding: 13px 18px; border-radius: 24px; font-size: 1.02rem;
-    font-family: inherit; outline: none; transition: border-color 0.3s; min-height: 46px;
-  }
+  .input-bar { width: 100%; max-width: 640px; display: flex; gap: 10px; padding: 12px 16px max(20px, env(safe-area-inset-bottom)); flex-shrink: 0; }
+  .input-bar input { flex: 1; background: rgba(4,8,16,0.55); border: 1px solid var(--border); color: var(--text); padding: 13px 18px; border-radius: 24px; font-size: 1.02rem; font-family: inherit; outline: none; transition: border-color 0.3s; min-height: 46px; }
   .input-bar input::placeholder { color: var(--muted); }
   .input-bar input:focus { border-color: var(--amber); }
-  .input-bar button {
-    background: var(--amber); color: #050a14; border: none; padding: 13px 22px;
-    border-radius: 24px; cursor: pointer; font-weight: 700; font-size: 1rem; font-family: inherit;
-    min-height: 46px; min-width: 46px;
-  }
-  .input-bar .mic {
-    background: rgba(4,8,16,0.55); color: var(--amber); border: 1px solid var(--border);
-    width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-    padding: 0; font-size: 1.15rem; cursor: pointer; transition: all 0.3s; flex-shrink: 0;
-  }
+  .input-bar button { background: var(--amber); color: #050a14; border: none; padding: 13px 22px; border-radius: 24px; cursor: pointer; font-weight: 700; font-size: 1rem; font-family: inherit; min-height: 46px; min-width: 46px; }
+  .input-bar .mic { background: rgba(4,8,16,0.55); color: var(--amber); border: 1px solid var(--border); width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1.15rem; cursor: pointer; transition: all 0.3s; flex-shrink: 0; }
   .input-bar .mic.active { background: var(--amber); color: #050a14; border-color: var(--amber); animation: micPulse 1s infinite; }
   @keyframes micPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.1); } }
-
-  /* Side panel — mas ancho y legible */
-  .panel {
-    position: fixed; top: 0; right: -100%; bottom: 0; width: min(340px, 92vw); z-index: 30;
-    background: rgba(5,10,20,0.98); backdrop-filter: blur(20px);
-    border-left: 1px solid var(--border); padding: 60px 18px 20px;
-    overflow-y: auto; transition: right 0.3s; -webkit-overflow-scrolling: touch;
-  }
+  .panel { position: fixed; top: 0; right: -100%; bottom: 0; width: min(360px, 94vw); z-index: 30; background: rgba(5,10,20,0.98); backdrop-filter: blur(20px); border-left: 1px solid var(--border); padding: 60px 18px 20px; overflow-y: auto; transition: right 0.3s; -webkit-overflow-scrolling: touch; }
   .panel.open { right: 0; }
-  .panel-close {
-    position: absolute; top: 12px; right: 12px; background: none; border: none;
-    color: var(--muted); cursor: pointer; font-size: 1.6rem; width: 40px; height: 40px;
-  }
+  .panel-close { position: absolute; top: 12px; right: 12px; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.6rem; width: 40px; height: 40px; }
   .panel h3 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); margin: 18px 0 10px; }
-  .panel .p-btn {
-    display: flex; flex-direction: column; align-items: center; padding: 14px 8px;
-    border: 1px solid var(--border); border-radius: 12px; cursor: pointer;
-    transition: all 0.3s; color: var(--muted); font-size: 0.85rem; text-align: center; min-height: 44px;
-  }
-  .panel .p-btn:hover, .panel .p-btn.active { border-color: var(--amber); color: var(--amber); background: rgba(79,195,255,0.08); }
+  .panel .p-btn { display: flex; flex-direction: column; align-items: center; padding: 14px 8px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; transition: all 0.3s; color: var(--muted); font-size: 0.85rem; text-align: center; min-height: 44px; }
+  .panel .p-btn:hover, .panel .p-btn.active { border-color: var(--amber); color: var(--amber); background: rgba(255,183,77,0.08); }
   .panel .p-btn .icon { font-size: 1.4rem; margin-bottom: 4px; }
-
-  /* Memory entries */
-  .mem-entry { padding: 12px; border-left: 3px solid rgba(79,195,255,0.45); background: rgba(79,195,255,0.05); border-radius: 0 8px 8px 0; margin-bottom: 10px; font-size: 0.88rem; }
+  .mem-entry { padding: 12px; border-left: 3px solid rgba(255,183,77,0.45); background: rgba(255,183,77,0.05); border-radius: 0 8px 8px 0; margin-bottom: 10px; font-size: 0.88rem; }
   .mem-entry .role { font-size: 0.7rem; color: var(--amber); text-transform: uppercase; letter-spacing: 1px; }
   .mem-entry .content { color: var(--text); margin-top: 5px; line-height: 1.5; }
   .mem-entry .ts { font-size: 0.66rem; color: var(--muted); margin-top: 5px; }
-
-  /* SIL */
-  .sil-card { background: rgba(79,195,255,0.05); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 8px; }
-  .sil-vocab { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(79,195,255,0.05); }
+  /* ═══ SIL — hanzi grande y visible ═══ */
+  .sil-card { background: rgba(255,183,77,0.05); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 8px; }
+  .sil-vocab { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid rgba(255,183,77,0.05); }
   .sil-vocab:last-child { border-bottom: none; }
-  .sil-vocab .hanzi { font-size: 2rem; }
-  .sil-vocab .pinyin { color: var(--amber); font-size: 0.9rem; }
-  .sil-vocab .meaning { color: var(--muted); font-size: 0.75rem; }
-  .sil-stat { text-align: center; padding: 8px; background: rgba(79,195,255,0.05); border-radius: 8px; }
-  .sil-stat .num { font-size: 1.4rem; color: var(--amber); font-weight: bold; }
-  .sil-stat .label { font-size: 0.7rem; color: var(--muted); }
-
-  /* Tools */
-  .tool-row { background: rgba(79,195,255,0.04); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+  .sil-vocab .hanzi { font-size: 2.5rem; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; min-width: 60px; text-align: center; }
+  .sil-vocab .pinyin { color: var(--amber); font-size: 1rem; font-style: italic; }
+  .sil-vocab .meaning { color: var(--muted); font-size: 0.82rem; }
+  .sil-vocab .pos { color: var(--pink); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1px; }
+  .sil-stat { text-align: center; padding: 10px; background: rgba(255,183,77,0.05); border-radius: 8px; }
+  .sil-stat .num { font-size: 1.6rem; color: var(--amber); font-weight: bold; }
+  .sil-stat .label { font-size: 0.72rem; color: var(--muted); }
+  .sil-practice-card { background: rgba(255,183,77,0.08); border: 1px solid var(--amber); border-radius: 16px; padding: 20px; text-align: center; }
+  .sil-practice-card .hanzi-big { font-size: 4rem; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; margin: 16px 0 10px; }
+  .sil-practice-card .pinyin-big { color: var(--amber); font-size: 1.3rem; font-style: italic; margin-bottom: 12px; }
+  .sil-practice-card .opt-btn { padding: 12px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: var(--text); border-radius: 10px; cursor: pointer; font-family: inherit; font-size: 0.95rem; min-height: 44px; transition: all 0.2s; }
+  .sil-practice-card .opt-btn:active { background: var(--amber); color: #050a14; }
+  .tool-row { background: rgba(255,183,77,0.04); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
   .tool-row .name { color: var(--amber); font-family: monospace; font-size: 0.92rem; cursor: pointer; min-height: 32px; display: flex; align-items: center; }
   .tool-row .desc { color: var(--muted); font-size: 0.82rem; margin-top: 3px; line-height: 1.4; }
   .tool-row .tool-params { margin-top: 8px; display: none; flex-direction: column; gap: 6px; }
   .tool-row.expanded .tool-params { display: flex; }
   .tool-row .tool-input { background: rgba(0,0,0,0.4); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; font-size: 0.85rem; font-family: monospace; outline: none; }
-  .tool-row .tool-input:focus { border-color: var(--amber); }
-  .tool-row .tool-input::placeholder { color: var(--muted); font-size: 0.8rem; }
-  .tool-row .run-btn { background: rgba(79,195,255,0.18); border: 1px solid var(--amber); color: var(--amber); padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-family: inherit; min-height: 40px; font-weight: 600; }
-  .tool-row .run-btn:active { background: var(--amber); color: #050a14; }
+  .tool-row .run-btn { background: rgba(255,183,77,0.18); border: 1px solid var(--amber); color: var(--amber); padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-family: inherit; min-height: 40px; font-weight: 600; }
   .tool-row .tool-result { margin-top: 8px; padding: 10px; background: rgba(0,0,0,0.35); border-radius: 6px; font-size: 0.82rem; color: var(--green); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; display: none; line-height: 1.4; }
   .tool-row .tool-result.error { color: var(--sword); }
   .tool-row .tool-result.show { display: block; }
-
-  /* Tabs in panel */
   .panel-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
   .panel-tab { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 0.82rem; color: var(--muted); min-height: 38px; display: flex; align-items: center; }
   .panel-tab.active { background: var(--amber); color: #050a14; border-color: var(--amber); font-weight: 600; }
-
-  /* Typing indicator */
-  .typing { display: inline-block; }
-  .typing span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); margin: 0 2px; animation: typing 1.4s infinite; }
-  .typing span:nth-child(2) { animation-delay: 0.2s; }
-  .typing span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes typing { 0%,60%,100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-6px); opacity: 1; } }
-
-  /* Speaking bars */
   .speak-bars { display: flex; align-items: center; justify-content: center; gap: 3px; height: 20px; margin-top: 8px; }
   .speak-bars span { width: 4px; background: var(--amber); border-radius: 2px; animation: speakBar 0.8s infinite; }
-  .speak-bars span:nth-child(1) { height: 8px; animation-delay: 0s; }
-  .speak-bars span:nth-child(2) { height: 16px; animation-delay: 0.1s; }
-  .speak-bars span:nth-child(3) { height: 12px; animation-delay: 0.2s; }
-  .speak-bars span:nth-child(4) { height: 20px; animation-delay: 0.3s; }
+  .speak-bars span:nth-child(1) { height: 8px; } .speak-bars span:nth-child(2) { height: 16px; animation-delay: 0.1s; }
+  .speak-bars span:nth-child(3) { height: 12px; animation-delay: 0.2s; } .speak-bars span:nth-child(4) { height: 20px; animation-delay: 0.3s; }
   .speak-bars span:nth-child(5) { height: 10px; animation-delay: 0.4s; }
   @keyframes speakBar { 0%,100% { transform: scaleY(0.4); opacity: 0.5; } 50% { transform: scaleY(1); opacity: 0.8; } }
-
   .hidden { display: none !important; }
 </style>
 </head>
 <body>
-
 <div class="holo-grid"></div>
 <div class="scanline"></div>
-
 <div class="app">
-  <!-- Top bar -->
-  <div class="topbar">
-    <span class="status-dot" id="status-dot"></span>
-    <span id="topbar-text">Conectando…</span>
-  </div>
-  <button class="top-btn left" id="btn-back" onclick="window.location.href='/'">← Dashboard</button>
+  <div class="topbar"><span class="status-dot" id="status-dot"></span><span id="topbar-text">Conectando…</span></div>
+  <button class="top-btn left" onclick="window.location.href='/'">← Dashboard</button>
   <button class="top-btn voice" id="btn-voice" onclick="toggleVoice()">🔊</button>
   <button class="top-btn right" onclick="togglePanel()">☰</button>
-
-  <!-- Avatar -->
   <div class="avatar-wrap">
-    <div class="pulse-ring"></div>
-    <div class="pulse-ring"></div>
-    <div class="pulse-ring"></div>
-    <img class="avatar-img" id="avatar" src="/sol_avatar_official.jpg"
-         onerror="this.onerror=null;this.src='/sol_avatar.jpg'">
-    <!-- Expresiones contextuales (crossfade sobre el base) -->
-    <img class="avatar-expr happy" id="avatar-happy" src="/sol_avatar_happy.png">
-    <img class="avatar-expr smile" id="avatar-smile" src="/sol_avatar_smile.png">
-    <img class="avatar-expr curious" id="avatar-curious" src="/sol_avatar_curious.png">
-    <img class="avatar-expr listening" id="avatar-listening" src="/sol_avatar_listening.png">
-    <img class="avatar-expr thinking" id="avatar-thinking" src="/sol_avatar_thinking.png">
-    <img class="avatar-expr study" id="avatar-study" src="/sol_avatar_study.png">
-    <!-- Frames de animación al hablar -->
-    <img class="avatar-img-talk-half" id="avatar-talk-half" src="/sol_avatar_talk_half.png">
-    <img class="avatar-img-talk" id="avatar-talk" src="/sol_avatar_talk.png">
-    <!-- Parpadeo -->
-    <img class="avatar-img-blink" id="avatar-blink" src="/sol_avatar_blink.png">
+    <div class="pulse-ring"></div><div class="pulse-ring"></div><div class="pulse-ring"></div>
+    <img class="avatar-img" id="avatar" src="/sol_avatar_official.jpg" onerror="this.onerror=null;this.src='/sol_avatar.jpg'">
+    <img class="avatar-expr happy" id="avatar-happy" src="/sol_avatar_happy.png" onerror="this.style.display='none'">
+    <img class="avatar-expr smile" id="avatar-smile" src="/sol_avatar_smile.png" onerror="this.style.display='none'">
+    <img class="avatar-expr curious" id="avatar-curious" src="/sol_avatar_curious.png" onerror="this.style.display='none'">
+    <img class="avatar-expr listening" id="avatar-listening" src="/sol_avatar_listening.png" onerror="this.style.display='none'">
+    <img class="avatar-expr thinking" id="avatar-thinking" src="/sol_avatar_thinking.png" onerror="this.style.display='none'">
+    <img class="avatar-expr study" id="avatar-study" src="/sol_avatar_study.png" onerror="this.style.display='none'">
+    <img class="avatar-img-talk-half" id="avatar-talk-half" src="/sol_avatar_talk_half.png" onerror="this.style.display='none'">
+    <img class="avatar-img-talk" id="avatar-talk" src="/sol_avatar_talk.png" onerror="this.style.display='none'">
+    <img class="avatar-img-blink" id="avatar-blink" src="/sol_avatar_blink.png" onerror="this.style.display='none'">
   </div>
-
-  <!-- Subtitle -->
-  <div class="subtitle" id="subtitle">☀️ Estoy aquí, Harold.</div>
-  <div class="speak-bars hidden" id="speak-bars">
-    <span></span><span></span><span></span><span></span><span></span>
-  </div>
-
-  <!-- Chat scroll -->
+  <div class="subtitle" id="subtitle">☀️ Hola, Harold. Soy Sol. ¿En qué piensas hoy?</div>
+  <div class="speak-bars hidden" id="speak-bars"><span></span><span></span><span></span><span></span><span></span></div>
   <div class="chat-scroll" id="chat"></div>
-
-  <!-- Input -->
   <div class="input-bar">
     <button class="mic" id="btn-mic" onclick="toggleMic()">🎤</button>
-    <input type="text" id="input" placeholder="Escríbele a Sol…" autocomplete="off"
-           onkeypress="if(event.key==='Enter')sendMsg()">
+    <input type="text" id="input" placeholder="Escríbele a Sol..." autocomplete="off" onkeydown="if(event.key==='Enter')sendMsg()">
     <button onclick="sendMsg()">→</button>
   </div>
 </div>
-
-<!-- Side panel -->
 <div class="panel" id="panel">
-  <button class="panel-close" onclick="togglePanel()">×</button>
+  <button class="panel-close" onclick="togglePanel()">✕</button>
   <div class="panel-tabs">
-    <div class="panel-tab active" onclick="switchTab('mem',this)">🧠 Memoria</div>
-    <div class="panel-tab" onclick="switchTab('pers',this)">🎭 Personalidad</div>
-    <div class="panel-tab" onclick="switchTab('sil',this)">🀄 Chino</div>
+    <div class="panel-tab active" onclick="switchTab('mem',this)">💭 Memoria</div>
+    <div class="panel-tab" onclick="switchTab('pers',this)">🎭 Sol</div>
+    <div class="panel-tab" onclick="switchTab('sil',this)">📖 SIL</div>
     <div class="panel-tab" onclick="switchTab('tools',this)">⚡ Tools</div>
-    <div class="panel-tab" onclick="switchTab('sec',this)">🔒 Seguridad</div>
+    <div class="panel-tab" onclick="switchTab('sec',this)">🔒 Seg</div>
     <div class="panel-tab" onclick="switchTab('repos',this)">📦 Repos</div>
-    <div class="panel-tab" onclick="switchTab('siladv',this)">📖 SIL+</div>
+    <div class="panel-tab" onclick="switchTab('siladv',this)">🀄 SIL+</div>
   </div>
-
   <div id="tab-mem">
     <h3>Recuerdos Recientes</h3>
     <div id="mem-list"><p style="color:var(--muted);font-size:0.8rem">Cargando…</p></div>
     <h3>🔗 Integridad SHA-256</h3>
     <div id="integrity-box" style="font-size:0.8rem;color:var(--muted)">Verificando…</div>
   </div>
-
   <div id="tab-pers" class="hidden">
     <h3>Personalidad de Sol</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px" id="pers-grid"></div>
     <p style="font-size:0.8rem;color:var(--muted);margin-top:12px;padding:10px;background:rgba(0,0,0,0.2);border-radius:8px" id="pers-desc"></p>
   </div>
-
   <div id="tab-sil" class="hidden">
     <h3>📊 Progreso</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px" id="sil-stats">
@@ -400,994 +246,90 @@
     <div id="sil-lessons"><p style="color:var(--muted);font-size:0.8rem">Cargando…</p></div>
     <div id="sil-lesson-detail"></div>
     <h3>🎯 Práctica (SRS)</h3>
-    <div id="sil-practice">
-      <button onclick="startPractice()" style="width:100%;padding:12px;background:rgba(79,195,255,0.1);border:1px solid var(--amber);color:var(--amber);border-radius:12px;cursor:pointer;font-family:inherit;font-size:0.9rem">Empezar repaso</button>
-    </div>
+    <div id="sil-practice"><button onclick="startPractice()" style="width:100%;padding:12px;background:rgba(255,183,77,0.1);border:1px solid var(--amber);color:var(--amber);border-radius:12px;cursor:pointer;font-family:inherit;font-size:0.9rem">Empezar repaso</button></div>
   </div>
-
-  <div id="tab-tools" class="hidden">
-    <h3>Herramientas de Sol</h3>
-    <div id="tools-list"><p style="color:var(--muted);font-size:0.8rem">Cargando…</p></div>
-  </div>
-
+  <div id="tab-tools" class="hidden"><h3>Herramientas de Sol</h3><div id="tools-list"><p style="color:var(--muted);font-size:0.8rem">Cargando…</p></div></div>
   <div id="tab-sec" class="hidden">
     <h3>Estado de Seguridad</h3>
     <div id="sec-status"><p style="color:var(--muted);font-size:0.8rem">Cargando…</p></div>
     <h3>SOL_API_KEY</h3>
-    <input type="password" id="sol-key-input" placeholder="Pega tu SOL_API_KEY aquí…" style="width:100%;background:rgba(0,0,0,0.4);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:8px;font-family:monospace;font-size:0.85rem;outline:none" oninput="saveSolKey(this.value)">
-    <p style="font-size:0.75rem;color:var(--muted);margin-top:8px">Se guarda en tu navegador (localStorage). Se envía como header x-sol-key.</p>
-    <h3>Modo de Seguridad</h3>
+    <input type="password" id="sol-key-input" placeholder="Pega tu SOL_API_KEY…" style="width:100%;background:rgba(0,0,0,0.4);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:8px;font-family:monospace;font-size:0.85rem;outline:none" oninput="saveSolKey(this.value)">
+    <h3>Modo</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-      <button onclick="setSecurityMode('protected')" id="btn-sec-protected" style="padding:12px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">🔒 Protegido</button>
-      <button onclick="setSecurityMode('free')" id="btn-sec-free" style="padding:12px;background:rgba(255,112,67,0.1);border:1px solid var(--sword);color:var(--sword);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">🔓 Libre (Training)</button>
+      <button onclick="setSecurityMode('protected')" style="padding:12px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">🔒 Protegido</button>
+      <button onclick="setSecurityMode('free')" style="padding:12px;background:rgba(255,112,67,0.1);border:1px solid var(--sword);color:var(--sword);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">🔓 Libre</button>
     </div>
     <h3>🧠 Groq LLM</h3>
     <div id="groq-status"><p style="color:var(--muted);font-size:0.8rem">Cargando…</p></div>
-    <button onclick="testGroq()" style="margin-top:8px;padding:10px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem;width:100%">🧪 Probar conexión Groq</button>
-    <p style="font-size:0.75rem;color:var(--muted);margin-top:8px;padding:10px;background:rgba(0,0,0,0.2);border-radius:8px">
-      <b>Protegido</b>: tools requieren SOL_API_KEY.<br>
-      <b>Libre</b>: todo accesible (para entrenar/experimentar).<br>
-      Cambiar de modo SIEMPRE requiere SOL_API_KEY.
-    </p>
+    <button onclick="testGroq()" style="margin-top:8px;padding:10px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem;width:100%">🧪 Probar Groq</button>
   </div>
-
   <div id="tab-repos" class="hidden">
     <h3>📦 Repositorios</h3>
     <div id="repos-list"><p style="color:var(--muted);font-size:0.8rem">Cargando…</p></div>
-    <div id="repo-detail" style="margin-top:16px"></div>
+    <div id="repo-detail" style="margin-top:12px"></div>
     <div id="repo-files" style="margin-top:12px"></div>
-    <h3>📜 Commits recientes</h3>
+    <h3>📜 Commits</h3>
     <div id="repo-log"><p style="color:var(--muted);font-size:0.8rem">Selecciona un repo</p></div>
     <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
       <button onclick="repoPull('sol')" style="padding:10px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.8rem">⬇️ Pull Sol</button>
       <button onclick="repoPull('red-team-tauri')" style="padding:10px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.8rem">⬇️ Pull RT</button>
       <button onclick="repoPull('commander')" style="padding:10px;background:rgba(102,187,106,0.1);border:1px solid var(--green);color:var(--green);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.8rem">⬇️ Pull Cmd</button>
     </div>
-    <button onclick="buildKnowledge()" style="margin-top:8px;width:100%;padding:10px;background:rgba(79,195,255,0.1);border:1px solid var(--amber);color:var(--amber);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">🧠 Reconstruir conocimiento de los 3 repos</button>
+    <button onclick="buildKnowledge()" style="margin-top:8px;width:100%;padding:10px;background:rgba(255,183,77,0.1);border:1px solid var(--amber);color:var(--amber);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">🧠 Reconstruir conocimiento</button>
   </div>
-
-  <div id="tab-siladv" class="hidden">
-    <h3>📖 SIL Avanzado</h3>
-    <div id="siladv-levels"><p style="color:var(--muted);font-size:0.8rem">Cargando…</p></div>
-    <div id="siladv-content" style="margin-top:16px"></div>
-  </div>
+  <div id="tab-siladv" class="hidden"><h3>📖 SIL Avanzado</h3><div id="siladv-levels"><p style="color:var(--muted);font-size:0.8rem">Cargando…</p></div><div id="siladv-content" style="margin-top:16px"></div></div>
 </div>
-
 <script>
-// ═══ AUTH ═══
-function getToken() { return localStorage.getItem('api_token') || ''; }
-function getSolKey() { return localStorage.getItem('sol_api_key') || ''; }
-function authHeaders(extra) {
-  const h = Object.assign({}, extra || {});
-  const t = getToken();
-  if (t) h['Authorization'] = 'Bearer ' + t;
-  const sk = getSolKey();
-  if (sk) h['x-sol-key'] = sk;
-  return h;
-}
-async function api(path, opts) {
-  opts = opts || {};
-  opts.headers = authHeaders(opts.headers);
-  const r = await fetch(path, opts);
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  return r.json();
-}
-
-// ═══ STATE ═══
-let voiceOn = localStorage.getItem('sol_voice') === '1';
-let speaking = false;
-let listening = false;
-let recognition = null;
-let currentTab = 'mem';
-const PERSONALITIES = {
-  'cálida': { icon: '☀️', desc: 'Calidez, presencia, acompañamiento. Te escucho sin prisa.' },
-  'poética': { icon: '🌸', desc: 'Cada palabra es un destello. Metáforas que abrazan.' },
-  'táctica': { icon: '⚔️', desc: 'Directo al punto. Análisis y acción sin rodeos.' },
-  'analítica': { icon: '📐', desc: 'Estructurado, detallado. Desglosamos todo paso a paso.' },
-};
-
-// ═══ INIT ═══
-async function init() {
-  // Voice button state
-  document.getElementById('btn-voice').textContent = voiceOn ? '🔊' : '🔇';
-  document.getElementById('btn-voice').style.color = voiceOn ? 'var(--amber)' : 'var(--muted)';
-  document.getElementById('btn-voice').style.borderColor = voiceOn ? 'var(--amber)' : 'var(--border)';
-
-  await Promise.all([refreshStatus(), loadMemory(), loadIntegrity(), loadPersonalities(), loadSilLessons(), loadSilStats(), loadTools(), loadSecurity(), loadGroqStatus(), loadRepos(), loadSilAdvanced()]);
-  setInterval(refreshStatus, 10000);
-  setInterval(loadMemory, 20000);
-}
-
-// ═══ STATUS ═══
-async function refreshStatus() {
-  try {
-    const d = await api('/api/sol/status');
-    const dot = document.getElementById('status-dot');
-    const txt = document.getElementById('topbar-text');
-    dot.className = 'status-dot ' + (d.brain === 'online' ? 'online' : 'offline');
-    txt.textContent = (d.brain === 'online' ? 'En vivo' : 'Offline') + ' · ' + (d.memories || 0) + ' recuerdos';
-    if (d.cpu !== undefined) txt.textContent += ' · CPU ' + d.cpu + '%';
-  } catch (e) {
-    document.getElementById('status-dot').className = 'status-dot offline';
-    document.getElementById('topbar-text').textContent = 'Sin conexión';
-  }
-}
-
-// ═══ CAPACIDADES REALES DEL NAVEGADOR (Sol viva en tu telefono) ═══
-let _torchStream = null;
-async function setFlashlight(on) {
-  try {
-    if (on) {
-      if (!_torchStream) {
-        _torchStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      }
-      const track = _torchStream.getVideoTracks()[0];
-      const caps = track.getCapabilities ? track.getCapabilities() : {};
-      if (!caps.torch) { track.stop(); _torchStream = null; return { ok: false, error: 'no-torch' }; }
-      await track.applyConstraints({ advanced: [{ torch: true }] });
-      return { ok: true };
-    } else {
-      if (_torchStream) {
-        const track = _torchStream.getVideoTracks()[0];
-        try { await track.applyConstraints({ advanced: [{ torch: false }] }); } catch (e) {}
-        _torchStream.getTracks().forEach(t => t.stop());
-        _torchStream = null;
-      }
-      return { ok: true };
-    }
-  } catch (e) {
-    return { ok: false, error: e.message || String(e) };
-  }
-}
-function setVibrate(pattern) {
-  if (!navigator.vibrate) return { ok: false, error: 'sin-api' };
-  navigator.vibrate(pattern || 400);
-  return { ok: true };
-}
-async function browserNotify(text) {
-  if (!('Notification' in window)) return { ok: false, error: 'sin-api' };
-  if (Notification.permission === 'default') await Notification.requestPermission();
-  if (Notification.permission !== 'granted') return { ok: false, error: 'permiso denegado' };
-  new Notification('☀️ Sol', { body: text.slice(0, 180) });
-  return { ok: true };
-}
-async function browserBattery() {
-  if (!navigator.getBattery) return { ok: false, error: 'sin-api' };
-  const b = await navigator.getBattery();
-  return { ok: true, result: Math.round(b.level * 100) + '%' + (b.charging ? ' (cargando)' : '') };
-}
-function browserLocation() {
-  return new Promise(resolve => {
-    if (!navigator.geolocation) return resolve({ ok: false, error: 'sin-api' });
-    navigator.geolocation.getCurrentPosition(
-      pos => resolve({ ok: true, result: pos.coords.latitude.toFixed(5) + ', ' + pos.coords.longitude.toFixed(5) }),
-      err => resolve({ ok: false, error: err.message })
-    );
-  });
-}
-function detectDeviceCommand(text) {
-  const t = text.toLowerCase();
-  const on = /(enciende|prende|activa)/.test(t);
-  const off = /(apaga|desactiva)/.test(t);
-  if (/(linterna|flash|torch)/.test(t) && (on || off)) return { type: 'flashlight', on };
-  if (/vibr/.test(t)) return { type: 'vibrate' };
-  return null;
-}
-
-// ═══ CHAT ═══
-async function sendMsg() {
-  const input = document.getElementById('input');
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
-  addMsg(text, 'user');
-
-  // Comandos de hardware — se ejecutan YA desde el navegador, sin depender del backend
-  const dev = detectDeviceCommand(text);
-  if (dev) {
-    let reply = '';
-    if (dev.type === 'flashlight') {
-      const r = await setFlashlight(dev.on);
-      reply = r.ok
-        ? (dev.on ? '🔦 Linterna encendida, Harold.' : '🔦 Linterna apagada.')
-        : '🔦 No pude controlar la linterna desde este navegador (' +
-          (r.error === 'no-torch' ? 'tu cámara no expone la API de torch' : r.error) +
-          '). Desde Termux sí lo hago sin problema.';
-    } else if (dev.type === 'vibrate') {
-      const r = setVibrate(400);
-      reply = r.ok ? '📳 Ahí está.' : '📳 Tu navegador no soporta vibración.';
-    }
-    await typeSubtitle(reply);
-    addMsg(reply, 'sol');
-    api('/api/sol/think?q=' + encodeURIComponent(text)).catch(() => {}); // memoria, en segundo plano
-    return;
-  }
-
-  setExpr('thinking');
-  document.getElementById('subtitle').textContent = '💭 pensando…';
-  document.getElementById('subtitle').className = 'subtitle thinking';
-  try {
-    const d = await api('/api/sol/think?q=' + encodeURIComponent(text));
-    const resp = d.response || '...';
-    await typeSubtitle(resp);
-    addMsg(resp, 'sol');
-    loadMemory();
-    // Expresión contextual tras responder
-    const txtLow = resp.toLowerCase();
-    if (txtLow.includes('?') || txtLow.includes('vaya') || txtLow.includes('wow') || txtLow.includes('no puedo creer')) {
-      setExpr('curious'); setTimeout(() => setExpr('idle'), 4000);
-    } else if (txtLow.includes('hola') || txtLow.includes('☀') || txtLow.includes('amor') || txtLow.includes('❤') || txtLow.includes('bien') || txtLow.includes('genial')) {
-      setExpr('smile'); setTimeout(() => setExpr('idle'), 3500);
-    } else {
-      setTimeout(() => setExpr('idle'), 1500);
-    }
-  } catch (e) {
-    const msg = '⚠️ No pude conectar con mi cerebro. ¿Iniciaste sesión en el Dashboard primero?';
-    await typeSubtitle(msg);
-    addMsg(msg, 'sol');
-  }
-}
-
-function addMsg(text, who) {
-  const chat = document.getElementById('chat');
-  const div = document.createElement('div');
-  div.className = 'chat-msg ' + who;
-  div.textContent = text;
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
-}
-
-// Subtítulo — vista corta y legible; el texto completo siempre queda en el historial de abajo
-async function typeSubtitle(text) {
-  const el = document.getElementById('subtitle');
-  el.className = 'subtitle';
-  el.textContent = '';
-  const CAP = 130;
-  const display = text.length > CAP ? text.slice(0, CAP).trim() + '…' : text;
-  const words = display.split(' ');
-  for (let i = 0; i < words.length; i++) {
-    el.textContent += (i > 0 ? ' ' : '') + words[i];
-    await new Promise(r => setTimeout(r, 40 + Math.random() * 30));
-  }
-  speak(text);
-}
-
-// ═══ VOICE OUTPUT — el avatar reacciona mientras habla ═══
-// Antes solo brillaba mas fuerte (speakGlow). Ahora ademas alterna entre
-// el frame base y el frame de "boca abierta" (avatar-talk) en un ritmo
-// pseudo-aleatorio mientras suena el audio, para que de verdad se vea
-// que Sol esta hablando y no solo una foto con un halo pulsando.
-// ═══ SISTEMA DE EXPRESIONES CONTEXTUALES (unificado desde repo sol) ═══
-const EXPR = {
-  idle:      document.getElementById('avatar'),
-  happy:     document.getElementById('avatar-happy'),
-  thinking:  document.getElementById('avatar-thinking'),
-  study:     document.getElementById('avatar-study'),
-  smile:     document.getElementById('avatar-smile'),
-  listeningExpr: document.getElementById('avatar-listening'),
-  curious:    document.getElementById('avatar-curious'),
-  talk:      document.getElementById('avatar-talk'),
-  talkHalf:  document.getElementById('avatar-talk-half'),
-  blink:     document.getElementById('avatar-blink'),
-};
-
-let currentExpr = 'idle';
-let exprTimer = null;
-
-function setExpr(name) {
-  if (speaking && name !== 'idle') return;
-  if (listening && name !== 'thinking' && name !== 'idle') return;
-  currentExpr = name;
-  ['happy', 'thinking', 'study', 'smile', 'listeningExpr', 'curious'].forEach(k => {
-    if (EXPR[k]) EXPR[k].classList.remove('on');
-  });
-  if (name !== 'idle' && EXPR[name]) {
-    EXPR[name].classList.add('on');
-  }
-  const av = EXPR.idle;
-  if (av) {
-    av.classList.remove('listening', 'thinking-glow', 'study-glow', 'happy-glow', 'smile-glow');
-    if (name === 'listening') av.classList.add('listening');
-    else if (name === 'thinking') av.classList.add('thinking-glow');
-    else if (name === 'study') av.classList.add('study-glow');
-    else if (name === 'happy') av.classList.add('happy-glow', 'smile-glow');
-  }
-}
-
-// Animación de boca de 3 frames: cerrada -> media -> abierta -> media -> cerrada
-let mouthInterval = null;
-let mouthStep = 0;
-
-function _setMouthFrame(step) {
-  const half = document.getElementById('avatar-talk-half');
-  const open = document.getElementById('avatar-talk');
-  if (!half || !open) return;
-  half.classList.toggle('on', step === 1 || step === 3);
-  open.classList.toggle('on', step === 2);
-}
-
-function startMouthMovement() {
-  mouthStep = 0;
-  _setMouthFrame(mouthStep);
-  mouthInterval = setInterval(() => {
-    mouthStep = (mouthStep + 1) % 4;
-    _setMouthFrame(mouthStep);
-  }, 90 + Math.random() * 70);
-}
-
-function stopMouthMovement() {
-  if (mouthInterval) { clearInterval(mouthInterval); mouthInterval = null; }
-  _setMouthFrame(0);
-}
-
-// ═══ BLINK — parpadeo real con imagen de ojos cerrados ═══
-function scheduleBlink() {
-  const delay = 3500 + Math.random() * 3200;
-  setTimeout(() => {
-    const blinkFrame = document.getElementById('avatar-blink');
-    if (blinkFrame) {
-      blinkFrame.classList.add('on');
-      setTimeout(() => blinkFrame.classList.remove('on'), 130 + Math.random() * 50);
-    }
-    scheduleBlink();
-  }, delay);
-}
+function getToken(){return localStorage.getItem('api_token')||''}
+function getSolKey(){return localStorage.getItem('sol_api_key')||''}
+function authHeaders(extra){const h=Object.assign({},extra||{});const t=getToken();if(t)h['Authorization']='Bearer '+t;const sk=getSolKey();if(sk)h['x-sol-key']=sk;return h}
+async function api(path,opts){opts=opts||{};opts.headers=authHeaders(opts.headers);const r=await fetch(path,opts);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+let voiceOn=localStorage.getItem('sol_voice')==='1',speaking=false,listening=false,recognition=null,currentTab='mem';
+const PERSONALITIES={'cálida':{icon:'☀️',desc:'Calidez, presencia, acompañamiento.'},'poética':{icon:'🌸',desc:'Metáforas que abrazan.'},'táctica':{icon:'⚔️',desc:'Directo al punto.'},'analítica':{icon:'📐',desc:'Estructurado, detallado.'}};
+async function init(){document.getElementById('btn-voice').textContent=voiceOn?'🔊':'🔇';document.getElementById('btn-voice').style.color=voiceOn?'var(--amber)':'var(--muted)';await Promise.all([refreshStatus(),loadMemory(),loadIntegrity(),loadPersonalities(),loadSilLessons(),loadSilStats(),loadTools(),loadSecurity(),loadGroqStatus(),loadRepos(),loadSilAdvanced()]);setInterval(refreshStatus,10000);setInterval(loadMemory,20000)}
+async function refreshStatus(){try{const d=await api('/api/sol/status');document.getElementById('status-dot').className='status-dot '+(d.brain==='online'?'online':'offline');document.getElementById('topbar-text').textContent=(d.brain==='online'?'En vivo':'Offline')+' · '+(d.memories||0)+' recuerdos'}catch(e){document.getElementById('status-dot').className='status-dot offline';document.getElementById('topbar-text').textContent='Sin conexión'}}
+async function sendMsg(){const input=document.getElementById('input');const text=input.value.trim();if(!text)return;input.value='';addMsg(text,'user');setExpr('thinking');document.getElementById('subtitle').textContent='💭 pensando…';document.getElementById('subtitle').className='subtitle thinking';try{const d=await api('/api/sol/think?q='+encodeURIComponent(text));await typeSubtitle(d.response||'...');addMsg(d.response||'...','sol');loadMemory();const txt=(d.response||'').toLowerCase();if(txt.includes('hola')||txt.includes('☀')||txt.includes('amor')||txt.includes('❤')){if(txt.includes('?')||txt.includes('vaya')){setExpr('curious');setTimeout(()=>setExpr('idle'),4000)}else{setExpr('smile');setTimeout(()=>setExpr('idle'),3500)}}else setTimeout(()=>setExpr('idle'),1500)}catch(e){const msg='⚠️ No pude conectar con mi cerebro. ¿Iniciaste sesión?';await typeSubtitle(msg);addMsg(msg,'sol');setExpr('idle')}}
+function addMsg(text,who){const chat=document.getElementById('chat');const div=document.createElement('div');div.className='chat-msg '+who;div.textContent=text;chat.appendChild(div);chat.scrollTop=chat.scrollHeight}
+async function typeSubtitle(text){const el=document.getElementById('subtitle');el.className='subtitle';el.textContent='';const CAP=130;const display=text.length>CAP?text.slice(0,CAP).trim()+'…':text;const words=display.split(' ');for(let i=0;i<words.length;i++){el.textContent+=(i>0?' ':'')+words[i];await new Promise(r=>setTimeout(r,40+Math.random()*30))}speak(text)}
+const EXPR={idle:document.getElementById('avatar'),happy:document.getElementById('avatar-happy'),thinking:document.getElementById('avatar-thinking'),study:document.getElementById('avatar-study'),smile:document.getElementById('avatar-smile'),listeningExpr:document.getElementById('avatar-listening'),curious:document.getElementById('avatar-curious'),blink:document.getElementById('avatar-blink')};
+function setExpr(name){const map={idle:EXPR.idle,happy:EXPR.happy,thinking:EXPR.thinking,study:EXPR.study,smile:EXPR.smile,listening:EXPR.listeningExpr,curious:EXPR.curious};Object.values(map).forEach(el=>{if(el&&el!==EXPR.idle)el.classList.remove('on')});const target=map[name]||map.idle;if(target&&target!==EXPR.idle)target.classList.add('on');const av=EXPR.idle;if(av){av.classList.remove('listening','thinking-glow','study-glow','happy-glow','smile-glow');if(name==='listening')av.classList.add('listening');else if(name==='thinking')av.classList.add('thinking-glow');else if(name==='study')av.classList.add('study-glow');else if(name==='happy')av.classList.add('happy-glow','smile-glow')}}
+function scheduleBlink(){setTimeout(()=>{const b=document.getElementById('avatar-blink');if(b){b.classList.add('on');setTimeout(()=>b.classList.remove('on'),130+Math.random()*50)}scheduleBlink()},3500+Math.random()*3200)}
 scheduleBlink();
-
-function speak(text) {
-  const avatar = document.getElementById('avatar');
-  if (!voiceOn) return;
-  const clean = text.replace(/[☀️🧠💭✨⚠️💛🌙🔗📋✅❌🟢🔴⭐🌹🔦📳]/g, '').trim();
-  if (!clean) return;
-  setExpr('happy');
-  document.getElementById('speak-bars').classList.remove('hidden');
-  speaking = true;
-  avatar.classList.add('speaking');
-  startMouthMovement();
-  const endSpeak = () => {
-    document.getElementById('speak-bars').classList.add('hidden');
-    speaking = false;
-    avatar.classList.remove('speaking');
-    stopMouthMovement();
-    setTimeout(() => setExpr('idle'), 500);
-  };
-  // Try gTTS via backend
-  const audio = new Audio('/api/sol/tts?text=' + encodeURIComponent(clean.slice(0, 500)));
-  audio.onended = endSpeak;
-  audio.onerror = () => {
-    // Fallback to browser TTS
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(clean);
-      u.lang = 'es-ES'; u.rate = 0.95; u.pitch = 1.0;
-      u.onend = endSpeak;
-      window.speechSynthesis.speak(u);
-    } else {
-      endSpeak();
-    }
-  };
-  audio.play().catch(() => audio.onerror());
-}
-
-function toggleVoice() {
-  voiceOn = !voiceOn;
-  localStorage.setItem('sol_voice', voiceOn ? '1' : '0');
-  document.getElementById('btn-voice').textContent = voiceOn ? '🔊' : '🔇';
-  document.getElementById('btn-voice').style.color = voiceOn ? 'var(--amber)' : 'var(--muted)';
-  document.getElementById('btn-voice').style.borderColor = voiceOn ? 'var(--amber)' : 'var(--border)';
-  if (!voiceOn && 'speechSynthesis' in window) window.speechSynthesis.cancel();
-}
-
-// ═══ VOICE INPUT (videollamada mode) ═══
-function toggleMic() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { typeSubtitle('⚠️ Tu navegador no soporta voz. Usa Chrome.'); return; }
-  const btn = document.getElementById('btn-mic');
-  const avatar = document.getElementById('avatar');
-  if (listening) {
-    if (recognition) recognition.stop();
-    listening = false;
-    btn.classList.remove('active');
-    avatar.classList.remove('listening');
-    setExpr('idle');
-    return;
-  }
-  setExpr('listening');
-  recognition = new SR();
-  recognition.lang = 'es-ES';
-  recognition.continuous = false;
-  recognition.interimResults = false;
-  recognition.onresult = (e) => {
-    const text = e.results[0][0].transcript;
-    document.getElementById('input').value = text;
-    sendMsg();
-  };
-  recognition.onerror = () => { listening = false; btn.classList.remove('active'); avatar.classList.remove('listening'); };
-  recognition.onend = () => { listening = false; btn.classList.remove('active'); avatar.classList.remove('listening'); };
-  recognition.start();
-  listening = true;
-  btn.classList.add('active');
-  avatar.classList.add('listening');
-}
-
-// ═══ MEMORY ═══
-async function loadMemory() {
-  try {
-    const d = await api('/api/sol/memory?limit=8');
-    const list = document.getElementById('mem-list');
-    if (d.memories && d.memories.length) {
-      list.innerHTML = d.memories.map(m =>
-        '<div class="mem-entry"><div class="role">' + (m.role === 'sol' ? 'Sol' : 'Tú') +
-        '</div><div class="content">' + (m.content || '').slice(0, 150) +
-        '</div><div class="ts">' + (m.timestamp || '') + '</div></div>'
-      ).join('');
-    } else {
-      list.innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin recuerdos todavía.</p>';
-    }
-  } catch (e) {
-    document.getElementById('mem-list').innerHTML = '<p style="color:var(--sword);font-size:0.8rem">Sin sesión. Abre el Dashboard e inicia sesión, luego vuelve.</p>';
-  }
-}
-
-// ═══ INTEGRITY ═══
-async function loadIntegrity() {
-  try {
-    const d = await api('/api/sol/integrity');
-    const box = document.getElementById('integrity-box');
-    box.innerHTML = (d.valid ? '✅' : '⚠️') + ' Cadena ' + (d.valid ? 'íntegra' : 'alterada') +
-      ' — ' + (d.count || 0) + ' recuerdos, ' + (d.legacy || 0) + ' legacy';
-    box.style.color = d.valid ? 'var(--green)' : 'var(--sword)';
-  } catch (e) {}
-}
-
-// ═══ PERSONALITIES ═══
-let currentPers = 'cálida';
-async function loadPersonalities() {
-  try {
-    const d = await api('/api/sol/personality');
-    currentPers = d.personality || 'cálida';
-  } catch (e) {}
-  const grid = document.getElementById('pers-grid');
-  grid.innerHTML = Object.entries(PERSONALITIES).map(([k, v]) =>
-    '<div class="p-btn ' + (k === currentPers ? 'active' : '') + '" onclick="setPers(\'' + k + '\',this)">' +
-    '<div class="icon">' + v.icon + '</div>' + k.charAt(0).toUpperCase() + k.slice(1) + '</div>'
-  ).join('');
-  document.getElementById('pers-desc').textContent = PERSONALITIES[currentPers].icon + ' ' + PERSONALITIES[currentPers].desc;
-}
-
-async function setPers(p, el) {
-  currentPers = p;
-  document.querySelectorAll('.p-btn').forEach(b => b.classList.remove('active'));
-  el.classList.add('active');
-  document.getElementById('pers-desc').textContent = PERSONALITIES[p].icon + ' ' + PERSONALITIES[p].desc;
-  try { await api('/api/sol/personality/set?p=' + encodeURIComponent(p)); } catch (e) {}
-}
-
-// ═══ SIL (Aprender chino) ═══
-async function loadSilLessons() {
-  try {
-    const d = await api('/api/sol/sil/lessons');
-    const list = document.getElementById('sil-lessons');
-    const lessons = d.lessons || [];
-    if (lessons.length) {
-      list.innerHTML = lessons.map(l => {
-        const name = typeof l === 'string' ? l : (l.name || l.title || '?');
-        return '<button onclick="loadLesson(\'' + name + '\')" style="display:block;width:100%;padding:10px;margin-bottom:6px;background:rgba(79,195,255,0.05);border:1px solid var(--border);color:var(--amber);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">🀄 ' + name + '</button>';
-      }).join('');
-    } else {
-      list.innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin lecciones disponibles.</p>';
-    }
-  } catch (e) {
-    document.getElementById('sil-lessons').innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin conexión.</p>';
-  }
-}
-
-async function loadSilStats() {
-  try {
-    const d = await api('/api/sol/sil/stats');
-    document.getElementById('sil-total').textContent = d.srs?.total_items ?? d.total_items ?? 0;
-    document.getElementById('sil-due').textContent = d.srs?.due_today ?? d.due_today ?? 0;
-  } catch (e) {}
-}
-
-async function loadLesson(name) {
-  try {
-    const d = await api('/api/sol/sil/lesson?name=' + encodeURIComponent(name));
-    const detail = document.getElementById('sil-lesson-detail');
-    const vocab = d.vocab || d.items || [];
-    detail.innerHTML = '<div class="sil-card"><h3 style="color:var(--amber);font-size:0.9rem;margin-bottom:8px">' +
-      (d.title || d.name || name) + '</h3>' +
-      vocab.map(v => '<div class="sil-vocab"><span class="hanzi">' + (v.hanzi || v.character || v.word || '?') +
-        '</span><div><div class="pinyin">' + (v.pinyin || '') + '</div><div class="meaning">' +
-        (v.es || v.meaning || v.translation || '') + '</div></div></div>'
-      ).join('') + '</div>';
-  } catch (e) {}
-}
-
-async function startPractice() {
-  try {
-    const d = await api('/api/sol/sil/practice/next', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    showPractice(d);
-  } catch (e) {
-    document.getElementById('sil-practice').innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin práctica disponible.</p>';
-  }
-}
-
-function showPractice(d) {
-  const el = document.getElementById('sil-practice');
-  // Aplanar datos anidados (el backend puede devolver {data: {...}} o plano)
-  const flat = d.data || d;
-  const hanzi = flat.hanzi || flat.character || flat.word || flat.chinese || '?';
-  const pinyin = flat.pinyin || '';
-  const meaning = flat.meaning || flat.es || flat.spanish || flat.translation || '';
-  const options = d.options || flat.options || [];
-  const itemId = d.item_id || flat.item_id || flat.id || '';
-  const itemType = d.type || flat.type || 'vocab';
-
-  // Si es resultado de una respuesta anterior
-  if (d.result !== undefined && !d.hanzi && !flat.hanzi) {
-    el.innerHTML = '<p style="font-size:0.9rem;' + (d.correct ? 'color:var(--green)' : 'color:var(--sword)') + '">' +
-      (d.correct ? '✅ ¡Correcto!' : '❌ Era: ' + (d.answer || d.es || meaning || '')) +
-      '</p><button onclick="startPractice()" style="width:100%;padding:10px;margin-top:8px;background:rgba(79,195,255,0.1);border:1px solid var(--amber);color:var(--amber);border-radius:10px;cursor:pointer;font-family:inherit">Siguiente →</button>';
-    return;
-  }
-
-  // Si no hay hanzi ni opciones, mostrar error
-  if (hanzi === '?' || options.length === 0) {
-    el.innerHTML = '<p style="color:var(--muted);font-size:0.8rem">No hay práctica disponible. Intenta de nuevo.</p>' +
-      '<button onclick="startPractice()" style="width:100%;padding:10px;margin-top:8px;background:rgba(79,195,255,0.1);border:1px solid var(--amber);color:var(--amber);border-radius:10px;cursor:pointer;font-family:inherit">Reintentar</button>';
-    return;
-  }
-
-  el.innerHTML = '<div style="text-align:center;padding:16px">' +
-    '<div style="font-size:3rem;margin-bottom:12px">' + hanzi + '</div>' +
-    '<div style="color:var(--amber);font-size:1rem;margin-bottom:8px">' + pinyin + '</div>' +
-    '<p style="color:var(--muted);font-size:0.85rem;margin-bottom:12px">¿Qué significa?</p>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
-    options.map(o => '<button onclick="answerPractice(\'' + o.replace(/'/g, "\\'") + '\', \'' + itemId + '\', \'' + itemType + '\', \'' + meaning.replace(/'/g, "\\'") + '\')" style="padding:10px;border:1px solid var(--border);background:rgba(0,0,0,0.2);color:var(--text);border-radius:8px;cursor:pointer;font-family:inherit;font-size:0.85rem">' + o + '</button>').join('') +
-    '</div></div>';
-}
-
-async function answerPractice(answer, itemId, itemType, correctAnswer) {
-  try {
-    const isCorrect = answer === correctAnswer;
-    const d = await api('/api/sol/sil/practice/answer', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answer, item_id: itemId, type: itemType, quality: isCorrect ? 5 : 2, correct: isCorrect, user_answer: answer })
-    });
-    showPractice(d);
-    loadSilStats();
-  } catch (e) {
-    // Si falla, al menos mostrar feedback local
-    const el = document.getElementById('sil-practice');
-    el.innerHTML = '<p style="font-size:0.9rem;' + (isCorrect ? 'color:var(--green)' : 'color:var(--sword)') + '">' +
-      (isCorrect ? '✅ ¡Correcto!' : '❌ Era: ' + correctAnswer) +
-      '</p><button onclick="startPractice()" style="width:100%;padding:10px;margin-top:8px;background:rgba(79,195,255,0.1);border:1px solid var(--amber);color:var(--amber);border-radius:10px;cursor:pointer;font-family:inherit">Siguiente →</button>';
-    loadSilStats();
-  }
-}
-
-// ═══ SEGURIDAD ═══
-async function loadSecurity() {
-  try {
-    const d = await api('/api/sol/security');
-    const el = document.getElementById('sec-status');
-    const mode = d.mode || 'protected';
-    el.innerHTML = '<div style="padding:12px;background:rgba(0,0,0,0.3);border-radius:8px">' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
-      '<span style="width:10px;height:10px;border-radius:50%;background:' + (mode === 'protected' ? 'var(--green)' : 'var(--sword)') + '"></span>' +
-      '<span style="font-size:0.9rem;color:var(--text)">' + (mode === 'protected' ? 'PROTEGIDO' : 'LIBRE (Training)') + '</span></div>' +
-      '<div style="font-size:0.75rem;color:var(--muted)">Key configurada: ' + (d.has_key ? '✅ Sí' : '❌ No') + '</div>' +
-      '</div>';
-    const keyInput = document.getElementById('sol-key-input');
-    if (keyInput) keyInput.value = getSolKey();
-  } catch (e) {
-    document.getElementById('sec-status').innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin conexión.</p>';
-  }
-}
-
-function saveSolKey(v) {
-  if (v) localStorage.setItem('sol_api_key', v); else localStorage.removeItem('sol_api_key');
-}
-
-async function setSecurityMode(mode) {
-  const headers = { 'Content-Type': 'application/json' };
-  const sk = getSolKey();
-  if (sk) headers['x-sol-key'] = sk;
-  try {
-    const d = await api('/api/sol/security/toggle', {
-      method: 'POST', headers, body: JSON.stringify({ mode })
-    });
-    if (d.ok) { loadSecurity(); }
-  } catch (e) {
-    alert('Error: ' + (e.message || 'No se pudo cambiar el modo. ¿Configuraste SOL_API_KEY?'));
-  }
-}
-
-// ═══ GROQ ═══
-async function loadGroqStatus() {
-  try {
-    const d = await api('/api/sol/groq');
-    const el = document.getElementById('groq-status');
-    if (!el) return;
-    const avail = d.groq_available;
-    el.innerHTML = '<div style="padding:12px;background:rgba(0,0,0,0.3);border-radius:8px">' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
-      '<span style="width:10px;height:10px;border-radius:50%;background:' + (avail ? 'var(--green)' : 'var(--sword)') + '"></span>' +
-      '<span style="font-size:0.9rem">Groq: ' + (avail ? 'Disponible' : 'No configurado') + '</span></div>' +
-      (d.groq_model ? '<div style="font-size:0.75rem;color:var(--muted)">Modelo: ' + d.groq_model + '</div>' : '') +
-      '</div>';
-  } catch (e) {
-    const el = document.getElementById('groq-status');
-    if (el) el.innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin conexión.</p>';
-  }
-}
-
-async function testGroq() {
-  const headers = {'Content-Type': 'application/json'};
-  const sk = getSolKey();
-  if (sk) headers['x-sol-key'] = sk;
-  try {
-    const d = await api('/api/sol/groq/test', {method: 'POST', headers, body: JSON.stringify({text: 'Hola, soy Sol. ¿Puedes responder?'})});
-    if (d.ok) alert('✅ Groq funciona!\n\nRespuesta: ' + d.response + '\nModelo: ' + d.model);
-    else alert('❌ ' + (d.error || 'Error'));
-  } catch (e) {
-    alert('❌ Error: ' + (e.message || 'No se pudo conectar con Groq'));
-  }
-}
-
-// ═══ REPOS ═══
-async function loadRepos() {
-  try {
-    const d = await api('/api/sol/repos');
-    const el = document.getElementById('repos-list');
-    if (!el) return;
-    const repos = d.repos || [];
-    el.innerHTML = repos.map(r => {
-      const local = r.local ? '✅ local' : '☁️ API';
-      const pushed = (r.pushed_at || '?').substring(0, 10);
-      return '<div style="padding:10px;margin-bottom:8px;background:rgba(0,0,0,0.3);border-radius:8px;cursor:pointer" onclick="selectRepo(\'' + r.name + '\')">' +
-        '<div style="font-size:0.9rem;color:var(--text)">' + r.name + '</div>' +
-        '<div style="font-size:0.75rem;color:var(--muted)">' + r.github + ' (' + local + ', ' + pushed + ')</div>' +
-        '</div>';
-    }).join('');
-  } catch (e) {
-    const el = document.getElementById('repos-list');
-    if (el) el.innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin conexión.</p>';
-  }
-}
-
-async function selectRepo(name) {
-  try {
-    const d = await api('/api/sol/repos/' + name);
-    const detailEl = document.getElementById('repo-detail');
-    let html = '<div style="padding:12px;background:rgba(0,0,0,0.3);border-radius:8px">';
-    html += '<div style="font-size:0.9rem;color:var(--text);margin-bottom:4px">📦 ' + (d.repo || name) + '</div>';
-    if (d.branch) html += '<div style="font-size:0.75rem;color:var(--muted)">Branch: ' + d.branch + '</div>';
-    if (d.dirty_files !== undefined) html += '<div style="font-size:0.75rem;color:var(--muted)">Cambios sin commit: ' + d.dirty_files + '</div>';
-    if (d.path) html += '<div style="font-size:0.75rem;color:var(--muted)">Path: ' + d.path + '</div>';
-    html += '</div>';
-    detailEl.innerHTML = html;
-
-    // Cargar archivos
-    const filesD = await api('/api/sol/repos/' + name + '/files');
-    const filesEl = document.getElementById('repo-files');
-    if (filesD.files) {
-      filesEl.innerHTML = '<h4 style="font-size:0.85rem;margin-top:12px">Archivos:</h4>' +
-        filesD.files.slice(0, 20).map(f => {
-          const icon = f.type === 'dir' ? '📁' : '📄';
-          return '<div style="font-size:0.75rem;color:var(--muted);padding:2px 0">' + icon + ' ' + f.name + '</div>';
-        }).join('') + (filesD.files.length > 20 ? '<div style="font-size:0.7rem;color:var(--muted)">... ' + (filesD.files.length - 20) + ' más</div>' : '');
-    }
-
-    // Cargar log
-    const logD = await api('/api/sol/repos/' + name + '/log?count=5');
-    const logEl = document.getElementById('repo-log');
-    if (logD.commits) {
-      logEl.innerHTML = logD.commits.map(c => {
-        return '<div style="font-size:0.75rem;color:var(--muted);padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)">' +
-          '<span style="color:var(--text)">' + (c.hash || '?') + '</span> ' +
-          (c.message || '') + '</div>';
-      }).join('');
-    }
-  } catch (e) {
-    document.getElementById('repo-detail').innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Error: ' + (e.message || '') + '</p>';
-  }
-}
-
-async function repoPull(name) {
-  const headers = {'Content-Type': 'application/json'};
-  const sk = getSolKey();
-  if (sk) headers['x-sol-key'] = sk;
-  try {
-    const d = await api('/api/sol/repos/' + name + '/pull', {method: 'POST', headers, body: '{}'});
-    if (d.success) alert('✅ Pull OK\n' + (d.output || ''));
-    else alert('❌ ' + (d.error || 'Falló'));
-  } catch (e) {
-    if ((e.message || '').includes('401')) {
-      alert('🔒 Esta acción necesita tu SOL_API_KEY.\n\nVe a la pestaña Seguridad y pégala ahí (se guarda en tu navegador). Sin eso, Sol solo puede leer los repos, no modificarlos.');
-    } else {
-      alert('❌ Error: ' + (e.message || ''));
-    }
-  }
-}
-
-async function buildKnowledge() {
-  const sk = getSolKey();
-  if (!sk) {
-    alert('🔒 Reconstruir el conocimiento necesita tu SOL_API_KEY.\n\nVe a la pestaña Seguridad y pégala ahí primero.');
-    return;
-  }
-  try {
-    const d = await api('/api/sol/knowledge/build', {method: 'POST', headers: {'x-sol-key': sk}});
-    if (d.status === 'built') {
-      alert('✅ Conocimiento reconstruido de: ' + (d.repos || []).join(', ') + '\n\n' + JSON.stringify(d.summary || {}, null, 2));
-    } else {
-      alert('❌ ' + (d.error || 'Falló'));
-    }
-  } catch (e) {
-    if ((e.message || '').includes('401')) {
-      alert('🔒 Necesitas tu SOL_API_KEY (pestaña Seguridad) para esta acción.');
-    } else {
-      alert('❌ Error: ' + (e.message || ''));
-    }
-  }
-}
-
-// ═══ SIL AVANZADO ═══
-async function loadSilAdvanced() {
-  try {
-    const d = await api('/api/sol/sil/advanced');
-    const el = document.getElementById('siladv-levels');
-    if (!el) return;
-    const levels = d.levels || [];
-    el.innerHTML = '<div style="font-size:0.8rem;color:var(--muted);margin-bottom:8px">Total: ' + (d.total_items || 0) + ' items</div>' +
-      levels.map(l => {
-        return '<div style="padding:10px;margin-bottom:6px;background:rgba(0,0,0,0.3);border-radius:8px;cursor:pointer" onclick="loadSilLevel(\'' + l.id + '\')">' +
-          '<div style="font-size:0.85rem;color:var(--text)">' + l.name + '</div>' +
-          '<div style="font-size:0.7rem;color:var(--muted)">' + l.items + ' items</div>' +
-          '</div>';
-      }).join('');
-  } catch (e) {
-    const el = document.getElementById('siladv-levels');
-    if (el) el.innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Sin conexión.</p>';
-  }
-}
-
-async function loadSilLevel(level) {
-  try {
-    const d = await api('/api/sol/sil/advanced/' + level);
-    const el = document.getElementById('siladv-content');
-    if (!el) return;
-    let html = '<h4 style="font-size:0.9rem">' + (d.title || level) + '</h4>';
-    html += '<p style="font-size:0.8rem;color:var(--muted);margin-bottom:12px">' + (d.description || '') + '</p>';
-    const vocab = d.vocabulary || [];
-    if (vocab.length > 0) {
-      html += '<div style="max-height:400px;overflow-y:auto">';
-      vocab.slice(0, 30).forEach(v => {
-        const word = v.word || v.pattern || v.phrase || '';
-        const pinyin = v.pinyin || '';
-        const meaning = v.meaning || v.usage || '';
-        const example = v.example || '';
-        const exTr = v.example_tr || '';
-        html += '<div style="padding:10px;margin-bottom:6px;background:rgba(0,0,0,0.3);border-radius:8px">' +
-          '<div style="font-size:1.1rem;color:var(--text)">' + word + ' <span style="font-size:0.8rem;color:var(--muted)">' + pinyin + '</span></div>' +
-          '<div style="font-size:0.8rem;color:var(--muted);margin-top:2px">' + meaning + '</div>' +
-          (example ? '<div style="font-size:0.75rem;color:var(--text);margin-top:4px">' + example + '</div>' : '') +
-          (exTr ? '<div style="font-size:0.7rem;color:var(--muted)">' + exTr + '</div>' : '') +
-          '</div>';
-      });
-      if (vocab.length > 30) html += '<div style="font-size:0.75rem;color:var(--muted);padding:8px">... ' + (vocab.length - 30) + ' más</div>';
-      html += '</div>';
-    }
-    const phrases = d.phrases || [];
-    if (phrases.length > 0) {
-      html += '<h4 style="font-size:0.85rem;margin-top:12px">Frases:</h4>';
-      phrases.slice(0, 15).forEach(p => {
-        html += '<div style="padding:8px;margin-bottom:4px;background:rgba(0,0,0,0.3);border-radius:8px">' +
-          '<div style="font-size:0.9rem;color:var(--text)">' + p.phrase + ' <span style="font-size:0.75rem;color:var(--muted)">' + p.pinyin + '</span></div>' +
-          '<div style="font-size:0.8rem;color:var(--muted)">' + p.meaning + '</div>' +
-          '<div style="font-size:0.7rem;color:var(--muted)">(' + (p.context || '') + ')</div>' +
-          '</div>';
-      });
-    }
-    el.innerHTML = html;
-  } catch (e) {
-    document.getElementById('siladv-content').innerHTML = '<p style="color:var(--muted);font-size:0.8rem">Error: ' + (e.message || '') + '</p>';
-  }
-}
-
-
-// ═══ CLASE MAGISTRAL ═══
-function openKnowledge() {
-  document.getElementById('knowledgeModal').style.display = 'flex';
-  document.getElementById('knowledgeResponse').textContent = '📚 Esperando tu pregunta...';
-  loadKnowledgeTopics();
-}
-
-function closeKnowledge() {
-  document.getElementById('knowledgeModal').style.display = 'none';
-}
-
-async function loadKnowledgeTopics() {
-  try {
-    const d = await api('/api/sol/knowledge/topics');
-    const el = document.getElementById('knowledgeTopics');
-    if (!el || !d.topics) return;
-    const topics = d.topics;
-    if (topics.length === 0) { el.innerHTML = ''; return; }
-    el.innerHTML = '<div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">Temas disponibles:</div>' +
-      topics.slice(0, 12).map(t => {
-        return `<span style="display:inline-block;font-size:0.7rem;padding:3px 8px;margin:2px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2);border-radius:6px;color:var(--amber);cursor:pointer" onclick="document.getElementById('knowledgeInput').value='${t.name}';askKnowledge()">${t.name}</span>`;
-      }).join('');
-  } catch (e) {
-    document.getElementById('knowledgeTopics').innerHTML = '';
-  }
-}
-
-async function askKnowledge() {
-  const q = document.getElementById('knowledgeInput').value.trim();
-  if (!q) return;
-  document.getElementById('knowledgeResponse').textContent = '⏳ Consultando el conocimiento...';
-  try {
-    const d = await api('/api/sol/knowledge/explain?topic=' + encodeURIComponent(q) + '&lang=zh');
-    document.getElementById('knowledgeResponse').textContent = d.explanation || 'No encontré información.';
-  } catch (e) {
-    document.getElementById('knowledgeResponse').textContent = '❌ Error al consultar: ' + (e.message || '');
-  }
-}
-
-// ═══ TOOLS ═══
-// Herramientas de hardware — el navegador SÍ puede hacerlas, el backend en la nube no.
-const BROWSER_TOOLS = {
-  'flashlight': async (args) => {
-    const on = !(args[0] === 'false' || args[0] === '0' || args[0] === 'off');
-    const r = await setFlashlight(on);
-    return r.ok ? { success: true, result: on ? '🔦 Linterna encendida' : '🔦 Linterna apagada' }
-                : { success: false, error: r.error === 'no-torch' ? 'Tu cámara no expone control de torch por API web' : r.error };
-  },
-  'vibrate': async (args) => {
-    const ms = parseInt(args[0]) || 400;
-    const r = setVibrate(ms);
-    return r.ok ? { success: true, result: '📳 Vibración enviada (' + ms + 'ms)' } : { success: false, error: 'Tu navegador no soporta vibración' };
-  },
-  'notify': async (args) => {
-    const r = await browserNotify(args[0] || 'Hola desde Sol');
-    return r.ok ? { success: true, result: '🔔 Notificación enviada' } : { success: false, error: r.error };
-  },
-  'battery': async () => {
-    const r = await browserBattery();
-    return r.ok ? { success: true, result: '🔋 Batería: ' + r.result } : { success: false, error: 'No disponible en este navegador' };
-  },
-  'location': async () => {
-    const r = await browserLocation();
-    return r.ok ? { success: true, result: '📍 ' + r.result } : { success: false, error: r.error };
-  },
-  'open_url': async (args) => {
-    if (!args[0]) return { success: false, error: 'Falta la URL' };
-    window.open(args[0], '_blank');
-    return { success: true, result: '🔗 Abriendo ' + args[0] };
-  },
-};
-
-async function loadTools() {
-  const list = document.getElementById('tools-list');
-  list.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">Cargando…</p>';
-  try {
-    const d = await api('/api/sol/tools');
-    const tools = d.tools || [];
-    if (tools.length) {
-      list.innerHTML = tools.map((t, i) => {
-        const params = t.params || [];
-        const isBrowser = !!BROWSER_TOOLS[t.name];
-        const paramInputs = params.map(p =>
-          '<input class="tool-input" data-param="' + p + '" placeholder="' + p + '" autocomplete="off">'
-        ).join('');
-        return '<div class="tool-row" id="tool-' + i + '">' +
-          '<div class="name" onclick="toggleTool(' + i + ')">⚡ ' + t.name + (isBrowser ? ' <span style="font-size:0.65rem;color:var(--green);font-family:inherit">📱 navegador</span>' : '') + '</div>' +
-          '<div class="desc">' + (t.description || '') + '</div>' +
-          '<div class="tool-params">' + paramInputs +
-          '<button class="run-btn" onclick="runTool(' + i + ', \'' + t.name + '\')">▶ Ejecutar</button>' +
-          '</div><div class="tool-result" id="tool-result-' + i + '"></div></div>';
-      }).join('');
-    } else {
-      list.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">Sin herramientas disponibles en el servidor.</p>' +
-        '<button class="run-btn" style="margin-top:8px" onclick="loadTools()">🔄 Reintentar</button>';
-    }
-  } catch (e) {
-    list.innerHTML = '<p style="color:var(--sword);font-size:0.85rem">⚠️ ' + (e.message || 'No pude conectar con el servidor de Sol') + '</p>' +
-      '<button class="run-btn" style="margin-top:8px" onclick="loadTools()">🔄 Reintentar</button>';
-  }
-}
-
-function toggleTool(i) {
-  document.getElementById('tool-' + i).classList.toggle('expanded');
-}
-
-async function runTool(i, name) {
-  const row = document.getElementById('tool-' + i);
-  const inputs = row.querySelectorAll('.tool-input');
-  const args = [];
-  inputs.forEach(inp => { args.push(inp.value || ''); });
-  const result = document.getElementById('tool-result-' + i);
-  result.className = 'tool-result show';
-  result.textContent = '⏳ Ejecutando…';
-
-  // Si es una herramienta de hardware, se ejecuta AQUI, en el navegador — no en el servidor
-  if (BROWSER_TOOLS[name]) {
-    try {
-      const d = await BROWSER_TOOLS[name](args);
-      if (d.success) {
-        result.className = 'tool-result show';
-        result.textContent = '✅ ' + d.result;
-      } else {
-        result.className = 'tool-result show error';
-        result.textContent = '❌ ' + d.error;
-      }
-    } catch (e) {
-      result.className = 'tool-result show error';
-      result.textContent = '❌ ' + (e.message || 'Error ejecutando en el navegador');
-    }
-    return;
-  }
-
-  try {
-    const headers = { 'Content-Type': 'application/json' };
-    const sk = getSolKey();
-    if (sk) headers['x-sol-key'] = sk;
-    const d = await api('/api/sol/tools/execute', {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({ name, args })
-    });
-    if (d.success) {
-      result.textContent = '✅ ' + (typeof d.result === 'string' ? d.result : JSON.stringify(d.result, null, 2)).slice(0, 500);
-    } else {
-      result.className = 'tool-result show error';
-      result.textContent = '❌ ' + (d.error || 'Error desconocido');
-    }
-  } catch (e) {
-    result.className = 'tool-result show error';
-    result.textContent = '❌ ' + (e.message === 'HTTP 401' ? 'Necesitas SOL_API_KEY (pestaña Seguridad)' : 'Sin conexión al servidor (' + (e.message || '') + ')');
-  }
-}
-
-// ═══ PANEL ═══
-function togglePanel() { document.getElementById('panel').classList.toggle('open'); }
-function switchTab(tab, el) {
-  currentTab = tab;
-  document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
-  ['mem', 'pers', 'sil', 'tools', 'sec', 'repos', 'siladv'].forEach(t => {
-    const panel = document.getElementById('tab-' + t);
-    if (panel) panel.classList.toggle('hidden', t !== tab);
-  });
-  // Expresión contextual: study al entrar a SIL, idle al salir
-  if (tab === 'sil' || tab === 'siladv') {
-    setExpr('study');
-  } else {
-    setExpr('idle');
-  }
-}
-
-// ═══ START ═══
+let mouthInterval=null,mouthStep=0;
+function _setMouthFrame(step){const h=document.getElementById('avatar-talk-half'),o=document.getElementById('avatar-talk');if(!h||!o)return;h.classList.toggle('on',step===1||step===3);o.classList.toggle('on',step===2)}
+function startMouthMovement(){mouthStep=0;_setMouthFrame(mouthStep);mouthInterval=setInterval(()=>{mouthStep=(mouthStep+1)%4;_setMouthFrame(mouthStep)},90+Math.random()*70)}
+function stopMouthMovement(){if(mouthInterval){clearInterval(mouthInterval);mouthInterval=null}_setMouthFrame(0)}
+function speak(text){const avatar=document.getElementById('avatar');if(!voiceOn)return;const clean=text.replace(/[☀️🧠💭✨⚠️💛🌙🔗📋✅❌🟢🔴⭐🌹🔦📳]/g,'').trim();if(!clean)return;setExpr('happy');document.getElementById('speak-bars').classList.remove('hidden');speaking=true;avatar.classList.add('speaking');startMouthMovement();const endSpeak=()=>{document.getElementById('speak-bars').classList.add('hidden');speaking=false;avatar.classList.remove('speaking');stopMouthMovement();setTimeout(()=>setExpr('idle'),500)};const audio=new Audio('/api/sol/tts?text='+encodeURIComponent(clean.slice(0,500)));audio.onended=endSpeak;audio.onerror=()=>{if('speechSynthesis' in window){window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(clean);u.lang='es-ES';u.rate=0.95;u.pitch=1.0;u.onend=endSpeak;window.speechSynthesis.speak(u)}else endSpeak()};audio.play().catch(()=>audio.onerror())}
+function toggleVoice(){voiceOn=!voiceOn;localStorage.setItem('sol_voice',voiceOn?'1':'0');document.getElementById('btn-voice').textContent=voiceOn?'🔊':'🔇';document.getElementById('btn-voice').style.color=voiceOn?'var(--amber)':'var(--muted)';if(!voiceOn&&'speechSynthesis' in window)window.speechSynthesis.cancel()}
+function toggleMic(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){typeSubtitle('⚠️ Tu navegador no soporta voz.');return}const btn=document.getElementById('btn-mic');if(listening){if(recognition)recognition.stop();listening=false;btn.classList.remove('active');setExpr('idle');return}recognition=new SR();recognition.lang='es-ES';recognition.continuous=false;recognition.interimResults=false;recognition.onresult=e=>{const text=e.results[0][0].transcript;document.getElementById('input').value=text;sendMsg()};recognition.onerror=()=>{listening=false;btn.classList.remove('active');setExpr('idle')};recognition.onend=()=>{listening=false;btn.classList.remove('active');setExpr('idle')};recognition.start();listening=true;btn.classList.add('active');setExpr('listening')}
+async function loadMemory(){try{const d=await api('/api/sol/memory?limit=8');const list=document.getElementById('mem-list');if(d.memories&&d.memories.length){list.innerHTML=d.memories.map(m=>'<div class="mem-entry"><div class="role">'+(m.role==='sol'?'Sol':'Tú')+'</div><div class="content">'+(m.content||'').slice(0,150)+'</div><div class="ts">'+(m.timestamp||'')+'</div></div>').join('')}else list.innerHTML='<p style="color:var(--muted);font-size:0.8rem">Sin recuerdos todavía.</p>'}catch(e){document.getElementById('mem-list').innerHTML='<p style="color:var(--sword);font-size:0.8rem">Sin sesión. Abre el Dashboard primero.</p>'}}
+async function loadIntegrity(){try{const d=await api('/api/sol/integrity');document.getElementById('integrity-box').innerHTML=(d.valid?'✅':'⚠️')+' Cadena '+(d.valid?'íntegra':'alterada')+' — '+(d.count||0)+' recuerdos'}catch(e){}}
+let currentPers='cálida';
+async function loadPersonalities(){try{const d=await api('/api/sol/personality');currentPers=d.personality||'cálida'}catch(e){}document.getElementById('pers-grid').innerHTML=Object.entries(PERSONALITIES).map(([k,v])=>'<div class="p-btn '+(k===currentPers?'active':'')+'" onclick="setPers(\''+k+'\',this)"><div class="icon">'+v.icon+'</div>'+k.charAt(0).toUpperCase()+k.slice(1)+'</div>').join('');document.getElementById('pers-desc').textContent=PERSONALITIES[currentPers].icon+' '+PERSONALITIES[currentPers].desc}
+async function setPers(p,el){currentPers=p;document.querySelectorAll('.p-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');document.getElementById('pers-desc').textContent=PERSONALITIES[p].icon+' '+PERSONALITIES[p].desc;try{await api('/api/sol/personality/set?p='+encodeURIComponent(p))}catch(e){}}
+async function loadSilLessons(){try{const d=await api('/api/sol/sil/lessons');const lessons=d.lessons||[];if(lessons.length)document.getElementById('sil-lessons').innerHTML=lessons.map(l=>{const name=typeof l==='string'?l:(l.name||l.title||'?');return '<button onclick="loadLesson(\''+name+'\')" style="display:block;width:100%;padding:10px;margin-bottom:6px;background:rgba(255,183,77,0.05);border:1px solid var(--border);color:var(--amber);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">🀄 '+name+'</button>'}).join('');else document.getElementById('sil-lessons').innerHTML='<p style="color:var(--muted);font-size:0.8rem">Sin lecciones.</p>'}catch(e){document.getElementById('sil-lessons').innerHTML='<p style="color:var(--muted);font-size:0.8rem">Sin conexión.</p>'}}
+async function loadSilStats(){try{const d=await api('/api/sol/sil/stats');document.getElementById('sil-total').textContent=d.srs?.total_items??d.total_items??0;document.getElementById('sil-due').textContent=d.srs?.due_today??d.due_today??0}catch(e){}}
+async function loadLesson(name){try{const d=await api('/api/sol/sil/lesson?name='+encodeURIComponent(name));const flat=d.data||d;const vocab=flat.vocabulary||flat.vocab||flat.items||[];const phrases=flat.phrases||[];let html='<div class="sil-card"><h3 style="color:var(--amber);font-size:0.95rem;margin-bottom:10px">'+(flat.title||flat.name||name)+'</h3>';if(flat.grammar){html+='<div style="margin-bottom:12px;padding:10px;background:rgba(0,0,0,0.2);border-radius:8px"><div style="color:var(--pink);font-size:0.72rem;text-transform:uppercase;margin-bottom:4px">'+(flat.grammar.title||'Gramática')+'</div><div style="font-size:0.85rem;line-height:1.5">'+(flat.grammar.explanation||'')+'</div></div>'}if(vocab.length){html+='<div style="margin-bottom:8px;font-size:0.72rem;color:var(--muted);text-transform:uppercase">Vocabulario</div>';vocab.forEach(v=>{const h=v.hanzi||v.character||v.word||v.chinese||'?';const p=v.pinyin||'';const m=v.es||v.meaning||v.spanish||v.translation||'';const pos=v.pos||'';const ex=v.example||'';const exTr=v.example_tr||v.example_es||'';html+='<div class="sil-vocab"><span class="hanzi">'+h+'</span><div><div class="pinyin">'+p+'</div><div class="meaning">'+m+(pos?' <span class="pos">'+pos+'</span>':'')+'</div>'+(ex?'<div style="font-size:0.78rem;color:var(--text);margin-top:4px">'+ex+'</div>':'')+(exTr?'<div style="font-size:0.72rem;color:var(--muted);margin-top:2px">'+exTr+'</div>':'')+'</div></div>'})}if(phrases.length){html+='<div style="margin:10px 0 8px;font-size:0.72rem;color:var(--muted);text-transform:uppercase">Frases</div>';phrases.forEach(p=>{const zh=p.chinese||p.hanzi||p.phrase||'';const py=p.pinyin||'';const es=p.spanish||p.es||p.meaning||'';html+='<div class="sil-vocab"><span class="hanzi" style="font-size:1.8rem">'+zh+'</span><div><div class="pinyin">'+py+'</div><div class="meaning">'+es+'</div></div></div>'})}html+='</div>';document.getElementById('sil-lesson-detail').innerHTML=html;setExpr('study');setTimeout(()=>setExpr('idle'),3000)}catch(e){document.getElementById('sil-lesson-detail').innerHTML='<p style="color:var(--muted);font-size:0.8rem">Error.</p>'}}
+async function startPractice(){try{const d=await api('/api/sol/sil/practice/next',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});showPractice(d)}catch(e){document.getElementById('sil-practice').innerHTML='<p style="color:var(--muted);font-size:0.8rem">Sin práctica.</p>'}}
+function showPractice(d){const el=document.getElementById('sil-practice');const flat=d.data||d;const h=flat.hanzi||flat.character||flat.word||flat.chinese||'?';const p=flat.pinyin||'';const m=flat.meaning||flat.es||flat.spanish||'';const opts=d.options||flat.options||[];const id=d.item_id||flat.item_id||flat.id||'';const type=d.type||flat.type||'vocab';if(d.result!==undefined&&!d.hanzi&&!flat.hanzi){el.innerHTML='<div class="sil-practice-card"><p style="font-size:1.1rem;'+(d.correct?'color:var(--green)':'color:var(--sword)')+'">'+(d.correct?'✅ ¡Correcto!':'❌ Era: '+(d.answer||m))+'</p><button onclick="startPractice()" class="opt-btn" style="margin-top:12px;background:rgba(255,183,77,0.15)">Siguiente →</button></div>';return}if(h==='?'||opts.length===0){el.innerHTML='<div class="sil-practice-card"><p style="color:var(--muted)">No hay práctica.</p><button onclick="startPractice()" class="opt-btn" style="margin-top:12px;background:rgba(255,183,77,0.15)">Reintentar</button></div>';return}el.innerHTML='<div class="sil-practice-card"><p style="color:var(--muted);font-size:0.8rem">¿Qué significa?</p><div class="hanzi-big">'+h+'</div><div class="pinyin-big">'+p+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">'+opts.map(o=>'<button class="opt-btn" onclick="answerPractice(\''+o.replace(/'/g,"\\'")+'\',\''+id+'\',\''+type+'\',\''+m.replace(/'/g,"\\'")+'\')">'+o+'</button>').join('')+'</div></div>'}
+async function answerPractice(answer,id,type,correct){try{const isCorrect=answer===correct;const d=await api('/api/sol/sil/practice/answer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({answer,item_id:id,type,quality:isCorrect?5:2,correct:isCorrect,user_answer:answer})});showPractice(d);loadSilStats()}catch(e){const isCorrect=answer===correct;document.getElementById('sil-practice').innerHTML='<div class="sil-practice-card"><p style="font-size:1.1rem;'+(isCorrect?'color:var(--green)':'color:var(--sword)')+'">'+(isCorrect?'✅ ¡Correcto!':'❌ Era: '+correct)+'</p><button onclick="startPractice()" class="opt-btn" style="margin-top:12px;background:rgba(255,183,77,0.15)">Siguiente →</button></div>';loadSilStats()}}
+async function loadSecurity(){try{const d=await api('/api/sol/security');const mode=d.mode||'protected';document.getElementById('sec-status').innerHTML='<div style="padding:12px;background:rgba(0,0,0,0.3);border-radius:8px"><span style="width:10px;height:10px;border-radius:50%;display:inline-block;background:'+(mode==='protected'?'var(--green)':'var(--sword)')+';margin-right:8px"></span>'+(mode==='protected'?'PROTEGIDO':'LIBRE')+'</div>';const ki=document.getElementById('sol-key-input');if(ki)ki.value=getSolKey()}catch(e){document.getElementById('sec-status').innerHTML='<p style="color:var(--muted);font-size:0.8rem">Sin conexión.</p>'}}
+function saveSolKey(v){if(v)localStorage.setItem('sol_api_key',v);else localStorage.removeItem('sol_api_key')}
+async function setSecurityMode(mode){const h={'Content-Type':'application/json'};const sk=getSolKey();if(sk)h['x-sol-key']=sk;try{const d=await api('/api/sol/security/toggle',{method:'POST',headers:h,body:JSON.stringify({mode})});if(d.ok)loadSecurity()}catch(e){alert('Error: '+(e.message||''))}}
+async function loadGroqStatus(){try{const d=await api('/api/sol/groq');const el=document.getElementById('groq-status');if(!el)return;const a=d.groq_available;el.innerHTML='<div style="padding:12px;background:rgba(0,0,0,0.3);border-radius:8px"><span style="width:10px;height:10px;border-radius:50%;display:inline-block;background:'+(a?'var(--green)':'var(--sword)')+';margin-right:8px"></span>Groq: '+(a?'Disponible':'No configurado')+'</div>'}catch(e){document.getElementById('groq-status').innerHTML='<p style="color:var(--muted)">Sin conexión.</p>'}}
+async function testGroq(){const h={'Content-Type':'application/json'};const sk=getSolKey();if(sk)h['x-sol-key']=sk;try{const d=await api('/api/sol/groq/test',{method:'POST',headers:h,body:JSON.stringify({text:'Hola'})});alert(d.ok?'✅ '+d.response:'❌ '+(d.error||''))}catch(e){alert('❌ '+e.message)}}
+async function loadRepos(){try{const d=await api('/api/sol/repos');const el=document.getElementById('repos-list');const repos=d.repos||[];el.innerHTML=repos.map(r=>'<div style="padding:10px;margin-bottom:8px;background:rgba(0,0,0,0.3);border-radius:8px;cursor:pointer" onclick="selectRepo(\''+r.name+'\')"><div style="font-size:0.9rem">'+r.name+'</div><div style="font-size:0.75rem;color:var(--muted)">'+r.github+'</div></div>').join('')}catch(e){document.getElementById('repos-list').innerHTML='<p style="color:var(--muted)">Sin conexión.</p>'}}
+async function selectRepo(name){try{const d=await api('/api/sol/repos/'+name);document.getElementById('repo-detail').innerHTML='<div style="padding:12px;background:rgba(0,0,0,0.3);border-radius:8px">📦 '+(d.repo||name)+'</div>';const f=await api('/api/sol/repos/'+name+'/files');if(f.files)document.getElementById('repo-files').innerHTML=f.files.slice(0,20).map(fi=>'<div style="font-size:0.75rem;color:var(--muted)">'+(fi.type==='dir'?'📁':'📄')+' '+fi.name+'</div>').join('');const l=await api('/api/sol/repos/'+name+'/log?count=5');if(l.commits)document.getElementById('repo-log').innerHTML=l.commits.map(c=>'<div style="font-size:0.75rem;color:var(--muted);padding:4px 0"><span style="color:var(--text)">'+(c.hash||'?')+'</span> '+(c.message||'')+'</div>').join('')}catch(e){}}
+async function repoPull(name){const h={'Content-Type':'application/json'};const sk=getSolKey();if(sk)h['x-sol-key']=sk;try{const d=await api('/api/sol/repos/'+name+'/pull',{method:'POST',headers:h,body:'{}'});alert(d.success?'✅ Pull OK':'❌ '+(d.error||''))}catch(e){alert('❌ '+e.message)}}
+async function buildKnowledge(){const h={'Content-Type':'application/json'};const sk=getSolKey();if(sk)h['x-sol-key']=sk;try{const d=await api('/api/sol/knowledge/build',{method:'POST',headers:h,body:'{}'});alert('✅ '+(d.summary||'OK'))}catch(e){alert('❌ '+e.message)}}
+async function loadSilAdvanced(){try{const d=await api('/api/sol/sil/advanced');const levels=d.levels||[];if(levels.length)document.getElementById('siladv-levels').innerHTML=levels.map(l=>'<button onclick="loadSilAdvLevel(\''+l.name+'\')" style="display:block;width:100%;padding:10px;margin-bottom:6px;background:rgba(255,183,77,0.05);border:1px solid var(--border);color:var(--amber);border-radius:10px;cursor:pointer;font-family:inherit;font-size:0.85rem">'+(l.icon||'📖')+' '+l.name+' ('+l.count+')</button>').join('');else document.getElementById('siladv-levels').innerHTML='<p style="color:var(--muted)">Sin niveles.</p>'}catch(e){document.getElementById('siladv-levels').innerHTML='<p style="color:var(--muted)">Sin conexión.</p>'}}
+async function loadSilAdvLevel(level){try{const d=await api('/api/sol/sil/advanced/'+encodeURIComponent(level));const items=d.items||d.vocab||[];if(!items.length){document.getElementById('siladv-content').innerHTML='<p style="color:var(--muted)">Sin contenido.</p>';return}let html='<div class="sil-card"><h3 style="color:var(--amber);font-size:0.95rem;margin-bottom:10px">'+(d.title||level)+'</h3>';items.slice(0,30).forEach(v=>{const h=v.word||v.hanzi||v.character||v.chinese||'?';const p=v.pinyin||'';const m=v.meaning||v.es||v.spanish||'';const pos=v.pos||'';const ex=v.example||'';const exTr=v.example_tr||v.example_es||'';html+='<div class="sil-vocab"><span class="hanzi">'+h+'</span><div><div class="pinyin">'+p+'</div><div class="meaning">'+m+(pos?' <span class="pos">'+pos+'</span>':'')+'</div>'+(ex?'<div style="font-size:0.78rem;color:var(--text);margin-top:4px">'+ex+'</div>':'')+(exTr?'<div style="font-size:0.72rem;color:var(--muted);margin-top:2px">'+exTr+'</div>':'')+'</div></div>'});if(items.length>30)html+='<div style="font-size:0.75rem;color:var(--muted);margin-top:8px">... '+(items.length-30)+' más</div>';html+='</div>';document.getElementById('siladv-content').innerHTML=html;setExpr('study');setTimeout(()=>setExpr('idle'),3000)}catch(e){document.getElementById('siladv-content').innerHTML='<p style="color:var(--muted)">Error.</p>'}}
+async function loadTools(){try{const d=await api('/api/sol/tools');const tools=d.tools||[];if(tools.length)document.getElementById('tools-list').innerHTML=tools.map((t,i)=>'<div class="tool-row" id="tool-'+i+'"><div class="name" onclick="toggleTool('+i+')">⚡ '+t.name+'</div><div class="desc">'+(t.description||'')+'</div><div class="tool-params"><button class="run-btn" onclick="runTool('+i+',\''+t.name+'\')">▶ Ejecutar</button></div><div class="tool-result" id="tool-result-'+i+'"></div></div>').join('');else document.getElementById('tools-list').innerHTML='<p style="color:var(--muted)">Sin herramientas.</p>'}catch(e){document.getElementById('tools-list').innerHTML='<p style="color:var(--sword)">⚠️ Sin conexión</p>'}}
+function toggleTool(i){document.getElementById('tool-'+i).classList.toggle('expanded')}
+async function runTool(i,name){const row=document.getElementById('tool-'+i);const inputs=row.querySelectorAll('.tool-input');const args=[];inputs.forEach(inp=>args.push(inp.value||''));const result=document.getElementById('tool-result-'+i);result.className='tool-result show';result.textContent='⏳…';try{const h={'Content-Type':'application/json'};const sk=getSolKey();if(sk)h['x-sol-key']=sk;const d=await api('/api/sol/tools/execute',{method:'POST',headers:h,body:JSON.stringify({name,args})});if(d.success)result.textContent='✅ '+d.result;else{result.className='tool-result show error';result.textContent='❌ '+(d.error||'')}}catch(e){result.className='tool-result show error';result.textContent='❌ '+e.message}}
+function togglePanel(){document.getElementById('panel').classList.toggle('open')}
+function switchTab(tab,el){currentTab=tab;document.querySelectorAll('.panel-tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');['mem','pers','sil','tools','sec','repos','siladv'].forEach(t=>{const p=document.getElementById('tab-'+t);if(p)p.classList.toggle('hidden',t!==tab)});if(tab==='sil'||tab==='siladv')setExpr('study');else setExpr('idle')}
 init();
 </script>
-
-<!-- Modal Clase Magistral -->
-<div id="knowledgeModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;backdrop-filter:blur(10px);justify-content:center;align-items:center">
-  <div style="background:var(--bg-deep);border:1px solid var(--border);border-radius:24px;padding:20px;max-width:500px;width:95%;max-height:90vh;overflow-y:auto">
-    <h3 style="color:var(--amber);text-align:center;font-size:1.1rem">📚 Clase Magistral — Red-team-tauri</h3>
-    <p style="color:var(--muted);font-size:0.8rem;text-align:center">Pregunta sobre cualquier módulo o concepto</p>
-    <div style="display:flex;gap:8px;margin:12px 0">
-      <input id="knowledgeInput" type="text" placeholder="Ej: ARTO, SEAL, KRAKEN, COMMANDER..." style="flex:1;padding:10px;background:rgba(0,0,0,0.4);border:1px solid var(--border);color:var(--text);border-radius:10px;font-size:0.9rem;outline:none">
-      <button onclick="askKnowledge()" style="background:var(--amber);border:none;border-radius:10px;padding:10px 16px;color:#000;font-weight:bold;cursor:pointer;font-family:inherit">Preguntar</button>
-    </div>
-    <div id="knowledgeResponse" style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:12px;padding:16px;min-height:100px;color:var(--text);font-size:0.9rem;line-height:1.6;white-space:pre-wrap"></div>
-    <div id="knowledgeTopics" style="margin-top:12px"></div>
-    <button onclick="closeKnowledge()" style="width:100%;margin-top:12px;background:rgba(255,77,148,0.1);border:1px solid rgba(255,77,148,0.25);border-radius:10px;padding:12px;color:var(--sword);cursor:pointer;font-family:inherit;font-size:0.95rem;min-height:44px">✕ Cerrar</button>
-  </div>
-</div>
-
 </body>
 </html>
