@@ -432,7 +432,39 @@ start() {
     info "C2 UNIFIED PRO no encontrado — saltando"
   fi
 
-  # ── 5. Telegram (Sol) — gestionado desde el repo sol en Replit ──
+  # ── 5. Commander Dashboard (:8003) ──
+  #    Commander tiene su propio servidor (commander_server.py) con endpoints
+  #    únicos que el dashboard :8001 NO tiene:
+  #    /api/iot/auto-access, /api/phantom/hunt, /api/osint, /api/scans, etc.
+  #    Se arranca independiente para que Sol pueda llegar a sus funciones.
+  if [ -f "$ROOT/commander/commander_server.py" ]; then
+    if curl -s -m 2 http://127.0.0.1:8003/api/health >/dev/null 2>&1; then
+      ok "Commander :8003    🟢 ya corriendo"
+    else
+      info "Commander :8003 — arrancando..."
+      # Cargar dependencias si faltan
+      if ! python3 -c "from Crypto.Cipher import AES; import fastapi, uvicorn" 2>/dev/null; then
+        pip install -q -r "$ROOT/commander/requirements.txt" >> "$LOG_DIR/commander.log" 2>&1 || true
+      fi
+      cd "$ROOT/commander"
+      COMMANDER_PORT=8003 BACKEND_API="http://127.0.0.1:8001"         nohup python3 commander_server.py >> "$LOG_DIR/commander.log" 2>&1 &
+      CMD_PID=$!
+      for i in $(seq 1 15); do
+        curl -s -m 2 http://127.0.0.1:8003/api/health >/dev/null 2>&1 && break
+        sleep 1
+      done
+      if curl -s -m 3 http://127.0.0.1:8003/api/health >/dev/null 2>&1; then
+        ok "Commander :8003    🟢 activo (PID $CMD_PID)"
+      else
+        warn "Commander :8003 no respondió en 15s — ver $LOG_DIR/commander.log"
+      fi
+      cd "$ROOT"
+    fi
+  else
+    info "commander/commander_server.py no encontrado — saltando"
+  fi
+
+  # ── 5b. Telegram (Sol) — gestionado desde el repo sol en Replit ──
   #    Sol vive en su propio repositorio (sourceseal-star/sol) y se despliega
   #    en Replit. Su bot de Telegram, cerebro (sol_core.py) y API (sol_api.py)
   #    residen allá. Aquí solo limpiamos zombies por si quedaron procesos viejos.
@@ -505,6 +537,8 @@ stop() {
   echo -e "${BOLD}── Deteniendo servicios ──${N}"
 
   pkill -f "omni.sh watchdog" 2>/dev/null && ok "Watchdog detenido" || true
+  # Commander :8003
+  pkill -f "commander_server.py" 2>/dev/null && ok "Commander :8003 detenido" || true
   # Sol (Telegram + daemon) vive en Replit — solo limpiar zombies locales
   pkill -f "sol_telegram_bridge" 2>/dev/null || true
   pkill -f "sol_telegram_bot.py" 2>/dev/null || true
@@ -592,6 +626,13 @@ status_short() {
       fail "C2 :8005           🔴 CAÍDO"
     fi
   fi
+  fi
+
+  # Commander :8003
+  if curl -s -m 2 http://127.0.0.1:8003/api/health >/dev/null 2>&1; then
+    ok "Commander :8003   🟢 ACTIVO"
+  else
+    warn "Commander :8003   🟡 INACTIVO"
   fi
 
   # Telegram — gestionado por Sol en Replit
