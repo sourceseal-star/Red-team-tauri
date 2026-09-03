@@ -647,7 +647,7 @@ status_short() {
   if curl -sf "$SOL_API_URL/api/sol/status" >/dev/null 2>&1; then
     ok "Sol Telegram ☀️    🟢 ACTIVO (Replit)"
   else
-    warn "Sol Telegram ☀️    🟡 NO RESponde (ver Replit)"
+    warn "Sol Telegram ☀️    🟡 NO responde (ver Replit)"
   fi
 
   # Seal IA
