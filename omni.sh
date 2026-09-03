@@ -437,62 +437,17 @@ start() {
     info "C2 UNIFIED PRO no encontrado — saltando"
   fi
 
-  # ── 5. Telegram (Sol) — SOLO UNO puede hacer polling del mismo token a la vez ──
-  #    Telegram API rechaza (409 Conflict) una segunda conexión getUpdates simultánea.
-  #    Preferimos la Miniapp (botones, recordatorios, voz, avatar); el Puente legacy
-  #    queda como fallback automático si python-telegram-bot no está disponible.
-  if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-    # Limpiar procesos zombie/huérfanos antes de intentar arrancar
-    pkill -9 -f "sol_telegram_bridge" >/dev/null 2>&1 || true
-    pkill -9 -f "sol_telegram_bot.py" >/dev/null 2>&1 || true
-    if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
-      ok "Puente Telegram ya corriendo (legacy)"
-    elif pgrep -f "sol_telegram_bot.py" >/dev/null 2>&1; then
-      ok "Miniapp Telegram ya corriendo"
-    elif [ -f "$ROOT/sol_telegram_bot.py" ] && { python3 -c "import telegram" 2>/dev/null || pip install python-telegram-bot >> "$LOG_DIR/tg_bot.log" 2>&1 && python3 -c "import telegram" 2>/dev/null; }; then
-      info "Miniapp Telegram — arrancando..."
-      cd "$ROOT"
-      : > "$LOG_DIR/tg_bot.log"
-      nohup python3 sol_telegram_bot.py >> "$LOG_DIR/tg_bot.log" 2>&1 &
-      echo $! > "$SOL_DIR/tg_bot.pid"
-      sleep 4
-      if kill -0 "$(cat "$SOL_DIR/tg_bot.pid" 2>/dev/null)" 2>/dev/null; then
-        ok "Miniapp Telegram activa ☀️ (PID $(cat "$SOL_DIR/tg_bot.pid"))"
-      else
-        warn "Miniapp Telegram no arrancó — probando puente legacy..."
-        echo -e "${R}  ── Error real (tg_bot.log) ──${N}"
-        tail -n 15 "$LOG_DIR/tg_bot.log" 2>/dev/null | sed 's/^/    /'
-        echo -e "${R}  ───────────────────────────${N}"
-        : > "$LOG_DIR/tg.log"
-        nohup python3 sol_telegram_bridge.py >> "$LOG_DIR/tg.log" 2>&1 &
-        sleep 4
-        if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
-          ok "Puente Telegram activo ☀️ (fallback)"
-        else
-          fail "Ningún bot de Telegram arrancó"
-          echo -e "${R}  ── Error real (tg.log) ──${N}"
-          tail -n 15 "$LOG_DIR/tg.log" 2>/dev/null | sed 's/^/    /'
-          echo -e "${R}  ─────────────────────────${N}"
-        fi
-      fi
-    else
-      info "python-telegram-bot no disponible — usando puente legacy"
-      cd "$ROOT"
-      : > "$LOG_DIR/tg.log"
-      nohup python3 sol_telegram_bridge.py >> "$LOG_DIR/tg.log" 2>&1 &
-      sleep 4
-      if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
-        ok "Puente Telegram activo ☀️"
-      else
-        fail "Puente Telegram no arrancó"
-        echo -e "${R}  ── Error real (tg.log) ──${N}"
-        tail -n 15 "$LOG_DIR/tg.log" 2>/dev/null | sed 's/^/    /'
-        echo -e "${R}  ─────────────────────────${N}"
-      fi
-    fi
-  else
-    warn "TELEGRAM_BOT_TOKEN no configurado — Telegram desactivado"
-  fi
+  # ── 5. Telegram — DESACTIVADO en Red-team-tauri (fix 2026-09-02) ──
+  #    El ÚNICO bot de Telegram que debe existir es el de Sol, y vive en
+  #    su propio repo (sourceseal-star/sol) arrancado por start_replit.sh
+  #    en Replit. Antes omni.sh arrancaba sol_telegram_bot.py Y
+  #    sol_telegram_bridge.py desde AQUI con el mismo TELEGRAM_BOT_TOKEN,
+  #    compitiendo con el de Replit (Telegram da 409 Conflict si dos
+  #    procesos hacen getUpdates del mismo token). Ahora solo se limpian
+  #    procesos zombie por si quedaron de una versión anterior.
+  pkill -9 -f "sol_telegram_bridge" >/dev/null 2>&1 || true
+  pkill -9 -f "sol_telegram_bot.py" >/dev/null 2>&1 || true
+  info "Telegram: bot de Sol vive en su repo (Replit) — no se arranca aquí"
 
   # ── 6. Seal IA Orquestador ──
   if [ -f "$ROOT/seal/orchestrator/seal_orchestrator.py" ]; then
@@ -1332,20 +1287,10 @@ watchdog() {
         fi
       fi
     fi
-    # Telegram — reiniciar SOLO si NINGUNO de los dos (puente/miniapp) está corriendo
-    if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-      if ! pgrep -f "sol_telegram_bridge" >/dev/null && ! pgrep -f "sol_telegram_bot.py" >/dev/null; then
-        log "⚠️ Telegram caído → reiniciando"
-        cd "$ROOT"
-        if [ -f "$ROOT/sol_telegram_bot.py" ] && python3 -c "import telegram" 2>/dev/null; then
-          nohup python3 sol_telegram_bot.py >> "$LOG_DIR/tg_bot.log" 2>&1 &
-          echo $! > "$SOL_DIR/tg_bot.pid"
-        else
-          nohup python3 sol_telegram_bridge.py >> "$LOG_DIR/tg.log" 2>&1 &
-        fi
-        sleep 3
-      fi
-    fi
+    # Telegram — DESACTIVADO en Red-team-tauri (fix 2026-09-02)
+    # El único bot de Telegram vive en el repo de Sol (Replit). Aquí solo limpiamos zombies.
+    pkill -f "sol_telegram_bridge" >/dev/null 2>&1 || true
+    pkill -f "sol_telegram_bot.py" >/dev/null 2>&1 || true
 
   done
 }
