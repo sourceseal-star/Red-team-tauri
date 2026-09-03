@@ -554,24 +554,25 @@ start() {
     info "Sol daemon no encontrado — saltando (usa 'bash ~/sol.sh start' manualmente)"
   fi
 
-  # ── 9. Sol API (cerebro de datos para sol.html) ──
-  if [ -f "$ROOT/sol_api.py" ] && [ -f "$ROOT/sol_core.py" ]; then
-    if pgrep -f "sol_api.py" >/dev/null 2>&1; then
-      ok "Sol API ☀️ ya corriendo (:8006)"
+  # ── 9. Sol integrado en :8001 (sol_api.py deprecado, todo en el dashboard) ──
+  # Sol ya no necesita puerto separado — endpoints, herramientas y SIL
+  # están montados en dashboard_server (:8001) via sol_router.py
+  if [ -f "$ROOT/sol_core.py" ]; then
+    if curl -s -m 2 http://127.0.0.1:8001/api/sol/status >/dev/null 2>&1; then
+      ok "Sol ☀️ activo en :8001 (integrado en dashboard)"
     else
-      info "Sol API ☀️ — arrancando en :8006..."
+      info "Sol ☀️ esperando dashboard :8001..."
+    fi
+    # sol_api.py como fallback legacy
+    if [ -f "$ROOT/sol_api.py" ] && ! pgrep -f "sol_api.py" >/dev/null 2>&1; then
       cd "$ROOT"
       nohup python3 sol_api.py >> "$LOG_DIR/sol_api.log" 2>&1 &
-      sleep 2
-      if pgrep -f "sol_api.py" >/dev/null 2>&1; then
-        ok "Sol API ☀️ activo en http://127.0.0.1:8006"
-      else
-        warn "Sol API ☀️ no arrancó — ver $LOG_DIR/sol_api.log"
-      fi
+      sleep 1
     fi
   else
-    info "Sol API no encontrado — saltando"
+    warn "sol_core.py no encontrado — Sol sin cerebro"
   fi
+
 
   cd "$ROOT"
   echo ""
@@ -716,12 +717,12 @@ status_short() {
   fi
 
   # Sol API (:8006) — cerebro + herramientas + SIL
-  if curl -s -m 2 http://127.0.0.1:8006/api/sol/state >/dev/null 2>&1; then
-    SOL_STATE=$(curl -s -m 2 http://127.0.0.1:8006/api/sol/state 2>/dev/null)
+  if curl -s -m 2 http://127.0.0.1:8001/api/sol/status >/dev/null 2>&1; then
+    SOL_STATE=$(curl -s -m 2 http://127.0.0.1:8001/api/sol/status 2>/dev/null)
     SOL_MEM=$(echo "$SOL_STATE" | grep -o '"memories":[0-9]*' | grep -o '[0-9]*' || echo "?")
-    ok "Sol API :8006 ☀️    🟢 ACTIVO ($SOL_MEM recuerdos)"
+    ok "Sol :8001 ☀️    🟢 ACTIVO ($SOL_MEM recuerdos)"
   else
-    warn "Sol API :8006 ☀️    🟡 DETENIDA"
+    warn "Sol :8001 ☀️    🟡 DETENIDA"
   fi
 
   # Sol Autónoma (daemon)
@@ -757,8 +758,8 @@ status_short() {
 
   # SIL (Inmersión Lingüística)
   if [ -f "$ROOT/sol_learning_advanced.py" ]; then
-    if curl -s -m 2 http://127.0.0.1:8006/api/sil/stats >/dev/null 2>&1; then
-      SIL_STATS=$(curl -s -m 2 http://127.0.0.1:8006/api/sil/stats 2>/dev/null)
+    if curl -s -m 2 http://127.0.0.1:8001/api/sol/sil/stats >/dev/null 2>&1; then
+      SIL_STATS=$(curl -s -m 2 http://127.0.0.1:8001/api/sol/sil/stats 2>/dev/null)
       SIL_LEARNED=$(echo "$SIL_STATS" | grep -o '"learned_items":[0-9]*' | grep -o '[0-9]*' || echo "0")
       SIL_DUE=$(echo "$SIL_STATS" | grep -o '"due_today":[0-9]*' | grep -o '[0-9]*' || echo "0")
       ok "SIL 📚            🟢 ACTIVO ($SIL_LEARNED aprendidas, $SIL_DUE pendientes)"
@@ -771,8 +772,8 @@ status_short() {
 
   # Sol Tools (herramientas)
   if [ -f "$ROOT/sol_tools.py" ]; then
-    if curl -s -m 2 http://127.0.0.1:8006/api/sol/tools >/dev/null 2>&1; then
-      TOOLS_COUNT=$(curl -s -m 2 http://127.0.0.1:8006/api/sol/tools 2>/dev/null | grep -o '"tools"' | head -1)
+    if curl -s -m 2 http://127.0.0.1:8001/api/sol/tools >/dev/null 2>&1; then
+      TOOLS_COUNT=$(curl -s -m 2 http://127.0.0.1:8001/api/sol/tools 2>/dev/null | grep -o '"tools"' | head -1)
       ok "Sol Tools 🔧      🟢 20 herramientas disponibles"
     else
       info "Sol Tools 🔧      ⚪ API DETENIDA"

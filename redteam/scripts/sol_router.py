@@ -250,7 +250,7 @@ async def _process_message(text: str):
             tool_result = sol_tools.execute_tool(tool_name, *tool_args)
             tool_desc = sol_tools.get_tool(tool_name)
             tool_desc_str = tool_desc.description if tool_desc else tool_name
-            resp = f"☀️ Hecho, Harold. {tool_desc_str}.\n\nResultado: {tool_result}"
+            resp = f"☀️ Hecho, Harold. {tool_desc_str}.\n\n{_format_tool_result(tool_result)}"
             if _sol_remember:
                 _sol_remember("user", text)
                 _sol_remember("sol", resp)
@@ -426,7 +426,7 @@ async def think_and_speak(req: ThinkRequest):
             tool_result = sol_tools.execute_tool(tool_name, *tool_args)
             tool_desc = sol_tools.get_tool(tool_name)
             tool_desc_str = tool_desc.description if tool_desc else tool_name
-            resp = f"Hecho, Harold. {tool_desc_str}. Resultado: {tool_result}"
+            resp = f"Hecho, Harold. {tool_desc_str}. {_format_tool_result(tool_result)}"
             if _sol_remember:
                 _sol_remember("user", req.message)
                 _sol_remember("sol", resp)
@@ -473,56 +473,165 @@ except Exception as e:
 # Mapeo de palabras clave → herramienta (en español, natural)
 _TOOL_TRIGGERS = {
     "linterna": "flashlight", "flashlight": "flashlight", "torch": "flashlight",
-    "lintérna": "flashlight", "luz": "flashlight", "foto": "screenshot",
-    "captura": "screenshot", "screenshot": "screenshot",
+    "lintérna": "flashlight", "luz": "flashlight",
+    "foto": "screenshot", "captura": "screenshot", "screenshot": "screenshot",
     "gps": "location", "ubicación": "location", "ubicacion": "location", "dónde": "location",
+    "donde estoy": "location", "mi ubicación": "location",
     "batería": "battery", "bateria": "battery", "carga": "battery",
-    "vibra": "vibrate", "vibrar": "vibrate", "vibración": "vibrate",
-    "sms": "send_sms", "mensaje": "send_sms", "texto": "send_sms",
-    "git": "git_status", "repo": "git_status", "github": "git_status",
-    "cpu": "cpu", "procesador": "cpu",
+    "cpu": "cpu", "procesador": "cpu", "rama": "cpu", "memoria ram": "cpu",
     "ping": "ping", "conexión": "ping",
-    "scan": "scan_ports", "puertos": "scan_ports", "escanea": "scan_ports",
+    "escanea puertos": "scan_ports", "scan ports": "scan_ports", "puertos abiertos": "scan_ports",
+    "vibra": "vibrate", "vibrar": "vibrate", "vibración": "vibrate",
+    "sms": "send_sms", "envía sms": "send_sms", "envia sms": "send_sms",
+    "notifíca": "notify", "notifica": "notify", "notificación": "notify",
+    "abre url": "open_url", "abre el navegador": "open_url",
+    "copia al portapapeles": "clipboard", "pega": "clipboard",
+    "habla en voz": "tts_speak", "di en voz alta": "tts_speak",
 }
 
+def _detect_repo(text: str) -> str:
+    """Detecta qué repo menciona el usuario."""
+    t = text.lower()
+    if any(w in t for w in ["redteam", "red team", "red-team", "rtt", "tauri"]):
+        return "redteam"
+    if "commander" in t or "comander" in t:
+        return "commander"
+    if any(w in t for w in ["origenprogreso", "origen", "academia", "sourceseal"]):
+        return "origenprogreso"
+    return "redteam"  # default
+
+def _format_tool_result(outcome):
+    """Extrae un texto limpio del resultado de una herramienta."""
+    if isinstance(outcome, dict):
+        if outcome.get("success"):
+            return str(outcome.get("result", "hecho"))
+        err = outcome.get("error", "algo salio mal")
+        return "⚠️ " + err
+    return str(outcome)
+
 def _detect_tool(text: str):
-    """Detecta si el mensaje del usuario pide ejecutar una herramienta."""
+    """Detecta si el mensaje pide ejecutar una herramienta.
+    Soporta lenguaje natural para pentesting, commander, repos y terminal."""
+    import re as _re
     t = text.lower().strip()
+
+    # -- Keywords simples --
     for keyword, tool_name in _TOOL_TRIGGERS.items():
         if keyword in t:
-            # Determinar argumentos
             args = []
             if tool_name == "flashlight":
-                # "enciende la linterna" → on=True, "apaga" → on=False
-                if any(w in t for w in ["apaga", "off", "apagar", "oculta"]):
-                    args = [False]
-                else:
-                    args = [True]
+                args = [not any(w in t for w in ["apaga", "off", "apagar", "oculta"])]
             elif tool_name == "scan_ports":
-                # extraer IP si existe
-                import re
-                ip_match = re.search(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', text)
-                args = [ip_match.group(1)] if ip_match else []
+                m = _re.search(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', text)
+                args = [m.group(1)] if m else []
             elif tool_name == "ping":
-                import re
-                ip_match = re.search(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', text)
-                host_match = re.search(r'ping\s+([a-zA-Z0-9.\-]+)', text, re.IGNORECASE)
-                if ip_match:
-                    args = [ip_match.group(1)]
-                elif host_match:
-                    args = [host_match.group(1)]
+                m = _re.search(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', text)
+                m2 = _re.search(r'ping\s+([a-zA-Z0-9.\-]+)', text, _re.IGNORECASE)
+                if m: args = [m.group(1)]
+                elif m2: args = [m2.group(1)]
             elif tool_name == "send_sms":
-                import re
-                num_match = re.search(r'(\+?\d{8,15})', text)
-                msg_match = re.search(r'(?:mensaje|texto)[":\s]+(.+)', text, re.IGNORECASE)
-                if num_match:
-                    args = [num_match.group(1), msg_match.group(1) if msg_match else "Hola"]
-            elif tool_name == "git_status":
-                # "git pull" → ejecutar pull en vez de status
-                if "pull" in t:
-                    return "git_pull", []
-                return "git_status", []
+                nm = _re.search(r'(\+?\d{8,15})', text)
+                mm = _re.search(r'(?:mensaje|texto)["\':\s]+(.+)', text, _re.IGNORECASE)
+                if nm: args = [nm.group(1), mm.group(1) if mm else "Hola"]
+            elif tool_name == "open_url":
+                um = _re.search(r'(https?://\S+)', text)
+                if um: args = [um.group(1)]
+            elif tool_name == "clipboard":
+                cm = _re.search(r'(?:copia|pega)["\':\s]+(.+)', text, _re.IGNORECASE)
+                args = [cm.group(1)] if cm else [text]
+            elif tool_name == "tts_speak":
+                tm = _re.search(r'(?:di|habla|dice)["\':\s]+(.+)', text, _re.IGNORECASE)
+                args = [tm.group(1)] if tm else [text]
+            elif tool_name == "notify":
+                nm = _re.search(r'(?:notif\w+)["\':\s]+(.+)', text, _re.IGNORECASE)
+                args = [nm.group(1)] if nm else [text]
             return tool_name, args
+
+    # -- Git --
+    if any(w in t for w in ["git pull", "actualiza el repo", "haz pull", "pull del repo", "sincroniza el repo"]):
+        return "git_pull", [_detect_repo(t)]
+    if any(w in t for w in ["git log", "historial de commits", "ultimos commits", "commits del repo", "historial del repo"]):
+        return "git_log", [_detect_repo(t), 10]
+    if any(w in t for w in ["git", "estado del repo", "estado de git", "github", "repo status"]):
+        if "pull" in t:
+            return "git_pull", [_detect_repo(t)]
+        return "git_status", [_detect_repo(t)]
+
+    # -- Repo info / read / search --
+    if any(w in t for w in ["info del repo", "informaci\u00f3n del repo", "que hay en el repo", "estructura del repo", "info repositorio"]):
+        return "repo_info", [_detect_repo(t)]
+    if any(w in t for w in ["lee el readme", "leer el readme", "muestra el readme"]):
+        return "repo_read", [_detect_repo(t), "README.md"]
+    if any(w in t for w in ["busca en el repo", "buscar en el repo", "busca en codigo", "buscar en codigo"]):
+        pm = _re.search(r"""(?:busca|buscar)\s+(?:en\w*\s+)?['"]([^'"]+)['"]""", text, _re.IGNORECASE)
+        if not pm:
+            pm = _re.search(r'(?:busca|buscar)\s+(?:en\w*\s+)?(\w+)', text, _re.IGNORECASE)
+        pattern = pm.group(1) if pm else ""
+        return "repo_search", [_detect_repo(t), pattern]
+
+    # -- Dashboard pentesting (:8001) --
+    if any(w in t for w in ["escanea la red", "escanea mi red", "escaneo de red", "network scan", "descubre dispositivos", "quien esta en mi red"]):
+        if "wifi" in t:
+            return "discover_wifi", []
+        return "discover_network", []
+    if any(w in t for w in ["escaneo integrado", "scan integrado"]) or _re.search(r'escanea\s+(\d+\.\d+\.\d+\.\d+/\d+)', t):
+        nm = _re.search(r'(\d+\.\d+\.\d+\.\d+/\d+)', text)
+        return "network_scan", [nm.group(1)] if nm else ["192.168.1.0/24"]
+    if any(w in t for w in ["shodan", "osint"]):
+        qm = _re.search(r'(?:shodan|osint)[:\s]+(.+)', text, _re.IGNORECASE)
+        return "osint_shodan", [qm.group(1)] if qm else [""]
+    if any(w in t for w in ["inteligencia de amenazas", "threat intel", "intel de amenazas"]):
+        return "intel", []
+    if any(w in t for w in ["exploits disponibles", "lista de exploits", "que exploits"]):
+        return "exploits_list", []
+    if "honeypot" in t:
+        if any(w in t for w in ["activa", "enciende", "start", "toggle", "cambia"]):
+            return "honeypot_toggle", []
+        return "honeypot_status", []
+    if any(w in t for w in ["dashboard activo", "estado del dashboard", "dashboard funciona"]):
+        return "dashboard_health", []
+    if any(w in t for w in ["escaneo tactico", "tactical scan", "scan tactico"]):
+        im = _re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', text)
+        return "tactical_scan", [im.group(1), "1-1000"] if im else []
+
+    # -- Commander --
+    if any(w in t for w in ["commander", "comander"]):
+        if any(w in t for w in ["audit", "audita", "auditoria"]):
+            im = _re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d+)?)', text)
+            em = _re.search(r'([\w.]+@[\w.]+\.[\w]+)', text)
+            return "commander_audit", [im.group(1) if im else "", em.group(1) if em else ""]
+        if any(w in t for w in ["audits", "auditorias", "lista de auditorias", "historial de auditorias"]):
+            return "commander_audits", []
+        if any(w in t for w in ["reportes", "reports", "lista de reportes"]):
+            return "commander_reports", []
+        if any(w in t for w in ["estado de commander", "commander status"]):
+            return "commander_status", []
+        if any(w in t for w in ["scan de red", "escanea con commander"]):
+            nm = _re.search(r'(\d+\.\d+\.\d+\.\d+/\d+)', text)
+            return "commander_scan_network", [nm.group(1)] if nm else ["192.168.1.0/24"]
+        if "osint" in t:
+            tm = _re.search(r'(?:osint)[:\s]+(.+)', text, _re.IGNORECASE)
+            return "commander_osint", [tm.group(1)] if tm else [""]
+        if any(w in t for w in ["commander activo", "commander disponible", "commander funciona"]):
+            return "commander_health", []
+
+    # -- Terminal: ejecucion arbitraria --
+    if any(w in t for w in ["ejecuta", "corre", "lanza", "ejecutar comando", "run command"]):
+        cm = _re.search(r'(?:ejecuta|corre|lanza)[:\s]+[`]?([^`\n]+)[`]?', text, _re.IGNORECASE)
+        if cm:
+            cmd = cm.group(1).strip()
+            repo = _detect_repo(t)
+            if repo != "redteam" and repo in t:
+                return "exec_in_repo", [repo, cmd, 30]
+            return "exec", [cmd, 30]
+
+    # -- nmap/nuclei/nikto directo --
+    tm = _re.search(r'\b(nmap|nuclei|nikto|sqlmap|hydra|ffuf|gobuster|masscan|rustscan)\b', t)
+    if tm:
+        tn = tm.group(1)
+        rest = text[text.lower().index(tn):]
+        return "exec", [rest, 60]
+
     return None, []
 
 @router.get("/tools")
@@ -542,10 +651,13 @@ async def execute_tool(request: dict):
     if not name:
         return {"success": False, "error": "Falta el nombre de la herramienta"}
     try:
-        result = sol_tools.execute_tool(name, *args)
-        return {"success": True, "tool": name, "result": result}
+        outcome = sol_tools.execute_tool(name, *args)
+        if isinstance(outcome, dict) and "success" in outcome:
+            outcome["tool"] = name
+            return outcome
+        return {"success": True, "tool": name, "result": outcome}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "tool": name, "error": str(e)}
 
 @router.get("/tools/{name}")
 async def tool_info(name: str):
