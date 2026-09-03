@@ -311,6 +311,217 @@ async def iot_batch(body: dict = Body(...)):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=502)
 
+# ─── KRAKEN (proxy al dashboard :8001) ───────────────────
+@app.get("/api/kraken/scan")
+async def kraken_scan(target: str = "192.168.1.0/24"):
+    """Ejecuta escaneo KRAKEN NSE contra un target."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=120) as c:
+            resp = await c.get(f"{REDTEAM_API}/api/kraken/scan", params={"target": target})
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.get("/api/kraken/results")
+async def kraken_results(limit: int = 50):
+    """Resultados almacenados de KRAKEN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            resp = await c.get(f"{REDTEAM_API}/api/kraken/results", params={"limit": limit})
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.get("/api/kraken/priorities")
+async def kraken_priorities():
+    """IPs priorizadas por exploits exitosos."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            resp = await c.get(f"{REDTEAM_API}/api/kraken/priorities")
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.get("/api/kraken/scripts")
+async def kraken_scripts():
+    """Lista de NSE scripts disponibles."""
+    return {
+        "scripts": [
+            "ssh-brute", "ftp-anon", "ftp-brute",
+            "smb-os-discovery", "smb-enum-shares", "smb-vuln-*",
+            "http-auth-finder", "http-vuln-*",
+            "rtsp-url-brute", "mysql-empty-password",
+            "pgsql-brute", "redis-info",
+            "rdp-vuln-ms12-020", "snmp-info",
+        ]
+    }
+
+@app.post("/api/kraken/daemon/start")
+async def kraken_daemon_start(target: str = "192.168.1.0/24", interval: int = 3600):
+    """Inicia el daemon de escaneo periódico KRAKEN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            resp = await c.post(f"{REDTEAM_API}/api/kraken/daemon/start",
+                                params={"target": target, "interval": interval})
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.post("/api/kraken/daemon/stop")
+async def kraken_daemon_stop():
+    """Detiene el daemon KRAKEN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            resp = await c.post(f"{REDTEAM_API}/api/kraken/daemon/stop")
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.get("/api/kraken/daemon/status")
+async def kraken_daemon_status():
+    """Estado del daemon KRAKEN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            resp = await c.get(f"{REDTEAM_API}/api/kraken/daemon/status")
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+# ─── LEVIATHAN (proxy al dashboard :8001) ────────────────
+@app.get("/api/leviathan/status")
+async def leviathan_status():
+    """Estado de LEVIATHAN v3.0."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            resp = await c.get(f"{REDTEAM_API}/api/leviathan/status")
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.get("/api/leviathan/modules")
+async def leviathan_modules():
+    """Lista los módulos cargados de LEVIATHAN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            resp = await c.get(f"{REDTEAM_API}/api/leviathan/modules")
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.post("/api/leviathan/scan")
+async def leviathan_scan(body: dict = Body(...)):
+    """Ejecuta un escaneo LEVIATHAN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=120) as c:
+            resp = await c.post(f"{REDTEAM_API}/api/leviathan/scan", json=body)
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.post("/api/leviathan/scan/network")
+async def leviathan_scan_network(body: dict = Body(...)):
+    """Escaneo de red LEVIATHAN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=120) as c:
+            resp = await c.post(f"{REDTEAM_API}/api/leviathan/scan/network", json=body)
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.post("/api/leviathan/scan/cameras")
+async def leviathan_scan_cameras(body: dict = Body(...)):
+    """Escaneo de cámaras LEVIATHAN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=120) as c:
+            resp = await c.post(f"{REDTEAM_API}/api/leviathan/scan/cameras", json=body)
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.get("/api/leviathan/cameras")
+async def leviathan_cameras(limit: int = 100):
+    """Cámaras detectadas por LEVIATHAN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            resp = await c.get(f"{REDTEAM_API}/api/leviathan/cameras", params={"limit": limit})
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.post("/api/leviathan/exploit")
+async def leviathan_exploit(body: dict = Body(...)):
+    """Ejecuta un exploit LEVIATHAN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            resp = await c.post(f"{REDTEAM_API}/api/leviathan/exploit", json=body)
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.get("/api/leviathan/scans")
+async def leviathan_scans(limit: int = 50):
+    """Historial de escaneos LEVIATHAN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            resp = await c.get(f"{REDTEAM_API}/api/leviathan/scans", params={"limit": limit})
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.get("/api/leviathan/alerts")
+async def leviathan_alerts(acknowledged: Optional[bool] = None):
+    """Alertas de seguridad de LEVIATHAN."""
+    import httpx
+    try:
+        params = {}
+        if acknowledged is not None:
+            params["acknowledged"] = acknowledged
+        async with httpx.AsyncClient(timeout=15) as c:
+            resp = await c.get(f"{REDTEAM_API}/api/leviathan/alerts", params=params)
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+@app.get("/api/leviathan/threat-map")
+async def leviathan_threat_map():
+    """Mapa de amenazas LEVIATHAN."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            resp = await c.get(f"{REDTEAM_API}/api/leviathan/threat-map")
+            return resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+# ─── IoT CAMERAS (fix del 404) ───────────────────────────
+@app.get("/api/iot/cameras")
+async def iot_cameras():
+    """Lista las cámaras IoT detectadas (proxy al dashboard)."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            # El dashboard tiene /api/leviathan/cameras que es la fuente real
+            resp = await c.get(f"{REDTEAM_API}/api/leviathan/cameras", params={"limit": 200})
+            cam_data = resp.json()
+            # También intentar /api/iot/auto-access para conectar resultados
+            return cam_data
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
 # ─── COM-LINK ────────────────────────────────────────────
 @app.get("/api/comlink/status")
 async def comlink_status():
