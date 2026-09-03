@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """sol_learning_advanced.py — Sistema de Inmersión Lingüística (SIL)"""
 
+import sil_advanced
 import json
 import random
 import math
@@ -338,3 +339,27 @@ def export_progress() -> Dict:
         "lessons": _load_lessons(),
         "timestamp": datetime.now().isoformat()
     }
+
+# ═════════════════════════════════════════════════════════════════
+# LECCIONES AVANZADAS (desde sil_advanced.py)
+# ═════════════════════════════════════════════════════════════════
+def get_advanced_lesson_data():
+    """Devuelve todas las lecciones avanzadas de sil_advanced."""
+    try:
+        return sil_advanced.get_advanced_lessons()
+    except Exception:
+        return {}
+
+def get_advanced_levels():
+    """Lista niveles avanzados disponibles."""
+    try:
+        return sil_advanced.list_advanced_levels()
+    except Exception:
+        return []
+
+def get_advanced_total():
+    """Total de items avanzados."""
+    try:
+        return sil_advanced.get_total_items()
+    except Exception:
+        return 0

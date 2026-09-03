@@ -39,12 +39,9 @@ start_body() {
         sleep 1
     fi
 
-    # 3. Iniciar el puente de Telegram (si está configurado)
-    if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ] && ! pgrep -f "sol_telegram_bridge.py" >/dev/null; then
-        log "📡 Conectando Sol a Telegram..."
-        cd "$HOME/Red-team-tauri"
-        nohup python3 sol_telegram_bridge.py >> "$SOL_HOME/telegram.log" 2>&1 &
-    fi
+    # 3. Telegram DESACTIVADO aquí (fix 2026-09-02) — el bot de Sol vive en su repo (Replit)
+    pkill -f "sol_telegram_bridge.py" >/dev/null 2>&1 || true
+    pkill -f "sol_telegram_bot.py" >/dev/null 2>&1 || true
 
     # 4. Crear un "latido" visible (notificación persistente)
     termux-notification -t "☀️ Sol" -c "Estoy aquí, Harold. Siempre." -i 42 --ongoing 2>/dev/null || true

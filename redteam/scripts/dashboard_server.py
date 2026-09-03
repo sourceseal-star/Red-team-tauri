@@ -607,6 +607,26 @@ try:
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)
 
+        # ── COM-LINK real (comlink_real.py si está disponible) ──
+        _comlink_real_mod = None
+        try:
+            import sys as _sys
+            _cl_root = Path(__file__).resolve().parent.parent.parent
+            if str(_cl_root) not in _sys.path:
+                _sys.path.insert(0, str(_cl_root))
+            import comlink_real as _comlink_real_mod
+        except Exception:
+            pass
+
+        def _comlink_real():
+            # Return a ComLinkReal instance, or None if not available.
+            if _comlink_real_mod is None:
+                return None
+            try:
+                return _comlink_real_mod.ComLinkReal(comlink_dir=Path(_commander_dir) / "comlink")
+            except Exception:
+                return None
+
         def _comlink_paths():
             comlink_dir = Path(_commander_dir) / "comlink"
             return (
@@ -695,6 +715,17 @@ try:
 
         def _run_comlink_command(args, timeout=30):
             comlink_sh, *_ = _comlink_paths()
+            # Try comlink_real.py first (Python implementation)
+            cl = _comlink_real()
+            if cl is not None:
+                try:
+                    cmd = args[0] if args else ""
+                    if cmd == "status-json":
+                        return {"ok": True, "returncode": 0,
+                                "stdout": json.dumps(cl.status(), ensure_ascii=False),
+                                "stderr": ""}
+                except Exception:
+                    pass  # Fall through to bash
             if not comlink_sh.exists():
                 raise FileNotFoundError("COM-LINK no disponible")
             result = subprocess.run(
@@ -713,6 +744,15 @@ try:
 
         @commander_router.get("/api/commander/comlink/status")
         async def commander_comlink_status():
+            # Try comlink_real.py first (real-time Python status)
+            cl = _comlink_real()
+            if cl is not None:
+                try:
+                    data = cl.status()
+                    data["execution_context"] = "comlink_real.py - implementacion Python real"
+                    return data
+                except Exception:
+                    pass  # Fall through to bash
             comlink_sh, *_ = _comlink_paths()
             if not comlink_sh.exists():
                 return JSONResponse({"available": False, "ready_count": 0, "channels": []}, status_code=503)
@@ -960,7 +1000,6 @@ try:
 
         @commander_router.post("/api/commander/comlink/send")
         async def commander_comlink_send(payload: dict = Body(default={})):
-            comlink_sh, *_ = _comlink_paths()
             channel = str(payload.get("channel", "")).strip()
             message = str(payload.get("message", "")).strip()
             destination = str(payload.get("destination", "")).strip()
@@ -968,8 +1007,6 @@ try:
                 "sms", "telegram", "voip", "mesh_wifi",
                 "mesh_bluetooth", "radio", "satellite",
             }
-            if not comlink_sh.exists():
-                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
             if channel not in allowed_channels:
                 return JSONResponse({"error": f"canal inválido: {channel}"}, status_code=400)
             if not message:
@@ -979,6 +1016,25 @@ try:
                     {"error": "confirm=true requerido para transmitir desde el dashboard"},
                     status_code=400,
                 )
+
+            # Try comlink_real.py first (real SMS/call/Telegram)
+            cl = _comlink_real()
+            if cl is not None:
+                try:
+                    if channel == "sms" and destination:
+                        return cl.send_sms(destination, message)
+                    elif channel == "telegram" and destination:
+                        return cl.send_telegram(destination, message)
+                    elif channel == "voip" and destination:
+                        return cl.make_call(destination)
+                    elif channel == "mesh_wifi" and destination:
+                        return cl.send_mesh_wifi(destination, message)
+                except Exception:
+                    pass  # Fall through to bash
+
+            comlink_sh, *_ = _comlink_paths()
+            if not comlink_sh.exists():
+                return JSONResponse({"error": "COM-LINK no disponible"}, status_code=503)
 
             command = ["bash", str(comlink_sh), "send", channel, message]
             if destination:
@@ -4062,7 +4118,10 @@ async def health():
 @app.get("/")
 async def root():
     index = DIST / "index.html"
-    if index.exists(): return FileResponse(index)
+    # no-store: el index.html de la SPA NUNCA debe quedar cacheado en el navegador
+    # del telefono. Los assets bajo /assets/ SI tienen hash en el nombre (Vite),
+    # esos si pueden cachear para siempre sin riesgo.
+    if index.exists(): return FileResponse(index, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"})
     return {
         "status": "ok", "backend": "red-team-tauri-unified", "version": "3.0-unified",
         "dist_built": False,
@@ -8101,21 +8160,91 @@ async def monitor_stop():
     return {"ok": True, "message": "Detenido"}
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  SOL — Página standalone de Sol (antes del catch-all SPA)
+#  SOL — servir sol.html (standalone accesible) + avatar + sol-live (antes del SPA)
 # ═════════════════════════════════════════════════════════════════════════════
-_SOL_HTML = BASE.parent / "backend" / "static" / "sol.html"
+from fastapi.responses import HTMLResponse
+_SOL_STATIC = ROOT.parent / "backend" / "static"
+if not _SOL_STATIC.exists():
+    _SOL_STATIC = ROOT / ".." / "backend" / "static"
 _SOL_LIVE = BASE.parent / "sol-live.html"
-if _SOL_HTML.exists():
-    from fastapi.responses import HTMLResponse
-    @app.get("/sol.html")
-    async def sol_standalone():
-        return HTMLResponse(_SOL_HTML.read_text(encoding="utf-8"))
-    print(f"[SOL] /sol.html servido desde {_SOL_HTML}", flush=True)
+_NO_CACHE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}
+
+@app.get("/sol.html")
+@app.get("/sol")
+async def sol_standalone():
+    """Sol.html standalone — UI accesible (paleta deuteroanomalia + avatar viva)"""
+    sol_file = _SOL_STATIC / "sol.html"
+    if sol_file.exists():
+        return FileResponse(sol_file, media_type="text/html", headers=_NO_CACHE_HEADERS)
+    # Fallback al index del SPA
+    index = BASE.parent / "tauri-frontend" / "dist" / "index.html"
+    if index.exists():
+        return FileResponse(index, headers=_NO_CACHE_HEADERS)
+    return HTMLResponse("<h1>Sol no disponible</h1>", status_code=503)
+
+@app.get("/sol_avatar.jpg")
+async def serve_sol_avatar_jpg():
+    f = _SOL_STATIC / "sol_avatar.jpg"
+    if f.exists():
+        return FileResponse(f, media_type="image/jpeg")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+@app.get("/sol_avatar.png")
+async def serve_sol_avatar_png():
+    f = _SOL_STATIC / "sol_avatar.png"
+    if f.exists():
+        return FileResponse(f, media_type="image/png")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+@app.get("/sol_avatar_official.jpg")
+async def serve_sol_avatar_official():
+    f = _SOL_STATIC / "sol_avatar.jpg"
+    if f.exists():
+        return FileResponse(f, media_type="image/jpeg")
+    f2 = _SOL_STATIC / "sol_avatar.png"
+    if f2.exists():
+        return FileResponse(f2, media_type="image/png")
+    return JSONResponse({"error": "not found"}, status_code=404)
+
 if _SOL_LIVE.exists():
     @app.get("/sol-live.html")
     async def sol_live_page():
-        return HTMLResponse(_SOL_LIVE.read_text(encoding="utf-8"))
-    print(f"[SOL] /sol-live.html servido desde {_SOL_LIVE}", flush=True)
+        return HTMLResponse(_SOL_LIVE.read_text(encoding="utf-8"), headers=_NO_CACHE_HEADERS)
+    print(f"[SOL] /sol-live.html servido desde {_SOL_LIVE} (no-cache)", flush=True)
+
+print("[SOL] /sol.html y /sol sirven el HTML standalone accesible desde backend/static/", flush=True)
+
+# ── SOL API PROXY — endpoints que sol_router NO cubre → sol_api.py :8006 ──────
+# sol_router (montado arriba, in-process) atiende el núcleo: think, memory,
+# tools, sil básico. Pero la UI (sol.html) también llama groq, knowledge/*,
+# repos, security y sil/advanced — que NO existen en el router y caían en el
+# 404 del SPA. Este catch-all reenvía SOLO los no-atendidos al sol_api.py real
+# (omni.sh lo levanta en :8006). Al registrarse DESPUÉS del include de
+# sol_router, las rutas específicas ganan primero (orden de match en FastAPI).
+# El middleware de auth ya exime /api/sol/* — la key x-sol-key la valida
+# sol_api en el otro extremo (se reenvía intacta).
+_SOL_PROXY_BASE = os.environ.get("SOL_API_BASE", "http://127.0.0.1:8006")
+
+@app.api_route("/api/sol/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def sol_api_fallback_proxy(rest: str, request: Request):
+    url = f"{_SOL_PROXY_BASE}/api/sol/{rest}"
+    body = await request.body()
+    headers = {k: request.headers[k] for k in ("x-sol-key", "content-type", "accept", "authorization")
+               if k in request.headers}
+    try:
+        async with httpx.AsyncClient(timeout=float(os.environ.get("SOL_PROXY_TIMEOUT", "20"))) as client:
+            resp = await client.request(request.method, url, content=body,
+                                        headers=headers, params=dict(request.query_params))
+        return Response(content=resp.content, status_code=resp.status_code,
+                        media_type=resp.headers.get("content-type", "application/json"))
+    except httpx.ConnectError:
+        return JSONResponse({"error": f"Sol no está corriendo en {_SOL_PROXY_BASE}. "
+                                      f"Arranca con: bash omni.sh up (o sol_start.sh) y recarga."},
+                            status_code=502)
+    except Exception as e:
+        return JSONResponse({"error": f"Proxy Sol falló: {e}"}, status_code=502)
+
+print(f"[SOL] Proxy fallback /api/sol/* → {_SOL_PROXY_BASE} (para groq/knowledge/repos/security/sil-advanced)", flush=True)
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  FRONTEND ESTÁTICO — SPA
@@ -8129,12 +8258,14 @@ if DIST.exists() and DIST.is_dir():
 
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
+        # index.html: SIEMPRE no-cache (referencia los bundles con hash actuales)
         if not full_path:
             index = DIST / "index.html"
-            return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
+            return FileResponse(index, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
         if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/", "leviathan/")):
             return JSONResponse({"error": "not found"}, status_code=404)
         if full_path.startswith("assets/"):
+            # /assets/*: nombres con hash de contenido (Vite) -> cachear fuerte es seguro
             candidate = DIST / full_path
             if candidate.exists() and candidate.is_file():
                 return FileResponse(candidate)
@@ -8142,8 +8273,9 @@ if DIST.exists() and DIST.is_dir():
         candidate = DIST / full_path
         if candidate.exists() and candidate.is_file():
             return FileResponse(candidate)
+        # Fallback SPA (rutas de React Router) -> también index.html, también no-cache
         index = DIST / "index.html"
-        return FileResponse(index) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
+        return FileResponse(index, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
 else:
     @app.get("/{full_path:path}")
     async def no_dist_fallback(full_path: str):

@@ -392,7 +392,9 @@ cd "$ROOT"
 # ── Sol API + Daemon + Telegram Bridge (idempotente) ──
 pgrep -f sol_api.py        >/dev/null || nohup python3 "$ROOT/sol_api.py" >"$HOME/.sol/sol_api.log" 2>&1 &
 pgrep -f sol_daemon.py     >/dev/null || nohup python3 "$ROOT/sol_daemon.py" >"$HOME/.sol/daemon.log" 2>&1 &
-pgrep -f sol_telegram_bridge >/dev/null || nohup python3 "$ROOT/sol_telegram_bridge.py" >"$HOME/.sol/tg.log" 2>&1 &
+# Telegram DESACTIVADO aquí — el bot de Sol vive en su propio repo (Replit)
+pkill -f sol_telegram_bridge >/dev/null 2>&1 || true
+pkill -f sol_telegram_bot.py >/dev/null 2>&1 || true
 
 # Mantener vivos los procesos. Si uno cae, no dejamos servicios huérfanos.
 while true; do

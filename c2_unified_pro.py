@@ -17,8 +17,12 @@
 ╚══════════════════════════════════════════════════════════════════════╝
 
 Uso:
-  export TELEGRAM_BOT_TOKEN="xxx"
-  export TELEGRAM_CHAT_ID="xxx"
+  # Token PROPIO de C2, distinto al de Sol (@sol_amg_bot) para que no
+  # compitan por los mismos mensajes de Telegram. Opcional: si no se
+  # configura, C2 simplemente no usa Telegram (se maneja por War Room
+  # o CLI de omni.sh) y el bot de Sol queda libre de interferencias.
+  export C2_TELEGRAM_BOT_TOKEN="xxx"
+  export C2_TELEGRAM_CHAT_ID="xxx"
   export C2_API_SECRET="tu_clave_segura"
   python3 c2_unified_pro.py
 """
@@ -71,8 +75,19 @@ class C2Config:
     api_port: int = int(os.environ.get("C2_PORT", "8005"))
     api_secret: str = field(default_factory=lambda: os.environ.get("C2_API_SECRET", "c2_dev_secret"))
 
-    telegram_token: str = field(default_factory=lambda: os.environ.get("TELEGRAM_BOT_TOKEN", ""))
-    telegram_chat_id: str = field(default_factory=lambda: os.environ.get("TELEGRAM_CHAT_ID", ""))
+    # FIX 2026-09-02: C2 usaba el MISMO token que sol_telegram_bridge.py
+    # (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID). Dos procesos haciendo polling
+    # sobre el mismo bot @sol_amg_bot compiten por los mismos updates de
+    # Telegram — resultado: mensajes como "Hola" los agarraba C2 primero
+    # y respondia "Comando no reconocido" en vez de que Sol conversara.
+    # Ahora C2 usa variables PROPIAS (C2_TELEGRAM_BOT_TOKEN/_CHAT_ID). Si no
+    # existen, C2 simplemente deja Telegram desactivado y @sol_amg_bot queda
+    # 100% para Sol. Para reactivar C2 en Telegram con un bot SEPARADO,
+    # crea otro bot con @BotFather y agrega en .env:
+    #   C2_TELEGRAM_BOT_TOKEN=...
+    #   C2_TELEGRAM_CHAT_ID=...
+    telegram_token: str = field(default_factory=lambda: os.environ.get("C2_TELEGRAM_BOT_TOKEN", ""))
+    telegram_chat_id: str = field(default_factory=lambda: os.environ.get("C2_TELEGRAM_CHAT_ID", ""))
     telegram_allowed_users: Set[str] = field(default_factory=lambda: set(
         u.strip() for u in os.environ.get("TELEGRAM_ALLOWED_USERS", "").split(",") if u.strip()
     ))
@@ -999,7 +1014,7 @@ async def startup():
         t = threading.Thread(target=telegram_thread, daemon=True)
         t.start()
     else:
-        log.warning("TELEGRAM_BOT_TOKEN no configurado — Telegram C2 desactivado.")
+        log.warning("C2_TELEGRAM_BOT_TOKEN no configurado — Telegram C2 desactivado (correcto: evita competir con el bot de Sol).")
     # Watchdog + Defense como tasks async
     asyncio.create_task(watchdog_loop())
     asyncio.create_task(defense_loop())

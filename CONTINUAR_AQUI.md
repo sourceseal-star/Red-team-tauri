@@ -12,6 +12,36 @@
 
 ---
 
+## ☀️ ARQUITECTURA SOL — Actualizado 02-sep-2026 20:30
+
+### Sol vive en su propio repo (sourceseal-star/sol)
+- **ELIMINadas de Red-team-tauri:** sol_core.py, sol_telegram_bot.py, sol_telegram_bridge.py, sol_daemon.py
+- El repo `sol` es la **única fuente de verdad** del código de Sol
+- Red-team-tauri solo conserva: avatar (`assets/sol_avatar_official.jpg`), `assets/SOL_IDENTITY.md`
+- `omni.sh` ya NO arranca Sol/Telegram localmente — verifica API en Replit
+- `commander/` se queda dentro de Red-team-tauri (es parte del conjunto)
+
+### Puente de control unificado (NUEVO)
+- `sol_actions.py` (en repo sol) conecta el LLM con 11 herramientas reales via function calling
+- Sol puede: ver estado de los 3 repos, hacer pull, leer archivos, ejecutar comandos seguros
+- Arquitectura: `mensaje → sol_core → sol_actions → LLM decide tool → sol_repo_tools ejecuta → respuesta`
+- Se activa automáticamente cuando el mensaje contiene palabras clave (repo, commit, status, etc.)
+
+### Commits clave de esta sesión
+| Repo | Commit | Descripción |
+|------|--------|-------------|
+| Red-team-tauri | `480f45d` | Eliminadas copias divergentes de Sol, omni.sh actualizado |
+| sol | `01cb37c` | sol_actions.py — puente de control con function calling |
+| sol | `1488c6c` | SOL_IDENTITY.md — identidad visual documentada |
+
+### Para continuar desde aquí
+1. Hacer `git pull` en ambos repos (sol y Red-team-tauri) en Replit y Termux
+2. Redeploy en Replit (el repo sol tiene sol_actions.py nuevo)
+3. Probar desde Telegram: enviar "cómo está mi repo de Red-team" → Sol debería ejecutar repo_status
+4. El token de Telegram debe ser válido (ver BLOQUEADOR ACTIVO más abajo)
+
+---
+
 ## ✅ NOVEDADES (01-sep-2026)
 
 ### Motor Táctico Profesional con Hot-Reload

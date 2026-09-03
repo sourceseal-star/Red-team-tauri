@@ -38,7 +38,8 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse, Response
+import httpx
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -3271,12 +3272,21 @@ async def ai_history(limit: int = 20):
 _SOL_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol.html")
 _SOL_AVATAR_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar.jpg")
 
+# Sin esto el navegador puede quedarse con una copia vieja de sol.html
+# cacheada para siempre (paso real: alguien vio una version vieja de la
+# pagina que ya no existe en el repo — cache del navegador, no el server).
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
 @app.get("/sol")
 async def sol_page():
     """Página de Sol — HTML estático en backend/static/ (fuera de tauri-frontend/dist,
     que vite build vacía por completo con emptyOutDir:true)."""
     if os.path.isfile(_SOL_PATH):
-        return FileResponse(_SOL_PATH, media_type="text/html")
+        return FileResponse(_SOL_PATH, media_type="text/html", headers=_NO_CACHE_HEADERS)
     raise HTTPException(404, "Sol no encuentra su página en backend/static/sol.html")
 
 @app.get("/sol.html")
@@ -3292,6 +3302,64 @@ async def sol_avatar():
     if os.path.isfile(_SOL_AVATAR_PATH):
         return FileResponse(_SOL_AVATAR_PATH, media_type="image/jpeg")
     raise HTTPException(404, "Avatar no encontrado en backend/static/sol_avatar.jpg")
+
+_SOL_AVATAR_TALK_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_talk.png")
+
+@app.get("/sol_avatar_talk.png")
+async def sol_avatar_talk():
+    """Segundo frame del avatar de Sol (boca abierta) para animacion de habla."""
+    if os.path.isfile(_SOL_AVATAR_TALK_PATH):
+        return FileResponse(_SOL_AVATAR_TALK_PATH, media_type="image/png", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Avatar talk no encontrado en backend/static/sol_avatar_talk.png")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SOL API PROXY — la UI incrustada (iframe FloatingSol / War Room → /sol.html)
+# se sirve desde :8001, pero su cerebro (sol_api.py) corre en :8006.
+# Sin este proxy, TODAS las llamadas /api/sol/* y /api/sil/* de la UI caían
+# en el 404 del SPA fallback y Sol se veía bonita pero muda (chat, memoria,
+# SIL, tools — todo muerto). Registrado ANTES del catch-all /{full_path:path}.
+# ═══════════════════════════════════════════════════════════════════════════════
+_SOL_API_BASE = os.environ.get("SOL_API_BASE", "http://127.0.0.1:8006")
+_SOL_PROXY_TIMEOUT = float(os.environ.get("SOL_PROXY_TIMEOUT", "20"))
+
+async def _proxy_to_sol(prefix: str, rest: str, request: Request):
+    """Reenvía transparentemente la petición al sol_api.py real (:8006).
+    Pasa el body, query params y los headers relevantes (incluido x-sol-key)."""
+    url = f"{_SOL_API_BASE}{prefix}/{rest}"
+    body = await request.body()
+    headers = {}
+    for key in ("x-sol-key", "content-type", "accept", "authorization"):
+        value = request.headers.get(key)
+        if value:
+            headers[key] = value
+    try:
+        async with httpx.AsyncClient(timeout=_SOL_PROXY_TIMEOUT) as client:
+            resp = await client.request(
+                request.method, url,
+                content=body,
+                headers=headers,
+                params=dict(request.query_params),
+            )
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=resp.headers.get("content-type", "application/json"),
+        )
+    except httpx.ConnectError:
+        return JSONResponse(
+            {"error": f"Sol no está corriendo en {_SOL_API_BASE}. Arranca con: bash sol_start.sh (módulo SOL) y recarga."},
+            status_code=502,
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Proxy Sol falló: {e}"}, status_code=502)
+
+@app.api_route("/api/sol/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def sol_api_proxy(rest: str, request: Request):
+    return await _proxy_to_sol("/api/sol", rest, request)
+
+@app.api_route("/api/sil/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def sil_api_proxy(rest: str, request: Request):
+    return await _proxy_to_sol("/api/sil", rest, request)
 
 # ── SPA fallback — rutas del React Router (ej. /dashboard, /osint) que no son archivos ni API ──
 _SPA_EXCLUDED_PREFIXES = ("api/", "docs", "openapi.json", "redoc", "ws", "assets/", "sol")

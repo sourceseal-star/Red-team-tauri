@@ -33,10 +33,10 @@ import NetworkMapPanel from './components/NetworkMapPanel';
 import AndroidFieldPanel from './components/AndroidFieldPanel';
 import NexusPanel from './components/NexusPanel';
 import ComlinkPanel from './components/ComlinkPanel';
+import EmergencyRoomPanel from './components/EmergencyRoomPanel';
 import OperationsPanel from './components/OperationsPanel';
 import IntegratedPanel from './components/IntegratedPanel';
 import TacticalPanel from './components/TacticalPanel';
-import { FloatingSol } from './components/FloatingSol';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('api_token'));
@@ -76,6 +76,7 @@ function App() {
       {module === 'leviathan' && <LeviathanPanel />}
       {module === 'commander' && <CommanderPanel />}
       {module === 'comlink' && <ComlinkPanel />}
+      {module === 'emergency' && <EmergencyRoomPanel />}
       {module === 'netmap' && <NetworkMapPanel />}
       {module === 'nexus' && <NexusPanel />}
       {module === 'integrated' && <IntegratedPanel />}
@@ -83,7 +84,6 @@ function App() {
       {module === 'android' && <AndroidFieldPanel />}
       {module === 'tactical' && <TacticalPanel />}
     </AppShell>
-    <FloatingSol />
     </ARTOProvider>
     </LanguageProvider>
   );
