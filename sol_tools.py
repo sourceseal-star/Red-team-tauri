@@ -650,6 +650,276 @@ def tool_commander_osint(target: str) -> str:
         return f"❌ {e}"
 
 # ============================================================
+# 9. VOZ BIDIRECCIONAL — Sol escucha y habla
+# ============================================================
+def tool_listen(duration: int = 5) -> str:
+    """Graba audio del micrófono y transcribe con SpeechRecognition."""
+    import tempfile
+    tmp_path = tempfile.mktemp(suffix='.m4a')
+    try:
+        subprocess.run(['termux-microphone-record', '-d', str(duration), '-f', tmp_path],
+                      capture_output=True, text=True, timeout=duration + 5)
+        if not Path(tmp_path).exists() or Path(tmp_path).stat().st_size < 100:
+            return '❌ No se pudo grabar. ¿Micrófono disponible?'
+        try:
+            import speech_recognition as sr
+            r = sr.Recognizer()
+            with sr.AudioFile(tmp_path) as source:
+                audio = r.record(source)
+            texto = r.recognize_google(audio, language='es-ES')
+            return f'🎤 Escuché: "{texto}"'
+        except ImportError:
+            return '❌ SpeechRecognition no instalado: pip install SpeechRecognition'
+        except Exception:
+            wav_path = tmp_path.replace('.m4a', '.wav')
+            try:
+                subprocess.run(['ffmpeg', '-i', tmp_path, '-y', wav_path],
+                              capture_output=True, timeout=10)
+                import speech_recognition as sr
+                r = sr.Recognizer()
+                with sr.AudioFile(wav_path) as source:
+                    audio = r.record(source)
+                texto = r.recognize_google(audio, language='es-ES')
+                return f'🎤 Escuché: "{texto}"'
+            except Exception:
+                return '❌ No pude transcribir. Verifica SpeechRecognition + ffmpeg.'
+    except FileNotFoundError:
+        return '❌ termux-microphone-record no disponible: pkg install termux-api'
+    except Exception as e:
+        return f'❌ {e}'
+    finally:
+        for p in [tmp_path, tmp_path.replace('.m4a', '.wav')]:
+            try: Path(p).unlink()
+            except: pass
+
+def tool_speak_file(text: str) -> str:
+    """Sol habla con voz natural (gTTS) y reproduce en Termux."""
+    import tempfile
+    tmp_path = tempfile.mktemp(suffix='.mp3')
+    try:
+        from gtts import gTTS
+        tts = gTTS(text=text, lang='es', tld='com', slow=False)
+        tts.save(tmp_path)
+        subprocess.run(['termux-media-player', 'play', tmp_path],
+                      capture_output=True, timeout=10)
+        return f'☀️ Dicho: {text[:60]}'
+    except ImportError:
+        try:
+            subprocess.run(['termux-tts-speak', text], capture_output=True, timeout=10)
+            return f'☀️ Dicho: {text[:60]}'
+        except Exception as e:
+            return f'❌ {e}'
+    except Exception as e:
+        return f'❌ {e}'
+    finally:
+        try: Path(tmp_path).unlink()
+        except: pass
+
+# ============================================================
+# 10. VISIÓN — Sol ve a través de la cámara
+# ============================================================
+def tool_camera_photo(camera_id: int = 0) -> str:
+    """Toma una foto con la cámara del celular."""
+    photos_dir = Path.home() / '.sol' / 'vision_photos'
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    photo_path = str(photos_dir / f'photo_{int(time.time())}.jpg')
+    try:
+        subprocess.run(['termux-camera-photo', '-c', str(camera_id), photo_path],
+                      capture_output=True, timeout=10)
+        if Path(photo_path).exists():
+            size = Path(photo_path).stat().st_size
+            return f'📸 Foto tomada: {photo_path} ({size:,} bytes)'
+        return '❌ No se pudo tomar la foto'
+    except FileNotFoundError:
+        return '❌ termux-camera-photo no disponible: pkg install termux-api'
+    except Exception as e:
+        return f'❌ {e}'
+
+def tool_camera_list() -> str:
+    """Lista las fotos tomadas por Sol."""
+    photos_dir = Path.home() / '.sol' / 'vision_photos'
+    if not photos_dir.exists():
+        return '📸 Sin fotos aún'
+    photos = sorted(photos_dir.glob('*.jpg'), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not photos:
+        return '📸 Sin fotos aún'
+    result = f'📸 {len(photos)} fotos guardadas:'
+    for p in photos[:10]:
+        mtime = time.strftime('%Y-%m-%d %H:%M', time.localtime(p.stat().st_mtime))
+        result += "\n  " + p.name + " (" + format(p.stat().st_size, ',') + " bytes) " + str(mtime)
+    return result
+
+# ============================================================
+# 11. MEMORIA VISUAL — Sol recuerda lo que ha visto
+# ============================================================
+_VISION_MEM_FILE = _SOL_HOME / 'vision_memory.json'
+
+def _load_vision_memory():
+    if _VISION_MEM_FILE.exists():
+        try:
+            return json.loads(_VISION_MEM_FILE.read_text())
+        except:
+            return []
+    return []
+
+def tool_vision_save(descripcion: str, photo_path: str = '', contexto: str = '') -> str:
+    """Guarda una observación visual en la memoria de Sol."""
+    from datetime import datetime
+    mem = _load_vision_memory()
+    mem.append({
+        'descripcion': descripcion,
+        'imagen': photo_path,
+        'contexto': contexto,
+        'fecha': datetime.now().isoformat(),
+    })
+    _VISION_MEM_FILE.write_text(json.dumps(mem, indent=2, ensure_ascii=False))
+    return f'👁️ Recuerdo guardado: {descripcion[:60]}'
+
+def tool_vision_recall(query: str = '') -> str:
+    """Busca en la memoria visual de Sol."""
+    mem = _load_vision_memory()
+    if not mem:
+        return '👁️ No tengo recuerdos visuales aún'
+    if query:
+        q = query.lower()
+        matches = [m for m in mem if q in m.get('descripcion', '').lower() or q in m.get('contexto', '').lower()]
+        if matches:
+            result = '👁️ Encontré ' + str(len(matches)) + ' recuerdos:'
+            for m in matches[:5]:
+                desc = m.get('descripcion', '')[:80]
+                fecha = m.get('fecha', '?')[:10]
+                result += '\n  • ' + desc + ' (' + fecha + ')'
+            return result
+        return '👁️ No encuentro recuerdos de "' + query + '"'
+    result = '👁️ ' + str(len(mem)) + ' recuerdos visuales:'
+    for m in mem[-5:]:
+        desc = m.get('descripcion', '')[:80]
+        fecha = m.get('fecha', '?')[:10]
+        result += '\n  • ' + desc + ' (' + fecha + ')'
+    return result
+
+# ============================================================
+# 12. APPS Y TELÉFONO — Sol interactúa con el celular
+# ============================================================
+def tool_open_app(package: str) -> str:
+    """Abre una aplicación del celular."""
+    try:
+        if '/' not in package:
+            subprocess.run(['am', 'start', '-n', f'{package}/.Main'],
+                          capture_output=True, timeout=5)
+        else:
+            subprocess.run(['am', 'start', '-n', package],
+                          capture_output=True, timeout=5)
+        return f'📱 Abriendo: {package}'
+    except Exception as e:
+        return f'❌ {e}'
+
+def tool_call_phone(number: str) -> str:
+    """Hace una llamada telefónica."""
+    try:
+        subprocess.run(['termux-telephony-call', number], capture_output=True, timeout=5)
+        return f'📞 Llamando a {number}'
+    except FileNotFoundError:
+        return '❌ termux-telephony-call no disponible: pkg install termux-api'
+    except Exception as e:
+        return f'❌ {e}'
+
+def tool_send_whatsapp(number: str, message: str = '') -> str:
+    """Abre WhatsApp con un número específico."""
+    try:
+        url = f'https://wa.me/{number}'
+        if message:
+            import urllib.parse
+            url += f'?text={urllib.parse.quote(message)}'
+        subprocess.run(['termux-open', url], capture_output=True, timeout=5)
+        return f'💬 WhatsApp abierto para {number}'
+    except Exception as e:
+        return f'❌ {e}'
+
+# ============================================================
+# 13. CONTEXTO DEL TELÉFONO — Sol siente el ambiente
+# ============================================================
+def tool_phone_state() -> str:
+    """Estado completo del teléfono: batería, ubicación, uptime, red."""
+    parts = []
+    try:
+        result = subprocess.run(['termux-battery-status'], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0:
+            b = json.loads(result.stdout)
+            parts.append(f'🔋 {b.get("percentage", "?")}% ({b.get("status", "?")})')
+    except: pass
+    try:
+        with open('/proc/uptime') as f:
+            up = float(f.read().split()[0])
+        h = int(up // 3600); m = int((up % 3600) // 60)
+        parts.append(f'⏱️ {h}h{m}m')
+    except: pass
+    try:
+        result = subprocess.run(['termux-wifi-connectioninfo'], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0 and result.stdout.strip():
+            wifi = json.loads(result.stdout)
+            ssid = wifi.get('ssid', wifi.get('SSID', '?'))
+            if ssid and ssid != '?':
+                parts.append(f'📶 {ssid}')
+    except: pass
+    try:
+        result = subprocess.run(['termux-location', '-p', 'network'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            loc = json.loads(result.stdout)
+            parts.append(f'📍 {loc.get("latitude", "?")},{loc.get("longitude", "?")}')
+    except: pass
+    return ' | '.join(parts) if parts else 'Estado no disponible'
+
+def tool_notification_list() -> str:
+    """Lista las últimas notificaciones del teléfono."""
+    try:
+        result = subprocess.run(['termux-notification-list'], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0 and result.stdout.strip():
+            notifs = json.loads(result.stdout)
+            if notifs:
+                summary = f'🔔 {len(notifs)} notificaciones activas:'
+                for n in notifs[:8]:
+                    title = n.get('title', '?')
+                    text = n.get('text', '')[:40]
+                    summary += '\n  \u2022 ' + title + ': ' + text
+                return summary
+            return '🔔 Sin notificaciones activas'
+        return '❌ No se pudo obtener notificaciones'
+    except FileNotFoundError:
+        return '❌ termux-notification-list no disponible: pkg install termux-api'
+    except Exception as e:
+        return f'❌ {e}'
+
+def tool_set_volume(volume: int = 50, stream: str = 'media') -> str:
+    """Cambia el volumen del teléfono."""
+    try:
+        subprocess.run(['termux-volume', stream, str(volume)], capture_output=True, timeout=3)
+        return f'🔊 Volumen {stream} = {volume}%'
+    except Exception as e:
+        return f'❌ {e}'
+
+def tool_clipboard_get() -> str:
+    """Lee el portapapeles de Termux."""
+    try:
+        result = subprocess.run(['termux-clipboard-get'], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0:
+            return f'📋 Portapapeles: {result.stdout[:200]}'
+        return '❌ No se pudo leer el portapapeles'
+    except Exception as e:
+        return f'❌ {e}'
+
+def tool_battery_info() -> str:
+    """Información detallada de la batería."""
+    try:
+        result = subprocess.run(['termux-battery-status'], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0:
+            b = json.loads(result.stdout)
+            return f'🔋 {b.get("percentage", "?")}% | {b.get("status", "?")} | {b.get("health", "?")} | {b.get("temperature", "?")}°C'
+        return 'No disponible'
+    except:
+        return 'No disponible'
+
+# ============================================================
 # REGISTRO DE HERRAMIENTAS — 38 herramientas
 # ============================================================
 TOOLS = {
@@ -707,6 +977,25 @@ TOOLS = {
     "commander_reports": Tool("commander_reports", "Lista reportes", tool_commander_reports),
     "commander_scan_network": Tool("commander_scan_network", "Escaneo de red commander", tool_commander_scan_network, ["network"]),
     "commander_osint": Tool("commander_osint", "OSINT con commander", tool_commander_osint, ["target"]),
+    # Voz bidireccional (2)
+    "listen": Tool("listen", "Escucha el microfono y transcribe", tool_listen, ["duration"]),
+    "speak_file": Tool("speak_file", "Habla con voz natural en Termux", tool_speak_file, ["text"]),
+    # Vision (2)
+    "camera_photo": Tool("camera_photo", "Toma foto con la camara", tool_camera_photo, ["camera_id"]),
+    "camera_list": Tool("camera_list", "Lista fotos tomadas", tool_camera_list),
+    # Memoria visual (2)
+    "vision_save": Tool("vision_save", "Guarda recuerdo visual", tool_vision_save, ["descripcion", "photo_path", "contexto"]),
+    "vision_recall": Tool("vision_recall", "Busca en memoria visual", tool_vision_recall, ["query"]),
+    # Apps y telefono (4)
+    "open_app": Tool("open_app", "Abre una app", tool_open_app, ["package"]),
+    "call_phone": Tool("call_phone", "Hace llamada telefonica", tool_call_phone, ["number"]),
+    "send_whatsapp": Tool("send_whatsapp", "Abre WhatsApp", tool_send_whatsapp, ["number", "message"]),
+    "phone_state": Tool("phone_state", "Estado completo del telefono", tool_phone_state),
+    # Notificaciones y media (4)
+    "notification_list": Tool("notification_list", "Lista notificaciones", tool_notification_list),
+    "set_volume": Tool("set_volume", "Cambia volumen", tool_set_volume, ["volume", "stream"]),
+    "clipboard_get": Tool("clipboard_get", "Lee el portapapeles", tool_clipboard_get),
+    "battery_info": Tool("battery_info", "Info detallada de bateria", tool_battery_info),
 }
 
 def get_tool(name: str) -> Optional[Tool]:

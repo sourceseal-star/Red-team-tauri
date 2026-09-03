@@ -238,12 +238,7 @@ async def think_post(req: ThinkRequest):
 async def _process_message(text: str):
     """Lógica compartida para procesar mensajes. Detecta herramientas y las ejecuta."""
     global _sol_last_message
-    if not _sol_pensar:
-        resp = "☀️ Mi cerebro está offline, Harold. Pero sigo aquí contigo. 我始终在此。"
-        _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
-        return {"response": resp, "intent": "offline"}
-
-    # ── Detección de herramientas físicas ──
+    # ── Detección de herramientas (antes que el cerebro) ──
     tool_name, tool_args = _detect_tool(text)
     if tool_name and _tools_ok:
         try:
@@ -260,6 +255,11 @@ async def _process_message(text: str):
             resp = f"☀️ Intenté ejecutar '{tool_name}' pero falló: {e}"
             _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
             return {"response": resp, "intent": "tool_error"}
+
+    if not _sol_pensar:
+        resp = "☀️ Mi cerebro está offline, Harold. Pero sigo aquí contigo. 我始终在此。"
+        _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
+        return {"response": resp, "intent": "offline"}
 
     try:
         resp = _sol_pensar(text)
@@ -414,12 +414,7 @@ async def think_and_speak(req: ThinkRequest):
     """
     global _sol_last_message
     
-    if not _sol_pensar:
-        resp = "☀️ Mi cerebro está offline, Harold. Pero sigo aquí contigo. 我始终在此。"
-        _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
-        return {"response": resp, "intent": "offline", "tts_url": None}
-    
-    # ── Detección de herramientas físicas ──
+    # ── Detección de herramientas (antes que el cerebro) ──
     tool_name, tool_args = _detect_tool(req.message)
     if tool_name and _tools_ok:
         try:
@@ -438,6 +433,11 @@ async def think_and_speak(req: ThinkRequest):
             resp = f"Intenté ejecutar {tool_name} pero falló: {e}"
             _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
             return {"response": resp, "intent": "tool_error", "tts_url": None}
+
+    if not _sol_pensar:
+        resp = "☀️ Mi cerebro está offline, Harold. Pero sigo aquí contigo. 我始终在此。"
+        _sol_last_message = {"message": resp, "time": datetime.now().isoformat()}
+        return {"response": resp, "intent": "offline", "tts_url": None}
 
     try:
         resp = _sol_pensar(req.message)
@@ -474,7 +474,7 @@ except Exception as e:
 _TOOL_TRIGGERS = {
     "linterna": "flashlight", "flashlight": "flashlight", "torch": "flashlight",
     "lintérna": "flashlight", "luz": "flashlight",
-    "foto": "screenshot", "captura": "screenshot", "screenshot": "screenshot",
+    "captura": "screenshot", "screenshot": "screenshot", "captura de pantalla": "screenshot",
     "gps": "location", "ubicación": "location", "ubicacion": "location", "dónde": "location",
     "donde estoy": "location", "mi ubicación": "location",
     "batería": "battery", "bateria": "battery", "carga": "battery",
@@ -483,10 +483,25 @@ _TOOL_TRIGGERS = {
     "escanea puertos": "scan_ports", "scan ports": "scan_ports", "puertos abiertos": "scan_ports",
     "vibra": "vibrate", "vibrar": "vibrate", "vibración": "vibrate",
     "sms": "send_sms", "envía sms": "send_sms", "envia sms": "send_sms",
-    "notifíca": "notify", "notifica": "notify", "notificación": "notify",
+    "notifíca": "notify", "crear notificación": "notify", "envía notificación": "notify", "notificación": "notify",
     "abre url": "open_url", "abre el navegador": "open_url",
     "copia al portapapeles": "clipboard", "pega": "clipboard",
-    "habla en voz": "tts_speak", "di en voz alta": "tts_speak",
+    "habla en voz": "tts_speak", "di en voz alta": "tts_speak", "habla": "speak_file", "dilo en voz": "speak_file",
+    # ── Escuchar micrófono ──
+    "escucha": "listen", "escuchar": "listen", "óyeme": "listen", "oime": "listen", "micrófono": "listen", "microfono": "listen",
+    # ── Cámara ──
+    "toma foto": "camera_photo", "tomar foto": "camera_photo", "sácame foto": "camera_photo", "foto cámara": "camera_photo", "cámara": "camera_photo", "foto": "camera_photo",
+    # ── Memoria visual ──
+    "recuerdas la foto": "vision_recall", "memoria visual": "vision_recall",
+    # ── Apps y teléfono ──
+    "llama a": "call_phone", "hazme llamada": "call_phone", "llamar a": "call_phone",
+    "abre whatsapp": "send_whatsapp", "envía whatsapp": "send_whatsapp", "manda whatsapp": "send_whatsapp",
+    "abre app": "open_app", "abrir app": "open_app", "abre aplicación": "open_app", "abre telegram": "open_app", "abre chrome": "open_app", "abre navegador": "open_app", "abre calculadora": "open_app", "abre reloj": "open_app", "abre maps": "open_app", "abre youtube": "open_app", "abre spotify": "open_app", "abre la cámara": "open_app", "abre la camara": "open_app",
+    "estado del teléfono": "phone_state", "cómo está el teléfono": "phone_state", "estado del celular": "phone_state", "cómo está el celular": "phone_state", "estado del telefono": "phone_state", "como esta el telefono": "phone_state", "como esta el celular": "phone_state",
+    # ── Notificaciones y media ──
+    "lista notificaciones": "notification_list", "ver notificaciones": "notification_list", "qué notificaciones": "notification_list",
+    "cambia volumen": "set_volume", "sube volumen": "set_volume", "baja volumen": "set_volume", "pon el volumen": "set_volume",
+    "lee el portapapeles": "clipboard_get", "qué hay en el portapapeles": "clipboard_get", "pega": "clipboard_get",
 }
 
 def _detect_repo(text: str) -> str:
@@ -545,6 +560,36 @@ def _detect_tool(text: str):
             elif tool_name == "notify":
                 nm = _re.search(r'(?:notif\w+)["\':\s]+(.+)', text, _re.IGNORECASE)
                 args = [nm.group(1)] if nm else [text]
+            elif tool_name == "call_phone":
+                nm = _re.search(r'(\+?\d{8,15})', text)
+                if nm: args = [nm.group(1)]
+                else:
+                    nm2 = _re.search(r'(?:llama a|llamar a)\s+([a-zA-Z\s]+)', text, _re.IGNORECASE)
+                    if nm2: args = [nm2.group(1).strip()]
+            elif tool_name == "send_whatsapp":
+                nm = _re.search(r'(\+?\d{8,15})', text)
+                msg = _re.search(r'(?:mensaje|texto)[:\s]+(.+)', text, _re.IGNORECASE)
+                if nm: args = [nm.group(1), msg.group(1) if msg else ""]
+                else: args = ["", ""]
+            elif tool_name == "open_app":
+                pm = _re.search(r'(?:abre|abrir)[:\s]+(com\.\w+\.\w+(?:\.\w+)*)', text, _re.IGNORECASE)
+                if pm: args = [pm.group(1)]
+                else:
+                    pm2 = _re.search(r'(?:abre|abrir)[:\s]+(whatsapp|telegram|chrome|navegador|c\u00e1mara|camara|calculadora|reloj|maps|youtube|spotify)', text, _re.IGNORECASE)
+                    if pm2:
+                        _apps = {"whatsapp": "com.whatsapp", "telegram": "org.telegram.messenger",
+                               "chrome": "com.android.chrome", "navegador": "com.android.chrome",
+                               "c\u00e1mara": "com.android.camera", "camara": "com.android.camera",
+                               "calculadora": "com.android.calculator2", "reloj": "com.android.deskclock",
+                               "maps": "com.google.android.apps.maps", "youtube": "com.google.android.youtube",
+                               "spotify": "com.spotify.music"}
+                        args = [_apps.get(pm2.group(1).lower(), pm2.group(1))]
+            elif tool_name == "listen":
+                dm = _re.search(r'(\d+)\s*(?:segundo| segundos|seg)', text, _re.IGNORECASE)
+                args = [int(dm.group(1))] if dm else [5]
+            elif tool_name == "set_volume":
+                vm = _re.search(r'(\d+)', text)
+                args = [int(vm.group(1)), "media"] if vm else [50, "media"]
             return tool_name, args
 
     # -- Git --
@@ -615,6 +660,66 @@ def _detect_tool(text: str):
         if any(w in t for w in ["commander activo", "commander disponible", "commander funciona"]):
             return "commander_health", []
 
+    # -- Llamar a alguien --
+    if any(w in t for w in ["llama a", "hazme llamada", "llamar a", "haz una llamada"]):
+        import re as _re
+        nm = _re.search(r'(?:llama a|llamar a|llamada)[:\s]*(\+?\d{8,15})', text, _re.IGNORECASE)
+        if nm:
+            return "call_phone", [nm.group(1)]
+        nm2 = _re.search(r'(?:llama a|llamar a)\s+([a-zA-Z\s]+)', text, _re.IGNORECASE)
+        if nm2:
+            return "call_phone", [nm2.group(1).strip()]
+
+    # -- WhatsApp --
+    if any(w in t for w in ["abre whatsapp", "envía whatsapp", "manda whatsapp", "whatsapp"]):
+        import re as _re
+        nm = _re.search(r'(\+?\d{8,15})', text)
+        msg = _re.search(r'(?:mensaje|texto)[:\s]+(.+)', text, _re.IGNORECASE)
+        if nm:
+            return "send_whatsapp", [nm.group(1), msg.group(1)] if msg else [nm.group(1), ""]
+
+    # -- Abrir app --
+    if any(w in t for w in ["abre app", "abrir app", "abre aplicación", "abre la app", "abre la aplicaci"]):
+        import re as _re
+        pm = _re.search(r'(?:abre|abrir)[:\s]+(com\.\w+\.\w+(?:\.\w+)*)', text, _re.IGNORECASE)
+        if pm:
+            return "open_app", [pm.group(1)]
+        pm2 = _re.search(r'(?:abre|abrir)[:\s]+(whatsapp|telegram|chrome|navegador|cámara|camara|calculadora|reloj|maps|youtube|spotify)', text, _re.IGNORECASE)
+        if pm2:
+            apps_map = {"whatsapp": "com.whatsapp", "telegram": "org.telegram.messenger",
+                       "chrome": "com.android.chrome", "navegador": "com.android.chrome",
+                       "cámara": "com.android.camera", "camara": "com.android.camera",
+                       "calculadora": "com.android.calculator2", "reloj": "com.android.deskclock",
+                       "maps": "com.google.android.apps.maps", "youtube": "com.google.android.youtube",
+                       "spotify": "com.spotify.music"}
+            app = apps_map.get(pm2.group(1).lower(), pm2.group(1))
+            return "open_app", [app]
+
+    # -- Volumen --
+    vol_match = _re.search(r'(?:volumen|vol)\s+(\d+)', t)
+    if vol_match:
+        return "set_volume", [int(vol_match.group(1)), "media"]
+    if any(w in t for w in ["silencio", "silenciar", "mute", "múteo"]):
+        return "set_volume", [0, "media"]
+    if "volumen máximo" in t or "volumen maximo" in t or "sube volumen" in t:
+        return "set_volume", [100, "media"]
+
+    # -- Estado del teléfono --
+    if any(w in t for w in ["estado del teléfono", "estado del celular", "cómo está el celular", "cómo está el teléfono", "sentir el teléfono"]):
+        return "phone_state", []
+
+    # -- Notificaciones --
+    if any(w in t for w in ["qué notificaciones", "ver notificaciones", "lista notificaciones", "notifícame"]):
+        return "notification_list", []
+
+    # -- Fotos de Sol --
+    if any(w in t for w in ["lista fotos", "ver fotos", "fotos de sol", "fotos tomadas"]):
+        return "camera_list", []
+
+    # -- Memoria visual --
+    if any(w in t for w in ["recuerdas la foto", "memoria visual", "recuerdos visuales", "qué viste", "que viste"]):
+        return "vision_recall", [""]
+
     # -- Terminal: ejecucion arbitraria --
     if any(w in t for w in ["ejecuta", "corre", "lanza", "ejecutar comando", "run command"]):
         cm = _re.search(r'(?:ejecuta|corre|lanza)[:\s]+[`]?([^`\n]+)[`]?', text, _re.IGNORECASE)
@@ -679,6 +784,43 @@ try:
 except Exception as e:
     print(f"[SOL] sol_learning_advanced no disponible: {e}", flush=True)
     _sil_ok = False
+
+@router.post("/listen")
+async def sol_listen(duration: int = 5):
+    """Sol escucha el micrófono y transcribe lo que oye."""
+    import sys, os
+    _ensure_imports()
+    result = sol_tools.execute_tool("listen", duration)
+    return result if isinstance(result, dict) else {"success": True, "result": result}
+
+@router.post("/camera")
+async def sol_camera(camera_id: int = 0):
+    """Sol toma una foto con la cámara."""
+    _ensure_imports()
+    result = sol_tools.execute_tool("camera_photo", camera_id)
+    return result if isinstance(result, dict) else {"success": True, "result": result}
+
+@router.post("/vision/save")
+async def sol_vision_save(req: dict = None):
+    """Guarda un recuerdo visual de Sol."""
+    _ensure_imports()
+    body = req or {}
+    result = sol_tools.execute_tool("vision_save", body.get("descripcion", ""), body.get("imagen", ""), body.get("contexto", ""))
+    return result if isinstance(result, dict) else {"success": True, "result": result}
+
+@router.get("/vision/recall")
+async def sol_vision_recall(query: str = ""):
+    """Busca en la memoria visual de Sol."""
+    _ensure_imports()
+    result = sol_tools.execute_tool("vision_recall", query)
+    return result if isinstance(result, dict) else {"success": True, "result": result}
+
+@router.get("/phone-state")
+async def sol_phone_state():
+    """Estado completo del teléfono."""
+    _ensure_imports()
+    result = sol_tools.execute_tool("phone_state")
+    return result if isinstance(result, dict) else {"success": True, "result": result}
 
 @router.get("/sil/lessons")
 async def sil_lessons(language: str = "chino"):
