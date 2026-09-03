@@ -225,25 +225,32 @@ help() {
 ⚡ OMNI.SH — SourceSeal Unified Command
 
 COMANDOS:
-  start          Levanta TODO: Dashboard + GHOST + Nexus + Telegram + Watchdog + Seal
+  up             🚀 Sync de los 3 repos + arrancar TODO (el más completo)
+  start          Levanta TODO: Dashboard + Commander + GHOST + Nexus + C2 + Seal + Watchdog
   stop           Detiene todo limpio
   restart        Stop + Start
   status         Estado de todos los servicios
-  sync           git pull + deps + build frontend (SIN tocar .env)
+  sync           git pull (Red-team + Sol) + deps + build frontend (SIN tocar .env)
   sync-deps      Solo instalar/actualizar dependencias Python + Node
   sync-frontend  Solo rebuild del frontend (npm run build)
-  logs [serv]    Ver logs: dash | ghost | tg | nexus | seal | all
+  logs [serv]    Ver logs: dash | commander | ghost | c2 | nexus | seal | all
   snapshot       Crea snapshot cifrado del .env
   verify         Verifica que las credenciales críticas existan
   help           Esta ayuda
 
 SERVICIOS:
-  :8001  Dashboard FastAPI + Commander
+  :8001  Dashboard FastAPI (+ Commander integrado)
   :8002  GHOST PHANTOM Master + Node
+  :8003  Commander Dashboard (endpoints únicos: IoT, Phantom, OSINT, scans)
   :8004  Nexus Omni-Sentient
   :8005  C2 UNIFIED PRO
-  ☀️     Puente Telegram
+  ☀️     Sol (gestionada desde su repo en Replit)
   🐕     Watchdog (auto-restart)
+
+REPOS SINCRONIZADOS POR sync/up:
+  Red-team-tauri  → git pull (incluye commander/ como subdirectorio)
+  sol             → git pull (si existe localmente, sino vive en Replit)
+  commander       → incluido en el pull de Red-team-tauri
 
 SEGURIDAD DE CREDENCIALES:
   .env NUNCA se modifica, regenera, ni borra durante sync.
@@ -722,25 +729,24 @@ sync() {
 
   echo ""
 
-  # ── 1. GIT PULL ──
-  echo -e "${BOLD} Paso 1: git pull${N}"
+  # ── 1. GIT PULL — Red-team-tauri + Sol + Commander ──
+  echo -e "${BOLD} Paso 1: git pull los 3 repos${N}"
   cd "$ROOT"
 
-  # Si hay cambios locales sin commitear, stash (NUNCA stashear .env — está en .gitignore)
+  # Si hay cambios locales sin commitear, stash (NUNCA stashear .env — en .gitignore)
   LOCAL_CHANGES="$(git status --porcelain 2>/dev/null | grep -v '^\?\?' | head -5)"
   if [ -n "$LOCAL_CHANGES" ]; then
     info "Cambios locales detectados — guardando en stash..."
     git stash push -m "omni-sync-$(date +%s)" 2>/dev/null && ok "Stash creado" || warn "No se pudo stash"
   fi
 
-  info "git pull origin main..."
+  info "git pull Red-team-tauri..."
   if git pull origin main 2>&1 | tee -a "$LOG_DIR/sync.log"; then
-    ok "git pull completado"
+    ok "Red-team-tauri actualizado"
   else
-    fail "git pull falló"
+    fail "git pull Red-team-tauri falló"
     warn "Restaurando stash si existe..."
     git stash pop 2>/dev/null || true
-    # Restaurar .env por si acaso
     if [ ! -f "$ENV_FILE" ] || [ "$(sha256sum "$ENV_FILE" | cut -d' ' -f1)" != "$ENV_HASH_BEFORE" ]; then
       warn "Restaurando .env desde respaldo..."
       cp "$ENV_RESTORE" "$ENV_FILE"
@@ -754,6 +760,26 @@ sync() {
   if git stash list 2>/dev/null | head -1 | grep -q "omni-sync"; then
     info "Restaurando cambios locales..."
     git stash pop 2>/dev/null && ok "Cambios locales restaurados" || warn "Conflicto en stash pop — resuelve manualmente"
+  fi
+
+  # Sincronizar repo Sol (si existe localmente)
+  SOL_DIR="${SOL_DIR:-$HOME/sol}"
+  if [ -d "$SOL_DIR/.git" ]; then
+    info "git pull Sol ($SOL_DIR)..."
+    cd "$SOL_DIR"
+    if git pull origin main 2>&1 | tee -a "$LOG_DIR/sync-sol.log"; then
+      ok "Sol actualizado"
+    else
+      warn "git pull Sol falló — continuando (no crítico)"
+    fi
+    cd "$ROOT"
+  else
+    info "Repo sol no encontrado localmente ($SOL_DIR) — saltando (vive en Replit)"
+  fi
+
+  # Commander es subdirectorio de Red-team-tauri — ya se actualizó con el pull de arriba
+  if [ -d "$ROOT/commander" ]; then
+    ok "Commander incluido en pull de Red-team-tauri (es subdirectorio)"
   fi
 
   echo ""
@@ -970,13 +996,15 @@ logs() {
     ghost|phantom)   tail -50 "$LOG_DIR/ghost.log" 2>/dev/null || echo "Sin logs de GHOST" ;;
     tg|telegram|sol) tail -50 "$LOG_DIR/tg.log" 2>/dev/null || echo "Sin logs de Telegram" ;;
     c2)              tail -50 "$LOG_DIR/c2.log" 2>/dev/null || echo "Sin logs de C2" ;;
+    commander|cmd)   tail -50 "$LOG_DIR/commander.log" 2>/dev/null || echo "Sin logs de Commander" ;;
     nexus)           tail -50 "$LOG_DIR/nexus.log" 2>/dev/null || echo "Sin logs de Nexus" ;;
     seal)            tail -50 "$LOG_DIR/seal.log" 2>/dev/null || echo "Sin logs de Seal" ;;
     watchdog)        tail -50 "$LOG_DIR/watchdog.log" 2>/dev/null || echo "Sin logs de Watchdog" ;;
-    all|*)           echo -e "${BOLD}=== Dashboard ===${N}"; tail -20 "$LOG_DIR/dash.log" 2>/dev/null
-                     echo -e "\n${BOLD}=== GHOST ===${N}"; tail -20 "$LOG_DIR/ghost.log" 2>/dev/null
-                     echo -e "\n${BOLD}=== Telegram ===${N}"; tail -20 "$LOG_DIR/tg.log" 2>/dev/null
-                     echo -e "\n${BOLD}=== Nexus ===${N}"; tail -20 "$LOG_DIR/nexus.log" 2>/dev/null
+    all|*)           echo -e "${BOLD}=== Dashboard :8001 ===${N}"; tail -20 "$LOG_DIR/dash.log" 2>/dev/null
+                     echo -e "\n${BOLD}=== Commander :8003 ===${N}"; tail -20 "$LOG_DIR/commander.log" 2>/dev/null
+                     echo -e "\n${BOLD}=== GHOST :8002 ===${N}"; tail -20 "$LOG_DIR/ghost.log" 2>/dev/null
+                     echo -e "\n${BOLD}=== C2 :8005 ===${N}"; tail -20 "$LOG_DIR/c2.log" 2>/dev/null
+                     echo -e "\n${BOLD}=== Nexus :8004 ===${N}"; tail -20 "$LOG_DIR/nexus.log" 2>/dev/null
                      echo -e "\n${BOLD}=== Seal ===${N}"; tail -20 "$LOG_DIR/seal.log" 2>/dev/null ;;
   esac
 }
@@ -1074,20 +1102,21 @@ watchdog() {
         fi
       fi
     fi
-    # Telegram — reiniciar SOLO si NINGUNO de los dos (puente/miniapp) está corriendo
-    if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-      if ! pgrep -f "sol_telegram_bridge" >/dev/null && ! pgrep -f "sol_telegram_bot.py" >/dev/null; then
-        log "⚠️ Telegram caído → reiniciando"
-        cd "$ROOT"
-        if [ -f "$ROOT/sol_telegram_bot.py" ] && python3 -c "import telegram" 2>/dev/null; then
-          nohup python3 sol_telegram_bot.py >> "$LOG_DIR/tg_bot.log" 2>&1 &
-          echo $! > "$SOL_DIR/tg_bot.pid"
-        else
-          nohup python3 sol_telegram_bridge.py >> "$LOG_DIR/tg.log" 2>&1 &
+    # Commander :8003
+    if [ -f "$ROOT/commander/commander_server.py" ]; then
+      if ! curl -s -m 3 http://127.0.0.1:8003/api/health >/dev/null 2>&1; then
+        if ! pgrep -f "commander_server.py" >/dev/null; then
+          log "⚠️ Commander :8003 caído → reiniciando"
+          cd "$ROOT/commander"
+          COMMANDER_PORT=8003 BACKEND_API="http://127.0.0.1:8001"             nohup python3 commander_server.py >> "$LOG_DIR/commander.log" 2>&1 &
+          sleep 8
+          cd "$ROOT"
         fi
-        sleep 3
       fi
     fi
+
+    # Telegram — Sol vive en Replit, no reiniciar localmente
+    # (si hay zombies locales se limpian en start/stop)
 
   done
 }
@@ -1095,6 +1124,27 @@ watchdog() {
 # ═══════════════════════════════════════════════════════════════════════
 #  DISPATCH
 # ═══════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
+#  UP — Sync de todos los repos + start (todo en uno)
+# ═══════════════════════════════════════════════════════════════════════
+up() {
+  banner
+  echo ""
+  log "🚀 UP — Sync + Start completo — $(date)"
+  echo -e "${BOLD}── Sincronizar todo y arrancar ──${N}"
+  echo ""
+  sync
+  SYNC_RC=$?
+  if [ $SYNC_RC -ne 0 ]; then
+    fail "Sync falló — NO arrancando (evita arrancar con código viejo)"
+    exit 1
+  fi
+  echo ""
+  echo -e "${BOLD}── Arrancando servicios ──${N}"
+  echo ""
+  start
+}
+
 case "${1:-help}" in
   start)          start ;;
   stop)           stop ;;
@@ -1103,6 +1153,7 @@ case "${1:-help}" in
   sync)           sync ;;
   sync-deps)      sync_deps ;;
   sync-frontend)  sync_frontend ;;
+  up)             up ;;
   logs)           logs "${2:-all}" ;;
   snapshot)       snapshot ;;
   verify)         verify ;;
