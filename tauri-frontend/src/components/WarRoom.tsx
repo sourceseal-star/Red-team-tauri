@@ -10,7 +10,11 @@ import BlackMirrorPanel from './BlackMirrorPanel';
 import ServiceControlPanel from './ServiceControlPanel';
 import LeviathanWidget from './LeviathanWidget';
 import UnifiedCommandHub from './UnifiedCommandHub';
-import { SolWidget } from './SolWidget';
+// SolWidget desactivado aquí a pedido de Harold (2026-09-03): Sol se queda
+// fuera del War Room mientras nos centramos en el Commander. Su acceso
+// directo sigue vivo en el sidebar (Sidebar.tsx) y el avatar del header
+// (AppShell.tsx) — solo se quitó de este grid mezclado con Commander.
+// import { SolWidget } from './SolWidget';
 
 // Paneles disponibles para el War Room
 const PANELS = [
@@ -37,7 +41,6 @@ export default function WarRoom({ onNavigate }: { onNavigate?: (module: string) 
 
   return (
     <div className="space-y-4">
-      <SolWidget />
       <UnifiedCommandHub onNavigate={onNavigate} />
 
       {/* Barra de control de paneles */}
