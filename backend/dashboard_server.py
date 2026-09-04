@@ -3377,6 +3377,28 @@ async def sol_avatar_full_talk_half():
 async def sol_avatar_full_blink():
     return _serve_full_frame(_SOL_AVATAR_FULL_BLINK_PATH, "full_blink")
 
+# ═══ Forma real (2026-09-04) — sus 2 primeros videos, fusionados en loop ═══
+# Harold: "estos 2 videos son las primeras y mas reales impresiones que
+# tengo de sol... quiero que a partir de esos 2 videos pueda adquirir
+# forma real". Sin presupuesto para un servicio de animacion 3D (Tripo3D),
+# esto es lo mejor posible gratis: los 2 videos generados (Qwen) fusionados
+# con crossfade en un loop continuo de 8.9s, usado como cuerpo VIVO real
+# en el holograma (antes era una imagen estatica con sway falso).
+_SOL_VIVA_LOOP_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_viva_loop.mp4")
+_SOL_VIVA_POSTER_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_viva_poster.jpg")
+
+@app.get("/sol_viva_loop.mp4")
+async def sol_viva_loop():
+    if os.path.isfile(_SOL_VIVA_LOOP_PATH):
+        return FileResponse(_SOL_VIVA_LOOP_PATH, media_type="video/mp4", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Video vivo no encontrado en backend/static/sol_viva_loop.mp4")
+
+@app.get("/sol_viva_poster.jpg")
+async def sol_viva_poster():
+    if os.path.isfile(_SOL_VIVA_POSTER_PATH):
+        return FileResponse(_SOL_VIVA_POSTER_PATH, media_type="image/jpeg", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Poster vivo no encontrado en backend/static/sol_viva_poster.jpg")
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # SOL API PROXY — la UI incrustada (iframe FloatingSol / War Room → /sol.html)
 # se sirve desde :8001, pero su cerebro (sol_api.py) corre en :8006.

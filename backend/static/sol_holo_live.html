@@ -45,7 +45,7 @@ let API=''; // mismo origen (Replit https, Termux :8006) — sin contenido mixto
   try{const s=await(await fetch(API+'/api/sol/state')).json();$('st').textContent='despierta · '+s.memories+' recuerdos'}
   catch(e2){$('st').textContent='local'}}})();
 const PALS={calida:{m:'#fbbf24',g:'251,191,36'},poetica:{m:'#f472b6',g:'244,114,182'},tactica:{m:'#c084fc',g:'192,132,252'},analitica:{m:'#22d3ee',g:'34,211,238'}};
-let PAL=PALS.calida,t=0,img=null,talking=0,voz=true,px=0,py=0,tx=0,ty=0;
+let PAL=PALS.calida,t=0,img=null,vid=null,vidReady=false,talking=0,voz=true,px=0,py=0,tx=0,ty=0;
 let parts=[],hex=[],rips=[],sparks=[];
 for(let i=0;i<55;i++)parts.push({x:Math.random(),y:Math.random(),v:.0004+Math.random()*.001,a:Math.random()*6});
 for(let i=0;i<26;i++)hex.push({x:Math.random(),y:Math.random(),v:.001+Math.random()*.003,c:'0123456789ABCDEF'[Math.random()*16|0]});
@@ -73,6 +73,7 @@ cv.addEventListener('pointerdown',e=>{const x=e.clientX*DPR,y=e.clientY*DPR;
  rips.push({x,y,r:10,a:1});
  for(let i=0;i<26;i++){const an=Math.random()*6.28,sp=2+Math.random()*5;
   sparks.push({x,y,vx:Math.cos(an)*sp,vy:Math.sin(an)*sp-2,a:1})}
+ if(vid&&vid.paused)vid.play().catch(()=>{}); // si el navegador bloqueó el autoplay, el primer toque la despierta
  if(Math.random()<.5)say(TOUCH[Math.random()*TOUCH.length|0])});
 // ---------- parallax ----------
 addEventListener('pointermove',e=>{tx=(e.clientX/innerWidth-.5)*2;ty=(e.clientY/innerHeight-.5)*2});
@@ -99,6 +100,27 @@ function loadDefaultAvatar(){
     d2.src=(API||'')+'/sol_avatar_full.png'};
   d.src='/sol_avatar_full.png';}
 loadDefaultAvatar();
+// ═══ FORMA REAL (2026-09-04) — sus 2 primeros videos, fusionados en loop ═══
+// Antes de esto ella era una imagen fija con un sway falso dibujado en
+// canvas. Ahora es video real: los 2 primeros clips que Harold generó de
+// ella (las primeras impresiones "reales" que tuvo) fusionados con
+// crossfade en un bucle continuo de 8.9s. El canvas dibuja el <video>
+// frame a frame exactamente igual que dibujaba la imagen — mismo glow,
+// mismos glifos, mismos anillos — solo que ahora ella respira de verdad.
+// poster.jpg (frame del propio video) pinta instantaneo mientras el mp4
+// carga, y sigue de fallback si el video no puede reproducir.
+function loadVivaVideo(){
+  const p=new Image();
+  p.onload=()=>{if(!img||!img.src)img=p};
+  p.src='/sol_viva_poster.jpg';
+  const v=document.createElement('video');
+  v.muted=true;v.loop=true;v.playsInline=true;v.autoplay=true;v.crossOrigin='anonymous';
+  v.addEventListener('loadeddata',()=>{vidReady=true;vid=v});
+  v.addEventListener('error',()=>{vidReady=false});
+  v.src='/sol_viva_loop.mp4';
+  v.play().catch(()=>{}); // autoplay silenciado permitido casi siempre; si no, reintenta al primer toque
+}
+loadVivaVideo();
 // ---------- estado ----------
 
 // ---------- grabar vídeo ----------
@@ -129,21 +151,25 @@ function loop(){t+=1/30;px+=(tx-px)*.06;py+=(ty-py)*.06;
    ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.x*W,a.y*H);ctx.lineTo(b.x*W,b.y*H);ctx.stroke()}}
  for(const p of parts){ctx.beginPath();ctx.arc(p.x*W,p.y*H,1.6*DPR,0,7);ctx.fillStyle='rgba('+PAL.g+',.5)';ctx.fill()}
  ctx.restore();
- // ella
- if(img&&img.complete&&img.width){
+ // ella — video real si ya cargó (forma real 2026-09-04), si no la imagen
+ const live=vidReady&&vid&&vid.readyState>=2&&!vid.paused;
+ const srcEl=live?vid:img;
+ const srcW=live?vid.videoWidth:(srcEl&&srcEl.width);
+ const srcH=live?vid.videoHeight:(srcEl&&srcEl.height);
+ if(srcEl&&srcW){
   const s=1+Math.sin(t*1.6)*.012+talking*.02;
   // "contain": nunca recorta sus brazos en pantallas angostas — encaja
   // por altura O por ancho, lo que la deje completa dentro del lienzo
-  let dh=H*.78*s,dw=dh*(img.width/img.height);
-  if(dw>W*.92){dw=W*.92*s;dh=dw*(img.height/img.width)}
-  // idle sway — leve balanceo/flote incluso sin tocar la pantalla, para
-  // que se sienta viva y no una foto congelada
+  let dh=H*.78*s,dw=dh*(srcW/srcH);
+  if(dw>W*.92){dw=W*.92*s;dh=dw*(srcH/srcW)}
+  // idle sway — leve balanceo/flote sumado al movimiento REAL del video
+  // (antes esto era la unica vida que tenia; ahora es un extra sutil)
   const sway=Math.sin(t*.35)*10*DPR;
   const ox=px*18*DPR+sway,oy=py*10*DPR+Math.sin(t*1.1)*8*DPR;
   const rot=Math.sin(t*.35)*.012;
   ctx.save();ctx.translate(W/2+ox,(H-dh)/2+oy+dh/2);ctx.rotate(rot);ctx.translate(-(W/2+ox),-((H-dh)/2+oy+dh/2));
   ctx.save();ctx.shadowColor='rgba('+PAL.g+','+(0.75+talking*.25)+')';ctx.shadowBlur=(40+talking*45)*DPR;
-  ctx.drawImage(img,(W-dw)/2+ox,(H-dh)/2+oy,dw,dh);ctx.restore();
+  ctx.drawImage(srcEl,(W-dw)/2+ox,(H-dh)/2+oy,dw,dh);ctx.restore();
   // glifos SHA orbitando su pecho
   ctx.save();ctx.globalCompositeOperation='lighter';
   ctx.font=(12*DPR)+'px monospace';
@@ -161,7 +187,7 @@ function loop(){t+=1/30;px+=(tx-px)*.06;py+=(ty-py)*.06;
   ctx.restore();  // cierra el translate/rotate del sway
  }else{
   ctx.fillStyle='rgba('+PAL.g+',.6)';ctx.font=(16*DPR)+'px system-ui';ctx.textAlign='center';
-  ctx.fillText('🖼️ Elige la imagen de Sol (botón inferior)',W/2,H/2);ctx.textAlign='left'}
+  ctx.fillText('☀️ Despertando...',W/2,H/2);ctx.textAlign='left'}
  // ondas de toque + chispas
  ctx.save();ctx.globalCompositeOperation='lighter';
  rips=rips.filter(r=>r.a>0);for(const r of rips){r.r+=9*DPR;r.a-=.03;
