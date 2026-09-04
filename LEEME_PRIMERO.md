@@ -1072,3 +1072,57 @@ intenta arrancar.
   **No es un bug — son dos cosas distintas que casualmente comparten el
   mismo puerto base.** La Sol de hoy, la del holo y los clips de amor,
   SIEMPRE es `127.0.0.1:8006`.
+
+## Regla #29 — CAUSA RAÍZ REAL encontrada: zombie de antes de la migración (2026-09-04, tarde)
+
+**El error exacto** (visto en `tail -40 ~/.sol/sol_api.log`, repetido decenas
+de veces, prueba de un loop de reintento):
+```
+File "/data/data/com.termux/files/home/Red-team-tauri/sol_api.py", line 10
+    import sol_core
+ModuleNotFoundError: No module named 'sol_core'
+```
+
+**No era RAM. No era OOM.** Era un archivo FANTASMA. `~/Red-team-tauri/`
+(este repo) todavía tenía su PROPIA copia vieja de `sol_api.py` —
+de antes de que Sol se mudara a su repo propio `~/sol` — sin su
+`sol_core.py` al lado (ese solo existe en `~/sol`). Y peor: también había
+copias viejas de `sol_watchdog.sh` y `sol_body.sh` en esta raíz, con
+`ROOT="$HOME/Red-team-tauri"` **harcodeado**, de fecha 2026-09-02 — DOS DÍAS
+antes de que empezáramos a arreglar las rutas.
+
+**Por qué sobrevivía a cada fix:** el `omni.sh` de HOY ya apunta bien a
+`~/sol` en todos lados — verificado, nunca toca estos archivos viejos.
+Pero un **proceso zombie** de `sol_body.sh`/`sol_watchdog.sh` (arrancado en
+una sesión vieja, ANTES de este fix, con la ROOT vieja ya cargada en su
+memoria) sigue viviendo en el teléfono sin que ningún `git pull` lo toque
+— el código en disco cambia, pero el proceso ya corriendo no se entera.
+Cada ~30-60s reintentaba `python3 sol_api.py` desde la carpeta vieja,
+crasheaba por el import faltante, y repetía para siempre. `pgrep -f
+sol_watchdog.sh` en el omni.sh nuevo lo veía "ya corriendo" y nunca lo
+reemplazaba con la versión buena.
+
+**Fix aplicado — se ELIMINARON de este repo (huérfanos, confirmado con
+grep exhaustivo que nada activo los llama):**
+- `sol_api.py` (la copia rota, sin `sol_core.py`)
+- `sol_watchdog.sh` (ROOT hardcodeado a este repo, de antes de la migración)
+- `sol_body.sh` (mismo problema)
+- `iniciar_unificado.sh` y `omni_start_patch.sh` (entry-points viejos,
+  superados por `omni.sh` — el patch que aplicaban ya está fusionado ahí)
+
+**Lo que SÍ se dejó intacto** (confirmado que SÍ está vivo y en uso, vía
+`redteam/scripts/sol_router.py` montado en el Dashboard real de :8001):
+`sol_memory.py`, `sol_tools.py`, `sol_learning_advanced.py`,
+`sol_knowledge.py`, `sol_groq.py`, `sol_relay_queue.py`, `sol_security.py`,
+`sol_start.sh`, `sol_sync.sh`, `sol_termux.py` — eso alimenta el widget
+"181 recuerdos" de la War Room. No tocar sin razón.
+
+**Acción manual de Harold, UNA SOLA VEZ (el código no puede matar un
+proceso que ya existe en memoria):**
+```bash
+pkill -9 -f sol_watchdog.sh; pkill -9 -f sol_body.sh
+pkill -9 -f sol_api.py; pkill -9 -f sol_daemon.py
+cd ~/sol && git pull
+cd ~/Red-team-tauri && git pull
+bash omni.sh restart
+```
