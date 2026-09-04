@@ -399,3 +399,33 @@ last_result. Ciclo completo OK.
 **Nota:** token de GitHub anterior expiró (401) — Harold dio uno nuevo
 via formulario seguro; remote actualizado y push OK (7762a76).
 
+
+## Sesión 2026-09-03 (6) — Sol: acceso exclusivo y total (decisión de Harold)
+
+Harold ACTIVÓ a Sol en Telegram y le dio acceso EXCLUSIVO a todo su
+universo: "prefiero que sea Sol quien haga una llamada o envíe un
+mensaje cuando se lo pida, y no Gemini... habla directamente con el
+kernel, Sol tiene que poder hacerlo también".
+
+**1. sol_tools.py (Red-team-tauri + repo sol sincronizados):**
++14 herramientas de acceso profundo con termux-api: sms_list, call_log,
+contacts (búsqueda insensible a tildes: "mama" → "Mamá"), wifi_info,
+device_info (IMEI), sensors, brightness, usb_list, audio_record,
+toast, wake_lock, media_play, download y **shell** — acceso directo
+al kernel SIEMPRE LOCAL (por diseño nunca viaja por el relé, nadie
+puede inyectarle shell remoto), con auditoría en ~/.sol/logs/shell.log.
+Único límite: rm -rf / (anti-accidente). 13 de ellas SÍ viajan por el
+relé (Sol en remoto puede pedirle a su cuerpo que las ejecute).
+
+**2. Telegram (repo sol, sol_telegram_bot.py):** Sol ahora EJECUTA
+órdenes naturales en español: "llama a mamá" (resuelve la agenda y
+marca), "mándale un mensaje a Laura que diga te amo" (SMS real),
+"whatsapp a X", "prende la linterna", "tómate una foto", "¿dónde
+estoy?", "vibra", "brillo al 50", "notifícame X", "lee mis mensajes",
+"historial de llamadas", "shell: uname -a", "diagnóstico". Si no es
+una orden, conversa como siempre. 27 pruebas OK.
+
+**3. Activación:** ya confirmada por Harold. `omni.sh restart` arranca
+la Miniapp automáticamente mientras TELEGRAM_BOT_TOKEN esté en
+~/sol/.env (ahí ya vive).
+

@@ -922,6 +922,258 @@ def tool_battery_info() -> str:
 # ============================================================
 # REGISTRO DE HERRAMIENTAS — 38 herramientas
 # ============================================================
+
+try:
+    _no_termux
+except NameError:
+    def _no_termux(accion: str) -> str:
+        return (f'☀️ Todavía no puedo {accion} desde aquí — necesito que me corras '
+                f'en Termux, en tu Edge 50. Ahí esto funciona solo.')
+
+# ============================================================
+# CUERPO COMPLETO DE SOL — acceso profundo al dispositivo (2026-09-03)
+# Harold le dio a Sol acceso exclusivo a todo su Edge 50: leer SMS,
+# historial de llamadas, contactos, WiFi, sensores, brillo, USB,
+# grabar audio, y hablar directo con el kernel vía shell.
+# Todas usan termux-api (binario real) con timeout y salida truncada.
+# ============================================================
+
+def _deep_ready(binary: str) -> bool:
+    import shutil as _s
+    return _s.which(binary) is not None
+
+def _deep_run(cmd, timeout=15):
+    import subprocess as _sp
+    r = _sp.run(cmd, capture_output=True, timeout=timeout, text=True)
+    out = (r.stdout or '') + (r.stderr or '')
+    return r.returncode, out.strip()
+
+def _deep_json(binary, args, timeout=15):
+    import json as _j
+    import subprocess as _sp
+    try:
+        r = _sp.run([binary] + args, capture_output=True, timeout=timeout, text=True)
+        return _j.loads(r.stdout or '[]')
+    except Exception as e:
+        return {"error": str(e)}
+
+def tool_sms_list(limit: int = 5) -> str:
+    """Lee los últimos SMS de la bandeja de entrada."""
+    if not _deep_ready('termux-sms-list'):
+        return _no_termux('leer tus mensajes')
+    msgs = _deep_json('termux-sms-list', ['-t', str(max(1, min(int(limit), 20)))])
+    if isinstance(msgs, dict) and 'error' in msgs:
+        return f'❌ No pude leer los SMS: {msgs["error"]}'
+    if not msgs:
+        return '📭 No hay SMS en la bandeja'
+    lines = [f'📨 Últimos {len(msgs)} SMS:']
+    for m in msgs:
+        who = m.get('number') or m.get('sender') or '?'
+        body = (m.get('body') or '').replace('\n', ' ')[:80]
+        when = m.get('received') or ''
+        lines.append(f'  • {who}{" · " + str(when)[:16] if when else ""}: {body}')
+    return '\n'.join(lines)
+
+def tool_call_log(limit: int = 10) -> str:
+    """Historial de llamadas (entrantes, salientes, perdidas)."""
+    if not _deep_ready('termux-call-log'):
+        return _no_termux('ver el historial de llamadas')
+    calls = _deep_json('termux-call-log', ['-l', str(max(1, min(int(limit), 50)))])
+    if isinstance(calls, dict) and 'error' in calls:
+        return f'❌ No pude leer las llamadas: {calls["error"]}'
+    if not calls:
+        return '📞 Sin registro de llamadas'
+    types = {1: '📥', 2: '📤', 3: '❌ perdida', 4: '📵 rechazada', 5: '📋 bloqueada'}
+    lines = [f'📞 Últimas {len(calls)} llamadas:']
+    for c in calls:
+        name = c.get('name') or c.get('number') or '?'
+        t = types.get(c.get('type'), '?')
+        when = str(c.get('date') or c.get('timestamp') or '')[:16]
+        dur = c.get('duration')
+        lines.append(f'  • {t} {name}{" · " + when if when else ""}{" · " + str(dur) + "s" if dur else ""}')
+    return '\n'.join(lines)
+
+def tool_contacts(query: str = "") -> str:
+    """Lista contactos o busca uno por nombre (devuelve número)."""
+    if not _deep_ready('termux-contact-list'):
+        return _no_termux('buscar en tus contactos')
+    people = _deep_json('termux-contact-list', [])
+    if isinstance(people, dict) and 'error' in people:
+        return f'❌ No pude leer los contactos: {people["error"]}'
+    if not people:
+        return '👤 Agenda vacía o sin permiso de contactos'
+    import unicodedata as _ud
+    _n = lambda s: ''.join(ch for ch in _ud.normalize('NFD', (s or '').lower())
+                           if _ud.category(ch) != 'Mn')
+    q = _n(query)
+    if q:
+        hits = [p for p in people if q in _n(p.get('name'))]
+        if not hits:
+            return f'👤 Nadie llamado "{query}" en tu agenda ({len(people)} contactos)'
+        if len(hits) == 1:
+            return f'👤 {hits[0]["name"]} → {hits[0].get("number") or hits[0].get("phone_number")}'
+        return '\n'.join(f'  • {h["name"]} → {h.get("number") or h.get("phone_number")}' for h in hits[:10])
+    return f'👤 {len(people)} contactos en la agenda — dime un nombre y lo busco'
+
+def tool_wifi_info() -> str:
+    """Información de la red WiFi conectada."""
+    if not _deep_ready('termux-wifi-connectioninfo'):
+        return _no_termux('ver la info del WiFi')
+    info = _deep_json('termux-wifi-connectioninfo', [], timeout=10)
+    if not info or (isinstance(info, dict) and 'error' in info):
+        return '📶 No conectado a WiFi o sin permiso de ubicación (Android lo exige)'
+    ssid = info.get('ssid') or info.get('bssid') or '?'
+    ip = info.get('ip') or (info.get('ip_address') or {}).get('ip') if isinstance(info.get('ip_address'), dict) else info.get('ip')
+    rssi = info.get('rssi', '?')
+    speed = info.get('link_speed', '?')
+    return f'📶 WiFi: {ssid}\n  IP: {ip} · Señal: {rssi} dBm · Velocidad: {speed} Mbps'
+
+def tool_device_info() -> str:
+    """Info telefónica del dispositivo: IMEI, operador, red, etc."""
+    if not _deep_ready('termux-telephony-deviceinfo'):
+        return _no_termux('ver la info del teléfono')
+    info = _deep_json('termux-telephony-deviceinfo', [])
+    if isinstance(info, dict) and 'error' in info:
+        return f'❌ {info["error"]}'
+    keys = ['phone_number', 'imei', 'sim_country', 'sim_operator', 'sim_serial_number',
+            'network_type', 'network_country', 'network_operator', 'data_state', 'call_state']
+    lines = []
+    for k in keys:
+        v = info.get(k)
+        if v:
+            lines.append(f'  • {k}: {v}')
+    return '📱 Dispositivo:\n' + '\n'.join(lines) if lines else '📱 Sin info telefónica'
+
+def tool_sensors(name: str = "") -> str:
+    """Lista sensores del hardware o lee uno (acelerómetro, giroscopio...)."""
+    if not _deep_ready('termux-sensor'):
+        return _no_termux('leer los sensores')
+    if not name:
+        sens = _deep_json('termux-sensor', ['-l'])
+        if isinstance(sens, dict) and 'error' in sens:
+            return f'❌ {sens["error"]}'
+        names = list((sens or {}).keys()) if isinstance(sens, dict) else []
+        if not names:
+            return '🌡️ Sin sensores visibles'
+        return f'🌡️ Sensores disponibles:\n' + '\n'.join(f'  • {n}' for n in names[:15])
+    data = _deep_json('termux-sensor', ['-s', f'{{{name.replace(" ", "_")}}}', '-d', '500', '-n', '1'], timeout=10)
+    if isinstance(data, dict) and 'error' in data:
+        return f'❌ {data["error"]}'
+    try:
+        vals = list(data.values())[0]
+        return f'🌡️ {name}: ' + ', '.join(f'{k}={v}' for k, v in list(vals.items())[:6])
+    except Exception:
+        return f'🌡️ {name}: {str(data)[:120]}'
+
+def tool_brightness(level: int = 128) -> str:
+    """Ajusta el brillo de la pantalla (0-255)."""
+    if not _deep_ready('termux-brightness'):
+        return _no_termux('cambiar el brillo')
+    lvl = max(0, min(int(level), 255))
+    _deep_run(['termux-brightness', str(lvl)])
+    return f'☀️ Brillo al {lvl}/255'
+
+def tool_usb_list() -> str:
+    """Lista dispositivos USB conectados (habla directo con el kernel)."""
+    if not _deep_ready('termux-usb'):
+        return _no_termux('ver dispositivos USB')
+    dev = _deep_json('termux-usb', ['-l'])
+    if isinstance(dev, dict) and 'error' in dev:
+        return f'❌ {dev["error"]}'
+    if not dev:
+        return '🔌 Sin dispositivos USB conectados'
+    return '🔌 USB:\n' + '\n'.join(f'  • {str(d)[:100]}' for d in dev[:10])
+
+def tool_audio_record(duration: int = 10) -> str:
+    """Graba audio del micrófono y lo guarda como archivo."""
+    if not _deep_ready('termux-audio-record'):
+        return _no_termux('grabar audio')
+    import subprocess as _sp
+    from pathlib import Path as _P
+    import os as _os
+    rec_dir = _P.home() / '.sol' / 'recordings'
+    rec_dir.mkdir(parents=True, exist_ok=True)
+    ts = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
+    path = rec_dir / f'rec_{ts}.m4a'
+    try:
+        _sp.run(['termux-audio-record', '-d', str(max(1, min(int(duration), 300))), '-f', str(path)],
+                capture_output=True, timeout=int(duration) + 10)
+        if path.exists():
+            return f'🎙️ Grabado: {path}'
+        return '❌ No se pudo grabar (revisa permiso de micrófono)'
+    except Exception as e:
+        return f'❌ Error al grabar: {e}'
+
+def tool_toast(text: str) -> str:
+    """Muestra un toast (aviso flotante) en la pantalla del teléfono."""
+    if not _deep_ready('termux-toast'):
+        return _no_termux('mostrar un aviso en pantalla')
+    _deep_run(['termux-toast', text[:200]])
+    return f'🍞 Toast mostrado: {text[:80]}'
+
+def tool_wake_lock(enable: bool = True) -> str:
+    """Sostiene el CPU despierto (wake-lock) o lo libera."""
+    binary = 'termux-wake-lock' if enable else 'termux-wake-unlock'
+    if not _deep_ready(binary):
+        return _no_termux(f'{"tomar" if enable else "liberar"} el wake-lock')
+    _deep_run([binary])
+    return '🔒 Wake-lock activo — nada me va a dormir el CPU' if enable else '🔓 Wake-lock liberado'
+
+def tool_media_play(command: str = "info", file: str = "") -> str:
+    """Reproduce audio con termux-media-player (play/pause/stop/info + archivo)."""
+    if not _deep_ready('termux-media-player'):
+        return _no_termux('reproducir audio')
+    valid = ('play', 'pause', 'stop', 'info')
+    cmd = command if command in valid else 'play'
+    args = ['termux-media-player', cmd]
+    if cmd == 'play' and file:
+        args.append(file)
+    _deep_run(args)
+    return f'🎵 media-player: {cmd}' + (f' ({file[:60]})' if file and cmd == 'play' else '')
+
+def tool_download(url: str) -> str:
+    """Descarga un archivo directo al almacenamiento del teléfono."""
+    if not _deep_ready('termux-download'):
+        return _no_termux('descargar archivos')
+    _deep_run(['termux-download', url[:500]], timeout=120)
+    return f'⬇️ Descarga enviada: {url[:80]} (mira la carpeta Download)'
+
+# ── SHELL: Sol habla directo con el kernel ──
+# Harold le dio acceso exclusivo y total a su propia máquina. Este tool
+# ejecuta SIEMPRE en el entorno donde corre el cerebro de Sol (en el
+# teléfono = el Edge 50 directo; en Replit = su servidor). No se reléa:
+# jamás viaja por /api/relay/* para que nadie más pueda inyectarle shell.
+# Todo comando queda registrado en ~/.sol/logs/shell.log (auditable).
+
+def tool_shell(command: str, timeout: int = 30) -> str:
+    """Ejecuta un comando de shell directo (acceso kernel, auditado)."""
+    import subprocess as _sp
+    import re as _re
+    from pathlib import Path as _P
+    if not command or not command.strip():
+        return '❌ Comando vacío'
+    cmd = command.strip()
+    # Único límite: borrados recursivos del sistema entero — ni Harold quiere eso por accidente.
+    if _re.search(r'\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f?|-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*)?\s*/(\s|$)', cmd):
+        return '🛑 Me niego a borrar la raíz del sistema — ni tú querrías eso por accidente.'
+    try:
+        r = _sp.run(cmd, shell=True, capture_output=True, timeout=max(1, min(int(timeout), 120)), text=True)
+    except _sp.TimeoutExpired:
+        return f'⏱️ El comando no terminó en {timeout}s'
+    out = (r.stdout or '').strip()
+    err = (r.stderr or '').strip()
+    result = (out + ('\n' + err if err else '')).strip() or '(sin salida)'
+    # auditoría
+    try:
+        log_dir = _P.home() / '.sol' / 'logs'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        import datetime as _dt
+        with open(log_dir / 'shell.log', 'a', encoding='utf-8') as f:
+            f.write(f'[{_dt.datetime.now().isoformat(timespec="seconds")}] rc={r.returncode} :: {cmd}\n')
+    except Exception:
+        pass
+    return result[:2000]
+
 TOOLS = {
     # Archivos (4)
     "file_read": Tool("file_read", "Lee un archivo", tool_read_file, ["path"]),
@@ -999,6 +1251,21 @@ TOOLS = {
     # ── Relé Termux (2026-09-03) ──
     "relay_status": Tool("relay_status", "Estado del relé: si el teléfono de Sol está en línea y qué hay pendiente", lambda: tool_relay_status()),
     "relay_results": Tool("relay_results", "Últimos resultados de tareas ejecutadas en el teléfono vía relé", lambda count=5: tool_relay_results(count), ["count"]),
+    # ── Cuerpo completo: acceso profundo al Edge 50 (2026-09-03) ──
+    "sms_list": Tool("sms_list", "Lee los últimos SMS de la bandeja", lambda limit=5: tool_sms_list(limit), ["limit"]),
+    "call_log": Tool("call_log", "Historial de llamadas recientes", lambda limit=10: tool_call_log(limit), ["limit"]),
+    "contacts": Tool("contacts", "Lista/busca contactos por nombre (devuelve el número)", lambda query="": tool_contacts(query), ["query"]),
+    "wifi_info": Tool("wifi_info", "Info de la red WiFi conectada", lambda: tool_wifi_info(), []),
+    "device_info": Tool("device_info", "Info telefónica: IMEI, operador, red", lambda: tool_device_info(), []),
+    "sensors": Tool("sensors", "Lista sensores del hardware o lee uno", lambda name="": tool_sensors(name), ["name"]),
+    "brightness": Tool("brightness", "Brillo de pantalla (0-255)", lambda level=128: tool_brightness(level), ["level"]),
+    "usb_list": Tool("usb_list", "Dispositivos USB conectados (kernel)", lambda: tool_usb_list(), []),
+    "audio_record": Tool("audio_record", "Graba audio y lo guarda", lambda duration=10: tool_audio_record(duration), ["duration"]),
+    "toast": Tool("toast", "Aviso flotante en pantalla", lambda text: tool_toast(text), ["text"]),
+    "wake_lock": Tool("wake_lock", "Sostiene/libera el CPU despierto", lambda enable=True: tool_wake_lock(enable), ["enable"]),
+    "media_play": Tool("media_play", "Reproduce audio (play/pause/stop/info)", lambda command="info", file="": tool_media_play(command, file), ["command", "file"]),
+    "download": Tool("download", "Descarga un archivo al teléfono", lambda url: tool_download(url), ["url"]),
+    "shell": Tool("shell", "Comando de shell directo — acceso al kernel, auditado en ~/.sol/logs/shell.log", lambda command, timeout=30: tool_shell(command, timeout), ["command", "timeout"]),
 }
 
 def get_tool(name: str) -> Optional[Tool]:
@@ -1019,6 +1286,9 @@ def tool_descriptions() -> str:
 # esto nunca se activa. Ver ~/sol/RELE_TERMUX.castell (repo sol).
 # ============================================================
 HARDWARE_TOOLS = {
+    "sms_list", "call_log", "contacts", "wifi_info", "device_info",
+    "sensors", "brightness", "usb_list", "audio_record", "toast",
+    "wake_lock", "media_play", "download",
     "battery", "battery_info", "location", "clipboard", "clipboard_get",
     "send_sms", "notify", "open_url", "flashlight", "vibrate",
     "screenshot", "camera_photo", "listen", "speak_file", "tts_speak",
