@@ -1,12 +1,6 @@
 import { useState } from 'react';
-import { Globe } from 'lucide-react';
+import { Globe, Shield, AlertTriangle } from 'lucide-react';
 import { useScanStore } from '../hooks/useScanStore';
-import { getApiKey } from '../lib/api';
-
-function intelHeaders(): Record<string, string> {
-  const key = getApiKey()
-  return key ? { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }
-}
 
 export default function IntelPanel() {
   const [ips, setIps] = useState<any[]>([]);
@@ -33,10 +27,10 @@ export default function IntelPanel() {
     try {
       const res = await fetch('/api/intel/bulk-check', {
         method: 'POST',
-        headers: intelHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(publicIps.slice(0, 20)),
       });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setIps(data.results || []);
       setStatus(`${data.total} IPs verificadas · ${data.malicious} maliciosas`);

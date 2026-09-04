@@ -1,11 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Eye, FileText, Activity, Fingerprint, AlertTriangle, Clock } from 'lucide-react';
-import { getApiKey } from '../lib/api';
-
-function bmHeaders(): Record<string, string> {
-  const key = getApiKey()
-  return key ? { 'Authorization': `Bearer ${key}` } : {}
-}
 
 type BMTab = 'canary' | 'ghost' | 'chaos';
 
@@ -32,8 +26,7 @@ export default function BlackMirrorPanel() {
         recipient, doc_type: docType, title: docTitle,
         content: 'Documento altamente confidencial. Distribucion restringida.'
       });
-      const res = await fetch(`/api/blackmirror/canary/forge?${params}`, { method: 'POST', headers: bmHeaders() });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
+      const res = await fetch(`/api/blackmirror/canary/forge?${params}`, { method: 'POST' });
       const data = await res.json();
       setStatus(`Canary forjado: ${data.recipient} | Token: ${data.token?.slice(0, 16)}...`);
       loadCanaries();
@@ -47,8 +40,7 @@ export default function BlackMirrorPanel() {
 
   const loadCanaries = async () => {
     try {
-      const res = await fetch('/api/blackmirror/canary/status', { headers: bmHeaders() });
-      if (!res.ok) return;
+      const res = await fetch('/api/blackmirror/canary/status');
       const data = await res.json();
       setCanaries(data.canaries || []);
     } catch {}
@@ -59,10 +51,9 @@ export default function BlackMirrorPanel() {
     setStatus('Analizando patron temporal...');
     try {
       const [profileRes, windowRes] = await Promise.all([
-        fetch(`/api/blackmirror/ghostprint/profile/${ghostHost}`, { headers: bmHeaders() }),
-        fetch(`/api/blackmirror/ghostprint/window/${ghostHost}`, { headers: bmHeaders() })
+        fetch(`/api/blackmirror/ghostprint/profile/${ghostHost}`),
+        fetch(`/api/blackmirror/ghostprint/window/${ghostHost}`)
       ]);
-      if (!profileRes.ok) { const e = await profileRes.json().catch(() => ({})); throw new Error(e.error || `HTTP ${profileRes.status}`); }
       setGhostProfile(await profileRes.json());
       setGhostWindow(await windowRes.json());
       setStatus(null);
@@ -76,8 +67,7 @@ export default function BlackMirrorPanel() {
     setLoading(true);
     setStatus(null);
     try {
-      const res = await fetch(`/api/blackmirror/chaos/apply?real_port=${chaosPort}&fake_os=${encodeURIComponent(chaosOS)}`, { method: 'POST', headers: bmHeaders() });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
+      const res = await fetch(`/api/blackmirror/chaos/apply?real_port=${chaosPort}&fake_os=${encodeURIComponent(chaosOS)}`, { method: 'POST' });
       const data = await res.json();
       setStatus(`Chaos aplicado: puerto ${data.real_port} ahora simula ${data.fake_os}`);
     } catch (e: any) {

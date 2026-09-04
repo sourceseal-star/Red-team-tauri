@@ -7,7 +7,7 @@ import { Network } from 'vis-network/standalone';
 import { DataSet } from 'vis-data';
 import { useTopology } from '../../hooks/useTopology';
 import { useScanStore } from '../../hooks/useScanStore';
-
+import { VisNode } from '../../types/topology';
 import { LeafletMap } from '../LeafletMap';
 
 export default function TopologyMap() {

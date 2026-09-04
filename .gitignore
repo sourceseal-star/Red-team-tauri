@@ -1,90 +1,72 @@
-*.tar
-*.tar.*
-*.jar
-*.exe
-*.msi
-*.deb
-*.zip
-*.tgz
-*.log
-*.log.*
-*.sig
-
-pkg/
-__pycache__/
-*.pyc
-
-# Keystore de firma — NO subir al repo (contiene clave privada)
-signing/
-*.keystore
-*.jks
-
+# ARTO runtime data (se regenera en cada arranque, no debe versionarse)
 # Archivos generados en runtime — NO subir al repo
-redteam/reports/
-redteam/evidence/
-redteam/logs/
-
-# Data files con estado en runtime (causan conflictos)
-redteam/data/latest.json
-redteam/data/honeypot.json
-redteam/data/rasp_devices.json
-redteam/data/settings.json
-redteam/data/soar_dags.json
-redteam/data/iocs.json
-
-# Reports de scans
-redteam/reports/*.json
-redteam/reports/latest.json
-node_modules/
-
 # Build output — se regenera en cada start/sync, no versionar
-tauri-frontend/dist/
-tauri-frontend/node_modules/
+# Credenciales de autenticacion (huella + password) — NO subir
+# DBs locales — no subir al repo
+# Data files con estado en runtime (causan conflictos)
+# Env
+# Evidence/outputs generados
+# Keystore de firma — NO subir al repo (contiene clave privada)
+# Node
+# Python caches adicionales
+# Reports de scans
+# Tauri build
 *.bak
 *.bak2
-source_seal_audit_report.json
+*.db
+*.deb
+*.egg-info/
+*.exe
+*.jar
+*.jks
+*.keystore
 *.log
+*.log.*
+*.msi
+*.pyc
+*.sig
+*.tar
+*.tar.*
+*.tgz
+*.zip
+*_tactical.db
+.eggs/
+.env
+.env.local
+__pycache__/
+backend/evidence/
+build/
+dist/
+enhanced_recon.db
+evidence/*.db
+leviathan_core/scans/*
+leviathan_scan_*
 manual_operaciones.enc
 manual_operaciones.md
 motor_cierre.db
-
-# Credenciales de autenticacion (huella + password) — NO subir
-redteam/scripts/.auth/
 motor_cierre/backend/.auth/
-.env
-enhanced_recon.db
-evidence/*.db
-redteam.db
-
-# DBs locales — no subir al repo
-*.db
-seal_*.db
-*_tactical.db
-
-# Evidence/outputs generados
-backend/evidence/
-seal/evidence/
-
-# Node
 node_modules/
-dist/
-
-# Env
-.env
-.env.local
-
-# Tauri build
-tauri-frontend/src-tauri/target/
-tauri-frontend/dist/
-
-# Python caches adicionales
-*.egg-info/
-.eggs/
-build/
-
-# ARTO runtime data (se regenera en cada arranque, no debe versionarse)
+pkg/
+redteam.db
+redteam/data/honeypot.json
+redteam/data/iocs.json
+redteam/data/latest.json
+redteam/data/rasp_devices.json
+redteam/data/settings.json
+redteam/data/soar_dags.json
+redteam/evidence/
+redteam/logs/
+redteam/reports/
+redteam/reports/*.json
+redteam/reports/latest.json
+redteam/scripts/.auth/
 redteam/scripts/arto_knowledge.json
-redteam/scripts/evidence/osint_results.db
 redteam/scripts/evidence/*.db
-leviathan_scan_*
-leviathan_core/scans/*
+redteam/scripts/evidence/osint_results.db
+seal/evidence/
+seal_*.db
+signing/
+source_seal_audit_report.json
+tauri-frontend/dist/
+tauri-frontend/node_modules/
+tauri-frontend/src-tauri/target/
