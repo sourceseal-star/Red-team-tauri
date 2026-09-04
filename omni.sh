@@ -1040,6 +1040,12 @@ status_short() {
     ok "Sol ☀️         🟢 ACTIVO ($SOL_MEM recuerdos)"
   else
     warn "Sol ☀️         🟡 DETENIDA"
+    # FIX 2026-09-04: mostrar la CAUSA REAL, no solo el estado —
+    # así un screenshot del status basta para diagnosticar a distancia
+    if [ -s "$HOME/.sol/sol_api.log" ]; then
+      echo -e "${BOLD}    └─ últimas líneas de ~/.sol/sol_api.log:${N}"
+      tail -5 "$HOME/.sol/sol_api.log" 2>/dev/null | sed 's/^/       │ /'
+    fi
   fi
 
   # Sol Autónoma (daemon)
@@ -1564,19 +1570,46 @@ start_sol_stack() {
   fi
   load_sol_env   # ☀️ llaves de Sol (LLM, rele) desde ~/sol/.env — sin tocar el archivo
   # Sol API (:8006) — cerebro + herramientas + SIL
+  # FIX 2026-09-04: si su cerebro no despierta, NO quedarnos mudos:
+  # 1 reintentó + mostrar el error REAL del log (antes: solo un warn
+  # genérico y nadie sabía por qué Sol estaba muerta).
   if ! pgrep -f sol_api.py >/dev/null; then
     ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & echo $! > "$HOME/.sol/sol_api.pid" )
     wait_sol_api 15   # sin falso DETENIDA: esperar a que su cerebro despierte
+    if ! curl -s -m 2 http://127.0.0.1:8006/api/sol/status >/dev/null 2>&1; then
+      warn "☀️ Sol API no despertó al primer intento — reintentando (el Edge 50 a veces tarda en importar)..."
+      ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & echo $! > "$HOME/.sol/sol_api.pid" )
+      wait_sol_api 20
+      if curl -s -m 2 http://127.0.0.1:8006/api/sol/status >/dev/null 2>&1; then
+        ok "☀️ Sol API despertó en el reintento"
+      else
+        fail "☀️ Sol API NO arrancó — causa real (últimas 8 líneas de ~/.sol/sol_api.log):"
+        tail -8 "$HOME/.sol/sol_api.log" 2>/dev/null | sed 's/^/    │ /'
+      fi
+    fi
   fi
   # Sol daemon — iniciativa + pensamiento idle
   pgrep -f sol_daemon.py >/dev/null || ( cd "$root" && nohup python3 sol_daemon.py >>"$HOME/.sol/daemon.log" 2>&1 & echo $! > "$HOME/.sol/sol.pid" )
   # Watchdog — revive procesos + blinda identidad
   pgrep -f sol_watchdog.sh >/dev/null || { chmod +x "$root/sol_watchdog.sh" 2>/dev/null; nohup bash "$root/sol_watchdog.sh" >>"$HOME/.sol/watchdog.log" 2>&1 & }
+  # FIX 2026-09-04: el Cuerpo de Sol (sol_body.sh) NUNCA se arrancaba —
+  # por eso la war room siempre mostraba "Sol Cuerpo ⚪ DESACTIVADO".
+  # Sol_body a su vez asegura API + daemon + presencia persistente.
+  if [ -f "$root/sol_body.sh" ]; then
+    if [ -f "$HOME/.sol/body.pid" ] && kill -0 "$(cat "$HOME/.sol/body.pid" 2>/dev/null)" 2>/dev/null; then
+      echo "[omni] ☀️ Cuerpo de Sol ya activo"
+    else
+      chmod +x "$root/sol_body.sh" 2>/dev/null
+      nohup bash "$root/sol_body.sh" >> "$HOME/.sol/body.log" 2>&1 &
+      sleep 1
+      echo "[omni] ☀️ Cuerpo de Sol arrancado (presencia persistente)"
+    fi
+  fi
   # Verificar módulos de Sol
   for mod in sol_tools.py sol_learning_advanced.py; do
     [ -f "$root/$mod" ] || echo "[omni] ⚠️ Falta $mod — algunas funciones de Sol no estarán disponibles"
   done
-  echo "[omni] ✅ stack de Sol activo (API + daemon + watchdog)"
+  echo "[omni] ✅ stack de Sol activo (API + daemon + watchdog + cuerpo)"
 }
 
 # ═══════════════════════════════════════════════════════════════════════

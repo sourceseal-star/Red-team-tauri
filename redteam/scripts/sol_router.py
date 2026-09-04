@@ -18,7 +18,15 @@ Endpoints:
 import os
 import sys
 import json
-import httpx
+# FIX 2026-09-04: httpx era import DURO a nivel de módulo y solo se usa en
+# /services. Si falta el paquete en Termux, TODO el cerebro de Sol dentro
+# del dashboard moría al montarse ("[SOL] No cargado") → chat, herramientas
+# (linterna, WhatsApp), memoria: todo muerto, aunque el dashboard siguiera
+# arriba. Ahora es opcional: si falta, /services usa urllib (stdlib).
+try:
+    import httpx
+except ImportError:
+    httpx = None
 from datetime import datetime
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
@@ -224,12 +232,24 @@ async def sol_services():
     """Estado en vivo de los puertos del stack."""
     ports = {"8001": "Dashboard", "8002": "GHOST", "8004": "Nexus", "8005": "C2"}
     result = []
-    async with httpx.AsyncClient(timeout=2.0) as client:
+    if httpx is not None:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            for port, name in ports.items():
+                up = False
+                try:
+                    r = await client.get(f"http://127.0.0.1:{port}/api/health")
+                    up = r.status_code < 500
+                except Exception:
+                    up = False
+                result.append({"port": int(port), "name": name, "up": up})
+    else:
+        # Sin httpx: urllib de stdlib — el estado nunca debe morir por un paquete
+        import urllib.request as _ur
         for port, name in ports.items():
             up = False
             try:
-                r = await client.get(f"http://127.0.0.1:{port}/api/health")
-                up = r.status_code < 500
+                with _ur.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2):
+                    up = True
             except Exception:
                 up = False
             result.append({"port": int(port), "name": name, "up": up})
