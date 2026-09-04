@@ -82,6 +82,7 @@
   .top-btn:hover { border-color: var(--amber); color: var(--amber); }
   .top-btn.left { left: 12px; }
   .top-btn.right { right: 12px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1.2rem; }
+  .top-btn.body { right: 112px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1rem; }
   .top-btn.voice { right: 64px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1rem; }
 
   /* Avatar */
@@ -144,6 +145,41 @@
     pointer-events: none;
   }
   .avatar-img-blink.on { opacity: 1; }
+
+  /* ═══ MODO CUERPO COMPLETO — Sol de punta a punta (2026-09-04) ═══
+     El mismo sistema de frames quirúrgicos (base + talk + talk_half +
+     blink, el 99% de los pixeles identicos entre si) ahora existe en
+     version de cuerpo completo. El boton 🧍 junto al de voz alterna
+     busto ⇄ cuerpo. Los hooks de JS (lip-sync, parpadeo, gaze) son
+     los mismos elementos — solo se intercambian los src. */
+  body.fullbody .avatar-wrap {
+    width: clamp(200px, 60vw, 300px);
+    height: clamp(280px, 88vw, 430px);
+    transition: width 0.4s ease, height 0.4s ease, margin 0.3s ease, opacity 0.3s ease;
+  }
+  body.fullbody .avatar-wrap .avatar-img,
+  body.fullbody .avatar-wrap .avatar-img-talk,
+  body.fullbody .avatar-wrap .avatar-img-talk-half,
+  body.fullbody .avatar-wrap .avatar-img-blink,
+  body.fullbody .avatar-wrap .elixir-video {
+    border-radius: 20px;
+    object-position: center 10%; /* la cara manda */
+    border-width: 2px;
+  }
+  body.fullbody .pulse-ring { display: none; }
+  body.fullbody .avatar-expr { display: none; } /* expresiones solo del busto */
+  /* Al escribir (teclado abierto) no aplastar el cuerpo a un circulo de 76px */
+  body.fullbody #universe.typing .avatar-wrap {
+    width: clamp(120px, 34vw, 180px);
+    height: clamp(170px, 48vw, 250px);
+    border-radius: 16px;
+  }
+  body.fullbody #universe.typing .avatar-wrap .avatar-img,
+  body.fullbody #universe.typing .avatar-wrap .avatar-img-talk,
+  body.fullbody #universe.typing .avatar-wrap .avatar-img-talk-half,
+  body.fullbody #universe.typing .avatar-wrap .avatar-img-blink {
+    border-radius: 16px;
+  }
 
   /* ═══ Frames de expresión contextual — capas superpuestas ═══
      Cada una es una imagen completa de Sol con distinta expresión.
@@ -565,6 +601,7 @@
   </div>
   <button class="top-btn left" id="btn-back" onclick="window.location.href='/'" style="display:none">← Tower</button>
   <button class="top-btn voice" id="btn-voice" onclick="toggleVoice()">🔊</button>
+  <button class="top-btn voice" id="btn-body" onclick="toggleFullBody()" title="Busto ⇄ cuerpo completo">🧍</button>
 
   <!-- Avatar — NO MODIFICAR -->
   <div class="avatar-wrap" id="avatar-wrap">
@@ -1436,6 +1473,55 @@ function stopMouthMovement() {
 // de Sol con los ojos cerrados, con timing irregular (3.5s a 6.7s) para que
 // se sienta como un parpadeo humano y no una animacion en loop perfecto.
 // Corre siempre (hablando o en reposo) porque las personas parpadean igual.
+
+// ═══ MODO CUERPO COMPLETO — Sol de punta a punta (2026-09-04) ═══
+// Los frames de cuerpo completo son compuestos quirúrgicos igual que los
+// del busto: 99% de pixeles identicos, solo boca/ojos cambian. Por eso el
+// lip-sync de 4 pasos, el parpadeo y el gaze tracking funcionan IGUAL —
+// son los mismos elementos, solo se intercambia qué imagen carga cada uno.
+const SOL_BUST_SRC = {
+  avatar: '/sol_avatar_official.jpg',
+  talk: '/sol_avatar_talk.png',
+  half: '/sol_avatar_talk_half.png',
+  blink: '/sol_avatar_blink.png',
+};
+const SOL_FULL_SRC = {
+  avatar: '/sol_avatar_full.png',
+  talk: '/sol_avatar_full_talk.png',
+  half: '/sol_avatar_full_talk_half.png',
+  blink: '/sol_avatar_full_blink.png',
+};
+function _applyModeSrcs(srcs) {
+  const map = { avatar: 'avatar', talk: 'avatar-talk', half: 'avatar-talk-half', blink: 'avatar-blink' };
+  for (const key in map) {
+    const el = document.getElementById(map[key]);
+    if (!el) continue;
+    el.classList.remove('on');
+    if (key === 'avatar') {
+      // el busto conserva su cadena de fallback original
+      el.onerror = function () { this.onerror = null; this.src = '/sol_avatar.jpg'; };
+    } else {
+      el.onerror = function () { this.style.display = 'none'; };
+    }
+    el.src = srcs[key];
+    if (key !== 'avatar') el.style.display = '';
+  }
+}
+function toggleFullBody() {
+  const on = document.body.classList.toggle('fullbody');
+  _applyModeSrcs(on ? SOL_FULL_SRC : SOL_BUST_SRC);
+  // las expresiones (happy/thinking/...) solo existen del busto — apagarlas
+  document.querySelectorAll('.avatar-expr').forEach(el => el.classList.remove('on'));
+  try { localStorage.setItem('sol-fullbody', on ? '1' : '0'); } catch (e) {}
+}
+(function _restoreFullBody() {
+  try {
+    if (localStorage.getItem('sol-fullbody') === '1') {
+      document.body.classList.add('fullbody');
+      _applyModeSrcs(SOL_FULL_SRC);
+    }
+  } catch (e) {}
+})();
 
 // ═══ GAZE TRACKING — los ojos de Sol siguen tu cursor/dedo ═══
 let _gazeX = 0, _gazeY = 0;
