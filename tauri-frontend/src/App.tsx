@@ -2,7 +2,13 @@ import { useState } from 'react';
 // El import de api.ts activa el interceptor global de fetch (injecta Bearer token)
 import './lib/api';
 import AppShell from './components/AppShell';
-import WarRoom from './components/WarRoom';
+// War Room oficial de SourceSeal Commander (tema cian --ss-*, mapa de
+// topologia, camaras, wifi, ultrasonidos, terminal) — decision de Harold
+// (2026-09-03): este es el que se mantiene, no se borra.
+import WarRoom from './components/dashboard/WarRoom';
+// Version anterior (generica, sin tema SourceSeal) — se deja de usar pero
+// no se borra el archivo, por si se necesita algo de ahi mas adelante.
+// import WarRoom from './components/WarRoom';
 import BiometricLogin from './components/BiometricLogin';
 import CameraCommandCenter from './components/CameraCommandCenter';
 import IntelPanel from './components/IntelPanel';
@@ -48,7 +54,7 @@ function App() {
     <LanguageProvider>
     <ARTOProvider>
     <AppShell activeModule={module} onNavigate={setModule}>
-      {module === 'warroom' && <WarRoom onNavigate={setModule} />}
+      {module === 'warroom' && <WarRoom />}
       {module === 'cameras' && <CameraCommandCenter />}
       {module === 'threat' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

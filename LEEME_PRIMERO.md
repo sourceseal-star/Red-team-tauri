@@ -429,3 +429,70 @@ una orden, conversa como siempre. 27 pruebas OK.
 la Miniapp automáticamente mientras TELEGRAM_BOT_TOKEN esté en
 ~/sol/.env (ahí ya vive).
 
+
+## Sesión 2026-09-03 (7) — War Room oficial: SourceSeal Commander (NO SE BORRA)
+
+Harold confirmó: el War Room correcto es el que usa el tema SourceSeal
+(`--ss-bg`, `--ss-cyan`, `--ss-gold` de `styles/source-seal.css`), con mapa
+de topología en vivo, cámaras, WiFi, ultrasonidos y terminal integrado.
+**Este dashboard y este War Room NO SE BORRAN — son el producto.**
+
+**Qué se hizo:**
+- `App.tsx` ahora importa el War Room desde `components/dashboard/WarRoom.tsx`
+  (675 líneas, tema SourceSeal real) en vez de `components/WarRoom.tsx`
+  (versión genérica sin tema, la que tenía el SolWidget mezclado — no se
+  borró el archivo, solo se dejó de usar, por si sirve algo de ahí luego).
+- Verificados TODOS sus endpoints (`/api/health`, `/api/resources`,
+  `/api/scan/topology`, `/api/scan/cameras`, `/api/scan/wifi`,
+  `/api/iot/scan-network`, `/api/geo`, `/api/intel`,
+  `/api/topology/traceroute`, `/api/vision/motion-detect`,
+  `/api/comms/ultrasonic-*`, `/api/terminal`) contra
+  `redteam/scripts/dashboard_server.py` (el backend real de :8001) — el
+  100% existe, todo alineado.
+- Corregido un bug menor en `AppShell.tsx`: dos botones de "Abrir Sol"
+  usaban `class=` en vez de `className=` (típico error de React/JSX).
+- El acceso a Sol (botón "Abrir Sol · SIEMPRE" + avatar circular
+  `sol_avatar.jpg`) vive en `AppShell.tsx`, que envuelve TODOS los
+  módulos — así que sigue apareciendo automáticamente arriba del nuevo
+  War Room, sin duplicar nada.
+- Sidebar agrupado confirmado (`SIDEBAR_SECTIONS` en `AppShell.tsx`):
+  🏠 Mando, 🗺️ Red, 🧠 Inteligencia, ⚔️ Laboratorio, 📡 Campo, ⚙️ Sistema
+  — coincide exactamente con "SourceSeal Console v6.0" que se ve en el
+  celular.
+- Build de producción verificado: `npm run build` → compiló limpio
+  (1534 módulos, 9s), War Room nuevo confirmado dentro del bundle final,
+  avatar y acceso a Sol confirmados en el bundle.
+
+**Cómo actualizar/sincronizar/levantar todo en Termux (usar SIEMPRE omni.sh):**
+
+```bash
+cd ~/Red-team-tauri
+
+# 1. Traer los cambios (si tienes cambios locales sin commitear que chocan,
+#    detente y avísame — no forzar con git reset --hard)
+bash omni.sh sync
+#    (equivale a: git pull + build del frontend + preparar todo)
+
+# 2. Reconstruir el frontend a mano si sync no lo hizo (memoria limitada en
+#    Termux — usar siempre este comando, no "npm run build" suelto):
+bash omni.sh build
+
+# 3. Reiniciar TODOS los servicios (Dashboard :8001, Commander, Nexus :8004
+#    intacto, Sol si su token está en el .env):
+bash omni.sh restart
+
+# 4. Verificar que todo levantó bien:
+bash omni.sh status
+curl -s http://127.0.0.1:8001/api/health
+
+# 5. En el navegador del celular: abre localhost:8001 y haz
+#    Ctrl+Shift+R (o borra caché de Chrome) para que cargue el bundle
+#    nuevo y no el viejo cacheado.
+```
+
+Si `omni.sh sync` falla por "local changes would be overwritten" (como
+pasó con `backend/static/sol.html` en la sesión anterior), NO se resuelve
+solo — Harold debe decidir si commitear, descartar o guardar esos cambios
+locales primero. Ese es justamente el caso de "detenerse si hay cambios
+locales no descritos".
+

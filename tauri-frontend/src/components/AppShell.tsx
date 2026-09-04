@@ -439,7 +439,7 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
             </div>
             {/* Sol acceso directo fijo */}
             {sidebarOpen && (
-              <button onClick={() => window.open('/sol', '_blank')} class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-800/50 transition w-full text-left">
+              <button onClick={() => window.open('/sol', '_blank')} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-800/50 transition w-full text-left">
                 <div className="flex items-center gap-2">
                   <img src="/sol_avatar.jpg" alt="Sol" className="w-7 h-7 rounded-full object-cover border border-amber-500/50" />
                   <span className="text-xs font-semibold">Abrir Sol</span>
@@ -519,7 +519,7 @@ export default function AppShell({ activeModule, onNavigate, children, breadcrum
                   })}
                 </div>
                 {/* Sol acceso directo fijo */}
-                <button onClick={() => window.open('/sol', '_blank')} class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-800/50 transition w-full text-left">
+                <button onClick={() => window.open('/sol', '_blank')} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-800/50 transition w-full text-left">
                   <div className="flex items-center gap-2">
                     <img src="/sol_avatar.jpg" alt="Sol" className="w-8 h-8 rounded-full object-cover border border-amber-500/50" />
                     <span className="font-semibold text-sm">Abrir Sol</span>
