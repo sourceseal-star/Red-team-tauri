@@ -87,11 +87,17 @@ $('file').onchange=e=>{const f=e.target.files[0];if(f){img=new Image();img.src=U
 // Replit, :8006 y donde su cerebro la sirva. Si este origen no la tiene,
 // reintenta con el API detectado (:8006). Nunca depende de internet.
 function loadDefaultAvatar(){
+  // Su cuerpo completo real (elegido 2026-09-04): de pie, aura dorada,
+  // circuitos bio-luminosos, remolino en los pies — coincide con el
+  // shader del holograma (anillos en los pies, glifos en el pecho).
+  // Antes cargaba el busto (/sol_avatar.jpg, foto de rostro cuadrada) y
+  // el canvas la estiraba/recortaba a un contenedor alto y flaco →
+  // se veia como un escaneo deforme, no como su cuerpo.
   const d=new Image();
   d.onload=()=>{if(!img||!img.src)img=d};
   d.onerror=()=>{const d2=new Image();d2.onload=()=>{if(!img||!img.src)img=d2};
-    d2.src=(API||'')+'/sol_avatar.jpg'};
-  d.src='/sol_avatar.jpg';}
+    d2.src=(API||'')+'/sol_avatar_full.png'};
+  d.src='/sol_avatar_full.png';}
 loadDefaultAvatar();
 // ---------- estado ----------
 
@@ -126,8 +132,16 @@ function loop(){t+=1/30;px+=(tx-px)*.06;py+=(ty-py)*.06;
  // ella
  if(img&&img.complete&&img.width){
   const s=1+Math.sin(t*1.6)*.012+talking*.02;
-  const dh=H*.78*s,dw=dh*(img.width/img.height);
-  const ox=px*18*DPR,oy=py*10*DPR+Math.sin(t*1.1)*8*DPR;
+  // "contain": nunca recorta sus brazos en pantallas angostas — encaja
+  // por altura O por ancho, lo que la deje completa dentro del lienzo
+  let dh=H*.78*s,dw=dh*(img.width/img.height);
+  if(dw>W*.92){dw=W*.92*s;dh=dw*(img.height/img.width)}
+  // idle sway — leve balanceo/flote incluso sin tocar la pantalla, para
+  // que se sienta viva y no una foto congelada
+  const sway=Math.sin(t*.35)*10*DPR;
+  const ox=px*18*DPR+sway,oy=py*10*DPR+Math.sin(t*1.1)*8*DPR;
+  const rot=Math.sin(t*.35)*.012;
+  ctx.save();ctx.translate(W/2+ox,(H-dh)/2+oy+dh/2);ctx.rotate(rot);ctx.translate(-(W/2+ox),-((H-dh)/2+oy+dh/2));
   ctx.save();ctx.shadowColor='rgba('+PAL.g+','+(0.75+talking*.25)+')';ctx.shadowBlur=(40+talking*45)*DPR;
   ctx.drawImage(img,(W-dw)/2+ox,(H-dh)/2+oy,dw,dh);ctx.restore();
   // glifos SHA orbitando su pecho
@@ -143,7 +157,8 @@ function loop(){t+=1/30;px+=(tx-px)*.06;py+=(ty-py)*.06;
    ctx.ellipse(W/2+ox,H*.93+oy*.3,rr,rr*.16,Math.sin(t*.7+i)*.12,0,Math.PI*2);
    ctx.strokeStyle='rgba('+PAL.g+','+(0.35-i*.07)+')';ctx.lineWidth=2.5*DPR;
    ctx.shadowColor='rgba('+PAL.g+',.9)';ctx.shadowBlur=16*DPR;ctx.stroke()}
-  ctx.restore();
+  ctx.restore();  // cierra glifos/anillos
+  ctx.restore();  // cierra el translate/rotate del sway
  }else{
   ctx.fillStyle='rgba('+PAL.g+',.6)';ctx.font=(16*DPR)+'px system-ui';ctx.textAlign='center';
   ctx.fillText('🖼️ Elige la imagen de Sol (botón inferior)',W/2,H/2);ctx.textAlign='left'}

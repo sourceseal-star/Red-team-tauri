@@ -3312,6 +3312,58 @@ async def sol_avatar_talk():
         return FileResponse(_SOL_AVATAR_TALK_PATH, media_type="image/png", headers=_NO_CACHE_HEADERS)
     raise HTTPException(404, "Avatar talk no encontrado en backend/static/sol_avatar_talk.png")
 
+# ── ✨ Holograma interactivo + su cuerpo completo real (2026-09-04) ──
+# Antes dashboard_server.py (el backend REAL de la torre, :8001) no tenia
+# ninguna de estas rutas: el boton ✨ (toggleHolo) dependia por completo de
+# que hubiera un sol_api.py corriendo aparte en :8006 (fallback), y el
+# modo 🧍 cuerpo completo (toggleFullBody) siempre caia en 404 silencioso
+# porque ni el archivo ni la ruta existian en ningun lado. Mismo patron
+# que /sol.html y /sol_avatar.jpg arriba: servidos directo desde
+# backend/static/, sin depender de Vite.
+_SOL_HOLO_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_holo_live.html")
+_SOL_AVATAR_OFFICIAL_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_official.jpg")
+_SOL_AVATAR_FULL_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_full.png")
+
+@app.get("/holo")
+async def sol_holo_page():
+    """Holograma interactivo de Sol — mismo origen que /sol.html, para que
+    el toggle ✨ funcione sin contenido mixto ni depender de :8006."""
+    if os.path.isfile(_SOL_HOLO_PATH):
+        return FileResponse(_SOL_HOLO_PATH, media_type="text/html", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Holo no encontrado en backend/static/sol_holo_live.html")
+
+@app.get("/sol_avatar_official.jpg")
+async def sol_avatar_official():
+    """Avatar principal (busto) que usa sol.html como src por defecto."""
+    if os.path.isfile(_SOL_AVATAR_OFFICIAL_PATH):
+        return FileResponse(_SOL_AVATAR_OFFICIAL_PATH, media_type="image/jpeg", headers=_NO_CACHE_HEADERS)
+    if os.path.isfile(_SOL_AVATAR_PATH):
+        return FileResponse(_SOL_AVATAR_PATH, media_type="image/jpeg", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Avatar official no encontrado")
+
+@app.get("/sol_avatar_full.png")
+async def sol_avatar_full():
+    """Cuerpo completo real de Sol — de pie, aura dorada, circuitos
+    bio-luminosos (elegida por Harold 2026-09-04). Usada por el holo ✨
+    y por el modo 🧍 busto⇄cuerpo de sol.html."""
+    if os.path.isfile(_SOL_AVATAR_FULL_PATH):
+        return FileResponse(_SOL_AVATAR_FULL_PATH, media_type="image/png", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Avatar full no encontrado en backend/static/sol_avatar_full.png")
+
+@app.get("/sol_avatar_full_talk.png")
+async def sol_avatar_full_talk():
+    """Sin frames propios de boca en cuerpo completo aun — sirve la misma
+    imagen (sin 404 silencioso, sin caer al busto)."""
+    return await sol_avatar_full()
+
+@app.get("/sol_avatar_full_talk_half.png")
+async def sol_avatar_full_talk_half():
+    return await sol_avatar_full()
+
+@app.get("/sol_avatar_full_blink.png")
+async def sol_avatar_full_blink():
+    return await sol_avatar_full()
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # SOL API PROXY — la UI incrustada (iframe FloatingSol / War Room → /sol.html)
 # se sirve desde :8001, pero su cerebro (sol_api.py) corre en :8006.
