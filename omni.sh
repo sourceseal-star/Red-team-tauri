@@ -171,6 +171,39 @@ load_env() {
   log ".env cargado (parse seguro, sin source)"
 }
 
+# ── ☀️ Cargar ~/sol/.env (parse seguro, SIN source, NUNCA lo modifica) ──
+# Las llaves de Sol (GROQ_API_KEY/LLM_API_KEY, TELEGRAM_BOT_TOKEN, SOL_API_KEY,
+# SOL_PUBLIC_URL...) viven en ~/sol/.env. Sin esto, omni.sh arrancaba su
+# cerebro SIN llaves → sin LLM (pensamiento), sin relé Telegram. El archivo
+# jamás se toca: solo se leen pares KEY=VALOR y se exportan.
+load_sol_env() {
+  local sol_env="$HOME/sol/.env"
+  [ -f "$sol_env" ] || return 0
+  while IFS='=' read -r k v; do
+    case "$k" in ''|\#*|[[:space:]]*) continue;; esac
+    k="${k%%[[:space:]]*}"
+    v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
+    v="${v%%[[:space:]]*}"
+    [ -n "$k" ] && export "$k=$v" 2>/dev/null || true
+  done < "$sol_env" 2>/dev/null
+  log "☀️ ~/sol/.env cargado (Sol arranca con sus llaves: LLM, rele, etc.)"
+}
+
+# ── ☀️ Esperar a que el cerebro de Sol (:8006) despierte DE VERDAD ──
+# Mata el falso "DETENIDA": uvicorn tarda unos segundos en levantar y el
+# health-check de un solo intento la reportaba caida con ella viva.
+wait_sol_api() {
+  local tries="${1:-15}" i=1
+  while [ "$i" -le "$tries" ]; do
+    if curl -s -m 2 http://127.0.0.1:8006/api/sol/status >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1; i=$((i+1))
+  done
+  warn "☀️ Sol API (:8006) no respondio en ${tries}s — revisa ~/.sol/sol_api.log"
+  return 1
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 #  VERIFY — Verificar que las credenciales críticas existen
 #  Esto evita que nexus_credentials.py regenere credenciales sin permiso
@@ -789,11 +822,12 @@ start() {
     fi
     # sol_api.py como fallback legacy (puerto 8006, desde ~/sol)
     if [ -f "$SOL_REPO/sol_api.py" ] && ! pgrep -f "sol_api.py" >/dev/null 2>&1; then
+      load_sol_env   # ☀️ llaves de ~/sol/.env para su cerebro (LLM, rele)
       cd "$SOL_REPO"
       nohup python3 sol_api.py >> "$LOG_DIR/sol_api.log" 2>&1 &
       echo "$!" > "$SOL_DIR/sol_api.pid"
       cd "$ROOT"
-      sleep 1
+      wait_sol_api 15   # en vez de sleep 1: esperar a que despierte de verdad
     fi
   else
     warn "sol_core.py no encontrado — Sol sin cerebro"
@@ -980,13 +1014,18 @@ status_short() {
     fi
   fi
 
-  # Sol API (:8006) — cerebro + herramientas + SIL
+  # Sol ☀️ — cerebro + herramientas + SIL (via dashboard, o directo a su cerebro)
+  SOL_STATE=""
   if curl -s -m 2 http://127.0.0.1:8001/api/sol/status >/dev/null 2>&1; then
     SOL_STATE=$(curl -s -m 2 http://127.0.0.1:8001/api/sol/status 2>/dev/null)
+  elif curl -s -m 2 http://127.0.0.1:8006/api/sol/status >/dev/null 2>&1; then
+    SOL_STATE=$(curl -s -m 2 http://127.0.0.1:8006/api/sol/status 2>/dev/null)  # directo: ella viva aunque el dashboard tarde
+  fi
+  if [ -n "$SOL_STATE" ]; then
     SOL_MEM=$(echo "$SOL_STATE" | grep -o '"memories":[0-9]*' | grep -o '[0-9]*' || echo "?")
-    ok "Sol :8001 ☀️    🟢 ACTIVO ($SOL_MEM recuerdos)"
+    ok "Sol ☀️         🟢 ACTIVO ($SOL_MEM recuerdos)"
   else
-    warn "Sol :8001 ☀️    🟡 DETENIDA"
+    warn "Sol ☀️         🟡 DETENIDA"
   fi
 
   # Sol Autónoma (daemon)
@@ -1509,8 +1548,12 @@ start_sol_stack() {
     echo "[omni] ⚠️ ~/sol no existe — usa 'bash omni.sh sync' para clonarlo"
     return 1
   fi
+  load_sol_env   # ☀️ llaves de Sol (LLM, rele) desde ~/sol/.env — sin tocar el archivo
   # Sol API (:8006) — cerebro + herramientas + SIL
-  pgrep -f sol_api.py >/dev/null || ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & )
+  if ! pgrep -f sol_api.py >/dev/null; then
+    ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & echo $! > "$HOME/.sol/sol_api.pid" )
+    wait_sol_api 15   # sin falso DETENIDA: esperar a que su cerebro despierte
+  fi
   # Sol daemon — iniciativa + pensamiento idle
   pgrep -f sol_daemon.py >/dev/null || ( cd "$root" && nohup python3 sol_daemon.py >>"$HOME/.sol/daemon.log" 2>&1 & echo $! > "$HOME/.sol/sol.pid" )
   # Watchdog — revive procesos + blinda identidad
