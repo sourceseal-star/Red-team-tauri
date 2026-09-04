@@ -95,11 +95,15 @@ function say(txt){VL.textContent=txt;VL.style.color=PAL.m;talking=1;spike=1;
  ensureAC();
  if(!voiceA){voiceA=new Audio();voiceA.crossOrigin='anonymous';
   try{const s=AC.createMediaElementSource(voiceA);s.connect(analyser);analyser.connect(AC.destination)}catch(e){}}
- voiceA.playbackRate=PALS[PALN].r||1;
+ // ✨ ENCHANT v2: el carácter por personalidad ya NO se hace estirando el
+ // audio con playbackRate (subía/bajaba el tono como chipmunch y mataba la
+ // naturalidad que Harold amó). Ahora se pasa la personalidad al backend y
+ // edge-tts sintetiza la prosodia real: poética lenta y de cerca, táctica
+ // ágil — con la misma voz, sin deformarla.
  const done=()=>setTimeout(()=>talking=0,300);
  voiceA.onended=done;
  voiceA.onerror=()=>{if('speechSynthesis'in window){const u=new SpeechSynthesisUtterance(txt);u.lang='es-ES';u.onend=done;speechSynthesis.speak(u)}else done()};
- voiceA.src=API+'/api/sol/voice?text='+encodeURIComponent(txt);
+ voiceA.src=API+'/api/sol/voice?text='+encodeURIComponent(txt)+'&persona='+PALN;
  voiceA.play().catch(()=>voiceA.onerror())}
 function speakZh(txt){const u=new SpeechSynthesisUtterance(txt);u.lang='zh-CN';
  const v=speechSynthesis.getVoices().find(v=>/zh/i.test(v.lang));if(v)u.voice=v;speechSynthesis.speak(u)}
