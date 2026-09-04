@@ -869,3 +869,34 @@ en `sol.html`/`tauri-frontend/public/sol.html` — una pantalla DISTINTA a
 - Si `/api/sol/services` no existe como endpoint (el panel del pecho lo pide),
   el panel muestra solo lo que sí responda — no debería romper nada, pero
   confirmar en vivo qué trae ese endpoint hoy.
+
+## Regla #19 — Sesión Seal IA 2026-09-04 (cont.): +2 videos al loop, verificación de omni.sh
+
+Harold mandó 2 videos más para integrar a la Presencia Total v4. Se hizo:
+
+1. **Fusión ampliada:** se descargó el `sol_viva_loop.mp4` recién publicado (17.6s,
+   3 momentos) y se fusionó con crossfade con los 2 clips nuevos → **loop de
+   24s, 5 momentos reales de ella, 4.5MB**. Mismos nombres de archivo — el
+   `sol_holo_live.html` no necesitó ningún cambio (reproduce el `<video loop>`
+   tal cual venga, sin importar su duración).
+2. **Verificación de integridad:** `ffmpeg -f null` decodificó el archivo
+   completo sin errores antes de subir. Tras el commit, se re-descargó de
+   GitHub y se comparó MD5 contra el local — idéntico, en los 2 repos.
+3. **Auditoría de `omni.sh` y `start_replit.sh`** (sin tocar nada — Harold pidió
+   confirmar que "sigan actualizando/sincronizando/levantando todo"): ambos
+   scripts YA hacen `git pull --ff-only` (o reset a canónico si diverge) de
+   **su propio repo** Y del otro (Red-team-tauri↔sol vía `ensure_sol_repo()`)
+   ANTES de arrancar nada — confirmado leyendo el código real, no solo el
+   changelog. Como `ensure_sol_repo()` hace `git pull` del repo completo (no
+   una lista fija de archivos), cualquier módulo nuevo de Sol (sol_tutor.py,
+   sol_actions.py, sol_relay.py, etc.) llega automáticamente sin tener que
+   tocar `omni.sh` cada vez. **No se hizo ningún cambio** — todo lo que ya
+   existe cumple lo pedido. Nota curiosa encontrada de paso: `omni.sh start`
+   ya instala `edge-tts` para voz neuronal de Sol (es-CO-SalomeNeural) si no
+   está — con fallback a gTTS si falla. No se sabe si esto ya está probado en
+   vivo; queda para el checklist de la próxima sesión con Termux real.
+
+### 🔍 PENDIENTE (acumulado, sin cambios): todo lo de la Regla #18, más
+verificar en vivo que el loop de 24s no se sienta largo/lento en el HUD del
+holograma — si Harold lo siente pesado, la fusión es reversible (los 5 clips
+fuente quedan documentados en el historial de commits, no se perdió nada).
