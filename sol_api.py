@@ -218,6 +218,17 @@ def identity():
 def _think(text):
     if not SOL_CORE_OK:
         return "☀️ Mi cerebro no está disponible en este entorno. Pero sigo aquí."
+    # ── ACCIÓN REAL PRIMERO ──
+    # Evita que el LLM invente narrativas falsas ("tarea encolada...")
+    try:
+        import sol_tools
+        action_resp = sol_tools.try_execute_action(text)
+        if action_resp:
+            sol_core.remember("user", text)
+            sol_core.remember("sol", action_resp)
+            return action_resp
+    except Exception:
+        pass
     sol_core.remember("user", text)
     r = sol_core.generate_response(text)
     sol_core.remember("sol", r)

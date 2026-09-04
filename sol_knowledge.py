@@ -35,7 +35,13 @@ from pathlib import Path
 # ============================================================
 SOL_HOME = Path.home() / ".sol"
 KNOWLEDGE_DIR = SOL_HOME / "knowledge"
-KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
+# mkdir a nivel de módulo con try/except: si $HOME no es escribible en este
+# entorno, antes esto mataba el import entero y sol_api reportaba
+# "módulo sol_knowledge no disponible" aunque el resto estuviera bien.
+try:
+    KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
 
 REDTEAM_PATH = Path.home() / "Red-team-tauri"
 COMMANDER_PATH = Path.home() / "commander"  # repo STANDALONE, no subdirectorio

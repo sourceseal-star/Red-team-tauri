@@ -496,3 +496,37 @@ solo — Harold debe decidir si commitear, descartar o guardar esos cambios
 locales primero. Ese es justamente el caso de "detenerse si hay cambios
 locales no descritos".
 
+
+## Sesión 2026-09-03 — Sol ejecuta acciones REALES (fin de las narrativas inventadas)
+
+**Causa raíz de "pides algo y no lo hace":** el chat de Sol (`/api/sol/think`,
+el que usa sol.html) le pasaba TODO directo al LLM sin detectar si el mensaje
+pedía una acción física. El LLM INVENTABA respuestas convincentes
+("tarea encolada, el teléfono la ejecutará en 15s...") sin que ningún código
+real hubiera corrido. Existía un detector honesto pero en un router aislado
+(sol_router.py) que el chat real nunca llamaba.
+
+**Arreglo (en los DOS repos, misma lógica):**
+1. `sol_tools.py`: bloque `DETECCIÓN HONESTA DE ACCIONES` —
+   `detect_action(text)` mapea lenguaje natural ("prende la linterna",
+   "abre whatsapp al +57...", "dónde estoy") a tools reales, y
+   `try_execute_action(text)` las ejecuta devolviendo éxito/fallo REAL.
+2. `sol_api.py` `_think()`: ejecuta la acción PRIMERO; solo si no hay acción
+   deja hablar al LLM (que ahora tiene candado: prohibido decir que
+   ejecutó/envió/encoló algo que no corrió de verdad).
+3. Nueva tool `open_whatsapp`: abre wa.me con chat+mensaje precargados.
+   HONESTA por diseño: WhatsApp exige que el humano toque Enviar —
+   Sol nunca dice "lo envié" si solo lo abrió.
+4. `omni.sh`: clone de ~/sol ahora usa GITHUB_ACCESS_TOKEN (repo privado);
+   sync() carga .env antes de clonar. `.env` nunca se modifica (solo export).
+5. `sol_knowledge.py`: mkdir protegido (un $HOME sin permisos de escritura
+   ya no tumba el import completo del módulo).
+
+**Regla para el futuro:** NUNCA dejar que el LLM narre acciones. Toda acción
+pasa primero por el detector/tools que reportan éxito o error reales.
+Si se agrega una acción nueva, agregarla a ACTION_TRIGGERS con tool real.
+
+**Nota:** el repo sol también recibió estos cambios (commit 0f3d93b) sobre
+su sol_core.py nuevo (function calling con sol_actions + prompt "Harold
+Giovanni") — ahí el candado se añadió al prompt nuevo, y el detector de
+sol_tools funciona como primera línea antes del function calling.

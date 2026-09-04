@@ -90,7 +90,14 @@ ensure_sol_repo() {
     return 0
   fi
   info "☀️ ~/sol no existe — clonando sourceseal-star/sol..."
-  if git clone https://github.com/sourceseal-star/sol.git "$SOL_REPO" >> "$LOG_DIR/sol_sync.log" 2>&1; then
+  # Repo PRIVADO: sin token el clone falla con "Repository not found".
+  # Intentamos primero con GITHUB_ACCESS_TOKEN (si .env ya se cargó),
+  # y solo si no hay token, probamos plano (por si algún día va público).
+  local _SOL_CLONE_URL="https://github.com/sourceseal-star/sol.git"
+  if [ -n "${GITHUB_ACCESS_TOKEN:-}" ]; then
+    _SOL_CLONE_URL="https://x-access-token:${GITHUB_ACCESS_TOKEN}@github.com/sourceseal-star/sol.git"
+  fi
+  if git clone "$_SOL_CLONE_URL" "$SOL_REPO" >> "$LOG_DIR/sol_sync.log" 2>&1; then
     ok "☀️ Repo de Sol clonado en ~/sol"
     if [ -f "$SOL_REPO/.env.example" ] && [ ! -f "$SOL_REPO/.env" ]; then
       cp "$SOL_REPO/.env.example" "$SOL_REPO/.env"
@@ -911,6 +918,10 @@ sync() {
   log "🔄 SYNC — $(date '+%Y-%m-%d %H:%M:%S') — entorno: $ENV_TYPE"
   echo -e "${BOLD}── Sincronización segura ──${N}"
   echo ""
+  # Cargar .env ANTES de protegerlo/clonar (solo export de variables,
+  # nunca modifica el archivo) — así GITHUB_ACCESS_TOKEN está disponible
+  # para clonar ~/sol si hace falta.
+  load_env 2>/dev/null || true
 
   # ── 0. PROTEGER .env — TRIPLE PROTECCIÓN ──
   echo -e "${BOLD} Paso 0: Proteger .env (triple protección)${N}"

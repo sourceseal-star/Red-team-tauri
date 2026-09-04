@@ -613,6 +613,24 @@ def tool_open_url(url: str) -> str:
     except Exception:
         return f"🔗 No se pudo abrir: {url}"
 
+def tool_open_whatsapp(number: str, message: str = "") -> str:
+    """Abre WhatsApp con un chat y mensaje precargados (via wa.me).
+    IMPORTANTE: esto NO envía el mensaje solo — wa.me abre la conversación
+    con el texto ya escrito, pero WhatsApp exige que un humano toque el
+    botón de enviar. Sol nunca debe decir que "lo envió" si solo hizo esto."""
+    import urllib.parse
+    clean_number = "".join(c for c in number if c.isdigit() or c == "+")
+    if not clean_number:
+        return "❌ Número inválido"
+    url = f"https://wa.me/{clean_number.lstrip('+')}"
+    if message:
+        url += f"?text={urllib.parse.quote(message)}"
+    try:
+        subprocess.run(["termux-open", url], capture_output=True, timeout=5, check=True)
+        return f"✅ Abrí WhatsApp con el chat de {clean_number} y el mensaje listo — falta que le doy Enviar (eso no lo puedo tocar yo)."
+    except Exception as e:
+        return f"❌ No pude abrir WhatsApp (¿este proceso corre en Termux, en el teléfono? aquí no hay termux-open): {e}"
+
 def tool_flashlight(on: bool = True) -> str:
     try:
         result = subprocess.run(
@@ -1362,6 +1380,7 @@ TOOLS = {
     "send_sms": Tool("send_sms", "Envía SMS", tool_send_sms, ["number", "message"]),
     "notify": Tool("notify", "Notificación de sistema", tool_notify, ["text"]),
     "open_url": Tool("open_url", "Abre una URL", tool_open_url, ["url"]),
+    "open_whatsapp": Tool("open_whatsapp", "Abre WhatsApp con chat y mensaje precargados (NO envia solo)", tool_open_whatsapp, ["number", "message"]),
     "flashlight": Tool("flashlight", "Control de linterna", tool_flashlight, ["on"]),
     "vibrate": Tool("vibrate", "Vibración", tool_vibrate, ["duration"]),
     "screenshot": Tool("screenshot", "Captura de pantalla", tool_screenshot),
@@ -1668,3 +1687,74 @@ def tool_repos_list() -> str:
         pushed = repo.get("pushed_at", "?")[:10] if repo.get("pushed_at") else "?"
         lines.append(f"  {repo['name']}: {repo['github']} ({local}, branch: {branch}, pushed: {pushed})")
     return "\n".join(lines)
+
+# ═══════════════════════════════════════════════════════════════════
+# DETECCIÓN HONESTA DE ACCIONES — lenguaje natural → tool real
+# ═══════════════════════════════════════════════════════════════════
+# ANTES: sol_api.py (/api/sol/think, la que usa sol.html de verdad) le
+# pasaba TODO directo al LLM sin detectar si el mensaje pedía una acción
+# real (linterna, WhatsApp, SMS...). El LLM entonces INVENTABA respuestas
+# convincentes ("tarea encolada, el teléfono la ejecutará en 15s...")
+# sin que ningún código real hubiera corrido. Esta función centraliza el
+# detector para que TODOS los puntos de entrada (sol_api, telegram) usen
+# la misma lógica: si hay acción, se ejecuta la tool REAL y se reporta
+# éxito o fallo tal cual — nunca una narrativa inventada.
+ACTION_TRIGGERS = {
+    "linterna": "flashlight", "flashlight": "flashlight", "torch": "flashlight",
+    "luz": "flashlight",
+    "captura": "screenshot", "screenshot": "screenshot",
+    "gps": "location", "ubicación": "location", "ubicacion": "location",
+    "batería": "battery", "bateria": "battery",
+    "vibra": "vibrate", "vibrar": "vibrate", "vibración": "vibrate",
+    "whatsapp": "open_whatsapp",
+    "sms": "send_sms",
+    "cpu": "cpu", "procesador": "cpu",
+    "ping": "ping",
+    "escanea": "scan_ports", "puertos": "scan_ports",
+    # Multi-palabra (los chequeos "keyword in t" también funcionan con frases)
+    "dónde estoy": "location", "donde estoy": "location",
+}
+
+def detect_action(text: str):
+    """Devuelve (tool_name, args) si el texto pide una acción real, o (None, [])."""
+    import re
+    t = text.lower().strip()
+    # WhatsApp tiene prioridad si se menciona explícito
+    if "whatsapp" in t:
+        num = re.search(r'(\+?\d{7,15})', text)
+        msg = re.search(r'(?:mensaje|texto|dile|diga)[\s:"\']*([^.!?]{2,200})', text, re.IGNORECASE)
+        return "open_whatsapp", [num.group(1) if num else "", msg.group(1).strip() if msg else ""]
+    for keyword, tool_name in ACTION_TRIGGERS.items():
+        if keyword not in t:
+            continue
+        if tool_name == "flashlight":
+            return "flashlight", [not any(w in t for w in ["apaga", "off", "apagar"])]
+        if tool_name == "send_sms":
+            num = re.search(r'(\+?\d{7,15})', text)
+            msg = re.search(r'(?:mensaje|texto)[":\s]+(.+)', text, re.IGNORECASE)
+            if num:
+                return "send_sms", [num.group(1), msg.group(1) if msg else "Hola"]
+            continue
+        if tool_name in ("ping", "scan_ports"):
+            ip = re.search(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', text)
+            if ip:
+                return tool_name, [ip.group(1)]
+            continue
+        return tool_name, []
+    return None, []
+
+def try_execute_action(text: str):
+    """Si el texto pide una acción real, la ejecuta y devuelve respuesta
+    honesta (str) — o None si no hay acción (seguir al chat normal)."""
+    tool_name, args = detect_action(text)
+    if not tool_name:
+        return None
+    result = execute_tool(tool_name, *args)
+    tool = get_tool(tool_name)
+    desc = tool.description if tool else tool_name
+    res_str = result.get("result", "") if isinstance(result, dict) else str(result)
+    ok = isinstance(result, dict) and result.get("success", False) and not str(res_str).startswith("❌")
+    if ok:
+        return f"☀️ {res_str}"
+    err = result.get("error") if isinstance(result, dict) else None
+    return f"☀️ Intenté '{desc}' pero no pude: {err or res_str or 'algo falló'}."
