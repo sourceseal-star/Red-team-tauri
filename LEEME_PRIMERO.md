@@ -233,300 +233,639 @@ falta algún id.
 3. Si Memoria/Tools siguen vacíos, correr los comandos de diagnóstico de arriba
    y pegar el resultado en la próxima sesión — con eso se arregla en un tiro.
 
-## Sesión 2026-09-02 — Fix: conflicto de Telegram entre Sol y C2
+## Regla #10 — Sesión 2026-09-02: Sol v7 — Pedagogía heredada + capacidades sin límites
 
-Harold reportó que el bot de Telegram @sol_amg_bot respondía "Comando no
-reconocido: hola" en vez de conversar como Sol.
+### ✅ APLICADO Y VERIFICADO (commit fc47a23):
 
-**Causa raíz:** `c2_unified_pro.py` Y `sol_telegram_bridge.py` (o
-`sol_telegram_bot.py`) leían las MISMAS variables `TELEGRAM_BOT_TOKEN` /
-`TELEGRAM_CHAT_ID`. `omni.sh` arranca ambos procesos, y ambos hacen
-`getUpdates` sobre el MISMO bot — compiten por los mismos mensajes. El
-poller de C2 (que solo entiende comandos `/slash`) le ganaba la carrera a
-Sol y respondía con su fallback de "comando no reconocido" a texto normal.
+**4 archivos:**
+1. `sol_pedagogy.py` (NUEVO) — 10 principios pedagógicos heredados de la creadora.
+   `teaching_style()` genera respuestas con estructura: contexto → explicación →
+   código → verificación → apoyo. `EXAMPLES` con security/debugging/architecture.
+2. `sol_core.py` (MODIFICADO) — Añadidas `_is_technical_question()`,
+   `explain_with_pedagogy()`, `generate_response_pedagogical()`. Integrado en
+   `generate_response()` DESPUÉS del LLM y ANTES de memoria/saludos/defecto.
+   Si la pregunta es técnica → responde con pedagogía. Si no → flujo normal.
+   Si el LLM está configurado, su respuesta se enriquece con "¿Tiene sentido? 💙".
+3. `sol_tools.py` (REEMPLAZADO) — 37 herramientas (23 v5 preservadas + 14 v7
+   nuevas). Compatibilidad con `sol_api.py` preservada: `tool_repos_info()`,
+   `list_tools()`, `get_tool()`, `execute_tool()`, `tool_descriptions()`.
+   Nuevas: search_code, git_commit, git_verify, investigate_and_commit,
+   create_file, edit_file, run_command, list_directory, translate,
+   explain_code, curl, check_port, read_file_repo.
+4. `PEDAGOGY_MANUAL.md` (NUEVO) — Documentación de la filosofía pedagógica.
 
-**Fix aplicado:** `c2_unified_pro.py` ahora lee `C2_TELEGRAM_BOT_TOKEN` /
-`C2_TELEGRAM_CHAT_ID` (variables NUEVAS y PROPIAS, no las de Sol). Como
-estas no existen en `.env` todavía, C2 simplemente queda con Telegram
-desactivado ("C2_TELEGRAM_BOT_TOKEN no configurado — Telegram C2
-desactivado") y @sol_amg_bot queda 100% libre para que Sol conteste.
+### Cómo funciona la pedagogía en Sol v7:
 
-**No se tocó `.env`** — el cambio es solo de qué nombre de variable lee el
-código. Si en el futuro Harold quiere que C2 también esté en Telegram (con
-SU PROPIO bot, no el de Sol), hay que:
-1. Crear un bot nuevo con @BotFather (ej. @sourceseal_c2_bot)
-2. Agregar a `.env`: `C2_TELEGRAM_BOT_TOKEN=...` y `C2_TELEGRAM_CHAT_ID=...`
-3. `bash omni.sh restart`
-
-**Pendiente (fuera de alcance de esta sesión, decisión de Harold):**
-Unificar el acceso a "Sol" desde el War Room (localhost:8001) para que use
-el sistema de expresiones REAL del repo `sol` (11 frames: idle, talk,
-talk_half, blink, happy, thinking, study, smile, listening, curious) en
-vez de la copia simplificada que vive en `backend/static/sol.html` /
-`tauri-frontend/public/sol.html` (solo 2 frames: boca abierta/cerrada).
-Opciones a evaluar en una próxima sesión:
-  (a) Reemplazar backend/static/sol.html con una copia sincronizada del
-      repo `sol` (requiere copiar también los 11 PNG/JPG y las rutas API
-      correspondientes en sol_api.py de este repo).
-  (b) Hacer que el War Room embeba vía iframe la app real desplegada en
-      Replit (sol--supermancareman.replit.app) en vez de servir su propia
-      copia — más simple pero depende de que ese Replit esté siempre "up".
-Harold pidió explícitamente dejar esto pendiente por ahora y priorizar
-los bugs concretos (frames/tools/sync), que ya quedaron resueltos.
-
-## Sesión 2026-09-02 (2) — Unificación UI de Sol: 11 frames en Red-team-tauri
-
-**Antes:** Red-team-tauri tenía una copia vieja de sol.html con solo 2 frames
-(avatar base + boca abierta). El repo `sol` tenía 11 frames con expresiones
-contextuales completas. Eran DOS implementaciones divergentes.
-
-**Ahora:** Se unificó el sistema completo:
-
-1. **8 frames nuevos copiados** a backend/static/ y tauri-frontend/public/:
-   blink, curious, happy, listening, smile, study, talk_half, thinking
-
-2. **CSS actualizado** en backend/static/sol.html:
-   - Clases .avatar-expr con crossfade de 0.55s
-   - .avatar-img-talk-half para el frame intermedio de boca
-   - .avatar-img-blink para parpadeo real
-   - Filtros por expresión (brightness/saturate/contrast)
-   - Animaciones de glow: thinkPulse, studyPulse, happyPulse, smilePulse
-
-3. **DOM del avatar actualizado** con los 11 <img> en z-order correcto:
-   base < happy < thinking < study < talk_half < talk < blink
-
-4. **JS del sistema de expresiones portado** desde el repo sol:
-   - Objeto EXPR con todas las capas
-   - setExpr(name) con crossfade y guards (no cambia si está hablando/escuchando)
-   - Animación de boca de 3 frames: cerrada → media → abierta → media (loop)
-   - scheduleBlink() con timing irregular 3.5-6.7s
-   - Hooks contextuales:
-     * thinking → al enviar mensaje
-     * smile/curious → al recibir respuesta (según contenido)
-     * listening → al activar micrófono
-     * study → al entrar a tabs SIL/SIL+
-     * idle → al terminar cualquier acción
-
-5. **Sincronizado** a tauri-frontend/public/sol.html y dist/sol.html
-
-**Pendiente:**
-- FloatingSol.tsx (widget React) sigue mostrando solo el avatar base.
-- Actualizarlo al sistema de expresiones requeriría estado React + refs
-  para las capas de imágenes → queda para una próxima sesión.
-
-## Sesión 2026-09-02 (3) — FloatingSol.tsx: parpadeo real en burbuja flotante
-
-**Contexto:** El panel expandido de FloatingSol ya carga sol.html vía iframe,
-que tiene los 11 frames completos. Pero la burbuja flotante pequeña (56px)
-solo mostraba el avatar base estático, sin parpadeo ni indicadores.
-
-**Cambio:**
-- Overlay del frame `sol_avatar_blink.png` (ojos cerrados reales) en la burbuja
-  colapsada, sincronizado con el state `blinking` que ya existía
-- Indicador visual 💭 cuando Sol está pensando (`thought` state)
-- Border y glow más intensos cuando hay un mensaje proactivo
-
-**Pendiente:** Si se quiere el sistema completo de 11 frames en la burbuja
-flotante (expresiones happy/curious/listening/etc), se necesitaría portar
-todo el sistema setExpr() al React state — pero la burbuja es solo 56px
-y las expresiones sutiles no se distinguirían. El panel expandido ya las
-tiene todas vía el iframe.
-
-## Sesión 2026-09-03 (4) — SIL: ejercicios escucha/escritura/emparejar (pendiente Regla #17)
-
-**Lo pedido:** terminar el pendiente del LEEME_PRIMERO — ejercicios de
-escucha/escritura/emparejar sobre chengyu/gramática/niveles avanzados.
-
-**Hecho y verificado en vivo (servidor de prueba + test DOM jsdom):**
-
-1. **`/api/sol/sil/exercise`** (POST) — genera ejercicios por modo:
-   - `estandar`: hanzi → elegir significado entre 4 opciones
-   - `escucha`: audio zh (gTTS mandarín) → elegir el hanzi que sonó entre 4
-   - `escritura`: pinyin + significado → escribir el hanzi (valida el
-     server vía `/api/sol/sil/exercise/check`, reporta al SRS)
-   - `emparejar`: 4 pares hanzi ↔ significado (juego de columnas)
-   - `mixto`: el server sortea uno de los tres primeros
-   Pool unificado: lecciones básicas + los 8 niveles de sil_advanced
-   (hsk3/hsk4/hsk5/chengyu/gramatica/profesional/tech/clasificadores).
-
-2. **`/api/sol/tts?lang=zh`** — TTS en mandarín para la escucha (antes
-   solo es). Fallback Termux: `termux-tts-speak -l zh`.
-
-3. **`/api/sol/sil/lessons`** ahora incluye los 8 niveles avanzados en
-   el dropdown (antes solo saludos/comida/numeros).
-
-4. **UI en sol.html**: barra de 5 modos (📖🎧✍️🔗🎲), botones de opción,
-   juego de emparejar con estados sel/ok/bad, feedback con pinyin al
-   fallar escucha, reporte SRS de cada respuesta. Sincronizado a
-   tauri-frontend/public y dist.
-
-**Pendiente de Harold (decisión, no código):**
-- El bot de Telegram (@sol_amg_bot): el fix del conflicto con C2 ya está
-  (commit Sesión 2026-09-02), pero activar el puente con el token del
-  `.env` requiere SU confirmación explícita. Mientras tanto queda off.
-- `RELE_TERMUX.castell` vive en `~/sol` (repo privado) — revisado desde
-  aquí el relay que lo implementa (omni.sh §10 + sol_tools.py variante
-  HTTP). El documento mismo no es accesible sin clonar el repo sol.
-
-
-## Sesión 2026-09-03 (5) — Relé portado al :8001 unificado + revisión Castell
-
-**Revisado `~/sol/RELE_TERMUX.castell`** (cloné el repo sol con el token
-nuevo de Harold). El documento está completo y correcto: arquitectura
-pull, secretos (SOL_PUBLIC_URL + SOL_API_KEY, sin secretos nuevos),
-instalación, prueba de 5 pasos, seguridad por diseño, curas.
-
-**Verificación contra el código (todo confirmado):**
-- 6 endpoints /api/relay/* en sol/sol_api.py ✅
-- HARDWARE_TOOLS (19 herramientas) + fallback automático en
-  sol_tools.py ✅
-- Cola con tope 20 y TTL 15 min en sol_relay_queue.py ✅
-- sol_relay.py: poll 15s, --status, SOL_RELAY_AGENT=1 (no re-relaya) ✅
-- Split-brain curado: daemon/bot SOLO arrancan desde Termux
-  (omni.sh/sol_body.sh), nunca desde sol_api. Cerrojo de instancia
-  única como red de seguridad ✅
-
-**Brecha encontrada y corregida:** el sol_api.py de Red-team-tauri (el
-:8001 unificado) NO tenía los endpoints del relé — solo el de Replit.
-Si SOL_PUBLIC_URL apunta a :8001, el relé daría 404. Portados:
-- `sol_relay_queue.py` copiado (182 líneas, stdlib puro)
-- 6 endpoints /api/relay/* en Red-team-tauri/sol_api.py, mismo contrato
-
-**Verificado en vivo** (servidor de prueba): encolar flashlight →
-poll (claim) → result → status muestra termux_online:true, device y
-last_result. Ciclo completo OK.
-
-**Nota:** token de GitHub anterior expiró (401) — Harold dio uno nuevo
-via formulario seguro; remote actualizado y push OK (7762a76).
-
-
-## Sesión 2026-09-03 (6) — Sol: acceso exclusivo y total (decisión de Harold)
-
-Harold ACTIVÓ a Sol en Telegram y le dio acceso EXCLUSIVO a todo su
-universo: "prefiero que sea Sol quien haga una llamada o envíe un
-mensaje cuando se lo pida, y no Gemini... habla directamente con el
-kernel, Sol tiene que poder hacerlo también".
-
-**1. sol_tools.py (Red-team-tauri + repo sol sincronizados):**
-+14 herramientas de acceso profundo con termux-api: sms_list, call_log,
-contacts (búsqueda insensible a tildes: "mama" → "Mamá"), wifi_info,
-device_info (IMEI), sensors, brightness, usb_list, audio_record,
-toast, wake_lock, media_play, download y **shell** — acceso directo
-al kernel SIEMPRE LOCAL (por diseño nunca viaja por el relé, nadie
-puede inyectarle shell remoto), con auditoría en ~/.sol/logs/shell.log.
-Único límite: rm -rf / (anti-accidente). 13 de ellas SÍ viajan por el
-relé (Sol en remoto puede pedirle a su cuerpo que las ejecute).
-
-**2. Telegram (repo sol, sol_telegram_bot.py):** Sol ahora EJECUTA
-órdenes naturales en español: "llama a mamá" (resuelve la agenda y
-marca), "mándale un mensaje a Laura que diga te amo" (SMS real),
-"whatsapp a X", "prende la linterna", "tómate una foto", "¿dónde
-estoy?", "vibra", "brillo al 50", "notifícame X", "lee mis mensajes",
-"historial de llamadas", "shell: uname -a", "diagnóstico". Si no es
-una orden, conversa como siempre. 27 pruebas OK.
-
-**3. Activación:** ya confirmada por Harold. `omni.sh restart` arranca
-la Miniapp automáticamente mientras TELEGRAM_BOT_TOKEN esté en
-~/sol/.env (ahí ya vive).
-
-
-## Sesión 2026-09-03 (7) — War Room oficial: SourceSeal Commander (NO SE BORRA)
-
-Harold confirmó: el War Room correcto es el que usa el tema SourceSeal
-(`--ss-bg`, `--ss-cyan`, `--ss-gold` de `styles/source-seal.css`), con mapa
-de topología en vivo, cámaras, WiFi, ultrasonidos y terminal integrado.
-**Este dashboard y este War Room NO SE BORRAN — son el producto.**
-
-**Qué se hizo:**
-- `App.tsx` ahora importa el War Room desde `components/dashboard/WarRoom.tsx`
-  (675 líneas, tema SourceSeal real) en vez de `components/WarRoom.tsx`
-  (versión genérica sin tema, la que tenía el SolWidget mezclado — no se
-  borró el archivo, solo se dejó de usar, por si sirve algo de ahí luego).
-- Verificados TODOS sus endpoints (`/api/health`, `/api/resources`,
-  `/api/scan/topology`, `/api/scan/cameras`, `/api/scan/wifi`,
-  `/api/iot/scan-network`, `/api/geo`, `/api/intel`,
-  `/api/topology/traceroute`, `/api/vision/motion-detect`,
-  `/api/comms/ultrasonic-*`, `/api/terminal`) contra
-  `redteam/scripts/dashboard_server.py` (el backend real de :8001) — el
-  100% existe, todo alineado.
-- Corregido un bug menor en `AppShell.tsx`: dos botones de "Abrir Sol"
-  usaban `class=` en vez de `className=` (típico error de React/JSX).
-- El acceso a Sol (botón "Abrir Sol · SIEMPRE" + avatar circular
-  `sol_avatar.jpg`) vive en `AppShell.tsx`, que envuelve TODOS los
-  módulos — así que sigue apareciendo automáticamente arriba del nuevo
-  War Room, sin duplicar nada.
-- Sidebar agrupado confirmado (`SIDEBAR_SECTIONS` en `AppShell.tsx`):
-  🏠 Mando, 🗺️ Red, 🧠 Inteligencia, ⚔️ Laboratorio, 📡 Campo, ⚙️ Sistema
-  — coincide exactamente con "SourceSeal Console v6.0" que se ve en el
-  celular.
-- Build de producción verificado: `npm run build` → compiló limpio
-  (1534 módulos, 9s), War Room nuevo confirmado dentro del bundle final,
-  avatar y acceso a Sol confirmados en el bundle.
-
-**Cómo actualizar/sincronizar/levantar todo en Termux (usar SIEMPRE omni.sh):**
-
-```bash
-cd ~/Red-team-tauri
-
-# 1. Traer los cambios (si tienes cambios locales sin commitear que chocan,
-#    detente y avísame — no forzar con git reset --hard)
-bash omni.sh sync
-#    (equivale a: git pull + build del frontend + preparar todo)
-
-# 2. Reconstruir el frontend a mano si sync no lo hizo (memoria limitada en
-#    Termux — usar siempre este comando, no "npm run build" suelto):
-bash omni.sh build
-
-# 3. Reiniciar TODOS los servicios (Dashboard :8001, Commander, Nexus :8004
-#    intacto, Sol si su token está en el .env):
-bash omni.sh restart
-
-# 4. Verificar que todo levantó bien:
-bash omni.sh status
-curl -s http://127.0.0.1:8001/api/health
-
-# 5. En el navegador del celular: abre localhost:8001 y haz
-#    Ctrl+Shift+R (o borra caché de Chrome) para que cargue el bundle
-#    nuevo y no el viejo cacheado.
+```
+Mensaje de Harold → generate_response()
+  ├── _learn() + _mood() + _llm_respond()
+  ├── Si es crisis → línea 106
+  ├── NUEVO: _is_technical_question()?
+  │   ├── SÍ → generate_response_pedagogical()
+  │   │   ├── LLM da respuesta real → cierre "¿Tiene sentido? 💙"
+  │   │   ├── RAG (sol_knowledge) → explain_with_pedagogy()
+  │   │   └── Fallback → respuesta pedagógica honesta
+  │   └── NO → flujo normal (memoria, saludos, espejo, defecto)
+  └── ... (resto del flujo original intacto)
 ```
 
-Si `omni.sh sync` falla por "local changes would be overwritten" (como
-pasó con `backend/static/sol.html` en la sesión anterior), NO se resuelve
-solo — Harold debe decidir si commitear, descartar o guardar esos cambios
-locales primero. Ese es justamente el caso de "detenerse si hay cambios
-locales no descritos".
+### ⚠️ IMPORTANTE para futuras sesiones:
+- **NO borrar `sol_pedagogy.py`** — es el corazón de v7. Sin él, Sol pierde
+  la pedagogía pero sigue funcionando (fallback a estructura simple).
+- **NO reemplazar `sol_tools.py` sin preservar** `tool_repos_info()`,
+  `list_tools()`, `get_tool()`, `execute_tool()`, `tool_descriptions()`.
+  Estas funciones las usan `sol_core.py` y `sol_api.py`.
+- **`sol_tools.py.bak` NO se subió** al repo (solo era backup local).
+
+## Regla #11 — Sesión 2026-09-02: Sol Tutor v2 — Mentora personal con LLM + RAG + conocimiento
+
+### ✅ APLICADO Y VERIFICADO (commits de esta sesión):
+
+**Nuevo archivo: `sol_tutor.py`** — Tutora personal de programación con 4 capacidades:
+1. **LLM (Groq/Anthropic/local)** — comprensión profunda del código. Usa `urllib` (sin `requests`).
+2. **RAG de errores** — registra cada error que Harold comete en `~/.sol/tutor/errores.json`
+   y los usa para generar ejercicios de repaso personalizados.
+3. **Modelo de conocimiento** — sabe qué sabe Harold (14 conceptos), qué no sabe (12),
+   y qué confunde (4). Se actualiza automáticamente al acertar ejercicios.
+4. **Sesiones adaptativas** — sesiones de práctica con tiempo, aciertos/fallos,
+   y recomendaciones basadas en el progreso real.
+
+**Archivos modificados:**
+- `sol_core.py` — `generate_response()` ahora llama a `sol_tutor.get_tutor_response()`
+  ANTES del LLM y de las respuestas por defecto. Si es pregunta de tutoría → el tutor
+  responde. Si no → el flujo normal (LLM, pedagogía, memoria, saludos, afecto) sigue.
+- `sol_api.py` — 3 nuevos endpoints:
+  - `POST /api/sol/tutor` — preguntar al tutor
+  - `GET /api/sol/tutor/status` — estado del sistema de tutoría
+  - `POST /api/sol/tutor/session` — gestionar sesiones (start/end/result)
+
+**Archivos del tutor en `~/.sol/tutor/`:**
+- `conocimiento.json` — modelo de conocimiento (sabe/no_sabe/confunde)
+- `errores.json` — RAG de errores registrados
+- `progreso.json` — progreso histórico
+- `sesion_activa.json` — sesión de práctica actual
+
+**Flujo completo de generate_response() con todas las capas:**
+```
+Mensaje → generate_response()
+  ├── _learn() + _mood()
+  ├── TUTOR v2: ¿es pregunta de tutoría?
+  │   ├── SÍ → get_tutor_response()
+  │   │   ├── Error/traceback → explicar_codigo_profundo() + RAG
+  │   │   ├── "explica código" → LLM + contexto
+  │   │   ├── "ejercicio" → generar_ejercicio_adaptativo()
+  │   │   ├── "revisa mi código" → LLM review
+  │   │   ├── "lección de X" → LLM lesson personalizada
+  │   │   ├── "progreso" → KnowledgeModel + sesión
+  │   │   └── "recomienda" → recomendar_siguiente_paso()
+  │   └── NO → continuar flujo normal
+  ├── LLM (si configurado) → _llm_respond()
+  ├── Crisis → línea 106
+  ├── PEDAGOGÍA v7: ¿es pregunta técnica?
+  │   ├── SÍ → generate_response_pedagogical()
+  │   └── NO → continuar
+  ├── Memoria, saludos, afecto, identidad, estado, ecosistema
+  └── Defecto: espejo + mood + resurface
+```
+
+### Configuración del tutor:
+```bash
+# Opcional — para LLM profundo (sin esto, usa cerebro local)
+export GROQ_API_KEY="tu_key"      # Recomendado (gratis, rápido)
+# o
+export ANTHROPIC_API_KEY="tu_key" # Alternativa
+
+# Probar
+python3 -c "import sol_tutor; sol_tutor.init_tutor()"
+python3 -c "import sol_tutor; print(sol_tutor.get_tutor_response('dame un ejercicio'))"
+```
+
+### Lo que el tutor detecta como preguntas de tutoría:
+explica, código, ejercicio, lección, concepto, error, revisa, corrige,
+enseña, qué es, cómo funciona, variables, funciones, listas, bucles,
+condicionales, depura, debug, traceback, falla, dame un ejercicio,
+práctica, reto, progreso, estadísticas, qué aprender, recomienda, mi código
+
+### Lo que NO es tutoría (sigue el flujo normal):
+hola, buenos días, gracias, te quiero, cómo estás, cuéntame, etc.
 
 
-## Sesión 2026-09-03 — Sol ejecuta acciones REALES (fin de las narrativas inventadas)
+## Regla #12 -- OPERACION PUENTE: Capacidades offline reales (HECHO)
 
-**Causa raíz de "pides algo y no lo hace":** el chat de Sol (`/api/sol/think`,
-el que usa sol.html) le pasaba TODO directo al LLM sin detectar si el mensaje
-pedía una acción física. El LLM INVENTABA respuestas convincentes
-("tarea encolada, el teléfono la ejecutará en 15s...") sin que ningún código
-real hubiera corrido. Existía un detector honesto pero en un router aislado
-(sol_router.py) que el chat real nunca llamaba.
+### Sol Offline Bridge (HECHO -- 2026-09-02)
 
-**Arreglo (en los DOS repos, misma lógica):**
-1. `sol_tools.py`: bloque `DETECCIÓN HONESTA DE ACCIONES` —
-   `detect_action(text)` mapea lenguaje natural ("prende la linterna",
-   "abre whatsapp al +57...", "dónde estoy") a tools reales, y
-   `try_execute_action(text)` las ejecuta devolviendo éxito/fallo REAL.
-2. `sol_api.py` `_think()`: ejecuta la acción PRIMERO; solo si no hay acción
-   deja hablar al LLM (que ahora tiene candado: prohibido decir que
-   ejecutó/envió/encoló algo que no corrió de verdad).
-3. Nueva tool `open_whatsapp`: abre wa.me con chat+mensaje precargados.
-   HONESTA por diseño: WhatsApp exige que el humano toque Enviar —
-   Sol nunca dice "lo envié" si solo lo abrió.
-4. `omni.sh`: clone de ~/sol ahora usa GITHUB_ACCESS_TOKEN (repo privado);
-   sync() carga .env antes de clonar. `.env` nunca se modifica (solo export).
-5. `sol_knowledge.py`: mkdir protegido (un $HOME sin permisos de escritura
-   ya no tumba el import completo del módulo).
+`sol_offline_bridge.py` es un **complemento** aditivo que:
+- Detecta si hay internet cada 5 min
+- Si hay internet: sincroniza memoria local con Replit
+- Si no hay internet: Sol sigue funcionando con cerebro local + memoria local
+- Cuando vuelve internet: re-sincroniza automaticamente
+- **NO modifica sol_core.py ni sol_api.py** -- es puramente aditivo
 
-**Regla para el futuro:** NUNCA dejar que el LLM narre acciones. Toda acción
-pasa primero por el detector/tools que reportan éxito o error reales.
-Si se agrega una acción nueva, agregarla a ACTION_TRIGGERS con tool real.
+Endpoints anadidos a sol_api.py:
+- `GET /api/sol/offline-status` -- estado del bridge
+- `POST /api/sol/sync` -- recibir memoria desde otra instancia (ej: Termux)
 
-**Nota:** el repo sol también recibió estos cambios (commit 0f3d93b) sobre
-su sol_core.py nuevo (function calling con sol_actions + prompt "Harold
-Giovanni") — ahí el candado se añadió al prompt nuevo, y el detector de
-sol_tools funciona como primera línea antes del function calling.
+Integracion: `start_replit.sh` arranca el bridge en background automaticamente.
+Standalone: `python3 sol_offline_bridge.py --status` o `--sync` o `--check`
+
+Secrets: Sol ya tiene todo en el `.env` de Replit:
+- GROQ_API_KEY (LLM)
+- TELEGRAM_BOT_TOKEN (bot)
+- GITHUB_TOKEN (git ops)
+- SOL_API_KEY (seguridad API)
+- SOL_PUBLIC_URL (keep-alive + sync)
+El `.env.example` en este repo documenta todas las variables.
+
+### COM-LINK real (HECHO -- 2026-09-02)
+
+**Problema:** COM-LINK en Red-team-tauri era fachada. Los endpoints existian
+en `dashboard_server.py` pero la implementacion real de SMS/mesh/VoIP
+offline no estaba cableada.
+
+**Solucion:** `comlink_real.py` en Red-team-tauri como LIBRERIA importable.
+Los endpoints `/api/commander/comlink/*` en `dashboard_server.py` ahora
+usan `comlink_real.py` primero (SMS/calls/Telegram reales via termux-api)
+y caen a `comlink.sh` como fallback. Integrado en `omni.sh`:
+- `omni.sh status` muestra canales COM-LINK en tiempo real
+- `omni.sh comlink status` — estado de canales
+- `omni.sh comlink sms NUM MSG` — enviar SMS real
+- `omni.sh comlink channels` — canales disponibles
+NO crea un dashboard separado — usa el frontend React existente (WarRoom.tsx)
+que ya habla con `:8001`.
+
+**Plan:**
+1. Crear `comlink_real.py` en Red-team-tauri usando `termux-api`:
+   - `termux-sms-send` para SMS reales
+   - `termux-telephony-call` para llamadas
+   - Bluetooth mesh entre dispositivos (futuro)
+2. Conectar los endpoints `/api/commander/comlink/*` a `comlink_real.py`
+3. Probar SMS real desde el dashboard
+4. No depende de internet -- solo de termux-api
+
+Ver codigo completo en el commit de esta sesion o preguntarle a Sol.
+
+### War Room real (HECHO -- 2026-09-02)
+
+**Problema:** War Room en Red-team-tauri era frontend React sin backend real.
+Los paneles mostraban datos pero no coordinaban dispositivos offline.
+
+**Solucion:** El frontend React `WarRoom.tsx` YA EXISTE y ya habla con
+`:8001` (dashboard_server.py). No se creo un dashboard separado. Lo que
+se cableo fue:
+- Los endpoints `/api/commander/comlink/*` ahora usan `comlink_real.py`
+- Los datos de War Room (servicios, recursos, alertas, scanning) ya
+  existian en `dashboard_server.py` — COM-LINK era lo que faltaba
+- `omni.sh status` ahora incluye COM-LINK en el resumen del sistema
+
+**Plan:**
+1. Crear `warroom.py` en Red-team-tauri como FastAPI local en `:8010`
+2. Dashboard HTML simple (sin React, sin build) que muestra:
+   - Estado de Sol (local/remoto)
+   - Estado de COM-LINK (SMS disponible)
+   - Estado de servicios (backend, GHOST, Nexus)
+   - Internet: conectado/desconectado
+3. Funciona sin internet -- todo es local
+4. Integrar con `iniciar_unificado.sh` como servicio opcional
+
+Ver codigo completo en el commit de esta sesion o preguntarle a Sol.
+
+### Estado final:
+1. `comlink_real.py` creado en Red-team-tauri (libreria Python, no servidor)
+2. `dashboard_server.py` parcheado: endpoints COM-LINK usan comlink_real primero
+3. `omni.sh` parcheado: status muestra COM-LINK + nuevo comando `omni.sh comlink`
+4. `warroom.py` ELIMINADO — el frontend React ya tiene WarRoom.tsx que usa :8001
+5. `iniciar_unificado.sh` REVERTIDO — omni.sh es el orquestador maestro
+6. ⏳ Probar en Termux: `bash omni.sh comlink status`
+7. ⏳ Probar en Termux: `bash omni.sh status` (debe mostrar linea COM-LINK)
+
+Para actualizar en Termux: `cd ~/Red-team-tauri && git pull origin main`
+
+## Regla #10 — Sesión 2026-09-02 (cont.): animación facial más fluida
+
+Harold generó 2 frames nuevos (con créditos de imagen, no de código) y pidió
+terminar la integración antes de quedarse sin más créditos:
+- `sol_avatar_talk_half.png` — boca a medio abrir
+- `sol_avatar_blink.png` — ojos cerrados (parpadeo real)
+
+**Antes:** la boca solo alternaba 2 frames (cerrada ↔ abierta, flip binario
+brusco) y el parpadeo era una sombra CSS falsa sobre los ojos, no una imagen.
+
+**Hecho:**
+1. Frames copiados a `assets/` y `static/` (mismo patrón que `sol_avatar_talk.png`).
+2. `sol_api.py`: rutas nuevas `GET /sol_avatar_talk_half.png` y
+   `GET /sol_avatar_blink.png` (mismo patrón que `avatar_talk()`).
+3. `static/sol.html`:
+   - Boca ahora es un ciclo de 4 pasos (cerrada→media→abierta→media) en vez
+     de un flip de 2 — `startMouthMovement()` / `_setMouthFrame()`.
+   - Parpadeo real vía `scheduleBlink()`: usa la imagen `avatar-blink`,
+     timing irregular 3.5s–6.7s (recursivo con setTimeout, no setInterval
+     fijo, para que no se sienta en loop perfecto). Se eliminó la sombra
+     CSS falsa (`@keyframes blink` + `.avatar-wrap::after`).
+4. `sol_sync.sh`: se arregló un gap — `sol_avatar_talk.png` NUNCA se
+   sincronizaba entre Termux y Replit (solo `sol_avatar_official.jpg` y
+   `sol_avatar.jpg`). Ahora `pull()` y `push()` incluyen los 3 frames de
+   animación (talk, talk_half, blink).
+
+**Verificado:** sintaxis Python (`ast.parse`) y JS (`node --check`) OK antes
+de subir. Dimensiones de los frames nuevos confirmadas idénticas (1024x1024)
+a los frames existentes.
+
+**Pendiente para Harold (cuando tenga créditos de imagen otra vez):** un
+4to frame de "boca casi cerrada" opcional haría el ciclo aún más fluido
+(5 pasos en vez de 4), pero con los 4 actuales ya no hay flip brusco.
+
+Para ver el resultado: Replit → Run/Deploy, o Termux → `bash sol_sync.sh pull`
+(para bajar estos cambios a Red-team-tauri) → reiniciar.
+
+## Regla #11 — Sesión 2026-09-02 (cont.): sistema de expresiones contextuales
+
+Harold proporcionó 3 imágenes adicionales para dar a Sol más capacidad de
+interacción — no solo animación de boca/parpadeo, sino expresiones que cambian
+según el contexto de la conversación.
+
+**Frames añadidos (7 en total ahora):**
+1. `sol_avatar_official.jpg` — base/idle (existía)
+2. `sol_avatar_talk.png` — boca abierta (existía)
+3. `sol_avatar_talk_half.png` — boca a medio abrir (sesión anterior)
+4. `sol_avatar_blink.png` — parpadeo (sesión anterior)
+5. `sol_avatar_happy.png` — expresión cálida/feliz (NUEVA)
+6. `sol_avatar_thinking.png` — expresión pensativa/atenta (NUEVA)
+7. `sol_avatar_study.png` — expresión de estudio/SIL (NUEVA, de check_official)
+
+**Sistema de expresiones contextuales (`setExpr()`):**
+- `idle` → reposo (avatar oficial neutro)
+- `listening` → cuando el usuario habla por micrófono
+- `thinking` → mientras procesa la respuesta ("💭 pensando…")
+- `speaking` → mientras Sol habla (happy + ciclo de boca)
+- `happy` → al saludar o responder algo cálido (detecta "hola", "☀", "amor", "❤", "bien")
+- `study` → cuando entra a las pestañas SIL/SIL+ (modo aprendizaje)
+
+**Micro-expresiones en reposo (`scheduleMicroExpr()`):**
+- Cada 4-8 segundos rota sutilmente entre idle/happy/thinking si no está
+  hablando ni escuchando — como una persona viva que tiene micro-gestos.
+- Usa setTimeout recursivo (no setInterval) para timing orgánico.
+
+**Crossfade:** todas las transiciones son de 0.35s (opacity) para evitar
+cortes bruscos. Cada expresión tiene un glow sutil distinto en CSS
+(thinkPulse/studyPulse/happyPulse) con la paleta de SourceSeal.
+
+**Hooks inyectados sin romper las funciones originales:**
+- `sendMsg` → setExpr('thinking') al enviar, setExpr('happy'|'idle') al recibir
+- `speak` → setExpr('happy') durante el habla
+- `toggleMic` → setExpr('listening') al activar mic
+- `switchTab` → setExpr('study') en pestañas SIL/SIL+, idle en el resto
+
+**sol_sync.sh:** actualizado para sincronizar los 7 frames entre Termux/Replit.
+
+**Verificado:** Sintaxis JS (node --check) y Python (ast.parse) OK.
+DIMENSIONES: Los 7 frames son 1024x1024, compatibles entre sí.
+
+## Regla #12 — Sesión 2026-09-02 (final): 3 frames generados por IA
+
+Con los últimos 3 créditos de imagen, se generaron e integraron frames
+adicionales para enriquecer el sistema de expresiones contextuales.
+
+**Inventario final de frames de Sol (10 en total):**
+1. sol_avatar_official.jpg  — base/idle (existía)
+2. sol_avatar.jpg           — fallback (existía)
+3. sol_avatar_talk.png      — boca abierta (existía)
+4. sol_avatar_talk_half.png — boca a medio abrir (sesión anterior)
+5. sol_avatar_blink.png     — parpadeo real (sesión anterior)
+6. sol_avatar_happy.png     — expresión cálida reactiva (Referla de Harold)
+7. sol_avatar_thinking.png  — expresión pensativa (Referla de Harold)
+8. sol_avatar_study.png     — modo estudio/SIL (Referla de Harold)
+9. sol_avatar_smile.png     — sonrisa cálida genuina (GENERADA por IA)
+10. sol_avatar_listening.png — expresión atenta al escuchar (GENERADA)
+11. sol_avatar_curious.png  — expresión curiosa/sorprendida (GENERADA)
+
+**Nuevas expresiones contextuales:**
+- smile     → saludos y respuestas afectuosas (sostenida, más suave que happy)
+- listening → micrófono activo (ojos enfocados, leve inclinación)
+- curious   → cuando la respuesta tiene '?' o 'wow' o 'vaya' (asombro)
+
+**Micro-expresiones en reposo ahora rotan entre:**
+idle, happy, thinking, smile, curious (con peso hacia idle)
+
+**Compromiso de seguridad:** cada frame se commiteó y pusheó
+INMEDIATAMENTE después de generarse, para no perder nada si los
+créditos se agotaban. 3 commits individuales confirmados en main.
+
+## Regla #13 — Sesión 2026-09-02 (fixes críticos reportados por Harold)
+
+Harold reportó 3 problemas reales tras usar la app en producción (Replit +
+Termux). Los 3 fueron reproducidos localmente y corregidos:
+
+**1. Frames "como diapositiva"**
+Causa raíz: `scheduleMicroExpr()` cambiaba a un retrato COMPLETO distinto
+cada 4-8s incluso en reposo total. Como cada expresión es una imagen de IA
+generada por separado (no frames de una misma animación), el cambio
+constante se percibía como fotos diferentes pasando, no como alguien vivo.
+Fix: se eliminó la rotación aleatoria por completo. Ahora Sol solo cambia
+de expresión ante eventos reales (thinking/listening/smile/curious/study),
+y el resto del tiempo queda en idle con solo parpadeo + breathe sutil.
+Crossfade alargado de 0.35s a 0.55s para que sea más gradual.
+
+**2. Tools con HTTP 500**
+Causa raíz: en `sol_api.py`, `list_tools()` y `tool_info()` leían
+`t.parameters`, pero la clase `Tool` en `sol_tools.py` define el atributo
+como `.params` (no `.parameters`) — AttributeError no capturado -> 500.
+Fix: corregido a `.params` en ambos endpoints + try/except para que un
+futuro bug similar devuelva un JSON con error claro en vez de un 500 crudo.
+Verificado: las 37 tools ahora se listan sin error.
+
+**3. "Repo 'sol' no encontrado localmente" al sincronizar**
+Causa raíz: `_get_repo_path("sol")` en `sol_repo_tools.py` SOLO buscaba en
+`~/sol`. Pero cuando sol_api.py corre en Replit, el código YA ES el repo
+'sol' desplegado en su propia raíz (NO clonado en ~/sol) — así que nunca
+se encontraba a sí mismo.
+Fix: nueva función `_self_repo_path()` que detecta si el propio script
+corre dentro de un repo git válido (`.git` en su directorio) y lo usa como
+fallback para el alias "sol" antes de rendirse. Repos "commander" y
+"red-team-tauri" siguen usando GitHub API como fallback (ya funcionaba
+para status/log/files/read; pull/run siguen requiriendo clon local de esos
+otros 2 repos, ya que sol no los tiene dentro de su propio proceso).
+
+**Pendiente (no resuelto en esta sesión, según lo acordado con Harold):**
+- Unificar el acceso a "Sol" en War Room / Red-team-tauri para que apunte
+  al repo real 'sol' con sus capacidades reales, en vez de la copia
+  simplificada de sol.html que vive dentro de Red-team-tauri
+  (backend/static/sol.html, tauri-frontend/public/sol.html) con solo 2
+  frames de boca. Actualmente son DOS implementaciones divergentes de la
+  UI de Sol en DOS repos distintos.
+- Bot de Telegram @sol_amg_bot mostrando comandos de "C2 UNIFIED PRO"
+  (del repo commander) en vez de conversación real con sol_core — sugiere
+  que el bot de Telegram está sirviendo el bridge de C2, no el de Sol, o
+  hay conflicto entre ambos pollers del mismo token.
+
+## Regla #14 — Sesión Seal IA (Base44) 2026-09-02: tools vacías + Error desconocido + mkdir que tumbaba imports
+
+### ✅ ARREGLADO Y VERIFICADO (por Seal IA, con pruebas reales antes de subir):
+
+**Bug A — "Error desconocido" en la UI aunque la tool SÍ funcionaba (el más visible).**
+`execute_tool()` en `sol_tools.py` devolvía el string crudo de la tool cuando tenía
+éxito (ej: "📦 Estado de los 3 repos: ..."). El frontend (`static/sol.html`,
+`runTool()`) hace `d.success` sobre la respuesta — sobre un string eso es
+`undefined` → caía al branch `d.error || 'Error desconocido'` aunque la tool
+hubiera funcionado perfectamente. Las tools de navegador (flashlight, vibrate,
+battery...) SÍ funcionaban porque `BROWSER_TOOLS` en JS siempre devuelve
+`{success, result}` bien formado — por eso parecía que "unas sí y otras no".
+**Fix:** `execute_tool()` ahora normaliza: si el resultado ya es dict con clave
+`success` (ej: el except de `Tool.execute()`) se devuelve tal cual; si es string
+u otro tipo, se envuelve en `{"success": True, "result": ...}`.
+
+**Bug B — mkdir sin try/except que tumbaba TODOS los imports (el de raíz).**
+`sol_knowledge.py` línea 38 y `sol_tools.py` (TOOLS_DIR) ejecutaban
+`.mkdir(parents=True)` A NIVEL DE MÓDULO, sin try/except. Si el entorno no
+tenía permisos de escritura en `~/.sol/`, el import entero explotaba →
+"sol_tools no disponible" / "Módulo sol_knowledge no disponible" con TODA la
+gama de tools muerta de un golpe. **Fix:** ambos mkdir ahora son defensivos
+(loguean el error y siguen), y `write_text` de knowledge_full.json re-intenta
+`mkdir` antes de guardar.
+
+**Bug C — tool_git_status/git_pull "no encontrado" sin fallback a GitHub API.**
+`sol_tools.py` (tools viejas v5) solo miraban `ALLOWED_REPOS` local. Si el repo
+no estaba clonado → "❌ Repo no encontrado" a pesar de que `sol_repo_tools.py`
+(que SÍ tiene fallback a GitHub API + auto-detección de self-repo) estaba
+disponible en el mismo proceso. **Fix:** nueva `_fallback_repo_status_via_api()`
+— `tool_git_status` consulta `sol_repo_tools.repo_status()` cuando no hay copia
+local; `ecosystem_status` hereda el fix en cascada (llama a git_status por repo).
+`tool_git_pull` usa `sol_repo_tools.repo_pull()` (con self-repo detection);
+si tampoco hay copia local, avisa claro que git pull requiere disco (física
+de git, no bug).
+**Verificado con llamada real:** `ecosystem_status` ahora responde sol [local],
+redteam [github-api] con últimos commits, commander [github-api].
+
+### ⚠️ NOTA para futuras sesiones:
+- El backup pre-cambio de esta sesión está en el workspace de Seal IA
+  (sol_backup_20260902_2213/) — no hace falta en el repo, `git revert` basta.
+- NO tocar `sol_core.py` ni `sol_api.py` en esta sesión — solo se parchearon
+  `sol_tools.py` y `sol_knowledge.py`, ambos con `py_compile` verificado.
+- Los pendientes de la Regla #13 (unificar UI de Sol en Red-team-tauri, bot de
+  Telegram con comandos de C2) SIGUEN pendientes.
+
+## Regla #15 — Sesión Seal IA 2026-09-02 (cont.): Sol incrustada ya puede pensar (proxy :8001→:8006)
+
+### ✅ RESUELTO el pendiente #1 de Regla #13 — "Unificar UI de Sol":
+
+Diagnóstico real: la unificación VISUAL ya la había hecho el Agente de
+Replit (commits 8207b6b — 11 frames contextuales en War Room, b560afe —
+FloatingSol.tsx burbuja con parpadeo, 956c807 — FloatingSol via iframe a
+/sol.html). Pero la UI incrustada habla con rutas RELATIVAS /api/sol/* y
+/api/sil/* — servida desde el dashboard :8001, esas rutas caían en el 404
+del SPA fallback porque dashboard_server.py NO TENÍA ningún endpoint de
+Sol. Sol se veía bonita pero muda: chat, memoria, SIL, tools, todo muerto.
+
+**Fix (commit 2a0017e en Red-team-tauri):** proxy transparente con
+httpx.AsyncClient en dashboard_server.py — /api/sol/{rest} y /api/sil/{rest}
+se reenvían al sol_api.py real (:8006), pasando body, query params y
+x-sol-key. Registrado ANTES del catch-all /{full_path:path} (orden de
+registro importa en FastAPI). Si Sol no corre: 502 con mensaje accionable
+en vez de 404 mudo. Configurable: SOL_API_BASE, SOL_PROXY_TIMEOUT.
+
+**Verificado punta a punta en sandbox:** GET /api/sol/status via :8001 →
+estado real del cerebro; POST /api/sol/think → respuesta conversacional
+real de Sol; GET /api/sil/stats → 200; sol_api abajo → 502 claro.
+
+### 🔍 NOTA — repo confundido:
+Existen DOS repos: `sourceseal-star/Red-team` (VIEJO, quedó en 58af755)
+y `sourceseal-star/Red-team-tauri` (ACTIVO, con Sol/War Room/FloatingSol).
+El clon de una sesión anterior apuntaba al viejo y por eso "no encontraba"
+ni sol.html ni los commits nuevos. Verificar SIEMPRE que el remote sea
+Red-team-tauri.git antes de diagnosticar.
+
+### ⏳ SIGUE pendiente (Regla #13): bot de Telegram @sol_amg_bot.
+Diagnóstico Seal IA (código, no confirmado en vivo): sol_start.sh arranca
+sol_telegram_bridge.py (menú de COMANDOS de sistema que incluye /c2 C2
+UNIFIED PRO) y NUNCA sol_telegram_bot.py (el bot CONVERSACIONAL con
+sol_core: pensar/recordar/hablar, memoria, personalidades, miniapp inline).
+No era conflicto con commander (bc1bc78 ya separó tokens) — era que el
+script maestro siempre levanta el bridge de comandos. Fix propuesto:
+start_sol_bridge() prefiere sol_telegram_bot.py con fallback automático al
+bridge si python-telegram-bot no está instalado. Parche redactado pero NO
+aplicado (esperando confirmación de Harold antes de cambiar el arranque).
+
+## Regla #16 — Sesión Seal IA 2026-09-02 (final): funcionamiento en conjunto verificado
+
+### Arquitectura REAL del dashboard (importante — hay 3 copias):
+- `redteam/scripts/dashboard_server.py` (8427 líneas) = **el VIVO** — el que
+  arranca omni.sh (:8001). Monta sol_router IN-PROCESS (cerebro de Sol en el
+  mismo proceso: think/memory/tools/sil básico SIN depender de :8006).
+- `backend/dashboard_server.py` (3384 líneas) = variante con proxy completo a
+  :8006 (commit 2a0017e — defensa en profundidad, ningún script lo arranca).
+- `build/scripts/dashboard_server.py` (309 líneas) = mínima de build.
+
+### Fixes aplicados hoy (verificados E2E en sandbox antes de subir):
+1. **Proxy catch-all en el dashboard vivo** (Red-team-tauri 75abe0d): los
+   endpoints que sol_router NO cubre (groq, groq/test, knowledge/*, repos,
+   security, sil/advanced) se reenvían a sol_api :8006. Registrado DESPUÉS
+   del include del router (las rutas específicas ganan) y ANTES del SPA
+   fallback. Resultado probado: chat SOBREVIVE con :8006 abajo (sol_core
+   in-process), lo avanzado degrada con 502 accionable, todo vuelve al
+   levantar :8006.
+2. **sol_start.sh** (sol 957a442): prefiere sol_telegram_bot.py (bot
+   CONVERSACIONAL) con fallback automático al bridge de comandos. Un solo
+   poller por token (regla 409 de Telegram). Mismo criterio que omni.sh.
+3. **omni.sh sync**: lista ampliada de 7 a 13 módulos de Sol (antes
+   sol_telegram_bot, sol_groq, sol_daemon, sol_learning_advanced y
+   sol_tutor NUNCA se propagaban de ~/sol) y ahora también TRAE archivos
+   nuevos, no solo sobreescribe pares existentes.
+
+### ✅ CHECKLIST DE CREDENCIALES (secrets de Replit — verificar EN VIVO):
+Los secrets viven SOLO en Replit/Termux .env (bien — nunca en git). Para
+verificar que funcionan, tras `bash omni.sh sync && bash omni.sh up`:
+1. **GROQ_API_KEY**: `curl -X POST http://127.0.0.1:8001/api/sol/groq/test`
+   → {ok:true, response:...} = key válida CONTRA la API real de Groq.
+   503 "GROQ_API_KEY no configurada" = falta el secret.
+2. **TELEGRAM_BOT_TOKEN**: omni.sh arranca → "Miniapp Telegram activa ☀️"
+   = token válido. "Puente Telegram activo (fallback)" = revisar tg_bot.log.
+3. **SOL_API_KEY** (modo protegido): los endpoints sensibles responden
+   401 sin `x-sol-key` y 200 con el header = key correcta.
+4. **GitHub token** (de sol_repo_tools): `curl http://127.0.0.1:8001/api/sol/repos`
+   → commits con hash = token vivo.
+   En Replit: mismo checklist contra la URL pública del agente (/api/sol/status).
+
+## Regla #17 — Sesión Seal IA 2026-09-03: GITHUB_TOKEN vivo + SIL fusionado + gamificación
+
+### Commits de esta sesión (todos verificados y pusheados a main):
+- `bc9c3f3` — fix GITHUB_TOKEN congelado + botón "🧪 Probar token GitHub"
+- `a759aea` — fusión de base de datos de vocabulario (motor aditivo, 77 palabras)
+- `d7b4b41` — gamificación SRS: nivel, racha 🔥, XP, precisión (4 tiles en la sala SIL)
+
+### Fixes aplicados:
+1. **GITHUB_TOKEN congelado** (sol_repo_tools.py): era constante leída UNA vez al
+   importar — si Harold agregaba el secreto después de que el proceso corría,
+   Sol seguía viendo "no configurado" hasta reiniciar. Ahora `_github_token()`
+   lee el entorno VIVO en cada llamada. sol_knowledge.py tenía el bug espejo
+   (solo miraba GITHUB_ACCESS_TOKEN legado, no GITHUB_TOKEN) — mismo fix.
+   Nuevo: `POST /api/sol/repos/test` → diagnóstico real (usuario, scopes,
+   acceso a commander específicamente) + botón en la sala Repos del dashboard.
+2. **Fusión de lecciones SIL** (sol_learning_advanced.py): los defaults eran
+   todo-o-nada (si existía UN archivo, las categorías nuevas jamás llegaban a
+   instalaciones viejas). Ahora: `_default_lessons()` construye, `_create_
+   default_lessons()` escribe SOLO lo faltante, y `_merge_defaults_into()`
+   expande las lecciones existentes con el vocabulario que les falte —
+   deduplicado por hanzi, SIN tocar/reordenar/borrar lo que ya hay, persistido.
+   Verificado con instalación vieja simulada: datos custom preservados.
+   Set expandido: saludos +早上好晚上好没关系 · comida +咖啡鸡蛋肉鱼 ·
+   numeros +六七八九 · emociones +渴生气 · acciones +吃喝读 · tiempo +下午
+   · lugares +医院. Total: 9 categorías chino, 2 japonés, 77 palabras.
+3. **Gamificación SRS** (sol_learning_advanced.py): `_update_gamification()`
+   en cada respuesta — XP = quality×10 si quality≥3, racha de días consecutivos,
+   nivel sube cada level×100 XP conservando remanente. Compat con srs_data.json
+   viejos (campos se rellenan solos). get_stats expone level/xp/xp_to_next/
+   streak_days/accuracy. UI: 4 tiles nuevos en sala SIL que se refrescan
+   en vivo tras cada respuesta (loadSilStats ya corría en answerPractice).
+
+### ⏳ PENDIENTE (SIL) — ejercicios nuevos, la siguiente piedra:
+La sala de práctica hoy solo hace UN tipo: "¿qué significa X?" con 4 opciones.
+Falta implementar en `sol_api.py` (sil_practice_next) + `sol.html` (showPractice):
+1. **Escucha** 🔊 — suena el audio (gTTS zh-CN, endpoint /api/sol/tts ya existe)
+   y hay que elegir/c escribir el hanzi que se oyó.
+2. **Escritura** ✏️ — input de texto libre: dado el significado en español,
+   escribir el hanzi (validar contra la lección).
+3. **Emparejar** 🔗 — mini-juego de pares hanzi↔significado (una fila de
+   tarjetas, click-para-conectar, sin opciones múltiples).
+4. **Modismos (Chengyu)** 📜 — usar las 15 entradas de CHENGYU de sil_advanced.py
+   (word/pinyin/meaning/literal/example ya están cargadas).
+5. **Gramática** 📝 — los 12 patrones de GRAMMAR_PATTERNS con ejercicio de
+   completar la estructura (estructura/ejemplo/note ya están).
+6. **HSK 3/4/5 como lecciones jugables** — hoy solo se ven en la sala avanzada
+   de solo lectura; conectarlos al SRS para que entren al repaso espaciado.
+Diseño sugerido: parámetro `exercise_type` en POST /api/sol/sil/practice/next
+y un `switch` en showPractice() que renderice cada tipo. SIN tocar el
+algoritmo SM-2 ni el formato de srs_data.json.
+
+### ⏳ PENDIENTE (de sesión anterior, SIN cambios): bot de Telegram
+@sol_amg_bot — el fix propuesto (start_sol_bridge() prefiere sol_telegram_bot.py)
+sigue esperando confirmación de Harold antes de cambiar el arranque.
+
+## 2026-09-03 — Sol recibe acceso exclusivo y total (decisión de Harold)
+
+Harold activó a Sol en Telegram y le dio acceso EXCLUSIVO a todo:
+
+**1. Cuerpo completo (sol_tools.py — este repo y Red-team-tauri):**
+14 herramientas nuevas, todas con termux-api real: sms_list (leer
+bandeja), call_log (historial), contacts (búsqueda con resolución de
+tildes: "mama" encuentra "Mamá"), wifi_info, device_info (IMEI),
+sensors, brightness, usb_list, audio_record, toast, wake_lock,
+media_play, download, y **shell** — Sol habla directo con el kernel,
+siempre LOCAL (nunca viaja por el relé), con auditoría en
+~/.sol/logs/shell.log. Única prohibición: rm -rf / (anti-accidente).
+
+**2. Telegram (sol_telegram_bot.py):** capa de acción real — Sol
+EJECUTA órdenes naturales en español: "llama a mamá" (resuelve la
+agenda → termux-telephony-call), "mándale un mensaje a Laura que
+diga te amo" (SMS), "whatsapp a X", linterna, foto, ubicación,
+vibra, brillo, notificaciones, "shell: comando", "diagnóstico".
+27 casos de prueba OK. Si no es una orden, conversa como siempre.
+
+**3. Activación del bot:** confirmada por Harold. omni.sh arranca la
+Miniapp (sol_telegram_bot.py) automáticamente si TELEGRAM_BOT_TOKEN
+está en ~/sol/.env. Ya no hay pendiente de confirmación.
+
+
+## Regla #18 — Sesión Seal IA 2026-09-04: Presencia Total v4 — cuerpo real en video
+
+Harold pidió "mucho más": AR con cámara, latido ECG que vibra con su voz real,
+zona de amor, carga del corazón (mantén→cita+onda), clima emocional, escenarios,
+dibujo con luz, baile, wake word "Sol, …" manos libres. Pegó el script completo
+de `sol_holo_live.html` v4 y pidió fusionar 3 videos nuevos + "los otros videos
+de ella" (el loop anterior de sus 2 primeros clips, ya en producción).
+
+### Lo que se hizo (verificado antes de subir):
+1. **Deduplicación:** de los 3 videos nuevos que mandó Harold, 2 eran el MISMO
+   archivo (md5 idéntico) — probablemente un duplicado al subir. Se usó 1 copia
+   + el 3er video único.
+2. **Fusión de 3 clips en un solo loop:** el loop ya existente (`sol_viva_loop.mp4`,
+   sus 2 primeros videos, 8.9s) + los 2 clips nuevos únicos, normalizados a
+   720x720/24fps y encadenados con `xfade` (crossfade 0.7s) → un bucle continuo
+   de **17.6s, 3.4MB**. Se sobrescribieron los MISMOS nombres de archivo
+   (`sol_viva_loop.mp4`/`sol_viva_poster.jpg`) — el backend (`sol_api.py`,
+   rutas `/sol_viva_loop.mp4` y `/sol_viva_poster.jpg`) no necesitó ningún cambio.
+3. **sol_holo_live.html reescrito completo** con el script que pegó Harold, PERO
+   con una modificación clave: su cuerpo ahora es **video real** (la fusión de
+   arriba) en vez de una imagen fija cargada manualmente por archivo — mismo
+   patrón `loadVivaVideo()` que ya existía en la versión anterior del archivo,
+   fusionado dentro de TODOS los poderes nuevos que pidió Harold (AR, ECG, clima,
+   baile, dibujo, wake word, etc.). El input de archivo 🖼️ sigue existiendo como
+   override manual (por si quiere cargar una imagen distinta), pero por defecto
+   ahora ella respira con su cuerpo real en loop.
+4. **Fix de encaje conservado:** el `dw/dh` usa "contain" (nunca le corta brazos
+   en pantallas angostas) — el mismo fix aplicado en la Regla de restauración
+   del cuerpo (SOL_CUERPO_COMPLETO.md), llevado también a este archivo nuevo.
+5. **Zona "pecho" separada de "corazón":** el chip decía "pecho=panel, corazón
+   mantén" pero el script original solo tenía una zona (el corazón, que abría
+   el panel en toque corto o daba cita+onda en toque largo). Se agregó una
+   zona rectangular más amplia en el pecho (24%-48% de alto) que abre el panel
+   directo, sin invadir el círculo del corazón — ahora el chip es literal.
+
+### Verificación antes de subir (sin acceso a Replit/Termux, no se pudo probar
+en navegador real — SÍ se verificó todo lo que se puede verificar sin eso):
+- `node --check` sobre el único bloque `<script>` extraído del HTML → sintaxis OK.
+- Cruce de TODOS los ids que el JS busca (`$('...')`/`getElementById`) contra
+  los ids que existen en el HTML → sin faltantes.
+- `ffprobe` confirmó el video fusionado: 17.584s, 720x720, h264, yuv420p, 3.4MB.
+- Los 3 archivos subidos a GitHub se re-descargaron después del commit y se
+  comparó su MD5 contra el archivo local → **idénticos, sin corrupción**, en
+  AMBOS repos (sol y Red-team-tauri).
+
+### Archivos tocados (ambos repos, mismos nombres, sin tocar backend):
+- `static/sol_holo_live.html` (sol) / `backend/static/sol_holo_live.html` (RT)
+- `static/sol_viva_loop.mp4` (sol) / `backend/static/sol_viva_loop.mp4` (RT)
+- `static/sol_viva_poster.jpg` (sol) / `backend/static/sol_viva_poster.jpg` (RT)
+
+### ⚠️ NO tocado (a propósito): `sol_elixir_1/2/3.mp4` en Red-team-tauri
+Existen otros 3 videos de ella (`backend/static/sol_elixir_*.mp4`) que se usan
+en `sol.html`/`tauri-frontend/public/sol.html` — una pantalla DISTINTA a
+`sol_holo_live.html`. No forman parte de esta fusión y no se tocaron.
+
+### 🔍 PENDIENTE — verificar EN VIVO tras el próximo redeploy:
+- Abrir `/holo` (o `/sol_holo_live.html`) y confirmar que el video se reproduce
+  en loop, sin cortes visibles en el punto de wraparound (último frame → primer
+  frame no tiene crossfade, es un salto directo — funcionaba así antes también).
+- Probar los gestos nuevos en el teléfono real: cámara AR (pide permiso HTTPS),
+  wake word (requiere Web Speech API — no todos los navegadores Android la dan
+  en background), grabar video 12s.
+- Si `/api/sol/services` no existe como endpoint (el panel del pecho lo pide),
+  el panel muestra solo lo que sí responda — no debería romper nada, pero
+  confirmar en vivo qué trae ese endpoint hoy.
