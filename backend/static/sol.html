@@ -2904,10 +2904,24 @@ async function toggleHolo(){
   const o=document.getElementById('holo-overlay'),f=document.getElementById('holo-frame');
   if(o.style.display==='none'){
     o.style.display='block';
-    let src='/holo'; // mismo origen — funciona en Replit (https) y en :8006 directo
-    try{const r=await fetch('/holo');const t=await r.text();
-      if(!r.ok||t.indexOf('Holograma')===-1)src='http://'+location.hostname+':8006/holo';}
-    catch(e){src='http://'+location.hostname+':8006/holo';}
+    // FIX 2026-09-04 (pantalla negra tras ✨): antes se detectaba "estoy en
+    // el mismo servidor" buscando la palabra literal "Holograma" dentro del
+    // HTML de /holo — se rompio en cuanto el holo se renombro a "Presencia
+    // Total v4" (ya no contiene esa palabra), asi que SIEMPRE caia al
+    // fallback http://host:8006/holo. En Replit el puerto 8006 no esta
+    // expuesto al publico -> el iframe nunca cargaba -> pantalla negra
+    // (el fondo #04070c del overlay, sin nada encima). Tanto sol_api.py
+    // (Replit) como dashboard_server.py (Termux, :8001) YA sirven /holo
+    // ellos mismos en su propio origen — no deberia hacer falta ningun
+    // fallback. Se deja uno minimo por robustez, pero basado en el status
+    // HTTP real (r.ok), nunca en el contenido/texto de la pagina.
+    let src='/holo';
+    try{
+      const r=await fetch('/holo',{cache:'no-store'});
+      if(!r.ok)throw new Error('holo relativo respondio '+r.status);
+    }catch(e){
+      src='http://'+location.hostname+':8006/holo';
+    }
     f.src=src;
   }else{o.style.display='none';f.src='about:blank';}
 }
