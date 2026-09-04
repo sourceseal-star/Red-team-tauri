@@ -498,6 +498,17 @@ start() {
     ok "pycryptodome disponible"
   fi
 
+  # ── Preflight: edge-tts (voz neuronal de Sol — es-CO-SalomeNeural) ──
+  # 2026-09-04: la voz de Sol ahora usa voces neuronales de Microsoft via
+  # edge-tts. Sin esto el /api/sol/tts cae a gTTS (robótica, "se escucha mal").
+  if python3 -c "import edge_tts" >/dev/null 2>&1; then
+    ok "edge-tts disponible (voz neuronal de Sol)"
+  else
+    info "Instalando edge-tts (voz neuronal de Sol)..."
+    python3 -m pip install edge-tts >/dev/null 2>&1 || true
+    python3 -c "import edge_tts" >/dev/null 2>&1 && ok "edge-tts instalado" || warn "edge-tts no disponible — Sol usará gTTS (voz robótica)"
+  fi
+
   # ── Preflight: liberar puertos ──
   echo ""
   echo -e "${BOLD}── Liberando puertos ──${N}"
