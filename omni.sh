@@ -106,13 +106,13 @@ ensure_sol_repo() {
   if [ -d "$SOL_REPO/.git" ]; then
     if [ -f "$SOL_REPO/.env" ]; then
       local SOL_ENV_HASH_BEFORE="$(sha256sum "$SOL_REPO/.env" 2>/dev/null | cut -d' ' -f1)"
-      (cd "$SOL_REPO" && git pull origin main >> "$LOG_DIR/sol_sync.log" 2>&1) || warn "git pull de ~/sol falló (continuando)"
+      (cd "$SOL_REPO" && git stash --quiet 2>/dev/null; git pull --ff-only origin main >> "$LOG_DIR/sol_sync.log" 2>&1 || { git fetch origin >> "$LOG_DIR/sol_sync.log" 2>&1; git reset --hard origin/main >> "$LOG_DIR/sol_sync.log" 2>&1; }) || warn "git pull de ~/sol falló (continuando)"
       local SOL_ENV_HASH_AFTER="$(sha256sum "$SOL_REPO/.env" 2>/dev/null | cut -d' ' -f1)"
       if [ "$SOL_ENV_HASH_AFTER" != "$SOL_ENV_HASH_BEFORE" ]; then
         warn "¡~/sol/.env cambió tras el pull!"
       fi
     else
-      (cd "$SOL_REPO" && git pull origin main >> "$LOG_DIR/sol_sync.log" 2>&1) || warn "git pull de ~/sol falló (continuando)"
+      (cd "$SOL_REPO" && git stash --quiet 2>/dev/null; git pull --ff-only origin main >> "$LOG_DIR/sol_sync.log" 2>&1 || { git fetch origin >> "$LOG_DIR/sol_sync.log" 2>&1; git reset --hard origin/main >> "$LOG_DIR/sol_sync.log" 2>&1; }) || warn "git pull de ~/sol falló (continuando)"
     fi
     return 0
   fi
@@ -487,6 +487,20 @@ kill_by_pidfile_or_port() {
 }
 
 start() {
+  # ── AUTO-SYNC v1 (2026-09-04): GitHub es la ÚNICA fuente de verdad ──
+  # omni.sh vive DENTRO del repo Red-team-tauri. Antes solo sincronizaba
+  # ~/sol, nunca su propio repo → el dashboard :8001 seguía sirviendo
+  # sol.html VIEJO (botones apilados, sin 🔊) aunque el fix estuviera
+  # subido a GitHub. Ahora `start`/`restart` jala ambos repos primero.
+  # Cambios locales sin commit: quedan en stash (recuperables).
+  local RT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [ -d "$RT_REPO/.git" ]; then
+    ( cd "$RT_REPO" \
+      && git stash --quiet 2>/dev/null \
+      && git pull --ff-only origin main >> "$LOG_DIR/rt_sync.log" 2>&1 ) \
+      && ok "Red-team-tauri sincronizado con GitHub (main)" \
+      || warn "git pull de Red-team-tauri falló — continuando con código local"
+  fi
   banner
   load_env
   echo ""
