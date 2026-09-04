@@ -4,7 +4,6 @@
 // poblado por DashboardProV2.runScan('Topología', '/api/scan/topology').
 import { useMemo, useCallback } from 'react';
 import { useScanStore, Host } from './useScanStore';
-import { getApiKey } from '../lib/api';
 import { TopologyData, VisNode, VisEdge } from '../types/topology';
 
 // ── Colores SourceSeal ──────────────────────────────────────────────────────
@@ -96,11 +95,7 @@ export function useTopology() {
     store.setError(null);
     store.pushLog('⏳ Refrescando topología...');
     try {
-      const key = getApiKey() || localStorage.getItem('api_token');
-      const res = await fetch('/api/scan/topology', {
-        method: 'POST',
-        headers: key ? { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
-      });
+      const res = await fetch('/api/scan/topology', { method: 'POST' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const items = (json.results || json.hosts || []).map((h: any) => ({

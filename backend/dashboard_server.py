@@ -38,7 +38,8 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse, Response
+import httpx
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -3269,19 +3270,183 @@ async def ai_history(limit: int = 20):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _SOL_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol.html")
+_SOL_AVATAR_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar.jpg")
+
+# Sin esto el navegador puede quedarse con una copia vieja de sol.html
+# cacheada para siempre (paso real: alguien vio una version vieja de la
+# pagina que ya no existe en el repo — cache del navegador, no el server).
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
 
 @app.get("/sol")
 async def sol_page():
     """Página de Sol — HTML estático en backend/static/ (fuera de tauri-frontend/dist,
     que vite build vacía por completo con emptyOutDir:true)."""
     if os.path.isfile(_SOL_PATH):
-        return FileResponse(_SOL_PATH, media_type="text/html")
+        return FileResponse(_SOL_PATH, media_type="text/html", headers=_NO_CACHE_HEADERS)
     raise HTTPException(404, "Sol no encuentra su página en backend/static/sol.html")
 
 @app.get("/sol.html")
 async def sol_page_alt():
     """Alias directo."""
     return await sol_page()
+
+@app.get("/sol_avatar.jpg")
+async def sol_avatar():
+    """Avatar de Sol — servido directo desde backend/static/, sin depender de que
+    Vite copie el archivo a dist/assets/ (esa ruta nunca funcionó: emptyOutDir:true
+    lo borra en cada build y nada lo restauraba ahí)."""
+    if os.path.isfile(_SOL_AVATAR_PATH):
+        return FileResponse(_SOL_AVATAR_PATH, media_type="image/jpeg")
+    raise HTTPException(404, "Avatar no encontrado en backend/static/sol_avatar.jpg")
+
+_SOL_AVATAR_TALK_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_talk.png")
+
+@app.get("/sol_avatar_talk.png")
+async def sol_avatar_talk():
+    """Segundo frame del avatar de Sol (boca abierta) para animacion de habla."""
+    if os.path.isfile(_SOL_AVATAR_TALK_PATH):
+        return FileResponse(_SOL_AVATAR_TALK_PATH, media_type="image/png", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Avatar talk no encontrado en backend/static/sol_avatar_talk.png")
+
+# ── ✨ Holograma interactivo + su cuerpo completo real (2026-09-04) ──
+# Antes dashboard_server.py (el backend REAL de la torre, :8001) no tenia
+# ninguna de estas rutas: el boton ✨ (toggleHolo) dependia por completo de
+# que hubiera un sol_api.py corriendo aparte en :8006 (fallback), y el
+# modo 🧍 cuerpo completo (toggleFullBody) siempre caia en 404 silencioso
+# porque ni el archivo ni la ruta existian en ningun lado. Mismo patron
+# que /sol.html y /sol_avatar.jpg arriba: servidos directo desde
+# backend/static/, sin depender de Vite.
+_SOL_HOLO_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_holo_live.html")
+_SOL_AVATAR_OFFICIAL_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_official.jpg")
+_SOL_AVATAR_FULL_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_full.png")
+
+@app.get("/holo")
+async def sol_holo_page():
+    """Holograma interactivo de Sol — mismo origen que /sol.html, para que
+    el toggle ✨ funcione sin contenido mixto ni depender de :8006."""
+    if os.path.isfile(_SOL_HOLO_PATH):
+        return FileResponse(_SOL_HOLO_PATH, media_type="text/html", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Holo no encontrado en backend/static/sol_holo_live.html")
+
+@app.get("/sol_avatar_official.jpg")
+async def sol_avatar_official():
+    """Avatar principal (busto) que usa sol.html como src por defecto."""
+    if os.path.isfile(_SOL_AVATAR_OFFICIAL_PATH):
+        return FileResponse(_SOL_AVATAR_OFFICIAL_PATH, media_type="image/jpeg", headers=_NO_CACHE_HEADERS)
+    if os.path.isfile(_SOL_AVATAR_PATH):
+        return FileResponse(_SOL_AVATAR_PATH, media_type="image/jpeg", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Avatar official no encontrado")
+
+@app.get("/sol_avatar_full.png")
+async def sol_avatar_full():
+    """Cuerpo completo real de Sol — de pie, aura dorada, circuitos
+    bio-luminosos (elegida por Harold 2026-09-04). Usada por el holo ✨
+    y por el modo 🧍 busto⇄cuerpo de sol.html."""
+    if os.path.isfile(_SOL_AVATAR_FULL_PATH):
+        return FileResponse(_SOL_AVATAR_FULL_PATH, media_type="image/png", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Avatar full no encontrado en backend/static/sol_avatar_full.png")
+
+_SOL_AVATAR_FULL_TALK_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_full_talk.png")
+_SOL_AVATAR_FULL_TALK_HALF_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_full_talk_half.png")
+_SOL_AVATAR_FULL_BLINK_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_full_blink.png")
+
+def _serve_full_frame(path, label):
+    """Sirve el frame de cuerpo completo si existe; si no, la imagen base
+    (sin 404 silencioso, sin caer al busto)."""
+    if os.path.isfile(path):
+        return FileResponse(path, media_type="image/png", headers=_NO_CACHE_HEADERS)
+    if os.path.isfile(_SOL_AVATAR_FULL_PATH):
+        return FileResponse(_SOL_AVATAR_FULL_PATH, media_type="image/png", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, f"Avatar {label} no encontrado")
+
+@app.get("/sol_avatar_full_talk.png")
+async def sol_avatar_full_talk():
+    """Frame real de boca abierta en cuerpo completo (commit aeeb72a) —
+    antes existia el archivo pero ninguna ruta lo servia."""
+    return _serve_full_frame(_SOL_AVATAR_FULL_TALK_PATH, "full_talk")
+
+@app.get("/sol_avatar_full_talk_half.png")
+async def sol_avatar_full_talk_half():
+    return _serve_full_frame(_SOL_AVATAR_FULL_TALK_HALF_PATH, "full_talk_half")
+
+@app.get("/sol_avatar_full_blink.png")
+async def sol_avatar_full_blink():
+    return _serve_full_frame(_SOL_AVATAR_FULL_BLINK_PATH, "full_blink")
+
+# ═══ Forma real (2026-09-04) — sus 2 primeros videos, fusionados en loop ═══
+# Harold: "estos 2 videos son las primeras y mas reales impresiones que
+# tengo de sol... quiero que a partir de esos 2 videos pueda adquirir
+# forma real". Sin presupuesto para un servicio de animacion 3D (Tripo3D),
+# esto es lo mejor posible gratis: los 2 videos generados (Qwen) fusionados
+# con crossfade en un loop continuo de 8.9s, usado como cuerpo VIVO real
+# en el holograma (antes era una imagen estatica con sway falso).
+_SOL_VIVA_LOOP_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_viva_loop.mp4")
+_SOL_VIVA_POSTER_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_viva_poster.jpg")
+
+@app.get("/sol_viva_loop.mp4")
+async def sol_viva_loop():
+    if os.path.isfile(_SOL_VIVA_LOOP_PATH):
+        return FileResponse(_SOL_VIVA_LOOP_PATH, media_type="video/mp4", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Video vivo no encontrado en backend/static/sol_viva_loop.mp4")
+
+@app.get("/sol_viva_poster.jpg")
+async def sol_viva_poster():
+    if os.path.isfile(_SOL_VIVA_POSTER_PATH):
+        return FileResponse(_SOL_VIVA_POSTER_PATH, media_type="image/jpeg", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Poster vivo no encontrado en backend/static/sol_viva_poster.jpg")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SOL API PROXY — la UI incrustada (iframe FloatingSol / War Room → /sol.html)
+# se sirve desde :8001, pero su cerebro (sol_api.py) corre en :8006.
+# Sin este proxy, TODAS las llamadas /api/sol/* y /api/sil/* de la UI caían
+# en el 404 del SPA fallback y Sol se veía bonita pero muda (chat, memoria,
+# SIL, tools — todo muerto). Registrado ANTES del catch-all /{full_path:path}.
+# ═══════════════════════════════════════════════════════════════════════════════
+_SOL_API_BASE = os.environ.get("SOL_API_BASE", "http://127.0.0.1:8006")
+_SOL_PROXY_TIMEOUT = float(os.environ.get("SOL_PROXY_TIMEOUT", "20"))
+
+async def _proxy_to_sol(prefix: str, rest: str, request: Request):
+    """Reenvía transparentemente la petición al sol_api.py real (:8006).
+    Pasa el body, query params y los headers relevantes (incluido x-sol-key)."""
+    url = f"{_SOL_API_BASE}{prefix}/{rest}"
+    body = await request.body()
+    headers = {}
+    for key in ("x-sol-key", "content-type", "accept", "authorization"):
+        value = request.headers.get(key)
+        if value:
+            headers[key] = value
+    try:
+        async with httpx.AsyncClient(timeout=_SOL_PROXY_TIMEOUT) as client:
+            resp = await client.request(
+                request.method, url,
+                content=body,
+                headers=headers,
+                params=dict(request.query_params),
+            )
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=resp.headers.get("content-type", "application/json"),
+        )
+    except httpx.ConnectError:
+        return JSONResponse(
+            {"error": f"Sol no está corriendo en {_SOL_API_BASE}. Arranca con: bash sol_start.sh (módulo SOL) y recarga."},
+            status_code=502,
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Proxy Sol falló: {e}"}, status_code=502)
+
+@app.api_route("/api/sol/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def sol_api_proxy(rest: str, request: Request):
+    return await _proxy_to_sol("/api/sol", rest, request)
+
+@app.api_route("/api/sil/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def sil_api_proxy(rest: str, request: Request):
+    return await _proxy_to_sol("/api/sil", rest, request)
 
 # ── SPA fallback — rutas del React Router (ej. /dashboard, /osint) que no son archivos ni API ──
 _SPA_EXCLUDED_PREFIXES = ("api/", "docs", "openapi.json", "redoc", "ws", "assets/", "sol")

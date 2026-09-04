@@ -1,6 +1,66 @@
 # Guía de Termux: actualizar, sincronizar y levantar todo
 
-**Última actualización:** 2026-08-30
+**Última actualización:** 2026-09-02
+
+---
+
+## ⚡ FLUJO MAESTRO — `omni.sh` (2026-09-02)
+
+`omni.sh` es el comando unificado actual. Todo lo demás de esta guía
+(`termux_recover.sh`, `arrancar.sh`, `setup.sh`) sigue funcionando, pero
+para el día a día usa omni.sh:
+
+```bash
+cd ~/Red-team-tauri
+
+# 1. ACTUALIZAR TODO (3 repos: Red-team-tauri + sol + commander)
+#    + sincroniza los 13 módulos de Sol desde ~/sol
+#    + sincroniza la UI (sol.html) y los avatars de ~/sol/static
+#    + deps + build frontend — SIN tocar .env jamás
+bash omni.sh sync
+
+# 2. LEVANTAR TODO
+bash omni.sh start
+#    → :8001 Dashboard + Commander integrado
+#    → :8002 GHOST PHANTOM    → :8004 Nexus
+#    → ☀️ Sol daemon + sol_api :8006
+#    → ☀️ Telegram: BOT conversacional (miniapp) con fallback al puente
+#    → 🐕 Watchdog que reinicia caídos
+
+# 3. ESTADO / LOGS / PARAR
+bash omni.sh status
+bash omni.sh logs all
+bash omni.sh stop
+```
+
+### Verificar credenciales (secrets) en vivo
+
+```bash
+# GROQ_API_KEY — prueba REAL contra la API de Groq:
+curl -X POST http://127.0.0.1:8001/api/sol/groq/test
+# → {"ok":true,"response":"..."} = key viva
+
+# TELEGRAM_BOT_TOKEN — omni.sh start debe imprimir:
+#   "Miniapp Telegram activa ☀️" = token válido
+#   "Puente Telegram activo (fallback)" = revisar logs/tg_bot.log
+
+# Token GitHub de Sol:
+curl http://127.0.0.1:8001/api/sol/repos
+# → commits con hash = token vivo
+
+# SOL_API_KEY (modo protegido): endpoints sensibles responden
+# 401 sin header x-sol-key y 200 con él.
+```
+
+### Nota sobre Sol (arquitectura 2026-09-02)
+
+El dashboard (:8001) tiene el **cerebro de Sol dentro** (sol_router
+in-process): el chat sigue funcionando aunque `sol_api` (:8006) esté caído.
+Los endpoints avanzados (groq, knowledge, repos, security, sil/advanced) se
+reenvían por proxy a :8006 — si éste no corre, responden 502 con el comando
+de arreglo en el mensaje. Arranca TODO con omni.sh y no habrá 502s.
+
+---
 
 Esta es la guía del flujo activo para Android:
 

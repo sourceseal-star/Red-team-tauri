@@ -66,8 +66,8 @@ WS_DISCOVERY_PROBE = '''<?xml version="1.0" encoding="UTF-8"?>
   </e:Body>
 </e:Envelope>'''
 
-def _onvif_discover_sync(timeout: float = 3.0) -> List[Dict]:
-    """Descubre cámaras ONVIF vía multicast WS-Discovery (versión síncrona)"""
+async def onvif_discover(timeout: float = 3.0) -> List[Dict]:
+    """Descubre cámaras ONVIF vía multicast WS-Discovery"""
     found = []
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -77,13 +77,13 @@ def _onvif_discover_sync(timeout: float = 3.0) -> List[Dict]:
         
         sock.sendto(WS_DISCOVERY_PROBE.encode(), ("239.255.255.250", 3702))
         
-        import time as _time
-        start = _time.monotonic()
-        while _time.monotonic() - start < timeout:
+        start = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start < timeout:
             try:
                 data, addr = sock.recvfrom(4096)
                 text = data.decode('utf-8', errors='ignore')
                 if "onvif" in text.lower() or "NetworkVideoTransmitter" in text:
+                    # Extraer XAddrs
                     xaddrs = re.findall(r'XAddrs>(.*?)</', text)
                     found.append({
                         "ip": addr[0], "port": addr[1],
@@ -98,10 +98,6 @@ def _onvif_discover_sync(timeout: float = 3.0) -> List[Dict]:
         print(f"[ONVIF Error] {e}")
     return found
 
-async def onvif_discover(timeout: float = 3.0) -> List[Dict]:
-    """Wrapper async que ejecuta el descubrimiento en un thread separado"""
-    return await asyncio.to_thread(_onvif_discover_sync, timeout)
-
 # ═══════════════════════════════════════════════════════
 # SSDP / UPnP Discovery (239.255.255.250:1900)
 # ═══════════════════════════════════════════════════════
@@ -113,8 +109,8 @@ MX: 3\r
 ST: ssdp:all\r
 \r\n'''
 
-def _ssdp_discover_sync(timeout: float = 3.0) -> List[Dict]:
-    """Descubre dispositivos UPnP/SSDP (versión síncrona para thread pool)"""
+async def ssdp_discover(timeout: float = 3.0) -> List[Dict]:
+    """Descubre dispositivos UPnP/SSDP incluyendo cámaras y routers"""
     found = []
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -122,9 +118,8 @@ def _ssdp_discover_sync(timeout: float = 3.0) -> List[Dict]:
         sock.settimeout(timeout)
         sock.sendto(SSDP_DISCOVER.encode(), ("239.255.255.250", 1900))
         
-        import time as _time
-        start = _time.monotonic()
-        while _time.monotonic() - start < timeout:
+        start = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start < timeout:
             try:
                 data, addr = sock.recvfrom(4096)
                 text = data.decode('utf-8', errors='ignore')
@@ -147,6 +142,7 @@ def _ssdp_discover_sync(timeout: float = 3.0) -> List[Dict]:
                             req = urllib.request.Request(device["location"], timeout=2)
                             with urllib.request.urlopen(req) as resp:
                                 xml = resp.read().decode('utf-8', errors='ignore')
+                                # Extraer modelo/fabricante
                                 mf = re.search(r'<manufacturer>(.*?)</manufacturer>', xml, re.I)
                                 md = re.search(r'<modelName>(.*?)</modelName>', xml, re.I)
                                 fn = re.search(r'<friendlyName>(.*?)</friendlyName>', xml, re.I)
@@ -163,15 +159,11 @@ def _ssdp_discover_sync(timeout: float = 3.0) -> List[Dict]:
         print(f"[SSDP Error] {e}")
     return found
 
-async def ssdp_discover(timeout: float = 3.0) -> List[Dict]:
-    """Wrapper async que ejecuta el descubrimiento en un thread separado"""
-    return await asyncio.to_thread(_ssdp_discover_sync, timeout)
-
 # ═══════════════════════════════════════════════════════
 # SNMP Probe (UDP 161)
 # ═══════════════════════════════════════════════════════
 
-def snmp_probe(ip: str, community: str = "public", timeout: float = 2.0) -> Optional[Dict]:
+async def snmp_probe(ip: str, community: str = "public", timeout: float = 2.0) -> Optional[Dict]:
     """Query SNMP v1 sysDescr, sysName, sysContact"""
     # SNMP GET request para sysDescr (1.3.6.1.2.1.1.1.0)
     oid_sysdescr = b'\x30\x26\x02\x01\x00\x04\x06' + community.encode() + \
@@ -204,7 +196,7 @@ def snmp_probe(ip: str, community: str = "public", timeout: float = 2.0) -> Opti
 # NetBIOS Name Query (UDP 137)
 # ═══════════════════════════════════════════════════════
 
-def netbios_query(ip: str, timeout: float = 2.0) -> Optional[Dict]:
+async def netbios_query(ip: str, timeout: float = 2.0) -> Optional[Dict]:
     """Query NetBIOS para nombre de host Windows"""
     # NetBIOS Name Service Query
     packet = b'\x82\x28\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00' \
@@ -231,7 +223,7 @@ def netbios_query(ip: str, timeout: float = 2.0) -> Optional[Dict]:
 # mDNS Query (224.0.0.251:5353)
 # ═══════════════════════════════════════════════════════
 
-def mdns_query(timeout: float = 2.0) -> List[Dict]:
+async def mdns_query(timeout: float = 2.0) -> List[Dict]:
     """Descubre servicios mDNS/Bonjour en la red local"""
     query = b'\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00' \
             b'\x09_services\x07_dns-sd\x04_udp\x05local\x00\x00\x0c\x00\x01'
@@ -242,9 +234,8 @@ def mdns_query(timeout: float = 2.0) -> List[Dict]:
         sock.settimeout(timeout)
         sock.sendto(query, ("224.0.0.251", 5353))
         
-        import time as _time
-        start = _time.monotonic()
-        while _time.monotonic() - start < timeout:
+        start = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start < timeout:
             try:
                 data, addr = sock.recvfrom(1024)
                 text = data.decode('utf-8', errors='ignore')
@@ -366,32 +357,29 @@ async def scan_camera_full(ip: str, port: int = 80) -> Optional[Dict]:
     # Construir RTSP URL
     rtsp_paths = ["/live/ch00_0", "/cam/realmonitor?channel=1&subtype=0", "/Streaming/channels/101"]
     for rp in rtsp_paths:
-        test_url = f"rtsp://{ip}:{port if port != 80 else 554}{rp}"
-        # Verificación ligera: intentar conectar TCP al puerto RTSP (async)
+        test_url = f"rtsp://{ip}:{554 if port == 80 else port}{rp}"
+        # Verificación ligera: intentar conectar TCP al puerto RTSP
         try:
-            _, writer = await asyncio.wait_for(asyncio.open_connection(ip, port if port != 80 else 554), timeout=1.0)
-            writer.close()
-            try: await writer.wait_closed()
-            except: pass
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            sock.connect((ip, 554))
+            sock.close()
             results["rtsp_working"] = test_url
             break
         except:
             continue
     
-    # Guardar en DB (en thread para no bloquear)
-    try:
-        conn = sqlite3.connect(DB_PATH, timeout=1.0)
-        c = conn.cursor()
-        c.execute("""INSERT OR REPLACE INTO cameras 
-            (ip, port, brand, rtsp_url, snapshot_url, credentials, discovered, last_seen, vulnerable)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (ip, port, brand, results["rtsp_working"], results["snapshot_url"],
-             results["working_credentials"], datetime.now().isoformat(), datetime.now().isoformat(),
-             1 if results["working_credentials"] else 0))
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass
+    # Guardar en DB
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""INSERT OR REPLACE INTO cameras 
+        (ip, port, brand, rtsp_url, snapshot_url, credentials, discovered, last_seen, vulnerable)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (ip, port, brand, results["rtsp_working"], results["snapshot_url"],
+         results["working_credentials"], datetime.now().isoformat(), datetime.now().isoformat(),
+         1 if results["working_credentials"] else 0))
+    conn.commit()
+    conn.close()
     
     return results
 
@@ -399,7 +387,7 @@ async def scan_camera_full(ip: str, port: int = 80) -> Optional[Dict]:
 # SSL Certificate Extractor
 # ═══════════════════════════════════════════════════════
 
-def extract_ssl_info(ip: str, port: int = 443) -> Optional[Dict]:
+async def extract_ssl_info(ip: str, port: int = 443) -> Optional[Dict]:
     try:
         context = ssl.create_default_context()
         context.check_hostname = False
@@ -427,175 +415,80 @@ def extract_ssl_info(ip: str, port: int = 443) -> Optional[Dict]:
 # ENDPOINTS
 # ═══════════════════════════════════════════════════════
 
-def _real_subnet_prefix() -> str:
-    """Detecta el prefijo /24 REAL del dispositivo (via socket UDP trick, sin
-    depender de rutas). Se usa como fallback cuando el cliente no manda
-    'network' -- antes el default hardcodeado '192.168.1' escaneaba una red
-    que casi nunca coincide con la red real (hotspots Android suelen usar
-    192.168.43.x, 192.168.49.x, etc.), por eso ONVIF/SSDP/camaras siempre
-    salian en 0 aunque hubiera dispositivos reales."""
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        local_ip = s.getsockname()[0]
-        s.close()
-        parts = local_ip.split(".")
-        return f"{parts[0]}.{parts[1]}.{parts[2]}"
-    except Exception:
-        return "192.168.1"
-
-@router.get("/discover/all")
-async def full_discovery_get(network: str = None):
-    """Alias GET del POST /discover/all — el frontend usa GET"""
-    return await full_discovery(network)
-
 @router.post("/discover/all")
-async def full_discovery(network: str = None, custom_ports: str = None):
+async def full_discovery(network: str = "192.168.1"):
     """
     Descubrimiento completo: ONVIF + SSDP + TCP scan + credenciales + SNMP + NetBIOS + mDNS
-    Timeout total ~30s (ONVIF 4s + SSDP 4s + mDNS 2s + scan 20s). Nunca bloquea el event loop.
-    custom_ports: puertos extra separados por coma (ej: "554,8554,37777,9999")
     """
-    if not network:
-        network = _real_subnet_prefix()
     all_cameras = []
     all_hosts = []
-
-    # 1. Descubrimiento pasivo multicast — con timeout individual
-    try:
-        onvif_cams = await asyncio.wait_for(onvif_discover(2.0), timeout=4.0)
-    except (asyncio.TimeoutError, Exception) as e:
-        onvif_cams = []
-        print(f"[DISCOVER] ONVIF multicast falló (común en Android/Termux): {e}")
-
-    try:
-        ssdp_devices = await asyncio.wait_for(ssdp_discover(2.0), timeout=4.0)
-    except (asyncio.TimeoutError, Exception) as e:
-        ssdp_devices = []
-        print(f"[DISCOVER] SSDP error: {e}")
-
-    try:
-        mdns_services = await asyncio.wait_for(asyncio.to_thread(mdns_query, 1.0), timeout=2.0)
-    except (asyncio.TimeoutError, Exception) as e:
-        mdns_services = []
-        print(f"[DISCOVER] mDNS error: {e}")
-
-    # 2. Escanear /24 en puertos clave — paralelo con semaphore y timeout por host
-    ports_to_scan = [80, 81, 82, 88, 443, 554, 8000, 8080, 8081, 8554, 37777, 8900, 23, 22, 5000, 8888]
-    # Agregar puertos personalizados del usuario
-    if custom_ports:
-        for p in custom_ports.split(","):
-            p = p.strip()
-            if p.isdigit() and int(p) not in ports_to_scan:
-                ports_to_scan.append(int(p))
-    semaphore = asyncio.Semaphore(50)
-
+    
+    # 1. Descubrimiento pasivo multicast
+    onvif_cams = await onvif_discover(3.0)
+    ssdp_devices = await ssdp_discover(3.0)
+    mdns_services = await mdns_query(2.0)
+    
+    # 2. Escanear /24 en puertos clave con timeout generoso
+    ports_to_scan = [80, 81, 82, 88, 443, 554, 8000, 8080, 8081, 8554, 37777, 8900]
+    semaphore = asyncio.Semaphore(30)
+    
     async def check_host(ip: str):
         async with semaphore:
             host_data = {"ip": ip, "open_ports": [], "services": []}
-            # TCP connect scan rápido con timeout por puerto
+            
+            # TCP connect scan rápido
             for port in ports_to_scan:
                 try:
-                    fut = asyncio.open_connection(ip, port)
-                    reader, writer = await asyncio.wait_for(fut, timeout=0.5)
-                    host_data["open_ports"].append(port)
-                    writer.close()
-                    try: await writer.wait_closed()
-                    except: pass
-                    # Si es puerto de cámara (HTTP o RTSP), escanear a fondo
-                    if port in [80, 81, 82, 88, 443, 8000, 8080, 8081, 37777, 8900]:
-                        try:
-                            cam = await asyncio.wait_for(scan_camera_full(ip, port), timeout=3.0)
-                            if cam and (cam.get("accessible_urls") or cam.get("snapshot_url") or cam.get("rtsp_working")):
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1.5)
+                    result = sock.connect_ex((ip, port))
+                    if result == 0:
+                        host_data["open_ports"].append(port)
+                        # Si es puerto de cámara, escanear a fondo
+                        if port in [80, 81, 82, 88, 443, 8000, 8080, 8081, 37777, 8900]:
+                            cam = await scan_camera_full(ip, port)
+                            if cam and (cam["accessible_urls"] or cam["snapshot_url"]):
                                 all_cameras.append(cam)
-                        except (asyncio.TimeoutError, Exception):
-                            pass
-                    # Si es puerto RTSP (554/8554) o puerto personalizado, agregar como cámara RTSP-only
-                    if port in [554, 8554] or (custom_ports and port in [int(p.strip()) for p in custom_ports.split(",") if p.strip().isdigit()]):
-                        rtsp_url = f"rtsp://{ip}:{port}/"
-                        # Evitar duplicados
-                        if not any(c.get("ip") == ip for c in all_cameras):
-                            all_cameras.append({
-                                "ip": ip, "port": port, "brand": "generic",
-                                "accessible_urls": [], "working_credentials": None,
-                                "rtsp_working": rtsp_url, "snapshot_url": None,
-                                "source": "rtsp-tcp-scan"
-                            })
-                        try:
-                            cam = await asyncio.wait_for(scan_camera_full(ip, port), timeout=3.0)
-                            if cam and (cam.get("accessible_urls") or cam.get("snapshot_url")):
-                                all_cameras.append(cam)
-                        except (asyncio.TimeoutError, Exception):
-                            pass
-                    # SSL en 443/8443
-                    if port in [443, 8443]:
-                        try:
-                            ssl_info = await asyncio.wait_for(asyncio.to_thread(extract_ssl_info, ip, port), timeout=2.0)
+                        # SSL en 443/8443
+                        if port in [443, 8443]:
+                            ssl_info = await extract_ssl_info(ip, port)
                             host_data["ssl"] = ssl_info
-                        except (asyncio.TimeoutError, Exception):
-                            pass
-                except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+                    sock.close()
+                except:
                     pass
-
+            
             # SNMP
-            try:
-                snmp = await asyncio.wait_for(asyncio.to_thread(snmp_probe, ip, "public", 1.5), timeout=3.0)
-                if snmp: host_data["snmp"] = snmp
-            except (asyncio.TimeoutError, Exception):
-                pass
-
+            snmp = await snmp_probe(ip, "public", 1.5)
+            if snmp: host_data["snmp"] = snmp
+            
             # NetBIOS
-            try:
-                nb = await asyncio.wait_for(asyncio.to_thread(netbios_query, ip, 1.5), timeout=3.0)
-                if nb: host_data["netbios"] = nb
-            except (asyncio.TimeoutError, Exception):
-                pass
-
+            nb = await netbios_query(ip, 1.5)
+            if nb: host_data["netbios"] = nb
+            
             if host_data["open_ports"] or host_data.get("snmp") or host_data.get("netbios"):
                 all_hosts.append(host_data)
                 # Guardar en DB
-                try:
-                    conn = sqlite3.connect(DB_PATH, timeout=1.0)
-                    c = conn.cursor()
-                    c.execute("""INSERT OR REPLACE INTO hosts_deep 
-                        (ip, open_ports, snmp_info, netbios_info, mdns_info, last_seen)
-                        VALUES (?, ?, ?, ?, ?, ?)""",
-                        (ip, json.dumps(host_data["open_ports"]),
-                         json.dumps(host_data.get("snmp")),
-                         json.dumps(host_data.get("netbios")),
-                         json.dumps([m for m in mdns_services if m.get("ip") == ip]),
-                         datetime.now().isoformat()))
-                    conn.commit()
-                    conn.close()
-                except Exception as db_err:
-                    print(f"[DISCOVER] DB error para {ip}: {db_err}")
-
-    # Chunking adaptativo: soporta cualquier CIDR sin saturar el celular.
-    # Construye la lista de IPs desde el CIDR (no asume /24).
-    import ipaddress as _ipa
-    try:
-        # network viene como prefijo (ej: "192.168.1") — convertir a CIDR
-        net_str = network if "/" in network else f"{network}.0/24"
-        net_obj = _ipa.ip_network(net_str, strict=False)
-        all_ips = [str(h) for h in net_obj.hosts()]
-    except Exception:
-        all_ips = [f"{network}.{i}" for i in range(1, 255)]
-
-    CHUNK_SIZE = 64  # 64 hosts por chunk para no saturar memoria
-    task_group = []
-    for chunk_start in range(0, len(all_ips), CHUNK_SIZE):
-        chunk = all_ips[chunk_start:chunk_start + CHUNK_SIZE]
-        for ip in chunk:
-            task_group.append(asyncio.create_task(check_host(ip)))
-        # Esperar este chunk antes de lanzar el siguiente
-        try:
-            await asyncio.wait_for(asyncio.gather(*task_group[-len(chunk):], return_exceptions=True), timeout=15.0)
-        except asyncio.TimeoutError:
-            print(f"[DISCOVER] Timeout en chunk {chunk_start}-{chunk_start + len(chunk)}, cancelando")
-            for t in task_group[-len(chunk):]:
-                if not t.done():
-                    t.cancel()
-
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute("""INSERT OR REPLACE INTO hosts_deep 
+                    (ip, open_ports, snmp_info, netbios_info, mdns_info, last_seen)
+                    VALUES (?, ?, ?, ?, ?, ?)""",
+                    (ip, json.dumps(host_data["open_ports"]),
+                     json.dumps(host_data.get("snmp")),
+                     json.dumps(host_data.get("netbios")),
+                     json.dumps([m for m in mdns_services if m.get("ip") == ip]),
+                     datetime.now().isoformat()))
+                conn.commit()
+                conn.close()
+    
+    # Lanzar scan en paralelo sobre /24
+    tasks = []
+    for i in range(1, 255):
+        ip = f"{network}.{i}"
+        tasks.append(check_host(ip))
+    
+    await asyncio.gather(*tasks)
+    
     return {
         "onvif_found": len(onvif_cams),
         "ssdp_found": len(ssdp_devices),
@@ -604,8 +497,7 @@ async def full_discovery(network: str = None, custom_ports: str = None):
         "hosts": all_hosts,
         "onvif_details": onvif_cams,
         "ssdp_details": ssdp_devices,
-        "mdns_details": mdns_services,
-        "partial": len(all_hosts) < 254
+        "mdns_details": mdns_services
     }
 
 

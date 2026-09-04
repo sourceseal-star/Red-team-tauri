@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import WarRoom from './WarRoom';
 
 export default function DashboardProV2() {

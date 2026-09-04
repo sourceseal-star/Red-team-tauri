@@ -1,6 +1,10 @@
 # Guía de Arranque — SourceSeal Red-team-tauri v7.0
 
-**Actualizada:** 2026-09-01
+**Actualizada:** 2026-09-02
+
+> ⚡ **Flujo recomendado desde 2026-09-02:** `bash omni.sh sync && bash omni.sh start`
+> (actualiza 3 repos, sincroniza módulos y avatars de Sol, levanta TODO y
+> prefiere el bot conversacional de Telegram). Ver `TERMUX_SYNC.md`.
 **Versión:** 7.0-TACTICAL-HOTRELOAD
 
 ---

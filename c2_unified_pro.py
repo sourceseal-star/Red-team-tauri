@@ -17,8 +17,12 @@
 ╚══════════════════════════════════════════════════════════════════════╝
 
 Uso:
-  export TELEGRAM_BOT_TOKEN="xxx"
-  export TELEGRAM_CHAT_ID="xxx"
+  # Token PROPIO de C2, distinto al de Sol (@sol_amg_bot) para que no
+  # compitan por los mismos mensajes de Telegram. Opcional: si no se
+  # configura, C2 simplemente no usa Telegram (se maneja por War Room
+  # o CLI de omni.sh) y el bot de Sol queda libre de interferencias.
+  export C2_TELEGRAM_BOT_TOKEN="xxx"
+  export C2_TELEGRAM_CHAT_ID="xxx"
   export C2_API_SECRET="tu_clave_segura"
   python3 c2_unified_pro.py
 """
@@ -42,7 +46,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
+    print("⚠️ psutil no instalado — watchdog y defense limitados")
 import requests
 import uvicorn
 from fastapi import (
@@ -67,8 +75,19 @@ class C2Config:
     api_port: int = int(os.environ.get("C2_PORT", "8005"))
     api_secret: str = field(default_factory=lambda: os.environ.get("C2_API_SECRET", "c2_dev_secret"))
 
-    telegram_token: str = field(default_factory=lambda: os.environ.get("TELEGRAM_BOT_TOKEN", ""))
-    telegram_chat_id: str = field(default_factory=lambda: os.environ.get("TELEGRAM_CHAT_ID", ""))
+    # FIX 2026-09-02: C2 usaba el MISMO token que sol_telegram_bridge.py
+    # (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID). Dos procesos haciendo polling
+    # sobre el mismo bot @sol_amg_bot compiten por los mismos updates de
+    # Telegram — resultado: mensajes como "Hola" los agarraba C2 primero
+    # y respondia "Comando no reconocido" en vez de que Sol conversara.
+    # Ahora C2 usa variables PROPIAS (C2_TELEGRAM_BOT_TOKEN/_CHAT_ID). Si no
+    # existen, C2 simplemente deja Telegram desactivado y @sol_amg_bot queda
+    # 100% para Sol. Para reactivar C2 en Telegram con un bot SEPARADO,
+    # crea otro bot con @BotFather y agrega en .env:
+    #   C2_TELEGRAM_BOT_TOKEN=...
+    #   C2_TELEGRAM_CHAT_ID=...
+    telegram_token: str = field(default_factory=lambda: os.environ.get("C2_TELEGRAM_BOT_TOKEN", ""))
+    telegram_chat_id: str = field(default_factory=lambda: os.environ.get("C2_TELEGRAM_CHAT_ID", ""))
     telegram_allowed_users: Set[str] = field(default_factory=lambda: set(
         u.strip() for u in os.environ.get("TELEGRAM_ALLOWED_USERS", "").split(",") if u.strip()
     ))
@@ -391,6 +410,8 @@ class TelegramC2:
 
     # ── Comandos ──
     def _cmd_status(self, args: str) -> str:
+        if psutil is None:
+            return {"cpu": 0, "ram": 0, "processes": 0, "alerts": [], "timestamp": datetime.now().isoformat()}
         cpu = psutil.cpu_percent(interval=1)
         ram = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
@@ -560,17 +581,35 @@ telegram_c2 = TelegramC2(CFG.telegram_token, CFG.telegram_chat_id)
 # =====================================================================
 # WATCHDOG — Monitoreo autónomo del sistema
 # =====================================================================
+def _safe_net_io():
+    """En Termux/Android, leer /proc/net/dev puede estar bloqueado (PermissionError:
+    Errno 13). Sin este guard, Watchdog() crashea en __init__ al cargar el módulo y
+    TODO el proceso muere antes de levantar el servidor — por eso C2 nunca respondía
+    en :8005. Devuelve contadores en 0 si no hay acceso, en vez de reventar."""
+    if psutil is None:
+        from collections import namedtuple
+        return namedtuple("NetIO", ["bytes_sent", "bytes_recv"])(0, 0)
+    try:
+        return psutil.net_io_counters()
+    except Exception as e:
+        log.warning(f"psutil.net_io_counters() sin permiso ({e}) — red deshabilitada en watchdog")
+        from collections import namedtuple
+        return namedtuple("NetIO", ["bytes_sent", "bytes_recv"])(0, 0)
+
+
 class Watchdog:
     """Vigila CPU, RAM, red y procesos. Alerta por Telegram."""
     def __init__(self):
-        self.last_net = psutil.net_io_counters()
+        self.last_net = _safe_net_io()
         self.alerts_sent = set()
         self.history: List[Dict] = []
 
     def check(self) -> Dict:
+        if psutil is None:
+            return {"cpu": 0, "ram": 0, "processes": 0, "alerts": [], "timestamp": datetime.now().isoformat()}
         cpu = psutil.cpu_percent(interval=1)
         ram = psutil.virtual_memory()
-        net = psutil.net_io_counters()
+        net = _safe_net_io()
         net_sent_mb = (net.bytes_sent - self.last_net.bytes_sent) / 1024 / 1024
         net_recv_mb = (net.bytes_recv - self.last_net.bytes_recv) / 1024 / 1024
         self.last_net = net
@@ -607,7 +646,12 @@ class Watchdog:
         return status
 
     def latest(self) -> Dict:
-        return self.history[-1] if self.history else {"status": "no data"}
+        if not self.history:
+            if psutil is not None:
+                return {"cpu": psutil.cpu_percent(interval=0.5), "ram": psutil.virtual_memory().percent,
+                        "processes": len(psutil.pids()), "alerts": [], "timestamp": datetime.now().isoformat()}
+            return {"status": "no data", "cpu": 0, "ram": 0, "processes": 0}
+        return self.history[-1]
 
     def history_list(self) -> List[Dict]:
         return self.history
@@ -625,6 +669,8 @@ class ActiveDefense:
     def scan(self) -> Dict:
         threats = []
         # Procesos sospechosos
+        if psutil is None:
+            return {"threats": [], "count": 0, "timestamp": datetime.now().isoformat()}
         for p in psutil.process_iter(['pid', 'name', 'cmdline']):
             name = (p.info.get('name') or '').lower()
             if name in self.SUSPICIOUS_PROCESSES:
@@ -635,8 +681,8 @@ class ActiveDefense:
             for c in conns:
                 if c.laddr and c.laddr.port in self.SUSPICIOUS_PORTS and c.status == "LISTEN":
                     threats.append({"type": "port", "port": c.laddr.port, "severity": "critical"})
-        except (psutil.AccessDenied, psutil.NoSuchProcess):
-            pass
+        except (psutil.AccessDenied, psutil.NoSuchProcess, PermissionError, OSError):
+            pass  # Termux/Android bloquea /proc/net sin root — no es fatal, seguimos sin ese dato.
         # Logins SSH recientes
         r = run_shell("last -10 2>/dev/null | head -5", timeout=5)
         if "pts" in r.get("stdout", "") and len(r.get("stdout", "")) > 50:
@@ -968,15 +1014,20 @@ async def startup():
         t = threading.Thread(target=telegram_thread, daemon=True)
         t.start()
     else:
-        log.warning("TELEGRAM_BOT_TOKEN no configurado — Telegram C2 desactivado.")
+        log.warning("C2_TELEGRAM_BOT_TOKEN no configurado — Telegram C2 desactivado (correcto: evita competir con el bot de Sol).")
     # Watchdog + Defense como tasks async
     asyncio.create_task(watchdog_loop())
     asyncio.create_task(defense_loop())
     log.info("✅ C2 UNIFIED PRO v5.0 — Todos los módulos activos.")
 
-@app.on_event("startup")
-async def on_startup():
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     await startup()
+    yield
+
+app.router.lifespan_context = lifespan
 
 if __name__ == "__main__":
     print("=" * 60)

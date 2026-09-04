@@ -1,6 +1,6 @@
 # SourceSeal Console — Estado del Proyecto
 
-**Última actualización:** 2026-09-01 12:50
+**Última actualización:** 2026-09-03 03:50 (Bogotá) — omni.sh arreglado: Sol arranca desde ~/sol
 **Versión:** 7.0-TACTICAL-HOTRELOAD
 **Repositorio:** https://github.com/sourceseal-star/Red-team-tauri
 **Branch:** main
@@ -9,6 +9,56 @@
 > ⚠️ **LEE PRIMERO:** hay un bloqueador activo de Telegram (token inválido, no es
 > bug de código) con instrucciones paso a paso más abajo → busca
 > "BLOQUEADOR ACTIVO — Telegram Bot Token inválido".
+
+---
+
+## ☀️ ARQUITECTURA SOL — Actualizado 02-sep-2026 20:30
+
+### Sol vive en su propio repo (sourceseal-star/sol)
+- **ELIMINadas de Red-team-tauri:** sol_core.py, sol_telegram_bot.py, sol_telegram_bridge.py, sol_daemon.py
+- El repo `sol` es la **única fuente de verdad** del código de Sol
+- Red-team-tauri solo conserva: avatar (`assets/sol_avatar_official.jpg`), `assets/SOL_IDENTITY.md`
+- `omni.sh` ya NO arranca Sol/Telegram localmente — verifica API en Replit
+- `commander/` se queda dentro de Red-team-tauri (es parte del conjunto)
+
+### Puente de control unificado (NUEVO)
+- `sol_actions.py` (en repo sol) conecta el LLM con 11 herramientas reales via function calling
+- Sol puede: ver estado de los 3 repos, hacer pull, leer archivos, ejecutar comandos seguros
+- Arquitectura: `mensaje → sol_core → sol_actions → LLM decide tool → sol_repo_tools ejecuta → respuesta`
+- Se activa automáticamente cuando el mensaje contiene palabras clave (repo, commit, status, etc.)
+
+### Commits clave de esta sesión
+| Repo | Commit | Descripción |
+|------|--------|-------------|
+| Red-team-tauri | `480f45d` | Eliminadas copias divergentes de Sol, omni.sh actualizado |
+| sol | `01cb37c` | sol_actions.py — puente de control con function calling |
+| sol | `1488c6c` | SOL_IDENTITY.md — identidad visual documentada |
+
+### ✅ omni.sh arreglado (03-sep-2026) — Sol SÍ arranca en Termux
+**EL BUG:** omni.sh seguía buscando sol_daemon.py / sol_core.py / sol_telegram_bot.py
+en la raíz de Red-team-tauri, pero esos archivos FUERON ELIMINADOS de ahí —
+Sol nunca arrancaba en Termux y el dashboard decía "cerebro offline".
+
+**LOS FIXES (commit de hoy):**
+- `SOL_REPO="$HOME/sol"` — nueva variable; todo el stack de Sol se levanta desde ~/sol
+- `ensure_sol_repo()` — clona sourceseal-star/sol si ~/sol no existe; si existe, git pull (protege ~/sol/.env con SHA-256)
+- Telegram (miniapp + puente legacy) → arranca desde ~/sol
+- Sol daemon → desde ~/sol; sol_api.py fallback → desde ~/sol
+- `start_sol_stack()` → root = ~/sol
+- Watchdog → revive Telegram desde ~/sol
+- `sync` → nuevo Paso 1b: sincroniza ~/sol junto con Red-team-tauri
+- `sol_router.py` → busca sol_core en ~/sol PRIMERO (fuente de verdad), fallback Red-team-tauri
+- `sol_tools` → se importa desde ~/sol (superconjunto: tiene TODAS las herramientas
+  físicas de Termux + las 37+ de v7 + sentidos nuevos: cámara, voz, WhatsApp, llamadas)
+
+**Verificado:** ~/sol/sol_tools.py expone la misma API que espera sol_router
+(execute_tool, get_tool, list_tools, tool_descriptions) — sin cambios de código necesarios.
+
+### Para continuar desde aquí
+1. Hacer `git pull` en ambos repos (sol y Red-team-tauri) en Replit y Termux
+2. Redeploy en Replit (el repo sol tiene sol_actions.py nuevo)
+3. Probar desde Telegram: enviar "cómo está mi repo de Red-team" → Sol debería ejecutar repo_status
+4. El token de Telegram debe ser válido (ver BLOQUEADOR ACTIVO más abajo)
 
 ---
 

@@ -54,15 +54,40 @@ export default function SystemSettings() {
     } finally { setLoading(false); }
   }, [authH]);
 
+  // Auto-sana una backend_base_url obsoleta guardada en localStorage.
+  // Bug real detectado: si alguna vez se guardó una URL personalizada
+  // (ej. para probar desde otro dispositivo) y luego se dejó de usar,
+  // ESTE panel (y solo este panel) seguía apuntando ahí para siempre —
+  // "Backend sin respuesta" + guardados fallando con HTTP 405/404, aunque
+  // el resto de la app (que usa '/api' directo, mismo origen) funcionara
+  // perfecto. Si la URL guardada no responde pero el mismo origen sí,
+  // la limpiamos automáticamente y avisamos.
   const checkHealth = useCallback(async () => {
     setHealth('checking');
+    const custom = localStorage.getItem('backend_base_url');
     try {
       const r = await fetch(getBaseUrl() + '/api/health', { headers: authH() });
-      setHealth(r.ok ? 'ok' : 'err');
-    } catch { setHealth('err'); }
-  }, [authH]);
+      if (r.ok) { setHealth('ok'); return; }
+      throw new Error(`HTTP ${r.status}`);
+    } catch {
+      if (custom) {
+        try {
+          const r2 = await fetch('/api/health', { headers: authH() });
+          if (r2.ok) {
+            localStorage.removeItem('backend_base_url');
+            setBackendUrl('');
+            setHealth('ok');
+            setMsg({ type: 'ok', text: 'URL de backend obsoleta detectada y limpiada — usando conexión automática. Ya puedes guardar tus API keys.' });
+            setTimeout(() => setMsg(null), 3000); // el useEffect ya llama a load() tras checkHealth()
+            return;
+          }
+        } catch { /* tampoco responde por el mismo origen — backend real caído */ }
+      }
+      setHealth('err');
+    }
+  }, [authH, load]);
 
-  useEffect(() => { load(); checkHealth(); }, [load, checkHealth]);
+  useEffect(() => { checkHealth().then(load); }, [checkHealth, load]);
   useEffect(() => { setBackendUrl(localStorage.getItem('backend_base_url') || ''); }, []);
 
   const saveConnection = () => {

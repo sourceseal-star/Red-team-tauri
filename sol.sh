@@ -114,25 +114,11 @@ start(){
     log "✅ GHOST ya activo en :8002"
   fi
 
-  # 3. Telegram — SOLO UNO puede hacer polling del mismo bot token a la vez.
-  #    Preferimos la miniapp (más funciones); si no está disponible, usamos el puente legacy.
-  if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-    if pgrep -f sol_telegram_bridge >/dev/null || pgrep -f sol_telegram_bot.py >/dev/null; then
-      log "✅ Telegram ya corriendo (puente o miniapp)."
-    elif [ -f "$RT/sol_telegram_bot.py" ] && python3 -c "import telegram" 2>/dev/null; then
-      log "📡 Activando miniapp de Telegram..."
-      (cd "$RT" && nohup python3 sol_telegram_bot.py >>"$SOL/logs/tg_bot.log" 2>&1 & echo $! > "$SOL/tg_bot.pid")
-      sleep 3
-      log "✅ Miniapp Telegram activa."
-    else
-      log "📡 Activando puente de Telegram (legacy — miniapp no disponible)..."
-      (cd "$RT" && nohup python3 sol_telegram_bridge.py >>"$SOL/logs/tg.log" 2>&1 &)
-      sleep 3
-      log "✅ Puente Telegram activo."
-    fi
-  else
-    log "⚠️  TELEGRAM_BOT_TOKEN no configurado — Telegram desactivado."
-  fi
+  # 3. Telegram — DESACTIVADO en Red-team-tauri (fix 2026-09-02)
+  #    El único bot de Telegram es el de Sol, que vive en su propio repo y arranca desde Replit.
+  pkill -f sol_telegram_bridge >/dev/null 2>&1 || true
+  pkill -f sol_telegram_bot.py >/dev/null 2>&1 || true
+  log "Telegram: bot de Sol vive en su repo (Replit) — no se arranca aquí"
 
   # 4. Watchdog (vigilancia permanente)
   pgrep -f "sol.sh watchdog" >/dev/null || nohup bash "$0" watchdog >/dev/null 2>&1 &
@@ -185,16 +171,9 @@ watchdog(){
       fi
     fi
 
-    # Telegram — reiniciar SOLO si NINGUNO de los dos está corriendo
-    if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && ! pgrep -f sol_telegram_bridge >/dev/null && ! pgrep -f sol_telegram_bot.py >/dev/null; then
-      log "⚠️ Telegram caído → reiniciando"
-      if [ -f "$RT/sol_telegram_bot.py" ] && python3 -c "import telegram" 2>/dev/null; then
-        (cd "$RT" && nohup python3 sol_telegram_bot.py >>"$SOL/logs/tg_bot.log" 2>&1 & echo $! > "$SOL/tg_bot.pid")
-      else
-        (cd "$RT" && nohup python3 sol_telegram_bridge.py >>"$SOL/logs/tg.log" 2>&1 &)
-      fi
-      sleep 3
-    fi
+    # Telegram — DESACTIVADO: el bot de Sol vive en Replit, no se reinicia aquí
+    pkill -f sol_telegram_bridge >/dev/null 2>&1 || true
+    pkill -f sol_telegram_bot.py >/dev/null 2>&1 || true
 
   done
 }
@@ -377,28 +356,11 @@ telegram_bot() {
     echo "   O: bash sol.sh stop && bash sol.sh telegram"
     return 1
   fi
-  if pgrep -f sol_telegram_bot.py >/dev/null 2>&1; then
-    echo "✅ La miniapp ya está corriendo."
-    return 0
-  fi
-  # Verificar python-telegram-bot
-  if ! python3 -c "import telegram" 2>/dev/null; then
-    echo "📦 Instalando python-telegram-bot..."
-    pip install python-telegram-bot 2>/dev/null || pip3 install python-telegram-bot 2>/dev/null
-  fi
-  cd "$RT"
-  echo "📡 Iniciando miniapp de Sol en Telegram..."
-  nohup python3 sol_telegram_bot.py > "$SOL/telegram_bot.log" 2>&1 &
-  echo $! > "$SOL/telegram_bot.pid"
-  sleep 3
-  if kill -0 "$(cat "$SOL/telegram_bot.pid" 2>/dev/null)" 2>/dev/null; then
-    echo "✅ Miniapp Telegram activa (PID $(cat "$SOL/telegram_bot.pid"))"
-    echo "   Busca tu bot en Telegram y envía /start"
-    echo "   Comandos: /help para ver todo lo que puedo hacer"
-  else
-    echo "❌ No arrancó — ver $SOL/telegram_bot.log"
-    tail -5 "$SOL/telegram_bot.log" 2>/dev/null
-  fi
+  echo "⚠️ Telegram se gestiona desde el repo de Sol en Replit (start_replit.sh)"
+  echo "   No se arranca desde Red-team-tauri para evitar conflicto 409 con el token."
+  pkill -f sol_telegram_bot.py >/dev/null 2>&1 || true
+  pkill -f sol_telegram_bridge.py >/dev/null 2>&1 || true
+  return 0
 }
 
 telegram_bot_stop() {
@@ -486,6 +448,48 @@ tg_check() {
 # ════════════════════════════════════════════════════════════════════
 # PUNTO DE ENTRADA
 # ════════════════════════════════════════════════════════════════════
+
+export_history() {
+    log "📖 Exportando historia de Sol..."
+    local MEMORY_FILE="$HOME/.sol/memory.jsonl"
+    local EXPORT_FILE="$HOME/.sol/sol_historia_$(date +%Y%m%d_%H%M%S).txt"
+    
+    if [ ! -f "$MEMORY_FILE" ]; then
+        echo "❌ No hay memoria guardada."
+        return 1
+    fi
+    
+    {
+        echo "☀️ SOL — HISTORIA COMPLETA"
+        echo "═══════════════════════════════════════════════════════════════"
+        echo "Fecha de exportación: $(date)"
+        echo ""
+        
+        while IFS= read -r line; do
+            if [ -n "$line" ]; then
+                # Parsear JSON con python3 (jq puede no estar en Termux)
+                echo "$line" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    ts = d.get('timestamp','')[:16].replace('T',' ')
+    who = d.get('who', d.get('role','?'))
+    msg = d.get('msg', d.get('content',''))
+    print(f'[{ts}] {who}: {msg}')
+except:
+    print(sys.stdin.read())
+" 2>/dev/null || echo "$line"
+            fi
+        done < "$MEMORY_FILE"
+    } > "$EXPORT_FILE"
+    
+    echo "📖 Historia guardada en: $EXPORT_FILE"
+    echo "   Tamaño: $(du -h "$EXPORT_FILE" | cut -f1)"
+    echo "   Líneas: $(wc -l < "$EXPORT_FILE")"
+    log "✅ Historia exportada: $EXPORT_FILE"
+}
+
+
 case "${1:-help}" in
   start)   start ;;
   stop)    stop; telegram_bot_stop ;;
@@ -493,6 +497,7 @@ case "${1:-help}" in
   talk)    shift; talk "$@" ;;
   telegram|tg) telegram_bot ;;
   tg-check) tg_check ;;
+  export-history) export_history ;;
   watchdog) watchdog ;;
   survival) survival ;;
   backup)  backup ;;

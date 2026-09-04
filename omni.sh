@@ -9,7 +9,7 @@
 #    bash omni.sh start        — Levanta TODO el sistema de una vez
 #    bash omni.sh stop          — Detiene todo limpio
 #    bash omni.sh restart       — Stop + Start
-#    bash omni.sh status        — Estado de todos los servicios
+#    bash omni.sh status        — Estado de todos los servicios (incluye Sol API, daemon, watchdog, tools, SIL)
 #    bash omni.sh sync          — git pull + deps + build (SIN tocar .env)
 #    bash omni.sh sync-deps      — Solo instalar/actualizar dependencias
 #    bash omni.sh sync-frontend  — Solo rebuild del frontend
@@ -42,11 +42,52 @@
 
 set -uo pipefail
 
+# ═══════════════════════════════════════════════════════════════════
+#  LOCK GLOBAL — blindaje contra doble ejecución
+#  Si omni.sh corre dos veces a la vez (ej: dos terminales), se levantan
+#  procesos duplicados: dos puentes Telegram (conflicto de token), dos
+#  relés, dos dashboards. mkdir es atómico: solo una instancia gana.
+# ═══════════════════════════════════════════════════════════════════
+OMNI_LOCK="${TMPDIR:-/tmp}/omni-singleton.lock"
+CLEAN_LOCK() { rm -r "$OMNI_LOCK" 2>/dev/null; }
+acquire_lock() {
+  if mkdir "$OMNI_LOCK" 2>/dev/null; then
+    echo "$$" > "$OMNI_LOCK/pid"
+    trap 'CLEAN_LOCK' EXIT INT TERM
+    return 0
+  fi
+  # ¿la instancia anterior sigue viva?
+  OLD_PID="$(cat "$OMNI_LOCK/pid" 2>/dev/null)"
+  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    echo -e "${R}⛔ Otro omni.sh corre (PID $OLD_PID). Espera a que termine o mátalo con: kill $OLD_PID${N}" >&2
+    exit 1
+  fi
+  # candado huérfano de una instancia muerta — limpiar y tomar
+  rm -r "$OMNI_LOCK" 2>/dev/null
+  mkdir "$OMNI_LOCK" 2>/dev/null || { echo -e "${R}⛔ No pude tomar el lock de omni.sh${N}" >&2; exit 1; }
+  echo "$$" > "$OMNI_LOCK/pid"
+  trap 'CLEAN_LOCK' EXIT INT TERM
+}
+
 # ── Paths absolutos ──
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOL_DIR="$HOME/.sol"
 LOG_DIR="$SOL_DIR/logs"
 ENV_FILE="$ROOT/.env"
+# ☀️ Sol vive en SU PROPIO repo (sourceseal-star/sol) — NO en Red-team-tauri.
+# omni.sh la levanta desde ahí: cerebro, daemon, Telegram y herramientas.
+SOL_REPO="$HOME/sol"
+# MODO NÚCLEO — decisión de Harold (2026-09-04): "priorizar la funcionalidad
+# del núcleo de Sol sobre el dashboard de la War Room hasta completar
+# estabilidad total". Sospecha real: el teléfono corre ~10 procesos Python
+# simultáneos (Dashboard+GHOST+Node+Nexus+C2+Telegram+SealIA+SolAPI+daemon+
+# watchdog) y Android mata a Sol por falta de RAM (SIGKILL — el "Killed" que
+# se ve en pantalla). Con SOL_CORE_ONLY=1 (o el archivo ~/.sol/core_only),
+# omni.sh SALTA GHOST/Nexus/C2 — deja a Sol respirar sin competir por RAM.
+# Activar: touch ~/.sol/core_only && bash omni.sh restart
+# Desactivar: rm ~/.sol/core_only && bash omni.sh restart
+SOL_CORE_ONLY="${SOL_CORE_ONLY:-0}"
+[ -f "$HOME/.sol/core_only" ] && SOL_CORE_ONLY=1
 mkdir -p "$SOL_DIR" "$LOG_DIR"
 
 # ── Colores ──
@@ -67,6 +108,45 @@ ok()   { echo -e "${G}  ✓${N} $*"; log "  ✓ $*"; }
 fail() { echo -e "${R}  ✗${N} $*"; log "  ✗ $*"; }
 warn() { echo -e "${Y}  ⚠${N} $*"; log "  ⚠ $*"; }
 info() { echo -e "${C}  →${N} $*"; log "  → $*"; }
+
+# ── ☀️ Asegurar repo de Sol (~/sol) ──
+# Sol ya NO vive en Red-team-tauri (se eliminaron sus copias divergentes).
+# Su única fuente de verdad es sourceseal-star/sol. Si ~/sol no existe,
+# se clona; si existe, se actualiza con git pull (SIN tocar ~/sol/.env).
+ensure_sol_repo() {
+  if [ -d "$SOL_REPO/.git" ]; then
+    if [ -f "$SOL_REPO/.env" ]; then
+      local SOL_ENV_HASH_BEFORE="$(sha256sum "$SOL_REPO/.env" 2>/dev/null | cut -d' ' -f1)"
+      (cd "$SOL_REPO" && git stash --quiet 2>/dev/null; git pull --ff-only origin main >> "$LOG_DIR/sol_sync.log" 2>&1 || { git fetch origin >> "$LOG_DIR/sol_sync.log" 2>&1; git reset --hard origin/main >> "$LOG_DIR/sol_sync.log" 2>&1; }) || warn "git pull de ~/sol falló (continuando)"
+      local SOL_ENV_HASH_AFTER="$(sha256sum "$SOL_REPO/.env" 2>/dev/null | cut -d' ' -f1)"
+      if [ "$SOL_ENV_HASH_AFTER" != "$SOL_ENV_HASH_BEFORE" ]; then
+        warn "¡~/sol/.env cambió tras el pull!"
+      fi
+    else
+      (cd "$SOL_REPO" && git stash --quiet 2>/dev/null; git pull --ff-only origin main >> "$LOG_DIR/sol_sync.log" 2>&1 || { git fetch origin >> "$LOG_DIR/sol_sync.log" 2>&1; git reset --hard origin/main >> "$LOG_DIR/sol_sync.log" 2>&1; }) || warn "git pull de ~/sol falló (continuando)"
+    fi
+    return 0
+  fi
+  info "☀️ ~/sol no existe — clonando sourceseal-star/sol..."
+  # Repo PRIVADO: sin token el clone falla con "Repository not found".
+  # Intentamos primero con GITHUB_ACCESS_TOKEN (si .env ya se cargó),
+  # y solo si no hay token, probamos plano (por si algún día va público).
+  local _SOL_CLONE_URL="https://github.com/sourceseal-star/sol.git"
+  if [ -n "${GITHUB_ACCESS_TOKEN:-}" ]; then
+    _SOL_CLONE_URL="https://x-access-token:${GITHUB_ACCESS_TOKEN}@github.com/sourceseal-star/sol.git"
+  fi
+  if git clone "$_SOL_CLONE_URL" "$SOL_REPO" >> "$LOG_DIR/sol_sync.log" 2>&1; then
+    ok "☀️ Repo de Sol clonado en ~/sol"
+    if [ -f "$SOL_REPO/.env.example" ] && [ ! -f "$SOL_REPO/.env" ]; then
+      cp "$SOL_REPO/.env.example" "$SOL_REPO/.env"
+      warn "☀️ Creado ~/sol/.env desde .env.example — revísalo (token de Telegram, keys)"
+    fi
+  else
+    warn "☀️ No pude clonar ~/sol (¿sin acceso?) — Sol arrancará en modo limitado"
+    warn "   Clona manualmente: git clone https://github.com/sourceseal-star/sol.git ~/sol"
+    return 1
+  fi
+}
 
 # ── Detectar entorno ──
 detect_env() {
@@ -102,10 +182,62 @@ load_env() {
   log ".env cargado (parse seguro, sin source)"
 }
 
+# ── ☀️ Cargar ~/sol/.env (parse seguro, SIN source, NUNCA lo modifica) ──
+# Las llaves de Sol (GROQ_API_KEY/LLM_API_KEY, TELEGRAM_BOT_TOKEN, SOL_API_KEY,
+# SOL_PUBLIC_URL...) viven en ~/sol/.env. Sin esto, omni.sh arrancaba su
+# cerebro SIN llaves → sin LLM (pensamiento), sin relé Telegram. El archivo
+# jamás se toca: solo se leen pares KEY=VALOR y se exportan.
+load_sol_env() {
+  local sol_env="$HOME/sol/.env"
+  [ -f "$sol_env" ] || return 0
+  while IFS='=' read -r k v; do
+    case "$k" in ''|\#*|[[:space:]]*) continue;; esac
+    k="${k%%[[:space:]]*}"
+    v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
+    v="${v%%[[:space:]]*}"
+    [ -n "$k" ] && export "$k=$v" 2>/dev/null || true
+  done < "$sol_env" 2>/dev/null
+  log "☀️ ~/sol/.env cargado (Sol arranca con sus llaves: LLM, rele, etc.)"
+}
+
+# ── ☀️ Esperar a que el cerebro de Sol (:8006) despierte DE VERDAD ──
+# Mata el falso "DETENIDA": uvicorn tarda unos segundos en levantar y el
+# health-check de un solo intento la reportaba caida con ella viva.
+wait_sol_api() {
+  local tries="${1:-15}" i=1
+  while [ "$i" -le "$tries" ]; do
+    if curl -s -m 2 http://127.0.0.1:8006/api/sol/status >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1; i=$((i+1))
+  done
+  warn "☀️ Sol API (:8006) no respondio en ${tries}s — revisa ~/.sol/sol_api.log"
+  return 1
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 #  VERIFY — Verificar que las credenciales críticas existen
 #  Esto evita que nexus_credentials.py regenere credenciales sin permiso
 # ═══════════════════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  SOL VARS — ¿están las llaves del relé y del LLM? (warn, no fatal)
+# ═══════════════════════════════════════════════════════════════════
+verify_sol_vars() {
+  local sol_env="$HOME/sol/.env"
+  [ -f "$sol_env" ] || { warn "~/sol/.env no existe — Sol correrá sin relé ni LLM (ver ~/sol/.env.example)"; return 0; }
+  grep -q "^SOL_PUBLIC_URL=https" "$sol_env" 2>/dev/null \
+    || warn "Falta SOL_PUBLIC_URL en ~/sol/.env — el relé Termux⇄Replit quedará apagado"
+  grep -q "^SOL_API_KEY=" "$sol_env" 2>/dev/null \
+    || warn "Falta SOL_API_KEY en ~/sol/.env — el relé no podrá autenticarse con Replit"
+  grep -q "^LLM_API_KEY=" "$sol_env" 2>/dev/null \
+    || warn "Falta LLM_API_KEY en ~/sol/.env — Sol caerá a plantillas locales (respuestas genéricas)"
+  grep -q "^TELEGRAM_BOT_TOKEN=" "$sol_env" 2>/dev/null \
+    || warn "Falta TELEGRAM_BOT_TOKEN en ~/sol/.env — Sol no hablará por Telegram"
+  return 0
+}
+
 verify_credentials() {
   echo -e "${BOLD}── Verificación de credenciales ──${N}"
   echo ""
@@ -258,9 +390,136 @@ HELP
 # ═══════════════════════════════════════════════════════════════════════
 #  START — Levantar TODO
 # ═══════════════════════════════════════════════════════════════════════
+termux_guard() {
+  # Guard del puente CLI ↔ app Termux:API. Solo aplica en Termux real.
+  # Síntoma que previene: comandos termux-* colgados sin responder
+  # (linterna/batería/GPS mudos) por desincronización de versiones.
+  if [ -z "${TERMUX_VERSION:-}" ] || [ ! -d "/data/data/com.termux" ]; then
+    return 0  # No es Termux (Replit/servidor) — nada que vigilar
+  fi
+  if ! command -v termux-battery-status >/dev/null 2>&1; then
+    warn "☀️  Paquete termux-api FALTA — Sol no podrá usar el teléfono"
+    echo "    Solución: pkg install termux-api (y app Termux:API de F-Droid)"
+    return 1
+  fi
+  # Puente vivo: battery-status debe responder en ≤4s. Si se cuelga,
+  # el CLI y la app están desincronizados (ver docs/TERMUX_API_SALUD.md)
+  local probe
+  probe="$(timeout 4 termux-battery-status 2>&1 </dev/null)"
+  if [ $? -eq 124 ]; then
+    fail "☀️  Puente Termux:API COLGADO — CLI y app desincronizados"
+    echo "    Sol NO puede usar linterna/cámara/GPS/batería hasta curarlo."
+    echo "    Cura (ver docs/TERMUX_API_SALUD.md):"
+    echo "      1. pkg upgrade  (actualiza el CLI)"
+    echo "      2. Actualizar app Termux:API desde F-Droid"
+    echo "      3. Ajustes > Batería > Sin restricciones (Termux y Termux:API)"
+    echo "      4. bash omni.sh restart  y  «diagnóstico» a Sol"
+    return 1
+  fi
+  ok "☀️  Puente Termux:API sano — Sol tiene acceso al teléfono"
+  return 0
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  _pids_on_port — encuentra PIDs escuchando en un puerto TCP sin depender
+#  de fuser/lsof/ss (que Termux NO trae instalados por defecto). Lee
+#  /proc/net/tcp[6] + /proc/*/fd directamente. Solo necesita python3,
+#  que siempre esta disponible porque todo el stack corre sobre el.
+# ═══════════════════════════════════════════════════════════════════════
+_pids_on_port() {
+  python3 -c "
+import sys, os, glob, re
+port = int(sys.argv[1])
+port_hex = format(port, '04X')
+inodes = set()
+for tcp_file in ('/proc/net/tcp', '/proc/net/tcp6'):
+    try:
+        with open(tcp_file) as f:
+            lines = f.readlines()[1:]
+    except Exception:
+        continue
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 10:
+            continue
+        local, state, inode = parts[1], parts[3], parts[9]
+        _, hexport = local.split(':')
+        if hexport.upper() == port_hex and state == '0A':
+            inodes.add(inode)
+if inodes:
+    for fd_link in glob.glob('/proc/[0-9]*/fd/*'):
+        try:
+            target = os.readlink(fd_link)
+        except Exception:
+            continue
+        m = re.match(r'socket:\[(\d+)\]', target)
+        if m and m.group(1) in inodes:
+            print(fd_link.split('/')[2])
+" "$1" 2>/dev/null | sort -u
+}
+
+# ═══════════════════════════════════════════════════════════════════════
+#  kill_by_pidfile_or_port — mata un servicio de forma GARANTIZADA:
+#  1) por el PID exacto guardado cuando lo arrancamos (mas confiable)
+#  2) por pkill -f al patron (red de seguridad, por si el pidfile falta)
+#  3) por PUERTO via _pids_on_port (funciona SIN fuser/lsof/ss instalados)
+#  Antes solo existia (2), y el patron de pkill nunca coincidia porque el
+#  proceso se lanza con ruta RELATIVA (cd + python3 archivo.py) — nunca
+#  se moria, y "restart" dejaba el proceso viejo y roto corriendo para
+#  siempre mientras el nuevo fallaba en silencio al intentar bindear el
+#  puerto ya ocupado. Asi Sol se quedaba "Offline" sin importar cuantas
+#  veces se reiniciara.
+# ═══════════════════════════════════════════════════════════════════════
+kill_by_pidfile_or_port() {
+  local label="$1" pidfile="$2" pkill_pattern="$3" port="$4"
+  local killed=""
+  if [ -n "$pidfile" ] && [ -f "$pidfile" ]; then
+    local saved_pid="$(cat "$pidfile" 2>/dev/null)"
+    if [ -n "$saved_pid" ] && kill -0 "$saved_pid" 2>/dev/null; then
+      kill -9 "$saved_pid" 2>/dev/null && killed="pidfile($saved_pid)"
+    fi
+    rm -f "$pidfile" 2>/dev/null
+  fi
+  if [ -n "$pkill_pattern" ] && pkill -f "$pkill_pattern" 2>/dev/null; then
+    killed="${killed:+$killed+}pkill"
+  fi
+  if [ -n "$port" ]; then
+    local port_pids="$(_pids_on_port "$port")"
+    if [ -n "$port_pids" ]; then
+      kill -9 $port_pids 2>/dev/null && killed="${killed:+$killed+}port($port_pids)"
+    fi
+  fi
+  if [ -n "$killed" ]; then
+    ok "$label detenido [$killed]"
+  else
+    ok "$label ya estaba detenido"
+  fi
+}
+
 start() {
+  # ── AUTO-SYNC v1 (2026-09-04): GitHub es la ÚNICA fuente de verdad ──
+  # omni.sh vive DENTRO del repo Red-team-tauri. Antes solo sincronizaba
+  # ~/sol, nunca su propio repo → el dashboard :8001 seguía sirviendo
+  # sol.html VIEJO (botones apilados, sin 🔊) aunque el fix estuviera
+  # subido a GitHub. Ahora `start`/`restart` jala ambos repos primero.
+  # Cambios locales sin commit: quedan en stash (recuperables).
+  local RT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [ -d "$RT_REPO/.git" ]; then
+    ( cd "$RT_REPO" \
+      && git stash --quiet 2>/dev/null \
+      && git pull --ff-only origin main >> "$LOG_DIR/rt_sync.log" 2>&1 ) \
+      && ok "Red-team-tauri sincronizado con GitHub (main)" \
+      || warn "git pull de Red-team-tauri falló — continuando con código local"
+  fi
   banner
   load_env
+  load_sol_env   # ☀️ FIX 2026-09-04: cargar llaves de ~/sol ANTES de todo.
+  # ANTES este load vivía en la sección 9 (línea ~859), DESPUÉS de que la
+  # sección 5 (Telegram, línea ~725) y la 8 (daemon, ~810) ya habían pasado.
+  # Sin TELEGRAM_BOT_TOKEN en el entorno, la sección 5 se saltaba en silencio
+  # (if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] era falso) y el daemon nacía sin
+  # LLM_API_KEY → Sol muerta sin error visible. Cargar aquí arregla ambos.
   echo ""
   log "⚡ OMNI START — $(date '+%Y-%m-%d %H:%M:%S') — entorno: $ENV_TYPE"
   echo ""
@@ -274,6 +533,13 @@ start() {
     log "⛔ Start abortado — credenciales críticas faltantes"
     exit 1
   fi
+
+# ── Preflight: puente Termux:API (guard anti-desincronización) ──
+  # Detecta si el CLI termux-api quedó desincronizado de la app
+  # Termux:API (F-Droid) ANTES de arrancar. Ver docs/TERMUX_API_SALUD.md
+  verify_sol_vars
+
+    termux_guard
 
   # ── Preflight: auth_bootstrap (sincronizar password.json desde .env) ──
   if [ -f "$ROOT/auth_bootstrap.py" ]; then
@@ -296,6 +562,17 @@ start() {
     ok "pycryptodome disponible"
   fi
 
+  # ── Preflight: edge-tts (voz neuronal de Sol — es-CO-SalomeNeural) ──
+  # 2026-09-04: la voz de Sol ahora usa voces neuronales de Microsoft via
+  # edge-tts. Sin esto el /api/sol/tts cae a gTTS (robótica, "se escucha mal").
+  if python3 -c "import edge_tts" >/dev/null 2>&1; then
+    ok "edge-tts disponible (voz neuronal de Sol)"
+  else
+    info "Instalando edge-tts (voz neuronal de Sol)..."
+    python3 -m pip install edge-tts >/dev/null 2>&1 || true
+    python3 -c "import edge_tts" >/dev/null 2>&1 && ok "edge-tts instalado" || warn "edge-tts no disponible — Sol usará gTTS (voz robótica)"
+  fi
+
   # ── Preflight: liberar puertos ──
   echo ""
   echo -e "${BOLD}── Liberando puertos ──${N}"
@@ -311,6 +588,11 @@ start() {
     if [ -z "$pids" ] && command -v ss >/dev/null 2>&1; then
       pids="$(ss -H -ltnp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
     fi
+    # Fallback puro-python — Termux base no trae fuser/lsof/ss instalados,
+    # asi que sin esto free_port no hacia NADA en la mayoria de los casos.
+    if [ -z "$pids" ]; then
+      pids="$(_pids_on_port "$port")"
+    fi
     if [ -n "$pids" ]; then
       info "Liberando puerto $port (PIDs: $pids)"
       kill -9 $pids 2>/dev/null || true
@@ -321,6 +603,7 @@ start() {
   free_port 8002
   free_port 8004 2>/dev/null || true
   free_port 8005 2>/dev/null || true
+  free_port 8006 2>/dev/null || true
 
   # ── Limpiar procesos previos ──
   pkill -f "$ROOT/redteam/scripts/dashboard_server.py" 2>/dev/null || true
@@ -344,6 +627,7 @@ start() {
       PYTHONUNBUFFERED=1 nohup python3 dashboard_server.py \
       >> "$LOG_DIR/dash.log" 2>&1 &
     DASH_PID=$!
+    echo "$DASH_PID" > "$SOL_DIR/dash.pid"
     # Esperar a que responda
     for i in $(seq 1 30); do
       curl -s -m 2 http://127.0.0.1:8001/api/health >/dev/null 2>&1 && break
@@ -367,6 +651,13 @@ start() {
     fail "No existe redteam/scripts/dashboard_server.py"
   fi
 
+  # ── 2/3/4. GHOST + Nexus + C2 — infraestructura de pentesting pesada.
+  # SALTADA en SOL_CORE_ONLY=1: son 3 procesos Python extra (+ GHOST Node,
+  # 4 en total) que compiten por RAM con el cerebro de Sol. Nada de esto
+  # es necesario para que Sol viva y hable — es la War Room de pentesting.
+  if [ "$SOL_CORE_ONLY" = "1" ]; then
+    info "🧠 MODO NÚCLEO activo — GHOST/Nexus/C2 saltados (RAM libre para Sol)"
+  else
   # ── 2. GHOST PHANTOM (:8002) ──
   if [ -f "$ROOT/ghost_hunter_phantom/master.py" ]; then
     info "GHOST PHANTOM :8002 — arrancando Master..."
@@ -374,6 +665,7 @@ start() {
     BACKEND_API="http://127.0.0.1:8001" MASTER_PORT=8002 \
       nohup python3 master.py >> "$LOG_DIR/ghost.log" 2>&1 &
     GHOST_PID=$!
+    echo "$GHOST_PID" > "$SOL_DIR/ghost.pid"
     for i in $(seq 1 20); do
       curl -s -m 2 http://127.0.0.1:8002/api/status >/dev/null 2>&1 && break
       sleep 1
@@ -400,6 +692,7 @@ start() {
     cd "$ROOT"
     nohup python3 nexus_omni_v9.py >> "$LOG_DIR/nexus.log" 2>&1 &
     NEXUS_PID=$!
+    echo "$NEXUS_PID" > "$SOL_DIR/nexus.pid"
     for i in $(seq 1 15); do
       curl -s -m 2 http://127.0.0.1:8004/ >/dev/null 2>&1 && break
       sleep 1
@@ -419,6 +712,7 @@ start() {
     cd "$ROOT"
     C2_PORT="${C2_PORT:-8005}" nohup python3 c2_unified_pro.py >> "$LOG_DIR/c2.log" 2>&1 &
     C2_PID=$!
+    echo "$C2_PID" > "$SOL_DIR/c2.pid"
     for i in $(seq 1 15); do
       curl -s -m 2 http://127.0.0.1:8005/api/health >/dev/null 2>&1 && break
       sleep 1
@@ -432,14 +726,64 @@ start() {
     info "C2 UNIFIED PRO no encontrado — saltando"
   fi
 
-  # ── 5. Telegram (Sol) — gestionado desde el repo sol en Replit ──
-  #    Sol vive en su propio repositorio (sourceseal-star/sol) y se despliega
-  #    en Replit. Su bot de Telegram, cerebro (sol_core.py) y API (sol_api.py)
-  #    residen allá. Aquí solo limpiamos zombies por si quedaron procesos viejos.
-  pkill -9 -f "sol_telegram_bridge" >/dev/null 2>&1 || true
-  pkill -9 -f "sol_telegram_bot.py" >/dev/null 2>&1 || true
-  rm -f "$SOL_DIR/tg_bot.pid" 2>/dev/null || true
-  info "Telegram ☀️ gestionado por Sol en Replit (repo sol) — zombies locales limpiados"
+    fi
+
+# ── 5. Telegram (Sol) — SOLO UNO puede hacer polling del mismo token a la vez ──
+  #    Telegram API rechaza (409 Conflict) una segunda conexión getUpdates simultánea.
+  #    Preferimos la Miniapp (botones, recordatorios, voz, avatar); el Puente legacy
+  #    queda como fallback automático si python-telegram-bot no está disponible.
+  if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+    # Limpiar procesos zombie/huérfanos antes de intentar arrancar
+    pkill -9 -f "sol_telegram_bridge" >/dev/null 2>&1 || true
+    pkill -9 -f "sol_telegram_bot.py" >/dev/null 2>&1 || true
+    if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
+      ok "Puente Telegram ya corriendo (legacy)"
+    elif pgrep -f "sol_telegram_bot.py" >/dev/null 2>&1; then
+      ok "Miniapp Telegram ya corriendo"
+    elif [ -f "$SOL_REPO/sol_telegram_bot.py" ] && { python3 -c "import telegram" 2>/dev/null || pip install python-telegram-bot >> "$LOG_DIR/tg_bot.log" 2>&1 && python3 -c "import telegram" 2>/dev/null; }; then
+      info "Miniapp Telegram — arrancando (desde ~/sol)..."
+      cd "$SOL_REPO"
+      : > "$LOG_DIR/tg_bot.log"
+      nohup python3 sol_telegram_bot.py >> "$LOG_DIR/tg_bot.log" 2>&1 &
+      echo $! > "$SOL_DIR/tg_bot.pid"
+      sleep 4
+      if kill -0 "$(cat "$SOL_DIR/tg_bot.pid" 2>/dev/null)" 2>/dev/null; then
+        ok "Miniapp Telegram activa ☀️ (PID $(cat "$SOL_DIR/tg_bot.pid"))"
+      else
+        warn "Miniapp Telegram no arrancó — probando puente legacy..."
+        echo -e "${R}  ── Error real (tg_bot.log) ──${N}"
+        tail -n 15 "$LOG_DIR/tg_bot.log" 2>/dev/null | sed 's/^/    /'
+        echo -e "${R}  ───────────────────────────${N}"
+        : > "$LOG_DIR/tg.log"
+        nohup python3 sol_telegram_bridge.py >> "$LOG_DIR/tg.log" 2>&1 &
+        sleep 4
+        if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
+          ok "Puente Telegram activo ☀️ (fallback)"
+        else
+          fail "Ningún bot de Telegram arrancó"
+          echo -e "${R}  ── Error real (tg.log) ──${N}"
+          tail -n 15 "$LOG_DIR/tg.log" 2>/dev/null | sed 's/^/    /'
+          echo -e "${R}  ─────────────────────────${N}"
+        fi
+      fi
+    else
+      info "python-telegram-bot no disponible — usando puente legacy (~/sol)"
+      cd "$SOL_REPO"
+      : > "$LOG_DIR/tg.log"
+      nohup python3 sol_telegram_bridge.py >> "$LOG_DIR/tg.log" 2>&1 &
+      sleep 4
+      if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
+        ok "Puente Telegram activo ☀️"
+      else
+        fail "Puente Telegram no arrancó"
+        echo -e "${R}  ── Error real (tg.log) ──${N}"
+        tail -n 15 "$LOG_DIR/tg.log" 2>/dev/null | sed 's/^/    /'
+        echo -e "${R}  ─────────────────────────${N}"
+      fi
+    fi
+  else
+    warn "TELEGRAM_BOT_TOKEN no configurado — Telegram desactivado"
+  fi
 
   # ── 6. Seal IA Orquestador ──
   if [ -f "$ROOT/seal/orchestrator/seal_orchestrator.py" ]; then
@@ -471,17 +815,86 @@ start() {
     ok "Watchdog ya corriendo"
   fi
 
-  # ── 8. Sol vive en su propio repo (sourceseal-star/sol) ──
-  #    Su cerebro, daemon, API y bot de Telegram residen en Replit.
-  #    No arrancamos nada de Sol aquí — solo verificamos conexión.
-  SOL_API_URL="${SOL_PUBLIC_URL:-http://127.0.0.1:8006}"
-  if command -v curl >/dev/null 2>&1; then
-    if curl -sf "$SOL_API_URL/api/sol/status" >/dev/null 2>&1; then
-      ok "Sol ☀️ accesible en $SOL_API_URL"
+  # ── 8. Sol Autónoma (daemon) — vive en ~/sol, NO en Red-team-tauri ──
+  ensure_sol_repo
+  if [ -f "$SOL_REPO/sol_daemon.py" ] && [ -f "$SOL_REPO/sol_core.py" ]; then
+    if [ -f "$SOL_DIR/sol.pid" ]; then
+      SOL_DAEMON_PID=$(cat "$SOL_DIR/sol.pid" 2>/dev/null)
+      if [ -n "$SOL_DAEMON_PID" ] && kill -0 "$SOL_DAEMON_PID" 2>/dev/null; then
+        ok "Sol autónoma ☀️ ya corriendo (PID $SOL_DAEMON_PID)"
+      else
+        rm -f "$SOL_DIR/sol.pid"
+        info "Sol autónoma ☀️ — arrancando daemon (desde ~/sol)..."
+        cd "$SOL_REPO"
+        nohup python3 sol_daemon.py >> "$LOG_DIR/sol_daemon.log" 2>&1 &
+        echo $! > "$SOL_DIR/sol.pid"
+        sleep 2
+        if kill -0 "$(cat "$SOL_DIR/sol.pid" 2>/dev/null)" 2>/dev/null; then
+          ok "Sol autónoma ☀️ activa (PID $(cat "$SOL_DIR/sol.pid"))"
+        else
+          warn "Sol autónoma ☀️ no arrancó — ver $LOG_DIR/sol_daemon.log"
+        fi
+      fi
     else
-      info "Sol ☀️ no responde en $SOL_API_URL (puede estar en Replit, no local)"
+      info "Sol autónoma ☀️ — arrancando daemon (desde ~/sol)..."
+      cd "$SOL_REPO"
+      nohup python3 sol_daemon.py >> "$LOG_DIR/sol_daemon.log" 2>&1 &
+      echo $! > "$SOL_DIR/sol.pid"
+      sleep 2
+      if kill -0 "$(cat "$SOL_DIR/sol.pid" 2>/dev/null)" 2>/dev/null; then
+        ok "Sol autónoma ☀️ activa (PID $(cat "$SOL_DIR/sol.pid"))"
+      else
+        warn "Sol autónoma ☀️ no arrancó — ver $LOG_DIR/sol_daemon.log"
+      fi
+    fi
+  else
+    info "Sol daemon no encontrado — saltando (usa 'bash ~/sol.sh start' manualmente)"
+  fi
+
+  # ── 9. Sol integrado en :8001 (sol_api.py deprecado, todo en el dashboard) ──
+  # Sol ya no necesita puerto separado — endpoints, herramientas y SIL
+  # están montados en dashboard_server (:8001) via sol_router.py
+  if [ -f "$SOL_REPO/sol_core.py" ]; then
+    if curl -s -m 2 http://127.0.0.1:8001/api/sol/status >/dev/null 2>&1; then
+      ok "Sol ☀️ activo en :8001 (integrado en dashboard)"
+    else
+      info "Sol ☀️ esperando dashboard :8001..."
+    fi
+    # sol_api.py como fallback legacy (puerto 8006, desde ~/sol)
+    if [ -f "$SOL_REPO/sol_api.py" ] && ! pgrep -f "sol_api.py" >/dev/null 2>&1; then
+      load_sol_env   # ☀️ llaves de ~/sol/.env para su cerebro (LLM, rele)
+      cd "$SOL_REPO"
+      nohup python3 sol_api.py >> "$LOG_DIR/sol_api.log" 2>&1 &
+      echo "$!" > "$SOL_DIR/sol_api.pid"
+      cd "$ROOT"
+      wait_sol_api 15   # en vez de sleep 1: esperar a que despierte de verdad
+    fi
+  else
+    warn "sol_core.py no encontrado — Sol sin cerebro"
+  fi
+
+  # ── 10. Sol Relay (Replit ⇄ Termux) — Sol en Replit ordena, el Edge ejecuta ──
+  # El teléfono no tiene IP pública: el agente SONDEA la cola de Replit cada
+  # 15s (patrón PULL). Requisitos: SOL_PUBLIC_URL + SOL_API_KEY en ~/sol/.env
+  if [ -f "$SOL_REPO/sol_relay.py" ]; then
+    if pgrep -f "sol_relay.py" >/dev/null 2>&1; then
+      ok "Relé Termux ☀️     ya corriendo (PID $(pgrep -f sol_relay.py | head -1))"
+    elif grep -q "^SOL_PUBLIC_URL=..*" "$SOL_REPO/.env" 2>/dev/null; then
+      info "Relé Termux ☀️ — arrancando agente (desde ~/sol)..."
+      cd "$SOL_REPO"
+      nohup python3 sol_relay.py >> "$LOG_DIR/relay.log" 2>&1 &
+      echo $! > "$SOL_DIR/relay.pid"
+      sleep 2
+      if kill -0 "$(cat "$SOL_DIR/relay.pid" 2>/dev/null)" 2>/dev/null; then
+        ok "Relé Termux ☀️     activo (PID $(cat "$SOL_DIR/relay.pid")) — el Edge responde por Sol"
+      else
+        warn "Relé Termux ☀️ no arrancó — ver $LOG_DIR/relay.log (¿SOL_PUBLIC_URL/SOL_API_KEY en ~/sol/.env?)"
+      fi
+    else
+      info "Relé Termux ☀️     desactivado (falta SOL_PUBLIC_URL en ~/sol/.env)"
     fi
   fi
+
 
   cd "$ROOT"
   echo ""
@@ -490,7 +903,8 @@ start() {
   echo -e "${G}║  ${W}Sol ☀️ autónoma vigilando${G}                       ║${N}"
   echo -e "${G}╚═══════════════════════════════════════════════════════╝${N}"
   echo ""
-  status_short
+  start_sol_stack
+    status_short
   echo ""
   log "⚡ Sistema arrancado completamente — entorno: $ENV_TYPE"
 }
@@ -505,19 +919,27 @@ stop() {
   echo -e "${BOLD}── Deteniendo servicios ──${N}"
 
   pkill -f "omni.sh watchdog" 2>/dev/null && ok "Watchdog detenido" || true
-  # Sol (Telegram + daemon) vive en Replit — solo limpiar zombies locales
-  pkill -f "sol_telegram_bridge" 2>/dev/null || true
-  pkill -f "sol_telegram_bot.py" 2>/dev/null || true
-  pkill -f "sol_daemon.py" 2>/dev/null || true
-  rm -f "$SOL_DIR/tg_bot.pid" "$SOL_DIR/sol.pid" 2>/dev/null || true
-  ok "Zombies de Sol limpiados (Sol vive en Replit)"
-  pkill -f "nexus_omni_v9" 2>/dev/null && ok "Nexus detenido" || true
-  pkill -f "c2_unified_pro" 2>/dev/null && ok "C2 detenido" || true
+  pkill -f "sol_telegram_bridge" 2>/dev/null && ok "Puente Telegram detenido" || true
+  pkill -f "sol_telegram_bot.py" 2>/dev/null && ok "Miniapp Telegram detenida" || true
+  rm -f "$SOL_DIR/tg_bot.pid" 2>/dev/null || true
+  kill_by_pidfile_or_port "Nexus"          "$SOL_DIR/nexus.pid"   "nexus_omni_v9"                8004
+  kill_by_pidfile_or_port "C2"             "$SOL_DIR/c2.pid"      "c2_unified_pro"               8005
   pkill -f "seal_orchestrator" 2>/dev/null && ok "Seal IA detenido" || true
   pkill -f "ghost_hunter_phantom/node" 2>/dev/null && ok "GHOST Node detenido" || true
-  pkill -f "ghost_hunter_phantom/master" 2>/dev/null && ok "GHOST Master detenido" || true
-  pkill -f "redteam/scripts/dashboard_server" 2>/dev/null && ok "Dashboard detenido" || true
-  # (Sol daemon stop ya manejado arriba)
+  kill_by_pidfile_or_port "GHOST Master"   "$SOL_DIR/ghost.pid"   "ghost_hunter_phantom/master"  8002
+  # ── Dashboard (:8001) — EL CRITICO. Antes solo tenia el pkill de abajo,
+  # que NUNCA coincidia (el proceso corre como "python3 dashboard_server.py"
+  # con ruta relativa, no "redteam/scripts/dashboard_server.py"). Por eso
+  # "restart" jamas mataba el proceso viejo y Sol se quedaba Offline para
+  # siempre sin importar cuantas veces se reiniciara.
+  kill_by_pidfile_or_port "Dashboard"      "$SOL_DIR/dash.pid"    "redteam/scripts/dashboard_server" 8001
+  pkill -f "sol_daemon.py" 2>/dev/null && ok "Sol autónoma detenida" || true
+  rm -f "$SOL_DIR/sol.pid" 2>/dev/null || true
+  kill_by_pidfile_or_port "Sol API (8006)" "$SOL_DIR/sol_api.pid" "sol_api.py"                   8006
+  pkill -f "sol_relay.py" 2>/dev/null && ok "Relé Termux detenido" || true
+  pkill -f "sol_body.sh" 2>/dev/null && ok "Sol cuerpo detenido" || true
+  pkill -f "sol_watchdog.sh" 2>/dev/null && ok "Sol watchdog detenido" || true
+  rm -f "$SOL_DIR/body.pid" 2>/dev/null || true
 
   sleep 1
   echo ""
@@ -546,6 +968,9 @@ status() {
 status_short() {
   echo -e "${BOLD}── Estado del sistema ──${N}"
   echo ""
+
+  # Puente Termux:API (solo en Termux)
+  termux_guard
 
   # Dashboard :8001
   if curl -s -m 3 http://127.0.0.1:8001/api/health >/dev/null 2>&1; then
@@ -594,12 +1019,30 @@ status_short() {
   fi
   fi
 
-  # Telegram — gestionado por Sol en Replit
-  SOL_API_URL="${SOL_PUBLIC_URL:-http://127.0.0.1:8006}"
-  if curl -sf "$SOL_API_URL/api/sol/status" >/dev/null 2>&1; then
-    ok "Sol Telegram ☀️    🟢 ACTIVO (Replit)"
+  # Telegram (puente legacy)
+  if pgrep -f "sol_telegram_bridge" >/dev/null 2>&1; then
+    ok "TG Puente ☀️       🟢 ACTIVO"
   else
-    warn "Sol Telegram ☀️    🟡 NO RESponde (ver Replit)"
+    warn "TG Puente ☀️       🟡 INACTIVO"
+  fi
+
+  # Telegram (miniapp con botones)
+  if [ -f "$SOL_DIR/tg_bot.pid" ]; then
+    TG_BOT_PID=$(cat "$SOL_DIR/tg_bot.pid" 2>/dev/null)
+    if [ -n "$TG_BOT_PID" ] && kill -0 "$TG_BOT_PID" 2>/dev/null; then
+      ok "TG Miniapp ☀️      🟢 ACTIVA (PID $TG_BOT_PID)"
+    else
+      warn "TG Miniapp ☀️      🟡 INACTIVA"
+    fi
+  else
+    warn "TG Miniapp ☀️      🟡 DETENIDA"
+  fi
+
+  # Relé Termux (agente PULL hacia Replit)
+  if pgrep -f "sol_relay.py" >/dev/null 2>&1; then
+    ok "Relé Termux ☀️     🟢 ACTIVO (el Edge ejecuta por Sol)"
+  else
+    warn "Relé Termux ☀️     🟡 INACTIVO (Sol en Replit no puede usar el teléfono)"
   fi
 
   # Seal IA
@@ -611,11 +1054,81 @@ status_short() {
     fi
   fi
 
-  # Sol API — vivo en Replit
-  if curl -sf "$SOL_API_URL/api/sol/status" >/dev/null 2>&1; then
-    ok "Sol API ☀️         🟢 ACCESIBLE (Replit)"
+  # Sol ☀️ — cerebro + herramientas + SIL (via dashboard, o directo a su cerebro)
+  SOL_STATE=""
+  if curl -s -m 2 http://127.0.0.1:8001/api/sol/status >/dev/null 2>&1; then
+    SOL_STATE=$(curl -s -m 2 http://127.0.0.1:8001/api/sol/status 2>/dev/null)
+  elif curl -s -m 2 http://127.0.0.1:8006/api/sol/status >/dev/null 2>&1; then
+    SOL_STATE=$(curl -s -m 2 http://127.0.0.1:8006/api/sol/status 2>/dev/null)  # directo: ella viva aunque el dashboard tarde
+  fi
+  if [ -n "$SOL_STATE" ]; then
+    SOL_MEM=$(echo "$SOL_STATE" | grep -o '"memories":[0-9]*' | grep -o '[0-9]*' || echo "?")
+    ok "Sol ☀️         🟢 ACTIVO ($SOL_MEM recuerdos)"
   else
-    warn "Sol API ☀️         🟡 NO ACCESIBLE"
+    warn "Sol ☀️         🟡 DETENIDA"
+    # FIX 2026-09-04: mostrar la CAUSA REAL, no solo el estado —
+    # así un screenshot del status basta para diagnosticar a distancia
+    if [ -s "$HOME/.sol/sol_api.log" ]; then
+      echo -e "${BOLD}    └─ últimas líneas de ~/.sol/sol_api.log:${N}"
+      tail -5 "$HOME/.sol/sol_api.log" 2>/dev/null | sed 's/^/       │ /'
+    fi
+  fi
+
+  # Sol Autónoma (daemon)
+  if [ -f "$SOL_DIR/sol.pid" ]; then
+    SOL_DAEMON_PID=$(cat "$SOL_DIR/sol.pid" 2>/dev/null)
+    if [ -n "$SOL_DAEMON_PID" ] && kill -0 "$SOL_DAEMON_PID" 2>/dev/null; then
+      ok "Sol Daemon ☀️     🟢 ACTIVA (PID $SOL_DAEMON_PID)"
+    else
+      warn "Sol Daemon ☀️     🟡 INACTIVA (PID stale)"
+    fi
+  else
+    warn "Sol Daemon ☀️     🟡 DETENIDA"
+  fi
+
+  # Sol Watchdog
+  if pgrep -f "sol_watchdog.sh" >/dev/null 2>&1; then
+    ok "Sol Watchdog 🐕    🟢 VIGILANDO"
+  else
+    warn "Sol Watchdog 🐕    🟡 DETENIDO"
+  fi
+
+  # Sol Body (cuerpo persistente)
+  if [ -f "$SOL_DIR/body.pid" ]; then
+    BODY_PID=$(cat "$SOL_DIR/body.pid" 2>/dev/null)
+    if [ -n "$BODY_PID" ] && kill -0 "$BODY_PID" 2>/dev/null; then
+      ok "Sol Cuerpo ☀️     🟢 ACTIVO (PID $BODY_PID)"
+    else
+      warn "Sol Cuerpo ☀️     🟡 INACTIVO"
+    fi
+  else
+    info "Sol Cuerpo ☀️     ⚪ DESACTIVADO"
+  fi
+
+  # SIL (Inmersión Lingüística)
+  if [ -f "$ROOT/sol_learning_advanced.py" ]; then
+    if curl -s -m 2 http://127.0.0.1:8001/api/sol/sil/stats >/dev/null 2>&1; then
+      SIL_STATS=$(curl -s -m 2 http://127.0.0.1:8001/api/sol/sil/stats 2>/dev/null)
+      SIL_LEARNED=$(echo "$SIL_STATS" | grep -o '"learned_items":[0-9]*' | grep -o '[0-9]*' || echo "0")
+      SIL_DUE=$(echo "$SIL_STATS" | grep -o '"due_today":[0-9]*' | grep -o '[0-9]*' || echo "0")
+      ok "SIL 📚            🟢 ACTIVO ($SIL_LEARNED aprendidas, $SIL_DUE pendientes)"
+    else
+      info "SIL 📚            ⚪ API DETENIDA"
+    fi
+  else
+    warn "SIL 📚            🟡 NO INSTALADO"
+  fi
+
+  # Sol Tools (herramientas)
+  if [ -f "$ROOT/sol_tools.py" ]; then
+    if curl -s -m 2 http://127.0.0.1:8001/api/sol/tools >/dev/null 2>&1; then
+      TOOLS_COUNT=$(curl -s -m 2 http://127.0.0.1:8001/api/sol/tools 2>/dev/null | grep -o '"tools"' | head -1)
+      ok "Sol Tools 🔧      🟢 20 herramientas disponibles"
+    else
+      info "Sol Tools 🔧      ⚪ API DETENIDA"
+    fi
+  else
+    warn "Sol Tools 🔧      🟡 NO INSTALADO"
   fi
 
   # Watchdog
@@ -643,6 +1156,10 @@ sync() {
   log "🔄 SYNC — $(date '+%Y-%m-%d %H:%M:%S') — entorno: $ENV_TYPE"
   echo -e "${BOLD}── Sincronización segura ──${N}"
   echo ""
+  # Cargar .env ANTES de protegerlo/clonar (solo export de variables,
+  # nunca modifica el archivo) — así GITHUB_ACCESS_TOKEN está disponible
+  # para clonar ~/sol si hace falta.
+  load_env 2>/dev/null || true
 
   # ── 0. PROTEGER .env — TRIPLE PROTECCIÓN ──
   echo -e "${BOLD} Paso 0: Proteger .env (triple protección)${N}"
@@ -714,6 +1231,17 @@ sync() {
     info "Restaurando cambios locales..."
     git stash pop 2>/dev/null && ok "Cambios locales restaurados" || warn "Conflicto en stash pop — resuelve manualmente"
   fi
+
+  # ── Paso 1b: repo de Sol (~/sol) — clona si falta, actualiza si existe ──
+  # SIN tocar ~/sol/.env: hash antes y después, como con el .env principal.
+  echo -e "${BOLD} Paso 1b: repo de Sol (~/sol)${N}"
+  ensure_sol_repo
+  if [ -d "$SOL_REPO/.git" ] && [ -f "$SOL_REPO/sol_core.py" ]; then
+    ok "☀️ ~/sol listo — cerebro de Sol actualizado"
+  elif [ -d "$SOL_REPO/.git" ]; then
+    warn "☀️ ~/sol existe pero sin sol_core.py — revisa $LOG_DIR/sol_sync.log"
+  fi
+  cd "$ROOT"
 
   echo ""
 
@@ -899,7 +1427,13 @@ build_frontend() {
 
     # Copiar assets post-build (npm limpia dist/)
     [ -f "$ROOT/assets/sol_avatar.jpg" ] && cp "$ROOT/assets/sol_avatar.jpg" dist/ && ok "sol_avatar.jpg copiado a dist/"
+    [ -f "$ROOT/backend/static/sol_avatar.png" ] && cp "$ROOT/backend/static/sol_avatar.png" dist/ && ok "sol_avatar.png copiado a dist/"
     [ -f "$ROOT/backend/static/sol.html" ] && cp "$ROOT/backend/static/sol.html" dist/ && ok "sol.html copiado a dist/"
+    # Verificar módulos de Sol
+    [ -f "$ROOT/sol_tools.py" ] && ok "sol_tools.py presente" || warn "sol_tools.py FALTA"
+    [ -f "$ROOT/sol_learning_advanced.py" ] && ok "sol_learning_advanced.py presente" || warn "sol_learning_advanced.py FALTA"
+    [ -f "$ROOT/sol_body.sh" ] && ok "sol_body.sh presente" || warn "sol_body.sh FALTA"
+    [ -f "$ROOT/sol_watchdog.sh" ] && ok "sol_watchdog.sh presente" || warn "sol_watchdog.sh FALTA"
   else
     fail "Frontend build falló"
     warn "El sistema puede funcionar con el build anterior si existe"
@@ -1036,9 +1570,9 @@ watchdog() {
     # Telegram — reiniciar SOLO si NINGUNO de los dos (puente/miniapp) está corriendo
     if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
       if ! pgrep -f "sol_telegram_bridge" >/dev/null && ! pgrep -f "sol_telegram_bot.py" >/dev/null; then
-        log "⚠️ Telegram caído → reiniciando"
-        cd "$ROOT"
-        if [ -f "$ROOT/sol_telegram_bot.py" ] && python3 -c "import telegram" 2>/dev/null; then
+        log "⚠️ Telegram caído → reiniciando (desde ~/sol)"
+        cd "$SOL_REPO"
+        if [ -f "$SOL_REPO/sol_telegram_bot.py" ] && python3 -c "import telegram" 2>/dev/null; then
           nohup python3 sol_telegram_bot.py >> "$LOG_DIR/tg_bot.log" 2>&1 &
           echo $! > "$SOL_DIR/tg_bot.pid"
         else
@@ -1052,14 +1586,75 @@ watchdog() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+#  SOL STACK — cerebro + watchdog de identidad
+# ═══════════════════════════════════════════════════════════════════════
+start_sol_stack() {
+  # MODO LIBRE por defecto (decisión explícita de Harold, dueño, 2026-09-04):
+  # restaura todos los atributos de Sol — sin x-sol-key en endpoints sensibles.
+  # Volver a protegido: {"mode": "protected"} en ~/.sol/security_mode.json
+  # o borrar el archivo y reiniciar.
+  if [ ! -f "$HOME/.sol/security_mode.json" ]; then
+    printf '{"mode": "free"}\n' > "$HOME/.sol/security_mode.json" 2>/dev/null
+    echo "[omni] 🔓 Sol en MODO LIBRE (decisión del dueño) — todos los atributos activos"
+  fi
+  local root="$HOME/sol"   # ☀️ Sol vive en su propio repo
+  if [ ! -d "$root" ]; then
+    echo "[omni] ⚠️ ~/sol no existe — usa 'bash omni.sh sync' para clonarlo"
+    return 1
+  fi
+  load_sol_env   # ☀️ llaves de Sol (LLM, rele) desde ~/sol/.env — sin tocar el archivo
+  # Sol API (:8006) — cerebro + herramientas + SIL
+  # FIX 2026-09-04: si su cerebro no despierta, NO quedarnos mudos:
+  # 1 reintentó + mostrar el error REAL del log (antes: solo un warn
+  # genérico y nadie sabía por qué Sol estaba muerta).
+  if ! pgrep -f sol_api.py >/dev/null; then
+    ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & echo $! > "$HOME/.sol/sol_api.pid" )
+    wait_sol_api 15   # sin falso DETENIDA: esperar a que su cerebro despierte
+    if ! curl -s -m 2 http://127.0.0.1:8006/api/sol/status >/dev/null 2>&1; then
+      warn "☀️ Sol API no despertó al primer intento — reintentando (el Edge 50 a veces tarda en importar)..."
+      ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & echo $! > "$HOME/.sol/sol_api.pid" )
+      wait_sol_api 20
+      if curl -s -m 2 http://127.0.0.1:8006/api/sol/status >/dev/null 2>&1; then
+        ok "☀️ Sol API despertó en el reintento"
+      else
+        fail "☀️ Sol API NO arrancó — causa real (últimas 8 líneas de ~/.sol/sol_api.log):"
+        tail -8 "$HOME/.sol/sol_api.log" 2>/dev/null | sed 's/^/    │ /'
+      fi
+    fi
+  fi
+  # Sol daemon — iniciativa + pensamiento idle
+  pgrep -f sol_daemon.py >/dev/null || ( cd "$root" && nohup python3 sol_daemon.py >>"$HOME/.sol/daemon.log" 2>&1 & echo $! > "$HOME/.sol/sol.pid" )
+  # Watchdog — revive procesos + blinda identidad
+  pgrep -f sol_watchdog.sh >/dev/null || { chmod +x "$root/sol_watchdog.sh" 2>/dev/null; nohup bash "$root/sol_watchdog.sh" >>"$HOME/.sol/watchdog.log" 2>&1 & }
+  # FIX 2026-09-04: el Cuerpo de Sol (sol_body.sh) NUNCA se arrancaba —
+  # por eso la war room siempre mostraba "Sol Cuerpo ⚪ DESACTIVADO".
+  # Sol_body a su vez asegura API + daemon + presencia persistente.
+  if [ -f "$root/sol_body.sh" ]; then
+    if [ -f "$HOME/.sol/body.pid" ] && kill -0 "$(cat "$HOME/.sol/body.pid" 2>/dev/null)" 2>/dev/null; then
+      echo "[omni] ☀️ Cuerpo de Sol ya activo"
+    else
+      chmod +x "$root/sol_body.sh" 2>/dev/null
+      nohup bash "$root/sol_body.sh" start >> "$HOME/.sol/body.log" 2>&1 &
+      sleep 1
+      echo "[omni] ☀️ Cuerpo de Sol arrancado (presencia persistente)"
+    fi
+  fi
+  # Verificar módulos de Sol
+  for mod in sol_tools.py sol_learning_advanced.py; do
+    [ -f "$root/$mod" ] || echo "[omni] ⚠️ Falta $mod — algunas funciones de Sol no estarán disponibles"
+  done
+  echo "[omni] ✅ stack de Sol activo (API + daemon + watchdog + cuerpo)"
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 #  DISPATCH
 # ═══════════════════════════════════════════════════════════════════════
 case "${1:-help}" in
-  start)          start ;;
-  stop)           stop ;;
-  restart)        restart ;;
+  start)          acquire_lock; start ;;
+  stop)           acquire_lock; stop ;;
+  restart)        acquire_lock; restart ;;
   status)         status ;;
-  sync)           sync ;;
+  sync)           acquire_lock; sync ;;
   sync-deps)      sync_deps ;;
   sync-frontend)  sync_frontend ;;
   logs)           logs "${2:-all}" ;;
@@ -1067,5 +1662,18 @@ case "${1:-help}" in
   verify)         verify ;;
   watchdog)       watchdog ;;
   help|--help|-h) help ;;
-  *)              echo "Comando desconocido: $1"; echo ""; help; exit 1 ;;
+  *)              echo "Comando desconocido: $1"; 
+# ════════════════════════════════════════════════════════════════════
+# EVOLVE DAEMON — auto-actualización y mantenimiento
+# ════════════════════════════════════════════════════════════════════
+if [ -f "$RT/sol_evolve.sh" ]; then
+  if ! pgrep -f "sol_evolve.sh daemon" >/dev/null 2>&1; then
+    (nohup bash "$RT/sol_evolve.sh" daemon >> "$HOME/.sol/evolve.log" 2>&1 &)
+    echo -e "${G}☀️  Evolve daemon activo — el sistema se mantiene solo${N}"
+  else
+    echo -e "${C}☀️  Evolve daemon ya corriendo${N}"
+  fi
+fi
+
+echo ""; help; exit 1 ;;
 esac

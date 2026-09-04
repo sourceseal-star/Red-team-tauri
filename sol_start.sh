@@ -362,17 +362,12 @@ start_sol_core() {
 # START: SOL Telegram Bridge
 # ════════════════════════════════════════════════════════════════════
 start_sol_bridge() {
-    [ -f "$ROOT/sol_telegram_bridge.py" ] || { warn "sol_telegram_bridge.py no encontrado"; return; }
-    [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || { fail "TELEGRAM_BOT_TOKEN no configurado"; return 1; }
-
-    info "SOL Telegram Bridge — arrancando..."
-    cd "$ROOT"
-    nohup python3 sol_telegram_bridge.py > "$LOG_DIR/sol.log" 2>&1 &
-    SOL_PID=$!
-    sleep 3
-    kill -0 "$SOL_PID" 2>/dev/null \
-        && ok "SOL Bridge activo (PID $SOL_PID)" \
-        || { fail "SOL Bridge murió"; tail -10 "$LOG_DIR/sol.log" 2>/dev/null; }
+    # DESACTIVADO 2026-09-02: El único bot de Telegram es el de Sol,
+    # que vive en su propio repo (sourceseal-star/sol) y arranca desde
+    # Replit via start_replit.sh. No se arranca nada de Telegram aquí.
+    info "Telegram: bot de Sol vive en su repo (Replit) — start_sol_bridge() desactivado"
+    pkill -f "sol_telegram_bridge.py" 2>/dev/null || true
+    pkill -f "sol_telegram_bot.py" 2>/dev/null || true
 }
 
 # ════════════════════════════════════════════════════════════════════
