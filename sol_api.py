@@ -409,6 +409,98 @@ async def execute_tool(request: Request, x_sol_key: str = Header(default="")):
         return {"success": False, "error": "Falta el nombre"}
     return sol_tools.execute_tool(name, *args, **kwargs)
 
+# ═══════════════════════════════════════════════════════════════
+# RELÉ SOL ⇄ TERMUX — mismo contrato que el repo sol (RELE_TERMUX.castell)
+# Agente en Termux: ~/sol/sol_relay.py (arrancado por omni.sh §10).
+# Portado 2026-09-03 para que el :8001 unificado también atienda el relé.
+# ═══════════════════════════════════════════════════════════════
+try:
+    import sol_relay_queue as relay
+    _relay_ok = True
+except Exception as e:
+    print(f"[SOL] sol_relay_queue no disponible: {e}", flush=True)
+    _relay_ok = False
+
+@app.get("/api/relay/status")
+def relay_status():
+    """¿Está el teléfono en línea? Ping/pong + cola + último resultado."""
+    if not _relay_ok:
+        return JSONResponse({"error": "relé no disponible"}, status_code=500)
+    return relay.status()
+
+@app.post("/api/relay/task")
+async def relay_task(request: Request, x_sol_key: str = Header(default="")):
+    """Encolar una tarea manualmente (mismo contrato que tools/execute)."""
+    if not sol_security.check_access(x_sol_key):
+        return JSONResponse({"error": "SOL_API_KEY requerida"}, status_code=401)
+    if not _relay_ok:
+        return JSONResponse({"error": "relé no disponible"}, status_code=500)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    name = body.get("name") or body.get("tool")
+    if not name:
+        return {"success": False, "error": "Falta el nombre de la herramienta"}
+    if not _tools_ok:
+        return {"success": False, "error": "sol_tools no disponible"}
+    if not sol_tools.get_tool(name):
+        return {"success": False, "error": f"Herramienta no encontrada: {name}"}
+    return relay.enqueue(name, body.get("args", []), body.get("kwargs", {}),
+                         origin=body.get("origin", "api"))
+
+@app.get("/api/relay/poll")
+@app.post("/api/relay/poll")
+async def relay_poll(x_sol_key: str = Header(default="")):
+    """El agente en Termux pregunta por tareas. Cada poll = pong (latido)."""
+    if not sol_security.check_access(x_sol_key):
+        return JSONResponse({"error": "SOL_API_KEY requerida"}, status_code=401)
+    if not _relay_ok:
+        return JSONResponse({"error": "relé no disponible"}, status_code=500)
+    tasks = relay.fetch_batch(max_tasks=5, claim=True,
+                              device={"device": os.environ.get("TERMUX_DEVICE", "")})
+    return {"tasks": tasks, "pong": relay.status()["last_pong"]}
+
+@app.post("/api/relay/announce")
+async def relay_announce(request: Request, x_sol_key: str = Header(default="")):
+    """Latido puro + info del dispositivo (sin tareas)."""
+    if not sol_security.check_access(x_sol_key):
+        return JSONResponse({"error": "SOL_API_KEY requerida"}, status_code=401)
+    if not _relay_ok:
+        return JSONResponse({"error": "relé no disponible"}, status_code=500)
+    try:
+        device = await request.json()
+    except Exception:
+        device = {}
+    relay.fetch_batch(max_tasks=0, claim=False, device=device or {})
+    return {"ok": True}
+
+@app.post("/api/relay/result")
+async def relay_result(request: Request, x_sol_key: str = Header(default="")):
+    """Termux entrega el resultado de una tarea ejecutada con hardware real."""
+    if not sol_security.check_access(x_sol_key):
+        return JSONResponse({"error": "SOL_API_KEY requerida"}, status_code=401)
+    if not _relay_ok:
+        return JSONResponse({"error": "relé no disponible"}, status_code=500)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON inválido"}, status_code=400)
+    task_id = body.get("task_id")
+    if not task_id:
+        return JSONResponse({"error": "Falta task_id"}, status_code=400)
+    entry = relay.push_result(task_id, body.get("ok", False), body.get("data"),
+                              device=body.get("device"))
+    print(f"[SOL] 📡 Relé: resultado de {entry['tool']} ({'OK' if entry['ok'] else 'FALLO'})", flush=True)
+    return {"ok": True, "entry": entry}
+
+@app.get("/api/relay/results")
+def relay_results(x_sol_key: str = Header(default=""), limit: int = 10):
+    """Resultados recientes de tareas ejecutadas en el teléfono."""
+    if not _relay_ok:
+        return JSONResponse({"error": "relé no disponible"}, status_code=500)
+    return {"results": relay.results(limit=limit)}
+
 @app.get("/api/sol/tools/{name}")
 def tool_info(name: str):
     if not _tools_ok:

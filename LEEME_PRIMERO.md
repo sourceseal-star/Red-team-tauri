@@ -368,3 +368,34 @@ escucha/escritura/emparejar sobre chengyu/gramática/niveles avanzados.
   aquí el relay que lo implementa (omni.sh §10 + sol_tools.py variante
   HTTP). El documento mismo no es accesible sin clonar el repo sol.
 
+
+## Sesión 2026-09-03 (5) — Relé portado al :8001 unificado + revisión Castell
+
+**Revisado `~/sol/RELE_TERMUX.castell`** (cloné el repo sol con el token
+nuevo de Harold). El documento está completo y correcto: arquitectura
+pull, secretos (SOL_PUBLIC_URL + SOL_API_KEY, sin secretos nuevos),
+instalación, prueba de 5 pasos, seguridad por diseño, curas.
+
+**Verificación contra el código (todo confirmado):**
+- 6 endpoints /api/relay/* en sol/sol_api.py ✅
+- HARDWARE_TOOLS (19 herramientas) + fallback automático en
+  sol_tools.py ✅
+- Cola con tope 20 y TTL 15 min en sol_relay_queue.py ✅
+- sol_relay.py: poll 15s, --status, SOL_RELAY_AGENT=1 (no re-relaya) ✅
+- Split-brain curado: daemon/bot SOLO arrancan desde Termux
+  (omni.sh/sol_body.sh), nunca desde sol_api. Cerrojo de instancia
+  única como red de seguridad ✅
+
+**Brecha encontrada y corregida:** el sol_api.py de Red-team-tauri (el
+:8001 unificado) NO tenía los endpoints del relé — solo el de Replit.
+Si SOL_PUBLIC_URL apunta a :8001, el relé daría 404. Portados:
+- `sol_relay_queue.py` copiado (182 líneas, stdlib puro)
+- 6 endpoints /api/relay/* en Red-team-tauri/sol_api.py, mismo contrato
+
+**Verificado en vivo** (servidor de prueba): encolar flashlight →
+poll (claim) → result → status muestra termux_online:true, device y
+last_result. Ciclo completo OK.
+
+**Nota:** token de GitHub anterior expiró (401) — Harold dio uno nuevo
+via formulario seguro; remote actualizado y push OK (7762a76).
+
