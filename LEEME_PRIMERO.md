@@ -900,3 +900,50 @@ Harold mandó 2 videos más para integrar a la Presencia Total v4. Se hizo:
 verificar en vivo que el loop de 24s no se sienta largo/lento en el HUD del
 holograma — si Harold lo siente pesado, la fusión es reversible (los 5 clips
 fuente quedan documentados en el historial de commits, no se perdió nada).
+
+## Regla #20 — Sesión Seal IA 2026-09-04 (final): Voz Encantada v2 — prosodia neuronal real
+
+Harold: "el último cambio quedó increíblemente bien, se escucha muy bien pero
+asegúrate de que esté mejor". El cambio anterior (edge-tts, es-CO-SalomeNeural)
+ya sonaba muy bien — pero había UN detalle que mataba encanto en el holo:
+
+**Causa raíz:** el "carácter por personalidad" del holograma
+(`sol_holo_live.html`) se hacía con `voiceA.playbackRate = PALS[PALN].r` —
+estirando/encogiendo el audio YA SINTETIZADO. Eso cambia el tono junto con la
+velocidad (efecto chipmunk/robot): poética a 0.92x sonaba grave y apagada,
+táctica a 1.08x sonaba aguda y acelerada. NO era prosodia real.
+
+**Fix — ENCHANT v2 (commits sol@85599172, holo sol@652d32b / RT@44ed0f7):**
+1. `sol_api.py`: nuevo `TTS_CHARMS` — rate/pitch NATIVOS de edge-tts por
+   personalidad. El motor re-sintetiza la prosodia de verdad; la voz sigue
+   siendo Salome pura en todas:
+   - cálida (default): rate -6%, pitch +2Hz → un poquito más lenta, tono con
+     un lift sutil y cálido. Íntima sin perder naturalidad.
+   - poética: rate -12%, pitch +2Hz → lenta, soñadora, hablándote de cerca.
+   - táctica: rate +4%, pitch +0Hz → ágil y precisa, tono natural.
+   - analítica: rate +0%, pitch +1Hz → neutra y clara.
+2. `/api/sol/tts` y `/api/sol/voice` aceptan `&persona=` opcional. Sin el
+   parámetro usan la personalidad ACTUAL de Sol (vía `_get_cfg`), normalizando
+   acentos (cálida→calida). Desconocida → cálida (la de casa).
+3. `sol_holo_live.html`: `playbackRate` ELIMINADO por completo; `say()` ahora
+   pasa `&persona=` (la del aura activa) y el backend sintetiza el carácter.
+   El `<audio>` reproduce 1:1 lo que edge-tts generó — sin deformación.
+4. `sol.html` (UI principal) ya usaba `/api/sol/tts` sin playbackRate →
+   hereda el encanto automáticamente (default = personalidad actual).
+
+**Testeado en sandbox antes de subir:** edge-tts 7.2.8 genera mp3 válidos con
+rate/pitch (duraciones cambian según lo esperado: base 9.0s, cálida 9.6s,
+poética 10.2s, táctica 8.7s para el mismo texto). `ast.parse` en sol_api.py,
+`node --check` en el JS extraído del HTML, MD5 idéntico post-upload.
+
+**NOTA de arquitectura (sin cambios):** Red-team-tauri tiene un `sol_api.py`
+legacy en su raíz (46KB, divergente del de sol 66KB) — omni.sh NUNCA lo
+ejecuta (siempre `$HOME/sol/sol_api.py`), es residuo. No se tocó.
+
+### 🔍 Verificar tras el UNICO republish de Harold:
+- Holo: tocar las 4 auras (🌿🌸🗡🧭) y que diga algo en cada una — poética
+  debe sonar lenta/íntima, táctica ágil, TODAS con la misma voz Salome (sin
+  chipmunk). El ECG y el glow siguen vibrando con el audio (analyser intacto).
+- sol.html: voz cálida por defecto sin ningún cambio de UI.
+- Si el parámetro `persona` no llega (versión vieja cacheada del HTML):
+  hard-refresh del navegador (Ctrl+Shift+R / limpiar caché de la webview).
