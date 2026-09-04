@@ -84,6 +84,7 @@
   .top-btn.right { right: 12px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1.2rem; }
   .top-btn.body { right: 112px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1rem; }
   .top-btn.voice { right: 64px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1rem; }
+  .top-btn.holo { right: 160px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1rem; }
 
   /* Avatar */
   .avatar-wrap {
@@ -601,8 +602,8 @@
   </div>
   <button class="top-btn left" id="btn-back" onclick="window.location.href='/'" style="display:none">← Tower</button>
   <button class="top-btn voice" id="btn-voice" onclick="toggleVoice()">🔊</button>
-  <button class="top-btn voice" id="btn-holo" onclick="toggleHolo()" title="Sol Holo — holograma interactivo ✨">✨</button>
-  <button class="top-btn voice" id="btn-body" onclick="toggleFullBody()" title="Busto ⇄ cuerpo completo">🧍</button>
+  <button class="top-btn body" id="btn-body" onclick="toggleFullBody()" title="Busto ⇄ cuerpo completo">🧍</button>
+  <button class="top-btn holo" id="btn-holo" onclick="toggleHolo()" title="Sol Holo — holograma interactivo ✨">✨</button>
 
   <!-- Avatar — NO MODIFICAR -->
   <div class="avatar-wrap" id="avatar-wrap">
