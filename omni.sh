@@ -1563,6 +1563,14 @@ watchdog() {
 #  SOL STACK — cerebro + watchdog de identidad
 # ═══════════════════════════════════════════════════════════════════════
 start_sol_stack() {
+  # MODO LIBRE por defecto (decisión explícita de Harold, dueño, 2026-09-04):
+  # restaura todos los atributos de Sol — sin x-sol-key en endpoints sensibles.
+  # Volver a protegido: {"mode": "protected"} en ~/.sol/security_mode.json
+  # o borrar el archivo y reiniciar.
+  if [ ! -f "$HOME/.sol/security_mode.json" ]; then
+    printf '{"mode": "free"}\n' > "$HOME/.sol/security_mode.json" 2>/dev/null
+    echo "[omni] 🔓 Sol en MODO LIBRE (decisión del dueño) — todos los atributos activos"
+  fi
   local root="$HOME/sol"   # ☀️ Sol vive en su propio repo
   if [ ! -d "$root" ]; then
     echo "[omni] ⚠️ ~/sol no existe — usa 'bash omni.sh sync' para clonarlo"
