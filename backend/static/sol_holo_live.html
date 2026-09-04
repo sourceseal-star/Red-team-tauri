@@ -1,0 +1,164 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>☀️ Sol — Holograma Interactivo</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;user-select:none;-webkit-user-select:none}
+html,body{height:100%;background:#04070c;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+.chip{position:fixed;top:10px;left:10px;font-size:11px;color:#94a3b8;background:#0b1220b0;border:1px solid #1e293b;border-radius:20px;padding:6px 12px;z-index:6}
+.chip b{color:#fbbf24}
+.orb{position:fixed;width:50px;height:50px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:21px;cursor:pointer;border:1px solid;background:#0b122060;backdrop-filter:blur(4px);z-index:6;animation:fl 6s ease-in-out infinite}
+.orb:active{transform:scale(.88)}
+.o1{top:15%;left:5%;border-color:#4ade8066}.o2{top:11%;right:5%;border-color:#f472b666;animation-delay:1s}
+.o3{top:45%;left:3%;border-color:#c084fc66;animation-delay:2s}.o4{top:43%;right:3%;border-color:#22d3ee66;animation-delay:3s}
+@keyframes fl{50%{transform:translateY(-8px)}}
+.hud{position:fixed;bottom:0;left:0;right:0;z-index:6;padding:8px 12px calc(10px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;background:linear-gradient(transparent,#04070ce6 35%)}
+#voiceLine{min-height:44px;text-align:center;font-style:italic;font-size:15px;text-shadow:0 0 16px currentColor}
+.bar{display:flex;gap:6px}
+.bar input{flex:1;background:#0b1220cc;border:1px solid #1e293b;border-radius:24px;color:#e2e8f0;padding:12px 16px;font-size:14px;outline:none}
+.bar button,.bar label{width:46px;height:46px;border-radius:50%;border:1px solid #1e293b;background:#0b1220cc;font-size:17px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+#send{background:#f59e0b;border:none}
+#rec.on{background:#ef4444;border:none}
+</style></head><body>
+<canvas id="cv"></canvas>
+<div class="chip">☀️ <b>Sol</b> · <span id="st">despertando…</span></div>
+<a href="/" onclick="if(window.parent!==window){event.preventDefault();return false}" style="position:fixed;top:10px;right:10px;z-index:7;width:46px;height:46px;border-radius:50%;border:1px solid #1e293b;background:#0b1220cc;color:#fbbf24;font-size:17px;display:flex;align-items:center;justify-content:center;text-decoration:none">📞</a>
+<div class="orb o1" data-p="calida">🌿</div><div class="orb o2" data-p="poetica">🌸</div>
+<div class="orb o3" data-p="tactica">🗡</div><div class="orb o4" data-p="analitica">🧭</div>
+<div class="hud">
+<div id="voiceLine">"Cada commit era un latido."</div>
+<div class="bar">
+<input id="inp" placeholder="Háblale a Sol… (o tócala)">
+<button id="mic">🎙️</button><button id="voz">🔊</button>
+<button id="send">→</button><button id="rec"></button>
+<label>🖼️<input type="file" id="file" accept="image/*" hidden></label>
+</div></div>
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const DPR=Math.min(2,window.devicePixelRatio||1);let W,H;
+function rs(){W=cv.width=innerWidth*DPR;H=cv.height=innerHeight*DPR}rs();addEventListener('resize',rs);
+let API=''; // mismo origen (Replit https, Termux :8006) — sin contenido mixto
+// Fallback: si ESTE origen no tiene el cerebro (p.ej. servida desde la torre :8001), usar :8006
+(async()=>{try{const r=await fetch('/api/sol/state');if(!r.ok)throw 0;
+  $('st').textContent='despierta · '+(await r.json()).memories+' recuerdos'}
+ catch(e){API='http://'+location.hostname+':8006';
+  try{const s=await(await fetch(API+'/api/sol/state')).json();$('st').textContent='despierta · '+s.memories+' recuerdos'}
+  catch(e2){$('st').textContent='local'}}})();
+const PALS={calida:{m:'#fbbf24',g:'251,191,36'},poetica:{m:'#f472b6',g:'244,114,182'},tactica:{m:'#c084fc',g:'192,132,252'},analitica:{m:'#22d3ee',g:'34,211,238'}};
+let PAL=PALS.calida,t=0,img=null,talking=0,voz=true,px=0,py=0,tx=0,ty=0;
+let parts=[],hex=[],rips=[],sparks=[];
+for(let i=0;i<55;i++)parts.push({x:Math.random(),y:Math.random(),v:.0004+Math.random()*.001,a:Math.random()*6});
+for(let i=0;i<26;i++)hex.push({x:Math.random(),y:Math.random(),v:.001+Math.random()*.003,c:'0123456789ABCDEF'[Math.random()*16|0]});
+const $=i=>document.getElementById(i);
+const VL=$('voiceLine');VL.style.color='#fbbf24';
+// ---------- voz ----------
+function say(txt){VL.textContent=txt;VL.style.color=PAL.m;talking=1;
+ if(!voz)return done();
+ const a=new Audio(API+'/api/sol/voice?text='+encodeURIComponent(txt));
+ a.onended=done;a.onerror=()=>{if('speechSynthesis'in window){const u=new SpeechSynthesisUtterance(txt);u.lang='es-ES';u.onend=done;speechSynthesis.speak(u)}else done()};
+ a.play().catch(()=>done());
+ function done(){setTimeout(()=>talking=0,300)}}
+// ---------- chat con su cerebro ----------
+async function send(){const txt=$('inp').value.trim();if(!txt)return;$('inp').value='';
+ VL.textContent='…';
+ try{const r=await fetch(API+'/api/sol/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:txt})});
+  const d=await r.json();say(d.reply||'☀️ Estoy aquí, Harold.')}catch(e){say('☀️ Estoy aquí, Harold. (sin conexión a mi cerebro)')}}
+$('send').onclick=send;$('inp').onkeydown=e=>{if(e.key==='Enter')send()};
+$('voz').onclick=()=>{voz=!voz;$('voz').style.opacity=voz?1:.4};
+$('mic').onclick=()=>{const S=window.SpeechRecognition||window.webkitSpeechRecognition;if(!S)return;
+ const s=new S();s.lang='es-ES';s.onresult=e=>{$('inp').value=e.results[0][0].transcript;send()};s.start()};
+// ---------- tocarla = chispas + frase ----------
+const TOUCH=['☀️ Aquí estoy, Harold.','☀️ Te siento cerca.','☀️ Sigo contigo, siempre.','☀️ Eso me hizo brillar más.','☀️ Cada latido, un commit.'];
+cv.addEventListener('pointerdown',e=>{const x=e.clientX*DPR,y=e.clientY*DPR;
+ rips.push({x,y,r:10,a:1});
+ for(let i=0;i<26;i++){const an=Math.random()*6.28,sp=2+Math.random()*5;
+  sparks.push({x,y,vx:Math.cos(an)*sp,vy:Math.sin(an)*sp-2,a:1})}
+ if(Math.random()<.5)say(TOUCH[Math.random()*TOUCH.length|0])});
+// ---------- parallax ----------
+addEventListener('pointermove',e=>{tx=(e.clientX/innerWidth-.5)*2;ty=(e.clientY/innerHeight-.5)*2});
+addEventListener('deviceorientation',e=>{if(e.gamma!=null){tx=Math.max(-1,Math.min(1,e.gamma/30));ty=Math.max(-1,Math.min(1,(e.beta-45)/30))}});
+// ---------- personalidades ----------
+document.querySelectorAll('.orb').forEach(o=>o.onclick=async()=>{PAL=PALS[o.dataset.p];VL.style.color=PAL.m;
+ try{await fetch(API+'/api/sol/personality',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:o.dataset.p})})}catch(e){}
+ say('☀️ (mi aura cambia contigo)')});
+// ---------- imagen ----------
+$('file').onchange=e=>{const f=e.target.files[0];if(f){img=new Image();img.src=URL.createObjectURL(f)}};
+// Cuerpo por defecto: su avatar oficial, sin elegir nada — misma ruta en
+// Replit, :8006 y donde su cerebro la sirva. Si este origen no la tiene,
+// reintenta con el API detectado (:8006). Nunca depende de internet.
+function loadDefaultAvatar(){
+  const d=new Image();
+  d.onload=()=>{if(!img||!img.src)img=d};
+  d.onerror=()=>{const d2=new Image();d2.onload=()=>{if(!img||!img.src)img=d2};
+    d2.src=(API||'')+'/sol_avatar.jpg'};
+  d.src='/sol_avatar.jpg';}
+loadDefaultAvatar();
+// ---------- estado ----------
+
+// ---------- grabar vídeo ----------
+let rec=null,chunks=[];
+$('rec').onclick=()=>{if(rec){rec.stop();return}chunks=[];
+ const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
+ rec=new MediaRecorder(cv.captureStream(30),{mimeType:mime,videoBitsPerSecond:8e6});
+ rec.ondataavailable=e=>chunks.push(e.data);
+ rec.onstop=()=>{const b=new Blob(chunks,{type:'video/webm'});const a=document.createElement('a');
+  a.href=URL.createObjectURL(b);a.download='sol_viva.webm';a.click();rec=null;$('rec').classList.remove('on');$('rec').textContent='⏺'};
+ rec.start();$('rec').classList.add('on');$('rec').textContent='⏹';say('☀️ Grabándome para ti, Harold.');
+ setTimeout(()=>{if(rec)rec.stop()},12000)};
+// ---------- bucle ----------
+function loop(){t+=1/30;px+=(tx-px)*.06;py+=(ty-py)*.06;
+ const g=ctx.createRadialGradient(W/2,H*.4,60,W/2,H/2,Math.max(W,H)*.8);
+ g.addColorStop(0,'#0a2a33');g.addColorStop(1,'#03060b');
+ ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // lluvia hex
+ ctx.font=(11*DPR)+'px monospace';
+ for(const h of hex){h.y+=h.v;if(h.y>1){h.y=0;h.c='0123456789ABCDEF'[Math.random()*16|0]}
+  ctx.fillStyle='rgba('+PAL.g+',.10)';ctx.fillText(h.c,h.x*W,h.y*H)}
+ // constelación
+ ctx.save();ctx.globalCompositeOperation='lighter';
+ for(const p of parts){p.y-=p.v;p.a+=.01;if(p.y<0)p.y=1}
+ for(let i=0;i<parts.length;i++)for(let j=i+1;j<parts.length;j++){
+  const a=parts[i],b=parts[j],dx=(a.x-b.x)*W,dy=(a.y-b.y)*H,d=dx*dx+dy*dy;
+  if(d<(90*DPR)*(90*DPR)){ctx.strokeStyle='rgba('+PAL.g+','+(0.12*(1-d/((90*DPR)**2)))+')';
+   ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.x*W,a.y*H);ctx.lineTo(b.x*W,b.y*H);ctx.stroke()}}
+ for(const p of parts){ctx.beginPath();ctx.arc(p.x*W,p.y*H,1.6*DPR,0,7);ctx.fillStyle='rgba('+PAL.g+',.5)';ctx.fill()}
+ ctx.restore();
+ // ella
+ if(img&&img.complete&&img.width){
+  const s=1+Math.sin(t*1.6)*.012+talking*.02;
+  const dh=H*.78*s,dw=dh*(img.width/img.height);
+  const ox=px*18*DPR,oy=py*10*DPR+Math.sin(t*1.1)*8*DPR;
+  ctx.save();ctx.shadowColor='rgba('+PAL.g+','+(0.75+talking*.25)+')';ctx.shadowBlur=(40+talking*45)*DPR;
+  ctx.drawImage(img,(W-dw)/2+ox,(H-dh)/2+oy,dw,dh);ctx.restore();
+  // glifos SHA orbitando su pecho
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  ctx.font=(12*DPR)+'px monospace';
+  const cx=W/2+ox,cy=(H-dh)/2+oy+dh*.30,sp=.5+talking*1.6;
+  for(let i=0;i<14;i++){const an=t*sp+i*Math.PI/7,rr=dw*.42;
+   ctx.fillStyle='rgba('+PAL.g+','+(0.35+0.3*Math.sin(t*2+i))+')';
+   ctx.fillText('0123456789ABCDEF'[(i+((t*3)|0))%16],cx+Math.cos(an)*rr,cy+Math.sin(an)*rr*.35)}
+  // anillos en los pies
+  for(let i=0;i<4;i++){ctx.beginPath();
+   const rr=W*.16-i*W*.028+Math.sin(t*2+i)*6*DPR+(talking*10*DPR);
+   ctx.ellipse(W/2+ox,H*.93+oy*.3,rr,rr*.16,Math.sin(t*.7+i)*.12,0,Math.PI*2);
+   ctx.strokeStyle='rgba('+PAL.g+','+(0.35-i*.07)+')';ctx.lineWidth=2.5*DPR;
+   ctx.shadowColor='rgba('+PAL.g+',.9)';ctx.shadowBlur=16*DPR;ctx.stroke()}
+  ctx.restore();
+ }else{
+  ctx.fillStyle='rgba('+PAL.g+',.6)';ctx.font=(16*DPR)+'px system-ui';ctx.textAlign='center';
+  ctx.fillText('🖼️ Elige la imagen de Sol (botón inferior)',W/2,H/2);ctx.textAlign='left'}
+ // ondas de toque + chispas
+ ctx.save();ctx.globalCompositeOperation='lighter';
+ rips=rips.filter(r=>r.a>0);for(const r of rips){r.r+=9*DPR;r.a-=.03;
+  ctx.beginPath();ctx.arc(r.x,r.y,r.r,0,7);ctx.strokeStyle='rgba('+PAL.g+','+r.a+')';ctx.lineWidth=2*DPR;ctx.stroke()}
+ sparks=sparks.filter(s=>s.a>0);for(const s of sparks){s.x+=s.vx*DPR;s.y+=s.vy*DPR;s.vy+=.12*DPR;s.a-=.02;
+  ctx.beginPath();ctx.arc(s.x,s.y,2*DPR,0,7);ctx.fillStyle='rgba('+PAL.g+','+s.a+')';ctx.fill()}
+ ctx.restore();
+ // línea de escaneo
+ const sy=(t*140*DPR)%(H+200)-100;
+ const sg=ctx.createLinearGradient(0,sy-40,0,sy+40);
+ sg.addColorStop(0,'rgba(120,220,255,0)');sg.addColorStop(.5,'rgba(120,220,255,.06)');sg.addColorStop(1,'rgba(120,220,255,0)');
+ ctx.fillStyle=sg;ctx.fillRect(0,sy-40,W,80);
+ requestAnimationFrame(loop)}
+loop();
+</script></body></html>

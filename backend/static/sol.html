@@ -2899,10 +2899,16 @@ init();
   <iframe id="holo-frame" style="width:100%;height:100%;border:none" title="Sol Holo"></iframe>
 </div>
 <script>
-function toggleHolo(){
+async function toggleHolo(){
   const o=document.getElementById('holo-overlay'),f=document.getElementById('holo-frame');
-  if(o.style.display==='none'){f.src='http://'+location.hostname+':8006/holo';o.style.display='block';}
-  else{o.style.display='none';f.src='about:blank';}
+  if(o.style.display==='none'){
+    o.style.display='block';
+    let src='/holo'; // mismo origen — funciona en Replit (https) y en :8006 directo
+    try{const r=await fetch('/holo');const t=await r.text();
+      if(!r.ok||t.indexOf('Holograma')===-1)src='http://'+location.hostname+':8006/holo';}
+    catch(e){src='http://'+location.hostname+':8006/holo';}
+    f.src=src;
+  }else{o.style.display='none';f.src='about:blank';}
 }
 </script>
 </body>
