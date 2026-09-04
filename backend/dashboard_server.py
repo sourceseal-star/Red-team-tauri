@@ -3350,19 +3350,32 @@ async def sol_avatar_full():
         return FileResponse(_SOL_AVATAR_FULL_PATH, media_type="image/png", headers=_NO_CACHE_HEADERS)
     raise HTTPException(404, "Avatar full no encontrado en backend/static/sol_avatar_full.png")
 
+_SOL_AVATAR_FULL_TALK_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_full_talk.png")
+_SOL_AVATAR_FULL_TALK_HALF_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_full_talk_half.png")
+_SOL_AVATAR_FULL_BLINK_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar_full_blink.png")
+
+def _serve_full_frame(path, label):
+    """Sirve el frame de cuerpo completo si existe; si no, la imagen base
+    (sin 404 silencioso, sin caer al busto)."""
+    if os.path.isfile(path):
+        return FileResponse(path, media_type="image/png", headers=_NO_CACHE_HEADERS)
+    if os.path.isfile(_SOL_AVATAR_FULL_PATH):
+        return FileResponse(_SOL_AVATAR_FULL_PATH, media_type="image/png", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, f"Avatar {label} no encontrado")
+
 @app.get("/sol_avatar_full_talk.png")
 async def sol_avatar_full_talk():
-    """Sin frames propios de boca en cuerpo completo aun — sirve la misma
-    imagen (sin 404 silencioso, sin caer al busto)."""
-    return await sol_avatar_full()
+    """Frame real de boca abierta en cuerpo completo (commit aeeb72a) —
+    antes existia el archivo pero ninguna ruta lo servia."""
+    return _serve_full_frame(_SOL_AVATAR_FULL_TALK_PATH, "full_talk")
 
 @app.get("/sol_avatar_full_talk_half.png")
 async def sol_avatar_full_talk_half():
-    return await sol_avatar_full()
+    return _serve_full_frame(_SOL_AVATAR_FULL_TALK_HALF_PATH, "full_talk_half")
 
 @app.get("/sol_avatar_full_blink.png")
 async def sol_avatar_full_blink():
-    return await sol_avatar_full()
+    return _serve_full_frame(_SOL_AVATAR_FULL_BLINK_PATH, "full_blink")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SOL API PROXY — la UI incrustada (iframe FloatingSol / War Room → /sol.html)
