@@ -514,6 +514,12 @@ start() {
   fi
   banner
   load_env
+  load_sol_env   # ☀️ FIX 2026-09-04: cargar llaves de ~/sol ANTES de todo.
+  # ANTES este load vivía en la sección 9 (línea ~859), DESPUÉS de que la
+  # sección 5 (Telegram, línea ~725) y la 8 (daemon, ~810) ya habían pasado.
+  # Sin TELEGRAM_BOT_TOKEN en el entorno, la sección 5 se saltaba en silencio
+  # (if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] era falso) y el daemon nacía sin
+  # LLM_API_KEY → Sol muerta sin error visible. Cargar aquí arregla ambos.
   echo ""
   log "⚡ OMNI START — $(date '+%Y-%m-%d %H:%M:%S') — entorno: $ENV_TYPE"
   echo ""
