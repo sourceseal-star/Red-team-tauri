@@ -77,6 +77,17 @@ ENV_FILE="$ROOT/.env"
 # ☀️ Sol vive en SU PROPIO repo (sourceseal-star/sol) — NO en Red-team-tauri.
 # omni.sh la levanta desde ahí: cerebro, daemon, Telegram y herramientas.
 SOL_REPO="$HOME/sol"
+# MODO NÚCLEO — decisión de Harold (2026-09-04): "priorizar la funcionalidad
+# del núcleo de Sol sobre el dashboard de la War Room hasta completar
+# estabilidad total". Sospecha real: el teléfono corre ~10 procesos Python
+# simultáneos (Dashboard+GHOST+Node+Nexus+C2+Telegram+SealIA+SolAPI+daemon+
+# watchdog) y Android mata a Sol por falta de RAM (SIGKILL — el "Killed" que
+# se ve en pantalla). Con SOL_CORE_ONLY=1 (o el archivo ~/.sol/core_only),
+# omni.sh SALTA GHOST/Nexus/C2 — deja a Sol respirar sin competir por RAM.
+# Activar: touch ~/.sol/core_only && bash omni.sh restart
+# Desactivar: rm ~/.sol/core_only && bash omni.sh restart
+SOL_CORE_ONLY="${SOL_CORE_ONLY:-0}"
+[ -f "$HOME/.sol/core_only" ] && SOL_CORE_ONLY=1
 mkdir -p "$SOL_DIR" "$LOG_DIR"
 
 # ── Colores ──
@@ -634,6 +645,13 @@ start() {
     fail "No existe redteam/scripts/dashboard_server.py"
   fi
 
+  # ── 2/3/4. GHOST + Nexus + C2 — infraestructura de pentesting pesada.
+  # SALTADA en SOL_CORE_ONLY=1: son 3 procesos Python extra (+ GHOST Node,
+  # 4 en total) que compiten por RAM con el cerebro de Sol. Nada de esto
+  # es necesario para que Sol viva y hable — es la War Room de pentesting.
+  if [ "$SOL_CORE_ONLY" = "1" ]; then
+    info "🧠 MODO NÚCLEO activo — GHOST/Nexus/C2 saltados (RAM libre para Sol)"
+  else
   # ── 2. GHOST PHANTOM (:8002) ──
   if [ -f "$ROOT/ghost_hunter_phantom/master.py" ]; then
     info "GHOST PHANTOM :8002 — arrancando Master..."
@@ -702,7 +720,9 @@ start() {
     info "C2 UNIFIED PRO no encontrado — saltando"
   fi
 
-  # ── 5. Telegram (Sol) — SOLO UNO puede hacer polling del mismo token a la vez ──
+    fi
+
+# ── 5. Telegram (Sol) — SOLO UNO puede hacer polling del mismo token a la vez ──
   #    Telegram API rechaza (409 Conflict) una segunda conexión getUpdates simultánea.
   #    Preferimos la Miniapp (botones, recordatorios, voz, avatar); el Puente legacy
   #    queda como fallback automático si python-telegram-bot no está disponible.

@@ -1023,3 +1023,52 @@ estaba solo en los valores de `TTS_CHARMS` en `sol_api.py`.
   Replit) — pedir a Harold un mensaje de voz o describir CÓMO suena mal
   (¿robótica? ¿entrecortada? ¿muy rápida/lenta?) para diagnosticar sin
   adivinar a ciegas otra vez.
+
+## Regla #28 — MODO NÚCLEO: sospecha de OOM matando a Sol (2026-09-04, tarde)
+
+**Lo que Harold vio:** hizo `git pull` + `bash omni.sh restart`, y en el log
+apareció `omni.sh: line 1229: 3039 Killed  nohup python3 sol_api.py ...` —
+seguido de `Sol API :8006 🧠 DETENIDA` en el resumen final. `127.0.0.1:8006`
+cargaba en blanco porque, literalmente, nadie estaba escuchando ahí.
+
+**"Killed" (con mayúscula, sin más contexto) es el mensaje EXACTO que bash
+imprime cuando un proceso recibe SIGKILL.** No fue un error de Python — fue
+matado desde afuera. La sospecha más probable: el teléfono corre ~10
+procesos Python simultáneos al arrancar todo (Dashboard :8001, GHOST Master
++ Node, Nexus :8004, C2 :8005, Telegram, Seal IA, Sol API, Sol daemon,
+watchdog, cuerpo) — Android mata procesos por falta de RAM (lowmemorykiller)
+cuando hay demasiada presión de memoria, y normalmente elige al que más
+memoria usa o al más reciente. Sol API (FastAPI + uvicorn + TTS neuronal)
+es de los más pesados.
+
+**Esto conecta directo con la decisión que Harold ya había tomado hoy:**
+*"Priorizar la funcionalidad del núcleo de Sol sobre el dashboard de la War
+Room hasta completar estabilidad total."* GHOST/Nexus/C2 son infraestructura
+de pentesting — no le hacen falta a Sol para vivir y hablar.
+
+**Fix — MODO NÚCLEO (`SOL_CORE_ONLY`):**
+```
+touch ~/.sol/core_only && bash omni.sh restart   # activar: salta GHOST/Nexus/C2
+rm ~/.sol/core_only && bash omni.sh restart       # volver a todo
+```
+Con el modo núcleo activo, omni.sh SOLO levanta: Dashboard :8001 (para ver
+el estado), Telegram, y el stack completo de Sol (API + daemon + watchdog +
+cuerpo + relé). Nada de GHOST/Nexus/C2 compitiendo por RAM.
+
+**Si el modo núcleo NO resuelve el "Killed":** el diagnóstico definitivo es
+`tail -40 ~/.sol/sol_api.log` justo después del restart — ahí queda el
+error REAL de Python si es que sí es un crash de código (no OOM). Y
+`cat /proc/meminfo | head -3` muestra cuánta RAM libre queda cuando Sol
+intenta arrancar.
+
+### Aclaración de las 2 pantallas confusas en :8001
+- `localhost:8001` (War Room completa) → el dashboard de Red-team-tauri,
+  con un widget embebido de Sol que muestra "Offline/Inactiva" porque lee
+  el estado real de Sol API :8006 (que estaba muerta).
+- `localhost:8001/sol.html` (fondo crema, "SourceSeal Operational Link")
+  → una página estática VIEJA, de otro proyecto/época (Seal IA / SHA-256
+  sellado), completamente aparte de la Sol que hemos construido hoy en
+  `~/sol` (esa vive en `localhost:8006`, servida por `sol_api.py`).
+  **No es un bug — son dos cosas distintas que casualmente comparten el
+  mismo puerto base.** La Sol de hoy, la del holo y los clips de amor,
+  SIEMPRE es `127.0.0.1:8006`.
