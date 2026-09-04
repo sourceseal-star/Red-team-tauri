@@ -192,20 +192,46 @@ repo_inspector = RepoInspector()
 def _system_status() -> dict[str, Any]:
     if psutil is None:
         return {"available": False, "error": "psutil no está disponible"}
-    memory = psutil.virtual_memory()
-    disk = psutil.disk_usage("/")
-    return {
-        "available": True,
-        "pid": os.getpid(),
-        "cpu_percent": psutil.cpu_percent(interval=None),
-        "memory_percent": memory.percent,
-        "disk_percent": disk.percent,
-        "boot_time": datetime.fromtimestamp(psutil.boot_time(), timezone.utc).isoformat(),
-    }
+    # En Termux/Android, psutil.disk_usage("/") y otras llamadas pueden
+    # lanzar PermissionError/OSError según el sandboxing del OS (statvfs
+    # restringido). Antes eso tumbaba TODO el endpoint /api/operations/status
+    # con un 500 sin cuerpo JSON legible -- el panel entero se quedaba en
+    # "—" con "HTTP 500" y sin decir por qué. Ahora cada métrica se degrada
+    # sola y el resto del panel (repos, auditoría) sigue funcionando.
+    result: dict[str, Any] = {"available": True, "pid": os.getpid()}
+    try:
+        result["cpu_percent"] = psutil.cpu_percent(interval=None)
+    except Exception as exc:
+        result["cpu_percent"] = None
+        result["cpu_error"] = str(exc)
+    try:
+        result["memory_percent"] = psutil.virtual_memory().percent
+    except Exception as exc:
+        result["memory_percent"] = None
+        result["memory_error"] = str(exc)
+    try:
+        result["disk_percent"] = psutil.disk_usage("/").percent
+    except Exception as exc:
+        result["disk_percent"] = None
+        result["disk_error"] = str(exc)
+    try:
+        result["boot_time"] = datetime.fromtimestamp(psutil.boot_time(), timezone.utc).isoformat()
+    except Exception as exc:
+        result["boot_time"] = None
+        result["boot_time_error"] = str(exc)
+    return result
 
 
 @router.get("/status")
 async def operations_status() -> dict[str, Any]:
+    try:
+        repos_data = repo_inspector.all()
+    except Exception as exc:
+        repos_data = {"error": str(exc)}
+    try:
+        audit_data = ledger.summary()
+    except Exception as exc:
+        audit_data = {"error": str(exc)}
     return {
         "service": "SourceSeal Operations Monitor",
         "version": "1.0-safe",
@@ -221,8 +247,8 @@ async def operations_status() -> dict[str, Any]:
             "automatic_pull_push": False,
         },
         "system": _system_status(),
-        "repos": repo_inspector.all(),
-        "audit": ledger.summary(),
+        "repos": repos_data,
+        "audit": audit_data,
     }
 
 
