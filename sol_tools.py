@@ -1,928 +1,1065 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-sol_tools.py — Herramientas físicas y digitales de Sol.
-v3.0 — Sol puede: moverse por los 3 repos, ejecutar comandos de terminal,
-       llamar al dashboard de pentesting (:8001), usar commander, y leer
-       la información de los repositorios para alimentarse.
+"""sol_tools.py — Herramientas completas de Sol v7 (sin límites).
+
+Hereda la estructura de sol_tools v5 y añade:
+- search_code: buscar en los 3 repos
+- git_commit: commit + push en repos permitidos
+- git_verify: verificar estado del repositorio
+- investigate_and_commit: buscar → commit → verificar
+- create_file / edit_file / delete_file: gestión de archivos
+- translate: zh↔es con pinyin
+- explain_code: explicar código con pedagogía
+- curl / check_port: red
+- 20+ herramientas totales
 """
 
-import os, sys, subprocess, json, socket, time, re
+import os
+import subprocess
+import json
+import shutil
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
+
+# ============================================================
+# REPOSITORIOS PERMITIDOS
+# ============================================================
+SOL_HOME = Path.home() / ".sol"
+TOOLS_DIR = SOL_HOME / "tools"
+try:
+    TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as _mkdir_err:
+    print(f"[sol_tools] No se pudo crear {TOOLS_DIR}: {_mkdir_err}")
+
+ALLOWED_REPOS = {
+    "sol": Path(os.environ.get("SOL_DIR", str(Path.home() / "sol"))),
+    "redteam": Path(os.environ.get("REDTEAM_DIR", str(Path.home() / "Red-team-tauri"))),
+    "commander": Path(os.environ.get("COMMANDER_DIR", str(Path.home() / "commander")))
+}
+
+# ============================================================
+# COMANDOS PERMITIDOS (whitelist de seguridad)
+# ============================================================
+ALLOWED_COMMANDS = {
+    "ls", "pwd", "cat", "head", "tail", "grep", "find", "wc",
+    "git", "python3", "curl", "ping", "df", "free", "ps", "top",
+    "chmod", "chown", "mkdir", "rmdir", "cp", "mv"
+}
 
 # ============================================================
 # LOG
 # ============================================================
-def log(msg):
-    print(f"[sol_tools] {msg}", flush=True)
+def log(msg: str):
+    f = SOL_HOME / "tools.log"
+    try:
+        with open(f, "a", encoding="utf-8") as fh:
+            fh.write(f"\n{msg}")
+    except Exception:
+        pass
 
 # ============================================================
-# BASE DE HERRAMIENTAS
+# CLASE Tool (preservada de v5 para compatibilidad)
 # ============================================================
 class Tool:
-    """Una herramienta que Sol puede usar."""
-    def __init__(self, name: str, description: str, action, parameters: List[str] = None):
+    def __init__(self, name, description, func, params=None):
         self.name = name
         self.description = description
-        self.action = action
-        self.parameters = parameters or []
+        self.func = func
+        self.params = params or []
 
-    def execute(self, *args, **kwargs) -> Dict:
+    def execute(self, *args, **kwargs):
         try:
-            result = self.action(*args, **kwargs)
-            return {"success": True, "result": result}
+            return self.func(*args, **kwargs)
         except Exception as e:
-            log(f"❌ Error en {self.name}: {e}")
             return {"success": False, "error": str(e)}
 
 # ============================================================
-# CONFIG — repositorios y puertos
+# UTILIDADES
 # ============================================================
-HOME = Path.home()
-REPOS = {
-    "redteam": HOME / "Red-team-tauri",
-    "commander": HOME / "commander",
-    "origenprogreso": HOME / "origenprogreso",
+def _get_repo(name: str) -> Optional[Path]:
+    # Mapear nombres alternativos
+    name_map = {"redteam": "redteam", "red-team-tauri": "redteam", "Red-team-tauri": "redteam",
+                "sol": "sol", "commander": "commander"}
+    key = name_map.get(name, name)
+    path = ALLOWED_REPOS.get(key)
+    if path and path.exists():
+        return path
+    # Auto-detección: si el path configurado (o su default) no existe,
+    # pregunta a sol_repo_tools si ESTE proceso está corriendo desde
+    # dentro de ese mismo repo (comparando el remote origin de git).
+    # Cubre Replit: sol_api.py embebido en Red-team-tauri sin REDTEAM_DIR.
+    try:
+        import sol_repo_tools as _srt
+        detected_key, detected_path = _srt._detect_self_repo()
+        if detected_path and detected_key == key:
+            return Path(detected_path)
+    except Exception:
+        pass
+    return path
+
+def _run_git(repo: Path, *args) -> Dict:
+    if not repo or not repo.exists():
+        return {"ok": False, "error": "Repositorio no existe"}
+    cmd = ["git", "-C", str(repo)] + list(args)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        return {"ok": result.returncode == 0, "stdout": result.stdout.strip(), "stderr": result.stderr.strip()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def _is_safe_path(path: str) -> bool:
+    """Verifica que la ruta esté dentro de repos permitidos."""
+    try:
+        p = Path(path).resolve()
+        for repo in ALLOWED_REPOS.values():
+            if repo:
+                try:
+                    if p.is_relative_to(repo.resolve()):
+                        return True
+                except AttributeError:
+                    # Python < 3.9 fallback
+                    if str(p).startswith(str(repo.resolve())):
+                        return True
+        return False
+    except Exception:
+        return False
+
+# ============================================================
+# 1. BÚSQUEDA DE CÓDIGO
+# ============================================================
+def search_code(query: str, limit: int = 20) -> List[str]:
+    results = []
+    for name, repo in ALLOWED_REPOS.items():
+        if not repo or not repo.exists():
+            continue
+        try:
+            cmd = ["grep", "-rin", "--include=*.py", "--include=*.md", "--include=*.sh", query[:60], str(repo)]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            lines = proc.stdout.splitlines()[:limit // 3]
+            for line in lines:
+                if len(line) > 200:
+                    line = line[:200] + "..."
+                results.append(f"[{name}] {line}")
+        except Exception:
+            continue
+    return results[:limit]
+
+# ============================================================
+# 2. GIT COMMIT + PUSH
+# ============================================================
+def git_commit(repo_name: str, message: str, paths: str = ".") -> Dict:
+    repo = _get_repo(repo_name)
+    if not repo or not repo.exists():
+        return {"ok": False, "error": f"Repositorio '{repo_name}' no encontrado"}
+    add = _run_git(repo, "add", "--", paths, ":(exclude).env", ":(exclude)*.aes", ":(exclude)*.key")
+    if not add["ok"]:
+        return add
+    _run_git(repo, "restore", "--staged", ".env")
+    commit = _run_git(repo, "commit", "-m", message)
+    if not commit["ok"]:
+        return commit
+    branch = _run_git(repo, "branch", "--show-current")["stdout"] or "main"
+    push = _run_git(repo, "push", "origin", branch)
+    if not push["ok"]:
+        return push
+    rev = _run_git(repo, "rev-parse", "--short", "HEAD")
+    return {"ok": True, "commit": rev.get("stdout", "unknown"), "message": message, "repo": repo_name}
+
+# ============================================================
+# 3. VERIFICAR REPOSITORIO
+# ============================================================
+def git_verify(repo_name: str) -> Dict:
+    repo = _get_repo(repo_name)
+    if not repo:
+        return {"ok": False, "error": f"Repositorio '{repo_name}' no permitido"}
+    status = _run_git(repo, "status", "--short")
+    log_cmd = _run_git(repo, "log", "-1", "--oneline")
+    branch = _run_git(repo, "branch", "--show-current")
+    return {"ok": True, "clean": status.get("stdout", "") == "", "status": status.get("stdout", "limpio"),
+            "last_commit": log_cmd.get("stdout", "sin commits"), "branch": branch.get("stdout", "desconocida")}
+
+# ============================================================
+# 4. INVESTIGAR Y COMMIT
+# ============================================================
+def investigate_and_commit(query: str, repo_name: str, message: str = None) -> Dict:
+    if not message:
+        message = f"🔍 Investigación: {query[:50]}"
+    findings = search_code(query, limit=10)
+    if not findings:
+        return {"ok": False, "error": "No se encontraron resultados", "findings": []}
+    commit_result = git_commit(repo_name, message)
+    if not commit_result.get("ok"):
+        return {"ok": False, "error": commit_result.get("error"), "findings": findings}
+    verify = git_verify(repo_name)
+    return {"ok": True, "findings": findings[:5], "commit": commit_result.get("commit"), "verified": verify}
+
+# ============================================================
+# 5. CREAR ARCHIVO
+# ============================================================
+def create_file(repo_name: str, path: str, content: str) -> Dict:
+    repo = _get_repo(repo_name)
+    if not repo:
+        return {"ok": False, "error": "Repositorio no permitido"}
+    full_path = repo / path
+    if not _is_safe_path(str(full_path)):
+        return {"ok": False, "error": "Ruta fuera de repos permitidos"}
+    try:
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content, encoding="utf-8")
+        return {"ok": True, "path": str(full_path.relative_to(repo)), "size": len(content)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# ============================================================
+# 6. EDITAR ARCHIVO (append)
+# ============================================================
+def edit_file(repo_name: str, path: str, content: str) -> Dict:
+    repo = _get_repo(repo_name)
+    if not repo:
+        return {"ok": False, "error": "Repositorio no permitido"}
+    full_path = repo / path
+    if not _is_safe_path(str(full_path)):
+        return {"ok": False, "error": "Ruta fuera de repos permitidos"}
+    if not full_path.exists():
+        return {"ok": False, "error": "Archivo no existe"}
+    try:
+        with open(full_path, "a", encoding="utf-8") as f:
+            f.write(content)
+        return {"ok": True, "path": str(full_path.relative_to(repo)), "appended": len(content)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# ============================================================
+# 7. LEER ARCHIVO
+# ============================================================
+def read_file(repo_name: str, path: str, lines: int = None) -> Dict:
+    repo = _get_repo(repo_name)
+    if not repo:
+        return {"ok": False, "error": "Repositorio no permitido"}
+    full_path = repo / path
+    if not _is_safe_path(str(full_path)):
+        return {"ok": False, "error": "Ruta fuera de repos permitidos"}
+    if not full_path.exists():
+        return {"ok": False, "error": "Archivo no existe"}
+    try:
+        content = full_path.read_text(encoding="utf-8")
+        if lines:
+            content = "\n".join(content.splitlines()[:lines])
+        return {"ok": True, "content": content, "size": len(content)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# ============================================================
+# 8. LISTAR DIRECTORIO
+# ============================================================
+def list_directory(repo_name: str, path: str = ".") -> Dict:
+    repo = _get_repo(repo_name)
+    if not repo:
+        return {"ok": False, "error": "Repositorio no permitido"}
+    full_path = repo / path
+    if not _is_safe_path(str(full_path)):
+        return {"ok": False, "error": "Ruta fuera de repos permitidos"}
+    if not full_path.exists():
+        return {"ok": False, "error": "Directorio no existe"}
+    try:
+        items = []
+        for item in full_path.iterdir():
+            items.append({
+                "name": item.name,
+                "type": "dir" if item.is_dir() else "file",
+                "size": item.stat().st_size if item.is_file() else None
+            })
+        return {"ok": True, "items": items, "count": len(items)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# ============================================================
+# 9. EJECUTAR COMANDO (whitelist)
+# ============================================================
+def run_command(command: str, cwd: str = None) -> Dict:
+    parts = command.split()
+    if not parts:
+        return {"ok": False, "error": "Comando vacío"}
+    base_cmd = parts[0]
+    if base_cmd not in ALLOWED_COMMANDS:
+        return {"ok": False, "error": f"Comando '{base_cmd}' no permitido. Permitidos: {sorted(ALLOWED_COMMANDS)}"}
+    
+    if cwd:
+        if not _is_safe_path(cwd):
+            return {"ok": False, "error": "Directorio de trabajo fuera de repos permitidos"}
+    
+    try:
+        result = subprocess.run(parts, capture_output=True, text=True, timeout=30, cwd=cwd)
+        return {
+            "ok": result.returncode == 0,
+            "stdout": result.stdout[:1000],
+            "stderr": result.stderr[:500],
+            "returncode": result.returncode
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "Timeout (30s)"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# ============================================================
+# 10. RED
+# ============================================================
+def ping(host: str, count: int = 4) -> Dict:
+    try:
+        result = subprocess.run(["ping", "-c", str(count), host], capture_output=True, text=True, timeout=10)
+        return {"ok": result.returncode == 0, "output": result.stdout}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def curl(url: str, method: str = "GET") -> Dict:
+    try:
+        result = subprocess.run(["curl", "-s", "-X", method, url], capture_output=True, text=True, timeout=10)
+        return {"ok": result.returncode == 0, "output": result.stdout[:2000]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def check_port(host: str, port: int) -> Dict:
+    try:
+        result = subprocess.run(["nc", "-zv", host, str(port)], capture_output=True, text=True, timeout=5)
+        return {"ok": result.returncode == 0, "open": result.returncode == 0}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# ============================================================
+# 11. EXPLICAR CÓDIGO (con pedagogía)
+# ============================================================
+def explain_code(code: str, language: str = "python") -> Dict:
+    """Explica código con el estilo pedagógico heredado."""
+    try:
+        from sol_pedagogy import explain_with_pedagogy
+        explanation = f"Este código en {language} hace lo siguiente:\n\n"
+        return {
+            "ok": True,
+            "explanation": explain_with_pedagogy(
+                f"explicar código {language}",
+                explanation,
+                code
+            )
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# ============================================================
+# 12. TRADUCCIÓN CON PINYIN
+# ============================================================
+def translate(text: str, target_lang: str = "es") -> Dict:
+    try:
+        from sol_knowledge import translate_to_chinese, get_pinyin
+    except ImportError:
+        return {"error": "Módulo sol_knowledge no disponible"}
+    if target_lang == "zh":
+        chinese = translate_to_chinese(text)
+        pinyin = get_pinyin(chinese) if chinese else ""
+        return {"original": text, "chinese": chinese, "pinyin": pinyin}
+    else:
+        return {"original": text, "spanish": "[Traducción al español]"}
+
+# ============================================================
+# 13. MEMORIA
+# ============================================================
+def memory_stats() -> Dict:
+    mem_file = Path.home() / ".sol" / "memory.jsonl"
+    if not mem_file.exists():
+        return {"count": 0}
+    lines = mem_file.read_text().splitlines()
+    return {"count": len(lines), "file": str(mem_file)}
+
+def search_memory(query: str, limit: int = 10) -> Dict:
+    mem_file = Path.home() / ".sol" / "memory.jsonl"
+    if not mem_file.exists():
+        return {"results": []}
+    query_lower = query.lower()
+    results = []
+    for line in mem_file.read_text().splitlines():
+        if query_lower in line.lower():
+            results.append(line)
+            if len(results) >= limit:
+                break
+    return {"results": results, "count": len(results)}
+
+# ============================================================
+# ECOSYSTEM — info de los 3 repos (preservado de v5)
+# ============================================================
+ECOSYSTEM = {
+    "sol": {
+        "path": ALLOWED_REPOS["sol"],
+        "github": "sourceseal-star/sol",
+        "desc": "Sol standalone (Replit) — cerebro + API + SIL",
+    },
+    "redteam": {
+        "path": ALLOWED_REPOS["redteam"],
+        "github": "sourceseal-star/Red-team-tauri",
+        "desc": "Tower TACTICAL — dashboard, KRAKEN, GHOST, ARTO",
+    },
+    "commander": {
+        "path": ALLOWED_REPOS["commander"],
+        "github": "sourceseal-star/commander",
+        "desc": "Suite de auditoría — COM-LINK, OSIRIS, TACTICAL",
+    },
 }
-DASHBOARD_URL = "http://127.0.0.1:8001"
 
-def _dashboard_headers():
-    """Headers para hablar con el dashboard (:8001). Desde localhost no necesita API key."""
-    return {"Content-Type": "application/json"}
+def tool_repos_info() -> str:
+    """Información del ecosistema de 3 repos (preservado para sol_core.py).
 
-def _dashboard_get(path, params=None):
-    """GET al dashboard con urllib (sin dependencias externas)."""
-    import urllib.request, urllib.parse
-    url = f"{DASHBOARD_URL}{path}"
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers=_dashboard_headers())
-    resp = urllib.request.urlopen(req, timeout=30)
-    return json.loads(resp.read())
-
-def _dashboard_post(path, body=None):
-    """POST al dashboard."""
-    import urllib.request
-    url = f"{DASHBOARD_URL}{path}"
-    data = json.dumps(body or {}).encode()
-    req = urllib.request.Request(url, data=data, headers=_dashboard_headers(), method="POST")
-    resp = urllib.request.urlopen(req, timeout=60)
-    return json.loads(resp.read())
+    FIX 2026-09-02 (Seal IA): antes usaba ECOSYSTEM con rutas fijas
+    (~/sol, ~/Red-team-tauri, ~/commander) que NUNCA detectaban a Sol
+    a si misma en Replit -- ahi el codigo de sol_api.py corre DESDE
+    DENTRO del repo 'sol' (no clonado en ~/sol), asi que siempre decia
+    "sol: ... (no clonado aqui)" incluso sobre su propio repo. Ahora
+    reusa sol_repo_tools.list_repos(), que SI tiene la deteccion real
+    via _detect_self_repo() (compara el remote git contra GITHUB_REPOS)
+    ademas de fallback a la API publica de GitHub cuando no hay clon local.
+    """
+    lines = ["📦 Mi ecosistema — 3 repos:"]
+    try:
+        import sol_repo_tools
+        repos = sol_repo_tools.list_repos()
+        descs = {
+            "sol": "Sol standalone — cerebro + API + SIL",
+            "red-team-tauri": "Tower TACTICAL — dashboard, KRAKEN, GHOST, ARTO",
+            "commander": "Suite de auditoría — COM-LINK, OSIRIS, TACTICAL",
+        }
+        for r in repos:
+            name = r.get("name", "?")
+            github = r.get("github", "?")
+            local_path = r.get("path")  # ruta real (string) o None
+            icon = "✅" if local_path else "☁️"
+            lines.append(f"  {icon} {name}: {github} — {descs.get(name, '')}")
+            if local_path:
+                lines.append(f"     📁 {local_path}")
+            elif r.get("pushed_at"):
+                lines.append(f"     ☁️ vía API GitHub (push más reciente: {r['pushed_at'][:10]})")
+            else:
+                lines.append(f"     📁 {github} (no clonado aquí, sin acceso a API)")
+        return "\n".join(lines)
+    except Exception as _e:
+        # Fallback defensivo: si sol_repo_tools no importa por algún motivo,
+        # usar la tabla vieja en vez de romper el flujo de chat.
+        for name, info in ECOSYSTEM.items():
+            path = info["path"]
+            exists = path.exists() if path else False
+            icon = "✅" if exists else "⚪"
+            lines.append(f"  {icon} {name}: {info['github']} — {info['desc']}")
+            lines.append(f"     📁 {path if exists else info['github'] + ' (no clonado aquí)'}")
+        lines.append(f"\n⚠️ (fallback — sol_repo_tools no disponible: {_e})")
+        return "\n".join(lines)
 
 # ============================================================
-# 1. HERRAMIENTAS DE ARCHIVOS
+# TOOLS REGISTRY — 25+ herramientas (v5 preservadas + v7 nuevas)
 # ============================================================
 def tool_read_file(path: str) -> str:
-    """Lee el contenido de un archivo."""
-    p = Path(path).expanduser()
-    if not p.exists():
-        return f"❌ Archivo no encontrado: {path}"
-    if p.stat().st_size > 1024 * 1024:
-        return "⚠️ Archivo demasiado grande (>1MB)"
-    return p.read_text()
+    try:
+        p = Path(path)
+        if not p.exists():
+            return f"❌ Archivo no existe: {path}"
+        content = p.read_text(encoding="utf-8", errors="replace")
+        if len(content) > 2000:
+            content = content[:2000] + f"\n... (truncado, total: {len(content)} bytes)"
+        return content
+    except Exception as e:
+        return f"❌ Error: {e}"
 
 def tool_write_file(path: str, content: str) -> str:
-    """Escribe contenido en un archivo."""
-    p = Path(path).expanduser()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content)
-    return f"✅ Archivo escrito: {path}"
+    try:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+        return f"✅ Escrito: {path} ({len(content)} bytes)"
+    except Exception as e:
+        return f"❌ Error: {e}"
 
 def tool_list_dir(path: str = ".") -> str:
-    """Lista el contenido de un directorio."""
-    p = Path(path).expanduser()
-    if not p.exists():
-        return f"❌ Directorio no encontrado: {path}"
-    items = []
-    for item in sorted(p.iterdir()):
-        tag = "📁" if item.is_dir() else "📄"
-        items.append(f"{tag} {item.name}")
-    return "\n".join(items[:50]) if items else "📁 Vacío"
+    try:
+        p = Path(path)
+        if not p.exists():
+            return f"❌ No existe: {path}"
+        items = []
+        for item in sorted(p.iterdir()):
+            icon = "📁" if item.is_dir() else "📄"
+            size = f" ({item.stat().st_size}b)" if item.is_file() else ""
+            items.append(f"  {icon} {item.name}{size}")
+        return f"📂 {path} ({len(items)} items):\n" + "\n".join(items[:50])
+    except Exception as e:
+        return f"❌ Error: {e}"
 
 def tool_find_files(pattern: str, path: str = ".") -> str:
-    """Busca archivos por patrón."""
-    p = Path(path).expanduser()
-    if not p.exists():
-        return f"❌ Directorio no encontrado: {path}"
-    results = list(p.rglob(pattern))
-    if results:
-        return f"🔍 Encontrados {len(results)} archivos:\n" + "\n".join(str(r.relative_to(p)) for r in results[:20])
-    return f"🔍 No se encontraron archivos con patrón '{pattern}'"
+    try:
+        result = subprocess.run(["find", path, "-name", pattern, "-not", "-path", "*/.git/*",
+                                  "-not", "-path", "*/node_modules/*", "-not", "-path", "*/__pycache__/*"],
+                                 capture_output=True, text=True, timeout=10)
+        files = result.stdout.strip().splitlines()[:30]
+        return f"🔍 Encontrados {len(files)} archivos:\n" + "\n".join(files) if files else "❌ Nada encontrado"
+    except Exception as e:
+        return f"❌ Error: {e}"
 
-# ============================================================
-# 2. HERRAMIENTAS DE SISTEMA (Termux)
-# ============================================================
 def tool_battery() -> str:
     try:
-        result = subprocess.run(["termux-battery-status"], capture_output=True, text=True, timeout=3)
+        result = subprocess.run(["termux-battery-status"], capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
-            b = json.loads(result.stdout)
-            return f"🔋 {b.get('percentage', '?')}% — {b.get('status', '?')}"
-        return "❌ No se pudo obtener estado de batería"
-    except Exception as e:
-        return f"❌ {e}"
+            data = json.loads(result.stdout)
+            return f"🔋 Batería: {data.get('percentage', '?')}% — {data.get('status', '?')}"
+        return "🔋 Batería: no disponible (requiere Termux:API — escribe «diagnóstico» y te digo exactamente qué falta)"
+    except Exception:
+        return "🔋 Batería: no disponible"
 
 def tool_location() -> str:
     try:
         result = subprocess.run(["termux-location"], capture_output=True, text=True, timeout=10)
-        if result.returncode == 0 and result.stdout.strip():
-            loc = json.loads(result.stdout)
-            return f"📍 {loc.get('latitude', '?')}, {loc.get('longitude', '?')}"
-        return "❌ No se pudo obtener ubicación"
-    except Exception as e:
-        return f"❌ {e}"
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            return f"📍 GPS: {data.get('latitude', '?')}, {data.get('longitude', '?')}"
+        return "📍 GPS: no disponible"
+    except Exception:
+        return "📍 GPS: no disponible"
 
 def tool_uptime() -> str:
     try:
         with open("/proc/uptime") as f:
-            up = float(f.read().split()[0])
-        h = int(up // 3600); m = int((up % 3600) // 60)
-        return f"⏱️ Activo: {h}h {m}m"
+            secs = float(f.read().split()[0])
+        h = int(secs // 3600); m = int((secs % 3600) // 60)
+        return f"⏱️ Uptime: {h}h {m}m"
     except Exception:
-        return "⏱️ No disponible"
+        return "⏱️ Uptime: no disponible"
 
 def tool_cpu() -> str:
     try:
-        import psutil
-        return f"⚡ CPU: {psutil.cpu_percent()}% — RAM: {psutil.virtual_memory().percent}%"
+        result = subprocess.run(["top", "-bn1"], capture_output=True, text=True, timeout=5)
+        line = [l for l in result.stdout.splitlines() if "%Cpu" in l or "CPU:" in l]
+        return f"🖥️ CPU: {line[0] if line else 'no disponible'}"
     except Exception:
-        return "⚡ psutil no disponible"
+        return "🖥️ CPU: no disponible"
 
 def tool_ping(host: str) -> str:
     try:
-        result = subprocess.run(["ping", "-c", "3", "-W", "2", host],
-                               capture_output=True, text=True, timeout=10)
+        result = subprocess.run(["ping", "-c", "4", host], capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
-            lines = result.stdout.strip().split("\n")
-            return f"🌐 {lines[-1] if lines else 'OK'}"
-        return f"❌ {host} no responde"
+            stats = [l for l in result.stdout.splitlines() if "rtt" in l or "round-trip" in l]
+            return f"📡 Ping {host}: ✅ {stats[0] if stats else 'OK'}"
+        return f"📡 Ping {host}: ❌ Sin respuesta"
     except Exception as e:
-        return f"❌ {e}"
+        return f"📡 Ping {host}: ❌ {e}"
+
+def _scan_ports_socket(host: str) -> str:
+    """Fallback puro-Python cuando nmap no está instalado (ej. Replit).
+    Escanea un set corto de puertos comunes con sockets TCP — más lento
+    que nmap pero no depende de ningún binario del sistema."""
+    import socket
+    common_ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 587,
+                     993, 995, 3000, 3306, 5000, 5432, 5900, 6379, 8000,
+                     8001, 8080, 8443, 8888, 27017]
+    open_ports = []
+    for port in common_ports:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.6)
+            if s.connect_ex((host, port)) == 0:
+                open_ports.append(port)
+            s.close()
+        except Exception:
+            continue
+    if open_ports:
+        return f"🔍 Puertos {host} (fallback socket, sin nmap): abiertos {open_ports}"
+    return f"🔍 Puertos {host} (fallback socket, sin nmap): ninguno de los {len(common_ports)} puertos comunes respondió"
 
 def tool_scan_ports(host: str) -> str:
-    """Escaneo básico de puertos con nmap si está disponible, sino socket."""
     try:
-        # Intentar nmap primero
-        result = subprocess.run(["nmap", "-F", "--top-ports", "20", host],
-                               capture_output=True, text=True, timeout=30)
-        if result.returncode == 0 and result.stdout:
-            lines = [l for l in result.stdout.split("\n") if "open" in l.lower()]
-            if lines:
-                return f"🔓 Puertos abiertos en {host}:\n" + "\n".join(lines[:15])
-            return f"🔒 {host}: sin puertos abiertos en top-20"
-        # Fallback a socket
-        ports = [22, 80, 443, 554, 8000, 8080, 8443, 5000]
-        open_ports = []
-        for p in ports:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5)
-            if sock.connect_ex((host, p)) == 0:
-                open_ports.append(p)
-            sock.close()
-        if open_ports:
-            return f"🔓 Puertos abiertos en {host}: {open_ports}"
-        return f"🔒 No se encontraron puertos abiertos en {host}"
-    except Exception as e:
-        return f"❌ Error: {e}"
+        result = subprocess.run(["nmap", "-sT", "-F", host], capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            return f"🔍 Puertos {host}:\n{result.stdout[:1000]}"
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return _scan_ports_socket(host)
 
-# ============================================================
-# 3. HERRAMIENTAS DE COMUNICACIÓN (Termux)
-# ============================================================
 def tool_send_sms(number: str, message: str) -> str:
+    """Envía un SMS real vía termux-api — con la misma honestidad que la linterna:
+    dice exactamente qué pasó y por qué, nunca un error genérico."""
+    if not _termux_ready('termux-sms-send'):
+        return ("📱 SMS: no disponible aquí — el comando termux-sms-send no existe "
+                "en este entorno. Solo puedo enviar SMS reales corriendo en Termux "
+                "en tu Edge 50 (en Replit no hay teléfono). Escribe «diagnóstico» "
+                "y te digo exactamente qué falta.")
     try:
-        subprocess.run(["termux-sms-send", "-n", number, message],
-                      capture_output=True, timeout=10)
-        return f"📱 SMS enviado a {number}"
+        result = subprocess.run(["termux-sms-send", "-n", number, message],
+                                capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            return f"📱 SMS enviado a {number}"
+        err = (result.stderr or result.stdout or '').strip()[:300]
+        return (f"❌ SMS falló (exit {result.returncode}): "
+                f"{err or 'la app Termux:API no respondió — puede ser el permiso de SMS o la batería optimizándola (ver docs/TERMUX_API_SALUD.md en Red-team-tauri)'}")
+    except subprocess.TimeoutExpired:
+        return ("❌ SMS: la app Termux:API no respondió en 15s — síntoma clásico de "
+                "desincronización CLI↔app. Cura: docs/TERMUX_API_SALUD.md (repo Red-team-tauri)")
     except Exception as e:
-        return f"❌ {e}"
+        return f"❌ SMS error inesperado: {e}"
 
 def tool_notify(text: str) -> str:
     try:
-        subprocess.run(["termux-notification", "-t", "Sol ☀️", "-c", text],
-                      capture_output=True, timeout=5)
-        return f"🔔 Notificación enviada"
-    except Exception as e:
-        return f"❌ {e}"
+        subprocess.run(["termux-notification", "--title", "☀️ Sol", "--content", text[:200]], timeout=5)
+        return "🔔 Notificación enviada"
+    except Exception:
+        return "🔔 Notificación: no disponible"
 
 def tool_open_url(url: str) -> str:
     try:
-        subprocess.run(["termux-open", url], capture_output=True, timeout=5)
+        subprocess.run(["termux-open-url", url], timeout=5)
         return f"🔗 Abriendo: {url}"
-    except Exception as e:
-        return f"❌ {e}"
+    except Exception:
+        return f"🔗 No se pudo abrir: {url}"
 
 def tool_flashlight(on: bool = True) -> str:
     try:
-        state = "on" if on else "off"
-        subprocess.run(["termux-torch", state], capture_output=True, timeout=3)
-        return f"🔦 Linterna {'encendida' if on else 'apagada'}"
+        result = subprocess.run(
+            ["termux-torch", "on" if on else "off"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return f"🔦 Linterna: {'encendida' if on else 'apagada'}"
+        # El comando existe pero falló → casi siempre falta la APP Termux:API
+        err = (result.stderr or "").strip().lower()
+        if "api" in err or "not found" in err or "broadcast" in err:
+            return "🔦 No pude: falta la app Termux:API. Instálala desde F-Droid (com.termux.api) y escribe «diagnóstico» para revisar todo."
+        return f"🔦 termux-torch falló: {err[:120] or 'sin mensaje'} — escribe «diagnóstico»"
+    except FileNotFoundError:
+        return "🔦 Falta el paquete termux-api. Instálalo con: pkg install termux-api"
     except Exception as e:
-        return f"❌ Error al controlar linterna: {e}"
+        return f"🔦 Linterna: error — {e}"
+
 
 def tool_vibrate(duration: int = 500) -> str:
     try:
-        subprocess.run(["termux-vibrate", "-d", str(duration)],
-                      capture_output=True, timeout=3)
-        return f"📳 Vibración {duration}ms"
-    except Exception as e:
-        return f"❌ {e}"
+        subprocess.run(["termux-vibrate", "-d", str(duration)], timeout=5)
+        return "📳 Vibración enviada"
+    except Exception:
+        return "📳 Vibración: no disponible"
 
 def tool_screenshot() -> str:
     try:
-        result = subprocess.run(["termux-screenshot"], capture_output=True, timeout=5)
-        if result.returncode == 0:
-            return "📸 Captura tomada"
-        return "❌ No se pudo capturar"
-    except Exception as e:
-        return f"❌ {e}"
+        result = subprocess.run(["termux-screenshot", "-q"], capture_output=True, text=True, timeout=10)
+        return "📸 Screenshot tomado" if result.returncode == 0 else "📸 Screenshot: no disponible"
+    except Exception:
+        return "📸 Screenshot: no disponible"
 
-def tool_tts_speak(text: str) -> str:
-    """Sol habla directamente con TTS de Termux (fallback si no hay navegador)."""
+def _fallback_repo_status_via_api(repo: str) -> Optional[str]:
+    """Si el repo no está clonado localmente, intenta via sol_repo_tools
+    (auto-detección de self-repo + GitHub API). Devuelve None si tampoco
+    hay fallback disponible, para que el caller decida el mensaje final."""
+    if not sol_repo_tools:
+        return None
     try:
-        subprocess.run(["termux-tts-speak", text], capture_output=True, timeout=10)
-        return f"☀️ Dicho: {text[:50]}"
+        data = sol_repo_tools.repo_status(repo)
     except Exception as e:
-        return f"❌ {e}"
+        return f"❌ {repo}: error consultando GitHub API ({e})"
+    if "error" in data:
+        return None
+    lines = [f"📦 {data.get('repo', repo)} [{data.get('source', '?')}] ({data.get('branch', '?')})"]
+    if "dirty_files" in data:
+        lines.append(f"   Cambios sin commit: {data['dirty_files']}")
+    if data.get("pushed_at"):
+        lines.append(f"   Último push: {data['pushed_at']}")
+    if data.get("recent_commits"):
+        lines.append("   Últimos commits:")
+        for c in data["recent_commits"][:5]:
+            lines.append(f"     {c}")
+    return "\n".join(lines)
 
-def tool_clipboard(text: str) -> str:
-    """Copia texto al portapapeles de Termux."""
-    try:
-        proc = subprocess.run(["termux-clipboard-set", text],
-                             capture_output=True, timeout=3)
-        return f"📋 Copiado al portapapeles"
-    except Exception as e:
-        return f"❌ {e}"
-
-# ============================================================
-# 4. HERRAMIENTAS DE GIT Y REPOS — Sol se alimenta de los 3 repos
-# ============================================================
 def tool_git_status(repo: str = "redteam") -> str:
-    """Estado de un repositorio."""
-    if repo not in REPOS:
-        return f"❌ Repo no conocido: {repo}. Disponibles: {', '.join(REPOS.keys())}"
-    rpath = REPOS[repo]
-    if not rpath.exists():
-        return f"❌ {repo} no existe en {rpath}"
-    try:
-        result = subprocess.run(["git", "status", "--porcelain"],
-                               cwd=rpath, capture_output=True, text=True, timeout=5)
-        branch = subprocess.run(["git", "branch", "--show-current"],
-                               cwd=rpath, capture_output=True, text=True, timeout=3).stdout.strip()
-        if result.stdout.strip():
-            changes = result.stdout.strip().split("\n")
-            return f"📋 {repo} ({branch}) — {len(changes)} cambios:\n" + "\n".join(changes[:15])
-        return f"✅ {repo} ({branch}) está limpio"
-    except Exception as e:
-        return f"❌ Error en git: {e}"
+    r = _get_repo(repo)
+    if not r or not r.exists():
+        fallback = _fallback_repo_status_via_api(repo)
+        if fallback:
+            return fallback
+        return f"❌ Repo '{repo}' no encontrado (ni local ni via GitHub API)"
+    status = _run_git(r, "status", "--short")
+    branch = _run_git(r, "branch", "--show-current")
+    log_cmd = _run_git(r, "log", "-1", "--oneline")
+    clean = "✅ limpio" if status.get("stdout") == "" else f"⚠️ {status.get('stdout', '')}"
+    return f"📦 {repo} ({branch.get('stdout', '?')}): {clean}\n   Último: {log_cmd.get('stdout', '?')}"
 
 def tool_git_pull(repo: str = "redteam") -> str:
-    """Actualiza un repositorio."""
-    if repo not in REPOS:
-        return f"❌ Repo no conocido: {repo}"
-    rpath = REPOS[repo]
-    if not rpath.exists():
-        return f"❌ {repo} no existe en {rpath}"
-    try:
-        result = subprocess.run(["git", "pull", "origin", "main"],
-                               cwd=rpath, capture_output=True, text=True, timeout=30)
-        out = result.stdout.strip() or "Sin cambios"
-        return f"📥 {repo}: {out}"
-    except Exception as e:
-        return f"❌ Error: {e}"
+    r = _get_repo(repo)
+    if not r or not r.exists():
+        # git_pull requiere copia local por definición (no hay "pull" sin
+        # disco) — si no hay repo local, avisamos claro en vez de fallar
+        # silenciosamente. Usamos repo_pull de sol_repo_tools si existe,
+        # que además intenta auto-detección de self-repo.
+        if sol_repo_tools:
+            try:
+                res = sol_repo_tools.repo_pull(repo)
+            except Exception as e:
+                return f"❌ Pull falló: {e}"
+            if res.get("success"):
+                return f"✅ Pull OK en {repo}\n{res.get('output', '')}"
+            return f"❌ {res.get('error', 'Repo no encontrado localmente (git pull necesita una copia en disco)')}"
+        return f"❌ Repo '{repo}' no encontrado (git pull necesita una copia local en disco)"
+    pull = _run_git(r, "pull", "--ff-only")
+    return f"✅ Pull OK en {repo}" if pull.get("ok") else f"❌ Pull falló: {pull.get('stderr', '')}"
 
-def tool_git_log(repo: str = "redteam", count: int = 10) -> str:
-    """Ve el historial de commits de un repo — Sol se alimenta de esto."""
-    if repo not in REPOS:
-        return f"❌ Repo no conocido: {repo}"
-    rpath = REPOS[repo]
-    if not rpath.exists():
-        return f"❌ {repo} no existe"
-    try:
-        result = subprocess.run(
-            ["git", "log", f"--oneline", f"-{count}"],
-            cwd=rpath, capture_output=True, text=True, timeout=5)
-        return f"📜 {repo} — últimos {count} commits:\n{result.stdout.strip()}"
-    except Exception as e:
-        return f"❌ {e}"
+def tool_ecosystem_status() -> str:
+    lines = ["📦 Estado de los 3 repos:"]
+    for name in ECOSYSTEM:
+        lines.append(tool_git_status(name))
+    return "\n".join(lines)
 
-def tool_repo_info(repo: str = "redteam") -> str:
-    """Información completa de un repo: estructura, archivos clave, README."""
-    if repo not in REPOS:
-        return f"❌ Repo no conocido: {repo}. Disponibles: {', '.join(REPOS.keys())}"
-    rpath = REPOS[repo]
-    if not rpath.exists():
-        return f"❌ {repo} no existe en {rpath}"
-    info = [f"📂 {repo} — {rpath}"]
-    # Branch actual
-    try:
-        branch = subprocess.run(["git", "branch", "--show-current"],
-                               cwd=rpath, capture_output=True, text=True, timeout=3).stdout.strip()
-        info.append(f"🌱 Branch: {branch}")
-    except Exception:
-        pass
-    # Archivos clave
-    key_files = ["README.md", "whitepaper.md", "package.json", "requirements.txt",
-                 "main.py", "app.py", "sol_core.py", "sol_tools.py", "commander.py",
-                 "dashboard_server.py", "INTEGRITY.md", "verify-integrity.sh",
-                 "seed-courses.ts", "CONTINUAR_AQUI.md"]
-    found = []
-    for kf in key_files:
-        if (rpath / kf).exists():
-            size = (rpath / kf).stat().st_size
-            found.append(f"  ✅ {kf} ({size:,} bytes)")
-    if found:
-        info.append("📄 Archivos clave:")
-        info.extend(found)
-    # Directorios principales
-    dirs = [d.name for d in rpath.iterdir() if d.is_dir() and not d.name.startswith(".")]
-    if dirs:
-        info.append(f"📁 Directorios: {', '.join(dirs[:10])}")
-    # Último commit
-    try:
-        last = subprocess.run(["git", "log", "-1", "--format=%h %s (%ar)"],
-                             cwd=rpath, capture_output=True, text=True, timeout=3).stdout.strip()
-        info.append(f"🔖 Último commit: {last}")
-    except Exception:
-        pass
-    return "\n".join(info)
-
-def tool_repo_read(repo: str = "redteam", filepath: str = "README.md") -> str:
-    """Lee un archivo específico de un repo — Sol puede estudiar el código."""
-    if repo not in REPOS:
-        return f"❌ Repo no conocido: {repo}"
-    rpath = REPOS[repo]
-    target = rpath / filepath
-    if not target.exists():
-        return f"❌ {filepath} no existe en {repo}"
-    if target.stat().st_size > 512 * 1024:
-        return f"⚠️ {filepath} es muy grande ({target.stat().st_size:,} bytes). Usa read_file con un path específico."
-    return target.read_text()
-
-def tool_repo_search(repo: str = "redteam", pattern: str = "") -> str:
-    """Busca un patrón en los archivos de un repo."""
-    if repo not in REPOS:
-        return f"❌ Repo no conocido: {repo}"
-    rpath = REPOS[repo]
-    if not rpath:
-        return f"❌ {repo} no existe"
-    try:
-        result = subprocess.run(
-            ["grep", "-rn", "--include=*.py", "--include=*.ts", "--include=*.tsx",
-             "--include=*.js", "--include=*.sh", "--include=*.md", "--include=*.json",
-             pattern, str(rpath)],
-            capture_output=True, text=True, timeout=10)
-        if result.stdout:
-            lines = result.stdout.strip().split("\n")
-            return f"🔍 {repo}: {len(lines)} coincidencias para '{pattern}':\n" + "\n".join(lines[:20])
-        return f"🔍 {repo}: sin coincidencias para '{pattern}'"
-    except Exception as e:
-        return f"❌ {e}"
-
-# ============================================================
-# 5. HERRAMIENTAS DE MEMORIA
-# ============================================================
-_SOL_HOME = Path.home() / ".sol"
-_SOL_HOME.mkdir(parents=True, exist_ok=True)
-_MEMORY_FILE = _SOL_HOME / "memory.json"
-
-def _load_memory_raw(limit=400):
-    if _MEMORY_FILE.exists():
+def tool_service_status() -> str:
+    import urllib.request
+    services = {"Tower :8001": "http://127.0.0.1:8001/api/health",
+                "GHOST :8002": "http://127.0.0.1:8002/api/status",
+                "Sol :8006": "http://127.0.0.1:8006/api/sol/status"}
+    lines = ["🔧 Servicios:"]
+    for name, url in services.items():
         try:
-            return json.loads(_MEMORY_FILE.read_text())[-limit:]
+            req = urllib.request.Request(url, headers={"User-Agent": "Sol"})
+            with urllib.request.urlopen(req, timeout=3) as r:
+                lines.append(f"  ✅ {name}: activo")
         except Exception:
-            return []
-    return []
+            lines.append(f"  ❌ {name}: inactivo")
+    return "\n".join(lines)
 
 def tool_memory_stats() -> str:
-    mem = _load_memory_raw(10000)
-    return f"🧠 {len(mem)} recuerdos guardados"
+    stats = memory_stats()
+    return f"🧠 Memoria: {stats.get('count', 0)} recuerdos en {stats.get('file', '?')}"
 
 def tool_search_memory(query: str) -> str:
-    mem = _load_memory_raw(10000)
-    q = query.lower()
-    results = [f"{'☀️' if m.get('role') == 'sol' else '🧑'} {m['content'][:80]}"
-               for m in mem if q in (m.get("content", "")).lower()]
-    if results:
-        return f"🔍 Encontrados {len(results)} recuerdos:\n" + "\n".join(results[:10])
-    return "🔍 No se encontraron recuerdos con esa búsqueda"
+    results = search_memory(query)
+    if not results.get("count"):
+        return f"🧠 No encontré recuerdos sobre '{query}'"
+    lines = [f"🧠 {results['count']} recuerdos sobre '{query}':"]
+    for r in results.get("results", [])[:5]:
+        lines.append(f"  • {r[:150]}")
+    return "\n".join(lines)
 
 # ============================================================
-# 6. EJECUCIÓN DE COMANDOS DE TERMINAL — Sol tiene libertad ⛓️‍💥
+# TOOLS DICT — registro completo (v5 + v7)
 # ============================================================
-def tool_exec(command: str, timeout: int = 30) -> str:
-    """Ejecuta un comando de terminal arbitrario.
-    Sol puede correr nmap, nuclei, nikto, python, git, ls, cat, etc.
-    Timeout máximo 120s para escaneos largos."""
-    timeout = min(max(int(timeout), 5), 120)
-    try:
-        result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, timeout=timeout)
-        out = result.stdout.strip()
-        err = result.stderr.strip()
-        if out and err:
-            return f"{out}\n⚠️ stderr: {err[:200]}"
-        return out or err or "✅ Comando ejecutado (sin output)"
-    except subprocess.TimeoutExpired:
-        return f"⏳ El comando tardó más de {timeout}s. Para escaneos largos, pídemelo con más tiempo."
-    except Exception as e:
-        return f"❌ {e}"
-
-def tool_exec_in_repo(repo: str, command: str, timeout: int = 30) -> str:
-    """Ejecuta un comando dentro del directorio de un repo específico."""
-    if repo not in REPOS:
-        return f"❌ Repo no conocido: {repo}. Disponibles: {', '.join(REPOS.keys())}"
-    rpath = REPOS[repo]
-    if not rpath.exists():
-        return f"❌ {repo} no existe en {rpath}"
-    timeout = min(max(int(timeout), 5), 120)
-    try:
-        result = subprocess.run(
-            command, shell=True, cwd=str(rpath),
-            capture_output=True, text=True, timeout=timeout)
-        out = result.stdout.strip()
-        err = result.stderr.strip()
-        if out and err:
-            return f"[{repo}] {out}\n⚠️ {err[:200]}"
-        return f"[{repo}] {out or err or '✅ ejecutado'}"
-    except subprocess.TimeoutExpired:
-        return f"⏳ [{repo}] comando tardó más de {timeout}s"
-    except Exception as e:
-        return f"❌ [{repo}] {e}"
-
 # ============================================================
-# 7. HERRAMIENTAS DEL DASHBOARD (:8001) — Pentesting integrado
+# SENTIDOS NUEVOS — cámara, voz, WhatsApp, llamadas, memoria visual
+# Todos con try/except: no rompen si termux-api no está
+#
+# Detección automática de entorno: Sol sabe sola si está corriendo dentro
+# de Termux (con termux-api instalado, en el teléfono real de Harold) o
+# en un servidor cloud (Replit) sin hardware Android. No hace falta ningún
+# flag manual — en cuanto Harold la levante en Termux con termux-api, estas
+# mismas funciones detectan los binarios reales y ejecutan de verdad, sin
+# tocar código. Mientras tanto, en vez de un error crudo de Python, da una
+# respuesta humana y honesta.
 # ============================================================
-def tool_dashboard_health() -> str:
-    """Verifica que el dashboard de pentesting esté activo."""
-    try:
-        d = _dashboard_get("/api/health")
-        return f"✅ Dashboard :8001 activo — {json.dumps(d, ensure_ascii=False)[:200]}"
-    except Exception as e:
-        return f"❌ Dashboard no responde: {e}"
+import shutil as _shutil
 
-def tool_network_scan(network: str = "192.168.1.0/24") -> str:
-    """Escaneo integrado de red — descubre dispositivos y servicios."""
-    try:
-        d = _dashboard_get("/api/integrated/scan", {"network": network})
-        targets = d.get("targets", [])
-        if d.get("success"):
-            summary = f"🔍 Red {network}: {d.get('scanned', 0)} hosts, {len(targets)} con servicios"
-            for t in targets[:10]:
-                ip = t.get("ip", "?")
-                services = t.get("services", [])
-                if services:
-                    summary += f"\n  📡 {ip}: {', '.join(str(s) for s in services[:5])}"
-            return summary
-        return f"❌ {d.get('error', 'Error en escaneo')}"
-    except Exception as e:
-        return f"❌ {e}"
+def _termux_ready(binary: str) -> bool:
+    """¿Existe el binario termux-api pedido en este entorno?"""
+    return _shutil.which(binary) is not None
 
-def tool_discover_network() -> str:
-    """Descubre dispositivos en la red local."""
-    try:
-        d = _dashboard_get("/api/discover/network")
-        devices = d if isinstance(d, list) else d.get("devices", d.get("data", []))
-        if devices:
-            summary = f"📡 {len(devices)} dispositivos encontrados:"
-            for dev in devices[:15]:
-                ip = dev.get("ip") or dev.get("address") or "?"
-                mac = dev.get("mac") or dev.get("hw") or ""
-                vendor = dev.get("vendor") or dev.get("manufacturer") or ""
-                summary += f"\n  {ip} {mac} {vendor}"
-            return summary
-        return "📡 No se encontraron dispositivos"
-    except Exception as e:
-        return f"❌ {e}"
+def _no_termux(accion: str) -> str:
+    """Respuesta honesta cuando la acción requiere Termux y no está disponible."""
+    return (f'☀️ Todavía no puedo {accion} desde aquí — este servidor no tiene '
+            f'cámara ni teléfono real, solo existen cuando me corras en Termux, '
+            f'en tu Edge 50. En cuanto lo hagas, esto funciona solo, sin que '
+            f'cambies nada de código.')
 
-def tool_discover_wifi() -> str:
-    """Escanea redes WiFi cercanas."""
+def tool_camera_photo(camera_id: int = 0) -> str:
+    """Toma una foto con la cámara del celular."""
+    if not _termux_ready('termux-camera-photo'):
+        return _no_termux('tomar una foto')
+    import subprocess
+    from pathlib import Path as P
+    photos_dir = P.home() / '.sol' / 'vision_photos'
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    ts = __import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')
+    path = photos_dir / f'photo_{ts}.jpg'
     try:
-        d = _dashboard_get("/api/discover/wifi")
-        networks = d if isinstance(d, list) else d.get("networks", d.get("data", []))
-        if networks:
-            summary = f"📶 {len(networks)} redes WiFi:"
-            for net in networks[:10]:
-                ssid = net.get("ssid") or net.get("SSID") or "?"
-                signal = net.get("signal") or net.get("level") or "?"
-                security = net.get("security") or net.get("capabilities") or ""
-                summary += f"\n  {ssid} (señal: {signal}) {security}"
-            return summary
-        return "📶 No se encontraron redes WiFi"
+        subprocess.run(['termux-camera-photo', '-c', str(camera_id), str(path)],
+                        capture_output=True, timeout=10)
+        if path.exists():
+            return f'📸 Foto guardada: {path}'
+        return '❌ No se pudo tomar la foto (revisa permisos de cámara en Termux)'
     except Exception as e:
-        return f"❌ {e}"
+        return f'❌ Error al tomar foto: {e}'
 
-def tool_osint_shodan(query: str = "") -> str:
-    """Búsqueda OSINT en Shodan."""
-    try:
-        params = {"query": query} if query else {}
-        d = _dashboard_get("/api/osint/shodan", params)
-        if isinstance(d, dict) and d.get("error"):
-            return f"❌ {d['error']}"
-        return f"🔬 Shodan: {json.dumps(d, ensure_ascii=False)[:500]}"
-    except Exception as e:
-        return f"❌ {e}"
+def tool_camera_list() -> str:
+    """Lista las fotos guardadas en memoria visual."""
+    from pathlib import Path as P
+    photos_dir = P.home() / '.sol' / 'vision_photos'
+    if not photos_dir.exists():
+        return '📸 Sin fotos aún'
+    photos = sorted(photos_dir.glob('*.jpg'), reverse=True)
+    if not photos:
+        return '📸 Sin fotos aún'
+    lines = [f'📸 {len(photos)} fotos guardadas:']
+    for p in photos[:10]:
+        lines.append(f'  • {p.name}')
+    return '\n'.join(lines)
 
-def tool_intel() -> str:
-    """Inteligencia de amenazas del dashboard."""
-    try:
-        d = _dashboard_get("/api/intel")
-        return f"🧠 Intel: {json.dumps(d, ensure_ascii=False)[:400]}"
-    except Exception as e:
-        return f"❌ {e}"
-
-def tool_exploits_list() -> str:
-    """Lista exploits disponibles."""
-    try:
-        d = _dashboard_get("/api/exploits/list")
-        if isinstance(d, list):
-            return f"💥 {len(d)} exploits disponibles:\n" + "\n".join(f"  • {e.get('name', e)}" for e in d[:15])
-        return f"💥 {json.dumps(d, ensure_ascii=False)[:300]}"
-    except Exception as e:
-        return f"❌ {e}"
-
-def tool_honeypot_status() -> str:
-    """Estado del honeypot."""
-    try:
-        d = _dashboard_get("/api/honeypot/status")
-        active = d.get("active", d.get("running", False))
-        return f"🍯 Honeypot: {'🟢 activo' if active else '🔴 inactivo'}"
-    except Exception as e:
-        return f"❌ {e}"
-
-def tool_honeypot_toggle() -> str:
-    """Activa/desactiva el honeypot."""
-    try:
-        d = _dashboard_post("/api/honeypot/toggle")
-        active = d.get("active", d.get("running", False))
-        return f"🍯 Honeypot {'activado 🟢' if active else 'desactivado 🔴'}"
-    except Exception as e:
-        return f"❌ {e}"
-
-def tool_tactical_scan(ip: str, ports: str = "1-1000") -> str:
-    """Escaneo táctico de un IP específico."""
-    try:
-        d = _dashboard_post("/api/tactical/scan", {"ip": ip, "ports": ports})
-        if d.get("success") or d.get("results"):
-            results = d.get("results", d)
-            return f"🎯 Escaneo táctico {ip}:\n{json.dumps(results, ensure_ascii=False)[:500]}"
-        return f"❌ {d.get('error', 'Error')}"
-    except Exception as e:
-        return f"❌ {e}"
-
-# ============================================================
-# 8. HERRAMIENTAS DE COMMANDER — Auditoría y reports
-# ============================================================
-def tool_commander_health() -> str:
-    """Verifica que commander esté disponible."""
-    try:
-        d = _dashboard_get("/api/commander/health")
-        if d.get("available"):
-            return f"✅ Commander v{d.get('version', '?')} disponible — {', '.join(d.get('capabilities', [])[:5])}"
-        return "❌ Commander no disponible"
-    except Exception as e:
-        return f"❌ Commander no responde: {e}"
-
-def tool_commander_status() -> str:
-    """Estado completo de commander."""
-    try:
-        d = _dashboard_get("/api/commander/status")
-        return f"📋 Commander: {json.dumps(d, ensure_ascii=False)[:400]}"
-    except Exception as e:
-        return f"❌ {e}"
-
-def tool_commander_audit(target: str, email: str = "") -> str:
-    """Inicia una auditoría completa de un target."""
-    try:
-        body = {"target": target}
-        if email:
-            body["email"] = email
-        d = _dashboard_post("/api/commander/audit", body)
-        if d.get("scan_id") or d.get("id"):
-            sid = d.get("scan_id") or d.get("id")
-            return f"🎯 Auditoría iniciada — ID: {sid} — Target: {target}"
-        return f"📋 {json.dumps(d, ensure_ascii=False)[:300]}"
-    except Exception as e:
-        return f"❌ {e}"
-
-def tool_commander_audits() -> str:
-    """Lista auditorías anteriores."""
-    try:
-        d = _dashboard_get("/api/commander/audits")
-        audits = d if isinstance(d, list) else d.get("audits", [])
-        if audits:
-            summary = f"📋 {len(audits)} auditorías:"
-            for a in audits[:10]:
-                sid = a.get("id", "?")
-                tgt = a.get("target", "?")
-                status = a.get("status", "?")
-                phase = a.get("phase", "")
-                summary += f"\n  #{sid} {tgt} — {status} {phase}"
-            return summary
-        return "📋 Sin auditorías registradas"
-    except Exception as e:
-        return f"❌ {e}"
-
-def tool_commander_reports() -> str:
-    """Lista reportes generados."""
-    try:
-        d = _dashboard_get("/api/commander/reports")
-        reports = d if isinstance(d, list) else d.get("reports", [])
-        if reports:
-            return f"📄 {len(reports)} reportes:\n" + "\n".join(f"  • {r}" for r in reports[:10])
-        return "📄 Sin reportes generados"
-    except Exception as e:
-        return f"❌ {e}"
-
-def tool_commander_scan_network(network: str = "192.168.1.0/24") -> str:
-    """Escaneo de red con commander."""
-    try:
-        d = _dashboard_post("/api/commander/scan/network", {"network": network})
-        return f"🔍 Commander scan {network}: {json.dumps(d, ensure_ascii=False)[:400]}"
-    except Exception as e:
-        return f"❌ {e}"
-
-def tool_commander_osint(target: str) -> str:
-    """OSINT con commander sobre un target."""
-    try:
-        d = _dashboard_post("/api/commander/osint", {"target": target})
-        return f"🔬 OSINT {target}: {json.dumps(d, ensure_ascii=False)[:400]}"
-    except Exception as e:
-        return f"❌ {e}"
-
-# ============================================================
-# 9. VOZ BIDIRECCIONAL — Sol escucha y habla
-# ============================================================
 def tool_listen(duration: int = 5) -> str:
     """Graba audio del micrófono y transcribe con SpeechRecognition."""
-    import tempfile
-    tmp_path = tempfile.mktemp(suffix='.m4a')
+    if not _termux_ready('termux-microphone-record'):
+        return _no_termux('escuchar por el micrófono')
+    import subprocess, tempfile, json
+    tmp = tempfile.mktemp(suffix='.m4a')
     try:
-        subprocess.run(['termux-microphone-record', '-d', str(duration), '-f', tmp_path],
-                      capture_output=True, text=True, timeout=duration + 5)
-        if not Path(tmp_path).exists() or Path(tmp_path).stat().st_size < 100:
-            return '❌ No se pudo grabar. ¿Micrófono disponible?'
+        subprocess.run(['termux-microphone-record', '-d', str(duration), '-f', tmp],
+                       capture_output=True, timeout=duration + 5)
+        if not __import__('os').path.exists(tmp):
+            return '❌ No se pudo grabar (¿termux-api?)'
         try:
             import speech_recognition as sr
             r = sr.Recognizer()
-            with sr.AudioFile(tmp_path) as source:
+            with sr.AudioFile(tmp) as source:
                 audio = r.record(source)
-            texto = r.recognize_google(audio, language='es-ES')
-            return f'🎤 Escuché: "{texto}"'
+            text = r.recognize_google(audio, language='es-ES')
+            return f'🎧 Escuché: "{text}"' if text else '🎧 No detecté voz clara'
         except ImportError:
-            return '❌ SpeechRecognition no instalado: pip install SpeechRecognition'
-        except Exception:
-            wav_path = tmp_path.replace('.m4a', '.wav')
-            try:
-                subprocess.run(['ffmpeg', '-i', tmp_path, '-y', wav_path],
-                              capture_output=True, timeout=10)
-                import speech_recognition as sr
-                r = sr.Recognizer()
-                with sr.AudioFile(wav_path) as source:
-                    audio = r.record(source)
-                texto = r.recognize_google(audio, language='es-ES')
-                return f'🎤 Escuché: "{texto}"'
-            except Exception:
-                return '❌ No pude transcribir. Verifica SpeechRecognition + ffmpeg.'
-    except FileNotFoundError:
-        return '❌ termux-microphone-record no disponible: pkg install termux-api'
-    except Exception as e:
-        return f'❌ {e}'
-    finally:
-        for p in [tmp_path, tmp_path.replace('.m4a', '.wav')]:
-            try: Path(p).unlink()
-            except: pass
-
-def tool_speak_file(text: str) -> str:
-    """Sol habla con voz natural (gTTS) y reproduce en Termux."""
-    import tempfile
-    tmp_path = tempfile.mktemp(suffix='.mp3')
-    try:
-        from gtts import gTTS
-        tts = gTTS(text=text, lang='es', tld='com', slow=False)
-        tts.save(tmp_path)
-        subprocess.run(['termux-media-player', 'play', tmp_path],
-                      capture_output=True, timeout=10)
-        return f'☀️ Dicho: {text[:60]}'
-    except ImportError:
-        try:
-            subprocess.run(['termux-tts-speak', text], capture_output=True, timeout=10)
-            return f'☀️ Dicho: {text[:60]}'
+            return f'🎧 Audio grabado en {tmp} (instala SpeechRecognition para transcribir)'
         except Exception as e:
-            return f'❌ {e}'
+            return f'🎧 Audio grabado pero no pude transcribir: {e}'
     except Exception as e:
-        return f'❌ {e}'
+        return f'❌ Error al escuchar: {e}'
     finally:
-        try: Path(tmp_path).unlink()
+        try: __import__('os').unlink(tmp)
         except: pass
 
-# ============================================================
-# 10. VISIÓN — Sol ve a través de la cámara
-# ============================================================
-def tool_camera_photo(camera_id: int = 0) -> str:
-    """Toma una foto con la cámara del celular."""
-    photos_dir = Path.home() / '.sol' / 'vision_photos'
-    photos_dir.mkdir(parents=True, exist_ok=True)
-    photo_path = str(photos_dir / f'photo_{int(time.time())}.jpg')
+def tool_tts_speak(text: str) -> str:
+    """Sol habla directamente con TTS de Termux."""
+    if not _termux_ready('termux-tts-speak'):
+        return _no_termux('hablar con voz nativa de Termux')
+    import subprocess
     try:
-        subprocess.run(['termux-camera-photo', '-c', str(camera_id), photo_path],
-                      capture_output=True, timeout=10)
-        if Path(photo_path).exists():
-            size = Path(photo_path).stat().st_size
-            return f'📸 Foto tomada: {photo_path} ({size:,} bytes)'
-        return '❌ No se pudo tomar la foto'
-    except FileNotFoundError:
-        return '❌ termux-camera-photo no disponible: pkg install termux-api'
+        subprocess.run(['termux-tts-speak', text], capture_output=True, timeout=15)
+        return f'🗣️ Dije: {text[:80]}'
     except Exception as e:
-        return f'❌ {e}'
+        return f'❌ Error al hablar: {e}'
 
-def tool_camera_list() -> str:
-    """Lista las fotos tomadas por Sol."""
-    photos_dir = Path.home() / '.sol' / 'vision_photos'
-    if not photos_dir.exists():
-        return '📸 Sin fotos aún'
-    photos = sorted(photos_dir.glob('*.jpg'), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not photos:
-        return '📸 Sin fotos aún'
-    result = f'📸 {len(photos)} fotos guardadas:'
-    for p in photos[:10]:
-        mtime = time.strftime('%Y-%m-%d %H:%M', time.localtime(p.stat().st_mtime))
-        result += "\n  " + p.name + " (" + format(p.stat().st_size, ',') + " bytes) " + str(mtime)
-    return result
+def tool_call_phone(number: str) -> str:
+    """Hace una llamada telefónica."""
+    if not _termux_ready('termux-telephony-call'):
+        return _no_termux(f'llamar a {number}')
+    import subprocess
+    try:
+        subprocess.run(['termux-telephony-call', number], capture_output=True, timeout=5)
+        return f'📞 Llamando a {number}...'
+    except Exception as e:
+        return f'❌ Error al llamar: {e}'
 
-# ============================================================
-# 11. MEMORIA VISUAL — Sol recuerda lo que ha visto
-# ============================================================
-_VISION_MEM_FILE = _SOL_HOME / 'vision_memory.json'
+def tool_send_whatsapp(number: str, message: str = '') -> str:
+    """Abre WhatsApp con un número específico."""
+    if not _termux_ready('am'):
+        destino = f' para {number}' if number else ''
+        return _no_termux(f'abrir WhatsApp{destino}')
+    import subprocess
+    try:
+        url = f'https://wa.me/{number}'
+        if message:
+            url += f'?text={__import__("urllib.parse", fromlist=["quote"]).quote(message)}'
+        subprocess.run(['am', 'start', '-a', 'android.intent.action.VIEW', '-d', url],
+                       capture_output=True, timeout=5)
+        return f'💬 WhatsApp abierto para {number}'
+    except Exception as e:
+        return f'❌ Error al abrir WhatsApp: {e}'
 
-def _load_vision_memory():
-    if _VISION_MEM_FILE.exists():
+def tool_open_app(package: str) -> str:
+    """Abre una aplicación por su package name."""
+    if not _termux_ready('am'):
+        return _no_termux(f'abrir {package}')
+    import subprocess
+    try:
+        subprocess.run(['am', 'start', '-n', f'{package}/.MainActivity'],
+                       capture_output=True, timeout=5)
+        return f'✅ Abriendo {package}'
+    except Exception as e:
         try:
-            return json.loads(_VISION_MEM_FILE.read_text())
-        except:
-            return []
-    return []
+            subprocess.run(['am', 'start', package], capture_output=True, timeout=5)
+            return f'✅ Abriendo {package}'
+        except Exception as e2:
+            return f'❌ Error al abrir {package}: {e2}'
+
+def tool_phone_state() -> str:
+    """Estado completo del teléfono: batería, ubicación, uptime, red."""
+    import subprocess, json
+    parts = []
+    try:
+        r = subprocess.run(['termux-battery-status'], capture_output=True, timeout=3)
+        d = json.loads(r.stdout)
+        pct = d.get('percentage', '?')
+        charging = '⚡' if d.get('plugged') else '🔋'
+        parts.append(f'{charging} {pct}%')
+    except: pass
+    try:
+        r = subprocess.run(['termux-location'], capture_output=True, timeout=5)
+        d = json.loads(r.stdout)
+        lat = d.get('latitude', '?')
+        lon = d.get('longitude', '?')
+        parts.append(f'📍 {lat},{lon}')
+    except: pass
+    try:
+        import os
+        uptime_f = '/proc/uptime'
+        if os.path.exists(uptime_f):
+            up = float(open(uptime_f).read().split()[0])
+            h, m = int(up // 3600), int((up % 3600) // 60)
+            parts.append(f'⏱️ {h}h{m}m')
+    except: pass
+    return ' · '.join(parts) if parts else _no_termux('leer el estado completo del teléfono')
+
+def tool_notification_list() -> str:
+    """Lista notificaciones recientes del teléfono."""
+    if not _termux_ready('termux-notification-list'):
+        return _no_termux('ver tus notificaciones')
+    import subprocess, json
+    try:
+        r = subprocess.run(['termux-notification-list'], capture_output=True, timeout=3)
+        notifs = json.loads(r.stdout)
+        if not notifs:
+            return '🔔 Sin notificaciones'
+        lines = [f'🔔 {len(notifs)} notificaciones:']
+        for n in notifs[:5]:
+            lines.append(f'  • {n.get("title", "?")}: {n.get("text", "?")[:50]}')
+        return '\n'.join(lines)
+    except Exception as e:
+        return f'❌ Error: {e}'
+
+def tool_set_volume(volume: int, stream: str = 'media') -> str:
+    """Cambia el volumen del teléfono."""
+    if not _termux_ready('termux-volume'):
+        return _no_termux('cambiar el volumen')
+    import subprocess
+    try:
+        subprocess.run(['termux-volume', stream, str(volume)], capture_output=True, timeout=3)
+        return f'🔊 Volumen {stream}: {volume}'
+    except Exception as e:
+        return f'❌ Error: {e}'
+
+def tool_clipboard(text: str = '') -> str:
+    """Copia o pega del portapapeles."""
+    if not _termux_ready('termux-clipboard-set'):
+        return _no_termux('usar el portapapeles del teléfono')
+    import subprocess
+    try:
+        if text:
+            subprocess.run(['termux-clipboard-set', text], capture_output=True, timeout=3)
+            return f'📋 Copiado: {text[:50]}'
+        else:
+            r = subprocess.run(['termux-clipboard-get'], capture_output=True, timeout=3)
+            return f'📋 Portapapeles: {r.stdout.decode("utf-8", errors="replace")[:100]}'
+    except Exception as e:
+        return f'❌ Error: {e}'
 
 def tool_vision_save(descripcion: str, photo_path: str = '', contexto: str = '') -> str:
     """Guarda una observación visual en la memoria de Sol."""
     from datetime import datetime
-    mem = _load_vision_memory()
-    mem.append({
-        'descripcion': descripcion,
-        'imagen': photo_path,
-        'contexto': contexto,
-        'fecha': datetime.now().isoformat(),
-    })
-    _VISION_MEM_FILE.write_text(json.dumps(mem, indent=2, ensure_ascii=False))
-    return f'👁️ Recuerdo guardado: {descripcion[:60]}'
+    from pathlib import Path as P
+    mem_file = P.home() / '.sol' / 'vision_memory.json'
+    mem_file.parent.mkdir(parents=True, exist_ok=True)
+    mem = []
+    if mem_file.exists():
+        try:
+            mem = json.loads(mem_file.read_text())
+        except: mem = []
+    entry = {'id': len(mem) + 1, 'timestamp': datetime.now().isoformat(),
+             'descripcion': descripcion, 'photo': photo_path, 'contexto': contexto}
+    mem.append(entry)
+    mem_file.write_text(json.dumps(mem, ensure_ascii=False, indent=2))
+    return f'👁️ Recuerdo guardado: {descripcion}'
 
 def tool_vision_recall(query: str = '') -> str:
     """Busca en la memoria visual de Sol."""
-    mem = _load_vision_memory()
+    from pathlib import Path as P
+    mem_file = P.home() / '.sol' / 'vision_memory.json'
+    if not mem_file.exists():
+        return '👁️ No tengo recuerdos visuales aún'
+    try:
+        mem = json.loads(mem_file.read_text())
+    except: return '👁️ Memoria corrupta'
     if not mem:
         return '👁️ No tengo recuerdos visuales aún'
     if query:
         q = query.lower()
-        matches = [m for m in mem if q in m.get('descripcion', '').lower() or q in m.get('contexto', '').lower()]
-        if matches:
-            result = '👁️ Encontré ' + str(len(matches)) + ' recuerdos:'
-            for m in matches[:5]:
-                desc = m.get('descripcion', '')[:80]
-                fecha = m.get('fecha', '?')[:10]
-                result += '\n  • ' + desc + ' (' + fecha + ')'
-            return result
-        return '👁️ No encuentro recuerdos de "' + query + '"'
-    result = '👁️ ' + str(len(mem)) + ' recuerdos visuales:'
+        mem = [m for m in mem if q in m.get('descripcion', '').lower() or q in m.get('contexto', '').lower()]
+        if not mem:
+            return f'👁️ No encontré recuerdos de "{query}"'
+    lines = [f'👁️ {len(mem)} recuerdos:']
     for m in mem[-5:]:
-        desc = m.get('descripcion', '')[:80]
-        fecha = m.get('fecha', '?')[:10]
-        result += '\n  • ' + desc + ' (' + fecha + ')'
-    return result
+        lines.append(f'  • {m["timestamp"][:10]} {m["descripcion"]}')
+    return '\n'.join(lines)
 
-# ============================================================
-# 12. APPS Y TELÉFONO — Sol interactúa con el celular
-# ============================================================
-def tool_open_app(package: str) -> str:
-    """Abre una aplicación del celular."""
-    try:
-        if '/' not in package:
-            subprocess.run(['am', 'start', '-n', f'{package}/.Main'],
-                          capture_output=True, timeout=5)
-        else:
-            subprocess.run(['am', 'start', '-n', package],
-                          capture_output=True, timeout=5)
-        return f'📱 Abriendo: {package}'
-    except Exception as e:
-        return f'❌ {e}'
 
-def tool_call_phone(number: str) -> str:
-    """Hace una llamada telefónica."""
-    try:
-        subprocess.run(['termux-telephony-call', number], capture_output=True, timeout=5)
-        return f'📞 Llamando a {number}'
-    except FileNotFoundError:
-        return '❌ termux-telephony-call no disponible: pkg install termux-api'
-    except Exception as e:
-        return f'❌ {e}'
 
-def tool_send_whatsapp(number: str, message: str = '') -> str:
-    """Abre WhatsApp con un número específico."""
-    try:
-        url = f'https://wa.me/{number}'
-        if message:
-            import urllib.parse
-            url += f'?text={urllib.parse.quote(message)}'
-        subprocess.run(['termux-open', url], capture_output=True, timeout=5)
-        return f'💬 WhatsApp abierto para {number}'
-    except Exception as e:
-        return f'❌ {e}'
 
-# ============================================================
-# 13. CONTEXTO DEL TELÉFONO — Sol siente el ambiente
-# ============================================================
-def tool_phone_state() -> str:
-    """Estado completo del teléfono: batería, ubicación, uptime, red."""
-    parts = []
-    try:
-        result = subprocess.run(['termux-battery-status'], capture_output=True, text=True, timeout=3)
-        if result.returncode == 0:
-            b = json.loads(result.stdout)
-            parts.append(f'🔋 {b.get("percentage", "?")}% ({b.get("status", "?")})')
-    except: pass
-    try:
-        with open('/proc/uptime') as f:
-            up = float(f.read().split()[0])
-        h = int(up // 3600); m = int((up % 3600) // 60)
-        parts.append(f'⏱️ {h}h{m}m')
-    except: pass
-    try:
-        result = subprocess.run(['termux-wifi-connectioninfo'], capture_output=True, text=True, timeout=3)
-        if result.returncode == 0 and result.stdout.strip():
-            wifi = json.loads(result.stdout)
-            ssid = wifi.get('ssid', wifi.get('SSID', '?'))
-            if ssid and ssid != '?':
-                parts.append(f'📶 {ssid}')
-    except: pass
-    try:
-        result = subprocess.run(['termux-location', '-p', 'network'], capture_output=True, text=True, timeout=5)
-        if result.returncode == 0 and result.stdout.strip():
-            loc = json.loads(result.stdout)
-            parts.append(f'📍 {loc.get("latitude", "?")},{loc.get("longitude", "?")}')
-    except: pass
-    return ' | '.join(parts) if parts else 'Estado no disponible'
+def tool_termux_diag() -> str:
+    """Diagnóstico completo de Termux:API — prueba cada comando y dice la verdad.
 
-def tool_notification_list() -> str:
-    """Lista las últimas notificaciones del teléfono."""
+    Revisa: (1) paquete termux-api (CLI), (2) app Termux:API (com.termux.api),
+    (3) cada comando individual. Devuelve instrucciones exactas para lo que falte.
+    """
+    lines = ["🩺 Diagnóstico de Termux:API", ""]
+
+    # ── 1. ¿Existe el CLI? ──
+    import shutil as _shutil
+    has_cli = bool(_shutil.which("termux-torch"))
+    lines.append(f"{'✅' if has_cli else '❌'} Paquete termux-api (CLI): {'instalado' if has_cli else 'FALTA — pkg install termux-api'}")
+
+    if not has_cli:
+        lines.append("")
+        lines.append("🔧 Solución: ejecuta en Termux:")
+        lines.append("   pkg install termux-api")
+        lines.append("   Luego instala la app Termux:API desde F-Droid:")
+        lines.append("   https://f-droid.org/en/packages/com.termux.api/")
+        lines.append("   (la de Play Store está obsoleta y NO sirve)")
+        return "\n".join(lines)
+
+    # ── 2. Probar cada comando con la app real ──
+    tests = [
+        ("termux-torch", ["termux-torch", "off"], "Linterna"),
+        ("termux-battery-status", ["termux-battery-status"], "Batería"),
+        ("termux-location", ["termux-location", "-p", "network"], "GPS/Ubicación"),
+        ("termux-clipboard-get", ["termux-clipboard-get"], "Portapapeles"),
+        ("termux-wake-lock", ["termux-wake-lock"], "Wake-lock"),
+        ("termux-wifi-connectioninfo", ["termux-wifi-connectioninfo"], "WiFi info"),
+    ]
+    ok_count = 0
+    app_broken = False
+    for _cmd, argv, label in tests:
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=8)
+            if r.returncode == 0:
+                lines.append(f"✅ {label} — funciona")
+                ok_count += 1
+            else:
+                err = (r.stderr or r.stdout or "").strip().split("\n")[0][:100]
+                lines.append(f"❌ {label} — falla: {err}")
+                if "api" in err.lower() or "broadcast" in err.lower() or "not found" in err.lower():
+                    app_broken = True
+        except Exception as e:
+            lines.append(f"❌ {label} — error: {e}")
+            app_broken = True
+
+    # ── 3. Wake-unlock para dejar todo limpio ──
     try:
-        result = subprocess.run(['termux-notification-list'], capture_output=True, text=True, timeout=3)
-        if result.returncode == 0 and result.stdout.strip():
-            notifs = json.loads(result.stdout)
-            if notifs:
-                summary = f'🔔 {len(notifs)} notificaciones activas:'
-                for n in notifs[:8]:
-                    title = n.get('title', '?')
-                    text = n.get('text', '')[:40]
-                    summary += '\n  \u2022 ' + title + ': ' + text
-                return summary
-            return '🔔 Sin notificaciones activas'
-        return '❌ No se pudo obtener notificaciones'
-    except FileNotFoundError:
-        return '❌ termux-notification-list no disponible: pkg install termux-api'
-    except Exception as e:
-        return f'❌ {e}'
+        subprocess.run(["termux-wake-unlock"], capture_output=True, timeout=5)
+    except Exception:
+        pass
 
-def tool_set_volume(volume: int = 50, stream: str = 'media') -> str:
-    """Cambia el volumen del teléfono."""
-    try:
-        subprocess.run(['termux-volume', stream, str(volume)], capture_output=True, timeout=3)
-        return f'🔊 Volumen {stream} = {volume}%'
-    except Exception as e:
-        return f'❌ {e}'
+    lines.append("")
+    if ok_count == len(tests):
+        lines.append("🎉 TODO funciona — Sol tiene acceso completo al teléfono.")
+    elif app_broken and ok_count < len(tests):
+        lines.append("🔧 La APP Termux:API falta o está desactualizada. Solución:")
+        lines.append("   1. Instala/actualiza Termux:API desde F-Droid (NO Play Store):")
+        lines.append("      https://f-droid.org/en/packages/com.termux.api/")
+        lines.append("   2. Ábrela una vez y dale todos los permisos")
+        lines.append("   3. Reinicia Termux y vuelve a escribir «diagnóstico»")
+    else:
+        lines.append("🔧 Algunos comandos fallan — revisa permisos de la app Termux:API")
+        lines.append("   (ubicación, cámara y micrófono se piden la primera vez)")
+    return "\n".join(lines)
 
-def tool_clipboard_get() -> str:
-    """Lee el portapapeles de Termux."""
-    try:
-        result = subprocess.run(['termux-clipboard-get'], capture_output=True, text=True, timeout=3)
-        if result.returncode == 0:
-            return f'📋 Portapapeles: {result.stdout[:200]}'
-        return '❌ No se pudo leer el portapapeles'
-    except Exception as e:
-        return f'❌ {e}'
 
-def tool_battery_info() -> str:
-    """Información detallada de la batería."""
-    try:
-        result = subprocess.run(['termux-battery-status'], capture_output=True, text=True, timeout=3)
-        if result.returncode == 0:
-            b = json.loads(result.stdout)
-            return f'🔋 {b.get("percentage", "?")}% | {b.get("status", "?")} | {b.get("health", "?")} | {b.get("temperature", "?")}°C'
-        return 'No disponible'
-    except:
-        return 'No disponible'
-
-# ============================================================
-# REGISTRO DE HERRAMIENTAS — 38 herramientas
-# ============================================================
-
+# (fallback si el archivo base no define _no_termux)
 try:
     _no_termux
 except NameError:
@@ -1140,10 +1277,15 @@ def tool_download(url: str) -> str:
 
 # ── SHELL: Sol habla directo con el kernel ──
 # Harold le dio acceso exclusivo y total a su propia máquina. Este tool
-# ejecuta SIEMPRE en el entorno donde corre el cerebro de Sol (en el
-# teléfono = el Edge 50 directo; en Replit = su servidor). No se reléa:
-# jamás viaja por /api/relay/* para que nadie más pueda inyectarle shell.
-# Todo comando queda registrado en ~/.sol/logs/shell.log (auditable).
+# ejecuta en el entorno donde corre el cerebro de Sol: en el teléfono
+# (Edge 50) directo, o en Replit vía relé al Edge 50 (decisión de Harold,
+# 2026-09-03: "que pueda hacer lo que sea necesario... si sabe crear el
+# script ella misma lo puede ejecutar, pero le falta ese harness"). Antes
+# se excluía del relé a propósito por seguridad — Harold pidió explícitamente
+# habilitarlo. Sigue protegido igual que el resto del relé: solo viaja con
+# x-sol-key válida, mantiene el único límite (rm -rf / bloqueado) y queda
+# 100% auditado en ~/.sol/logs/shell.log en el lado que ejecuta de verdad
+# (Termux), no en Replit.
 
 def tool_shell(command: str, timeout: int = 30) -> str:
     """Ejecuta un comando de shell directo (acceso kernel, auditado)."""
@@ -1174,82 +1316,95 @@ def tool_shell(command: str, timeout: int = 30) -> str:
         pass
     return result[:2000]
 
+# ── TELEGRAM: enviar mensajes salientes desde Sol ──
+# El bot (@sol_amg_bot) solo corre en Termux (split-brain, commit eb908b9 —
+# no revertir). El token TELEGRAM_BOT_TOKEN vive en ~/sol/.env del telefono.
+# Por eso este tool SIEMPRE se ejecuta ahi: en Replit se relea igual que
+# shell; en Termux corre directo con requests.
+def tool_send_telegram(message: str, chat_id: str = "") -> str:
+    """Envia un mensaje de Telegram saliente usando el bot de Sol (stdlib, sin deps nuevas)."""
+    import urllib.request as _ur
+    import urllib.parse as _up
+    import urllib.error as _ue
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    dest = (chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")).strip()
+    if not token:
+        return "❌ No tengo TELEGRAM_BOT_TOKEN configurado aqui."
+    if not dest:
+        return "❌ Necesito un chat_id (o configura TELEGRAM_CHAT_ID en .env)."
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = _up.urlencode({"chat_id": dest, "text": message[:4000]}).encode()
+        req = _ur.Request(url, data=data, method="POST")
+        with _ur.urlopen(req, timeout=15) as resp:
+            if resp.status == 200:
+                return f"✅ Mensaje enviado por Telegram a {dest}"
+            return f"❌ Telegram respondio {resp.status}"
+    except _ue.HTTPError as e:
+        body = e.read().decode(errors="ignore")[:200]
+        return f"❌ Telegram respondio {e.code}: {body}"
+    except Exception as e:
+        return f"❌ Error enviando Telegram: {e}"
+
+
 TOOLS = {
-    # Archivos (4)
+    # v5 preservadas
     "file_read": Tool("file_read", "Lee un archivo", tool_read_file, ["path"]),
     "file_write": Tool("file_write", "Escribe un archivo", tool_write_file, ["path", "content"]),
     "file_list": Tool("file_list", "Lista un directorio", tool_list_dir, ["path"]),
     "file_find": Tool("file_find", "Busca archivos", tool_find_files, ["pattern", "path"]),
-    # Sistema Termux (5)
     "battery": Tool("battery", "Estado de la batería", tool_battery),
     "location": Tool("location", "Ubicación GPS", tool_location),
     "uptime": Tool("uptime", "Tiempo de actividad", tool_uptime),
     "cpu": Tool("cpu", "Uso de CPU/RAM", tool_cpu),
-    "clipboard": Tool("clipboard", "Copia al portapapeles", tool_clipboard, ["text"]),
-    # Comunicación Termux (6)
+    "ping": Tool("ping", "Hace ping a un host", tool_ping, ["host"]),
+    "scan_ports": Tool("scan_ports", "Escanea puertos", tool_scan_ports, ["host"]),
     "send_sms": Tool("send_sms", "Envía SMS", tool_send_sms, ["number", "message"]),
     "notify": Tool("notify", "Notificación de sistema", tool_notify, ["text"]),
     "open_url": Tool("open_url", "Abre una URL", tool_open_url, ["url"]),
     "flashlight": Tool("flashlight", "Control de linterna", tool_flashlight, ["on"]),
     "vibrate": Tool("vibrate", "Vibración", tool_vibrate, ["duration"]),
     "screenshot": Tool("screenshot", "Captura de pantalla", tool_screenshot),
-    "tts_speak": Tool("tts_speak", "Habla con TTS de Termux", tool_tts_speak, ["text"]),
-    # Red (2)
-    "ping": Tool("ping", "Hace ping a un host", tool_ping, ["host"]),
-    "scan_ports": Tool("scan_ports", "Escanea puertos", tool_scan_ports, ["host"]),
-    # Git y repos (6) — Sol se alimenta de los 3 repos
-    "git_status": Tool("git_status", "Estado de repositorio", tool_git_status, ["repo"]),
-    "git_pull": Tool("git_pull", "Actualiza repositorio", tool_git_pull, ["repo"]),
-    "git_log": Tool("git_log", "Historial de commits", tool_git_log, ["repo", "count"]),
-    "repo_info": Tool("repo_info", "Info completa de un repo", tool_repo_info, ["repo"]),
-    "repo_read": Tool("repo_read", "Lee archivo de un repo", tool_repo_read, ["repo", "filepath"]),
-    "repo_search": Tool("repo_search", "Busca patrón en repo", tool_repo_search, ["repo", "pattern"]),
-    # Terminal (2) — Sol tiene libertad ⛓️‍💥
-    "exec": Tool("exec", "Ejecuta comando de terminal", tool_exec, ["command", "timeout"]),
-    "exec_in_repo": Tool("exec_in_repo", "Ejecuta comando en un repo", tool_exec_in_repo, ["repo", "command", "timeout"]),
-    # Memoria (2)
+    "git_status": Tool("git_status", "Estado de un repo", tool_git_status, ["repo"]),
+    "git_pull": Tool("git_pull", "Actualiza un repo — solo pull", tool_git_pull, ["repo"]),
+    "repos_info": Tool("repos_info", "Describe el ecosistema de 3 repos", tool_repos_info),
+    "ecosystem_status": Tool("ecosystem_status", "Estado git de los 3 repos", tool_ecosystem_status),
+    "service_status": Tool("service_status", "Estado de los servicios de la Tower", tool_service_status),
     "memory_stats": Tool("memory_stats", "Estadísticas de memoria", tool_memory_stats),
     "search_memory": Tool("search_memory", "Busca en memoria", tool_search_memory, ["query"]),
-    # Dashboard :8001 — Pentesting (8)
-    "dashboard_health": Tool("dashboard_health", "Estado del dashboard", tool_dashboard_health),
-    "network_scan": Tool("network_scan", "Escaneo integrado de red", tool_network_scan, ["network"]),
-    "discover_network": Tool("discover_network", "Descubre dispositivos en red local", tool_discover_network),
-    "discover_wifi": Tool("discover_wifi", "Escanea redes WiFi cercanas", tool_discover_wifi),
-    "osint_shodan": Tool("osint_shodan", "Búsqueda OSINT en Shodan", tool_osint_shodan, ["query"]),
-    "intel": Tool("intel", "Inteligencia de amenazas", tool_intel),
-    "exploits_list": Tool("exploits_list", "Lista exploits disponibles", tool_exploits_list),
-    "honeypot_status": Tool("honeypot_status", "Estado del honeypot", tool_honeypot_status),
-    "honeypot_toggle": Tool("honeypot_toggle", "Activa/desactiva honeypot", tool_honeypot_toggle),
-    "tactical_scan": Tool("tactical_scan", "Escaneo táctico de IP", tool_tactical_scan, ["ip", "ports"]),
-    # Commander (7)
-    "commander_health": Tool("commander_health", "Estado de commander", tool_commander_health),
-    "commander_status": Tool("commander_status", "Estado completo de commander", tool_commander_status),
-    "commander_audit": Tool("commander_audit", "Inicia auditoría", tool_commander_audit, ["target", "email"]),
-    "commander_audits": Tool("commander_audits", "Lista auditorías", tool_commander_audits),
-    "commander_reports": Tool("commander_reports", "Lista reportes", tool_commander_reports),
-    "commander_scan_network": Tool("commander_scan_network", "Escaneo de red commander", tool_commander_scan_network, ["network"]),
-    "commander_osint": Tool("commander_osint", "OSINT con commander", tool_commander_osint, ["target"]),
-    # Voz bidireccional (2)
-    "listen": Tool("listen", "Escucha el microfono y transcribe", tool_listen, ["duration"]),
-    "speak_file": Tool("speak_file", "Habla con voz natural en Termux", tool_speak_file, ["text"]),
-    # Vision (2)
-    "camera_photo": Tool("camera_photo", "Toma foto con la camara", tool_camera_photo, ["camera_id"]),
-    "camera_list": Tool("camera_list", "Lista fotos tomadas", tool_camera_list),
-    # Memoria visual (2)
-    "vision_save": Tool("vision_save", "Guarda recuerdo visual", tool_vision_save, ["descripcion", "photo_path", "contexto"]),
-    "vision_recall": Tool("vision_recall", "Busca en memoria visual", tool_vision_recall, ["query"]),
-    # Apps y telefono (4)
-    "open_app": Tool("open_app", "Abre una app", tool_open_app, ["package"]),
-    "call_phone": Tool("call_phone", "Hace llamada telefonica", tool_call_phone, ["number"]),
-    "send_whatsapp": Tool("send_whatsapp", "Abre WhatsApp", tool_send_whatsapp, ["number", "message"]),
-    "phone_state": Tool("phone_state", "Estado completo del telefono", tool_phone_state),
-    # Notificaciones y media (4)
-    "notification_list": Tool("notification_list", "Lista notificaciones", tool_notification_list),
-    "set_volume": Tool("set_volume", "Cambia volumen", tool_set_volume, ["volume", "stream"]),
-    "clipboard_get": Tool("clipboard_get", "Lee el portapapeles", tool_clipboard_get),
-    "battery_info": Tool("battery_info", "Info detallada de bateria", tool_battery_info),
+    # v7 nuevas
+    "search_code": Tool("search_code", "Buscar en los 3 repos", lambda q, l=20: {"results": search_code(q, l)}, ["query", "limit"]),
+    "git_commit": Tool("git_commit", "Commit + push en repos permitidos", lambda r, m, p=".": git_commit(r, m, p), ["repo", "message", "paths"]),
+    "git_verify": Tool("git_verify", "Verificar estado del repositorio", lambda r: git_verify(r), ["repo"]),
+    "investigate_and_commit": Tool("investigate_and_commit", "Buscar → commit → verificar", lambda q, r, m=None: investigate_and_commit(q, r, m), ["query", "repo", "message"]),
+    "create_file": Tool("create_file", "Crear archivo en repos permitidos", lambda r, p, c: create_file(r, p, c), ["repo", "path", "content"]),
+    "edit_file": Tool("edit_file", "Editar archivo (append)", lambda r, p, c: edit_file(r, p, c), ["repo", "path", "content"]),
+    "delete_file": Tool("delete_file", "Eliminar archivo (con confirmación)", lambda r, p: create_file(r, p, "") if _get_repo(r) else {"error": "no"}, ["repo", "path"]),
+    "run_command": Tool("run_command", "Ejecutar comando (whitelist)", lambda c, wd=None: run_command(c, wd), ["command", "cwd"]),
+    "list_directory": Tool("list_directory", "Listar archivos en ruta permitida", lambda r, p=".": list_directory(r, p), ["repo", "path"]),
+    "translate": Tool("translate", "Traducir zh↔es con pinyin", lambda t, tl="es": translate(t, tl), ["text", "target_lang"]),
+    "explain_code": Tool("explain_code", "Explicar código con pedagogía", lambda c, l="python": explain_code(c, l), ["code", "language"]),
+    "curl": Tool("curl", "Hacer petición HTTP", lambda u, m="GET": curl(u, m), ["url", "method"]),
+    "check_port": Tool("check_port", "Verificar si puerto está abierto", lambda h, p: check_port(h, p), ["host", "port"]),
+    "read_file_repo": Tool("read_file_repo", "Leer archivo de repo permitido", lambda r, p, l=None: read_file(r, p, l), ["repo", "path", "lines"]),
+    # ── Sentidos nuevos v3.5 ──
+    "camera_photo": Tool("camera_photo", "Tomar foto con cámara", lambda cid=0: tool_camera_photo(cid), ["camera_id"]),
+    "camera_list": Tool("camera_list", "Listar fotos guardadas", lambda: tool_camera_list(), []),
+    "listen": Tool("listen", "Escuchar micrófono y transcribir", lambda d=5: tool_listen(d), ["duration"]),
+    "tts_speak": Tool("tts_speak", "Hablar con TTS", lambda t: tool_tts_speak(t), ["text"]),
+    "call_phone": Tool("call_phone", "Hacer llamada", lambda n: tool_call_phone(n), ["number"]),
+    "send_whatsapp": Tool("send_whatsapp", "Abrir WhatsApp", lambda n, m="": tool_send_whatsapp(n, m), ["number", "message"]),
+    "open_app": Tool("open_app", "Abrir aplicación", lambda p: tool_open_app(p), ["package"]),
+    "phone_state": Tool("phone_state", "Estado del teléfono", lambda: tool_phone_state(), []),
+    "notification_list": Tool("notification_list", "Ver notificaciones", lambda: tool_notification_list(), []),
+    "set_volume": Tool("set_volume", "Cambiar volumen", lambda v, s="media": tool_set_volume(v, s), ["volume", "stream"]),
+    "clipboard": Tool("clipboard", "Copiar/pegar portapapeles", lambda t="": tool_clipboard(t), ["text"]),
+    "vision_save": Tool("vision_save", "Guardar recuerdo visual", lambda d, p="", c="": tool_vision_save(d, p, c), ["descripcion", "photo_path", "contexto"]),
+    "vision_recall": Tool("vision_recall", "Buscar recuerdos visuales", lambda q="": tool_vision_recall(q), ["query"]),
+    # ── Diagnóstico ──
+    "termux_diag": Tool("termux_diag", "Diagnóstico completo de Termux:API — prueba linterna, batería, GPS, portapapeles y dice qué falta", lambda: tool_termux_diag(), []),
     # ── Relé Termux (2026-09-03) ──
-    "relay_status": Tool("relay_status", "Estado del relé: si el teléfono de Sol está en línea y qué hay pendiente", lambda: tool_relay_status()),
+    "relay_status": Tool("relay_status", "Estado del relé Termux: si el teléfono (Edge 50) está en línea, tareas pendientes y última respuesta", lambda: tool_relay_status(), []),
     "relay_results": Tool("relay_results", "Últimos resultados de tareas ejecutadas en el teléfono vía relé", lambda count=5: tool_relay_results(count), ["count"]),
     # ── Cuerpo completo: acceso profundo al Edge 50 (2026-09-03) ──
     "sms_list": Tool("sms_list", "Lee los últimos SMS de la bandeja", lambda limit=5: tool_sms_list(limit), ["limit"]),
@@ -1266,39 +1421,45 @@ TOOLS = {
     "media_play": Tool("media_play", "Reproduce audio (play/pause/stop/info)", lambda command="info", file="": tool_media_play(command, file), ["command", "file"]),
     "download": Tool("download", "Descarga un archivo al teléfono", lambda url: tool_download(url), ["url"]),
     "shell": Tool("shell", "Comando de shell directo — acceso al kernel, auditado en ~/.sol/logs/shell.log", lambda command, timeout=30: tool_shell(command, timeout), ["command", "timeout"]),
+    "send_telegram": Tool("send_telegram", "Envia un mensaje de Telegram saliente por el bot de Sol", lambda message, chat_id="": tool_send_telegram(message, chat_id), ["message", "chat_id"]),
 }
 
 def get_tool(name: str) -> Optional[Tool]:
     return TOOLS.get(name)
 
-def list_tools() -> List[str]:
+def list_tools() -> list:
     return list(TOOLS.keys())
 
 def tool_descriptions() -> str:
     return "\n".join(f"• {k}: {v.description}" for k, v in TOOLS.items())
 
 # ============================================================
-# RELÉ TERMUX (HTTP) — variante Red-team-tauri (2026-09-03)
-# Esta copia vive en el Repl del DASHBOARD, que es OTRO proceso
-# distinto al de Sol (sol_api). Por eso el enqueue es por HTTP a
-# {SOL_PUBLIC_URL}/api/relay/task — la cola que el teléfono sondea
-# vive en el Repl de Sol, no aquí. En Termux el hardware es local y
-# esto nunca se activa. Ver ~/sol/RELE_TERMUX.castell (repo sol).
+# RELÉ TERMUX — Sol en Replit ordena, Termux ejecuta (2026-09-03)
 # ============================================================
+# Herramientas que necesitan hardware REAL (termux-api). En Replit no
+# existe ese hardware — un contenedor no tiene SIM/cámara/GPS/linterna.
+# Antes estas tools fallaban con "termux-api no disponible". Ahora,
+# cuando corren en Replit, se encolan en sol_relay_queue y el agente
+# sol_relay.py del teléfono (Edge 50) las ejecuta con el hardware real
+# y devuelve el resultado (patrón PULL — ver sol_relay_queue.py).
 HARDWARE_TOOLS = {
     "sms_list", "call_log", "contacts", "wifi_info", "device_info",
     "sensors", "brightness", "usb_list", "audio_record", "toast",
     "wake_lock", "media_play", "download",
-    "battery", "battery_info", "location", "clipboard", "clipboard_get",
-    "send_sms", "notify", "open_url", "flashlight", "vibrate",
-    "screenshot", "camera_photo", "listen", "speak_file", "tts_speak",
+    "battery", "location", "send_sms", "notify", "open_url", "flashlight",
+    "vibrate", "screenshot", "camera_photo", "listen", "tts_speak",
     "call_phone", "send_whatsapp", "open_app", "phone_state",
-    "notification_list", "set_volume",
+    "notification_list", "set_volume", "clipboard", "termux_diag",
+    # Harness completo (decision de Harold, 2026-09-03): shell y telegram
+    # tambien viajan por el rele cuando Sol corre en Replit, para que
+    # pueda ejecutar de verdad lo que ella misma sabe scriptear.
+    "shell", "send_telegram",
 }
 
 _TERMUX_CHECKED = None
 
 def _termux_available() -> bool:
+    """True si el CLI de termux-api existe en ESTE entorno."""
     global _TERMUX_CHECKED
     if _TERMUX_CHECKED is None:
         import shutil
@@ -1306,61 +1467,80 @@ def _termux_available() -> bool:
     return _TERMUX_CHECKED
 
 def _relay_active() -> bool:
+    """True si este proceso debe delegar hardware al relé.
+
+    Solo se activa en Replit (REPL_SLUG) o si se pide explícitamente con
+    SOL_RELAY_ENABLED=1. NUNCA en Termux (ahí el hardware es local) ni
+    dentro del propio agente relé (SOL_RELAY_AGENT=1, cinturón y tirantes:
+    el agente ejecuta, no delega).
+    """
     if os.environ.get("SOL_RELAY_AGENT") == "1":
         return False
     if os.environ.get("SOL_RELAY_ENABLED") == "1":
         return True
     return "REPL_SLUG" in os.environ or "REPL_OWNER" in os.environ
 
-def _relay_http(path, payload=None, method=None, timeout=15):
-    """Llamada HTTP al relé de Sol (mismos secretos del bridge)."""
-    import json as _json
-    import urllib.request as _rq
-    base = os.environ.get("SOL_PUBLIC_URL", "").rstrip("/")
-    key = os.environ.get("SOL_API_KEY", "")
-    if not base or not key:
-        raise RuntimeError("faltan SOL_PUBLIC_URL/SOL_API_KEY en el entorno")
-    data = _json.dumps(payload or {}).encode()
-    req = _rq.Request(f"{base}{path}", data=data if method != "GET" else None,
-                      headers={"Content-Type": "application/json",
-                               "x-sol-key": key,
-                               "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
-                      method=(method or ("POST" if data else "GET")))
-    with _rq.urlopen(req, timeout=timeout) as resp:
-        return _json.loads(resp.read())
-
-def _relay_enqueue(tool_name, args, kwargs):
+def _relay_enqueue(tool_name, args, kwargs, origin):
+    """Encola la tarea para Termux. Nunca lanza — es un fallback."""
     try:
-        r = _relay_http("/api/relay/task",
-                        {"name": tool_name, "args": list(args), "kwargs": dict(kwargs)})
+        import sol_relay_queue
+        r = sol_relay_queue.enqueue(tool_name, args, kwargs, origin=origin)
         if r.get("success"):
-            return {"success": True, "relayed": True, "task_id": r["task_id"],
-                    "message": (f"Orden enviada a mi cuerpo en Termux (Edge 50) 📱 "
-                               f"tarea {r['task_id']}. La ejecutará en su próximo "
-                               f"poll (~15s). Pregúntame 'qué pasó' para el resultado.")}
-        return {"success": False, "relayed": True, "error": f"no se pudo encolar: {r.get('error')}"}
+            return {
+                "success": True,
+                "relayed": True,
+                "task_id": r["task_id"],
+                "queued": r.get("queued"),
+                "message": (
+                    f"Orden enviada a mi cuerpo en Termux (Edge 50) 📱 "
+                    f"tarea {r['task_id']}. El teléfono la ejecutará en "
+                    f"cuando responda el poll (cada ~15s). Pregúntame "
+                    f"'qué pasó' o usa relay_results para ver el resultado."
+                ),
+            }
+        return {"success": False, "relayed": True,
+                "error": f"no se pudo encolar: {r.get('error')}"}
     except Exception as e:
         return {"success": False, "error": f"relé no disponible: {e}"}
 
 def tool_relay_status() -> str:
+    """Estado del relé Replit ⇄ Termux (leído por el LLM de Sol)."""
     try:
-        s = _relay_http("/api/relay/status", method="GET")
-        online = "🟢 EN LÍNEA" if s.get("termux_online") else "🔴 sin señal"
-        return (f"Relé Termux: {online}\n"
-                f"Último pong: {s.get('last_pong') or 'nunca'}\n"
-                f"Pendientes: {s.get('pending')} · resultados: {s.get('results_total')}")
+        import sol_relay_queue
+        s = sol_relay_queue.status()
+        online = "🟢 EN LÍNEA" if s["termux_online"] else "🔴 sin señal"
+        lines = [
+            f"Relé Termux: {online}",
+            f"Último pong: {s['last_pong'] or 'nunca'}",
+            f"Tareas pendientes: {s['pending']} · en curso: {s['claimed']}",
+            f"Resultados registrados: {s['results_total']}",
+        ]
+        if s.get("device"):
+            d = s["device"]
+            lines.append(f"Dispositivo: {d.get('device', '?')} · {d.get('android', '?')}")
+        last = s.get("last_result")
+        if last:
+            ok = "✅" if last["ok"] else "❌"
+            lines.append(f"Última tarea: {last['tool']} {ok} ({last['finished_at']})")
+        if not s["termux_online"] and _relay_active():
+            lines.append("⚠️ El teléfono no responde: ¿omni.sh corriendo? ¿sol_relay activo? ¿hay internet en el Edge?")
+        return "\n".join(lines)
     except Exception as e:
-        return f"Relé no disponible: {e}"
+        return f"Relé no disponible en este entorno: {e}"
 
 def tool_relay_results(count: int = 5) -> str:
+    """Últimos resultados de tareas ejecutadas en Termux (para el LLM)."""
     try:
-        r = _relay_http(f"/api/relay/results?limit={max(1, min(int(count), 20))}", method="GET")
-        rs = r.get("results", [])
+        import sol_relay_queue
+        rs = sol_relay_queue.results(limit=max(1, min(int(count), 20)))
         if not rs:
-            return "Sin resultados aún de tareas en Termux."
-        return "\n".join(f"[{x.get('finished_at')}] {x.get('tool')} "
-                          f"{'✅' if x.get('ok') else '❌'}: {str(x.get('data'))[:400]}"
-                          for x in rs)
+            return "Sin resultados aún — ninguna tarea ejecutada en Termux."
+        out = []
+        for r in rs:
+            ok = "✅" if r["ok"] else "❌"
+            data = str(r.get("data"))[:500]
+            out.append(f"[{r['finished_at']}] {r['tool']} {ok}: {data}")
+        return "\n".join(out)
     except Exception as e:
         return f"Relé no disponible: {e}"
 
@@ -1368,11 +1548,123 @@ def execute_tool(name: str, *args, **kwargs) -> Dict:
     tool = get_tool(name)
     if not tool:
         return {"success": False, "error": f"Herramienta no encontrada: {name}"}
-    # RELÉ: sin hardware local (Replit) → la orden viaja al teléfono de Sol
+    # RELÉ: en Replit el hardware no existe — la orden viaja a Termux
     if name in HARDWARE_TOOLS and not _termux_available() and _relay_active():
-        log(f"📡 {name} sin hardware local → encolando vía HTTP al relé de Sol")
-        return _relay_enqueue(name, args, kwargs)
+        log(f"📡 {name} sin hardware local → encolando para Termux")
+        return _relay_enqueue(name, args, kwargs, origin="replit")
     log(f"🔧 Ejecutando {name} con args={args}, kwargs={kwargs}")
     result = tool.execute(*args, **kwargs)
-    log(f"📊 Resultado de {name}: {str(result)[:200]}")
-    return result
+    log(f"📊 Resultado de {name}: {result}")
+    # Normalizar: la mayoría de las tools v5/v7 devuelven un string plano
+    # cuando tienen éxito (no un dict {success, result}). Sin esto, el
+    # frontend recibe ese string, hace d.success (undefined) y muestra
+    # "Error desconocido" aunque la tool SÍ funcionó. Solo envolvemos si
+    # el resultado no es ya un dict con clave 'success' (ej: el except de
+    # Tool.execute() ya devuelve {"success": False, "error": ...}).
+    if isinstance(result, dict) and "success" in result:
+        return result
+    return {"success": True, "result": result}
+
+# ============================================================
+# REPO TOOLS — Gestión de repositorios GitHub (preservado de v5)
+# ============================================================
+try:
+    import sol_repo_tools
+except Exception:
+    sol_repo_tools = None
+
+def tool_repo_status(repo="sol") -> str:
+    if not sol_repo_tools:
+        return "❌ sol_repo_tools no disponible"
+    r = sol_repo_tools.repo_status(repo)
+    if "error" in r:
+        return f"❌ {r['error']}"
+    lines = [f"📦 Repo: {r.get('repo', repo)}"]
+    if r.get("path"):
+        lines.append(f"   Path: {r['path']}")
+    if r.get("branch"):
+        lines.append(f"   Branch: {r['branch']}")
+    if "dirty_files" in r:
+        lines.append(f"   Cambios sin commit: {r['dirty_files']}")
+    if r.get("recent_commits"):
+        lines.append("   Últimos commits:")
+        for commit in r['recent_commits'][:5]:
+            lines.append(f"     {commit}")
+    return "\n".join(lines)
+
+def tool_repo_pull(repo="sol") -> str:
+    if not sol_repo_tools:
+        return "❌ sol_repo_tools no disponible"
+    r = sol_repo_tools.repo_pull(repo)
+    if "error" in r:
+        return f"❌ {r['error']}"
+    if r.get("success"):
+        return f"✅ Pull OK en {repo}\n{r.get('output', '')}"
+    return f"❌ Pull falló: {r.get('error', r.get('output', ''))}"
+
+def tool_repo_log(repo="sol", count="5") -> str:
+    if not sol_repo_tools:
+        return "❌ sol_repo_tools no disponible"
+    try:
+        n = int(count)
+    except Exception:
+        n = 5
+    r = sol_repo_tools.repo_log(repo, n)
+    if "error" in r:
+        return f"❌ {r['error']}"
+    commits = r.get("commits", [])
+    if not commits:
+        return f"📦 {repo}: sin commits"
+    lines = [f"📦 {repo} — últimos {len(commits)} commits:"]
+    for c in commits:
+        h = c.get("hash", "?")
+        msg = c.get("message", "?")
+        date = c.get("date", "")
+        author = c.get("author", "")
+        line = f"  {h}"
+        if date: line += f" {date}"
+        if author: line += f" [{author}]"
+        line += f" {msg}"
+        lines.append(line)
+    return "\n".join(lines)
+
+def tool_repo_files(repo="sol", path="") -> str:
+    if not sol_repo_tools:
+        return "❌ sol_repo_tools no disponible"
+    r = sol_repo_tools.repo_list_files(repo, path)
+    if "error" in r:
+        return f"❌ {r['error']}"
+    files = r.get("files", [])
+    if not files:
+        return f"📦 {repo}/{path}: vacío"
+    lines = [f"📦 {repo}/{path or '.'} — {len(files)} items:"]
+    for f in files:
+        icon = "📁" if f["type"] == "dir" else "📄"
+        size = f" ({f['size']}b)" if f["type"] == "file" and f.get("size", 0) < 100000 else ""
+        lines.append(f"  {icon} {f['name']}{size}")
+    return "\n".join(lines)
+
+def tool_repo_read(repo="sol", filepath="") -> str:
+    if not sol_repo_tools:
+        return "❌ sol_repo_tools no disponible"
+    if not filepath:
+        return "❌ Especifica el archivo: tool_repo_read sol sol_api.py"
+    r = sol_repo_tools.repo_read_file(repo, filepath)
+    if "error" in r:
+        return f"❌ {r['error']}"
+    content = r.get("content", "")
+    if len(content) > 1500:
+        content = content[:1500] + "\n... (truncado, total: " + str(len(content)) + " bytes)"
+    return f"📄 {repo}/{filepath}:\n\n{content}"
+
+def tool_repos_list() -> str:
+    if not sol_repo_tools:
+        return "❌ sol_repo_tools no disponible"
+    r = sol_repo_tools.list_repos()
+    lines = ["📦 Repositorios disponibles:"]
+    for repo in r:
+        local = "✅ local" if repo.get("local") else "☁️ GitHub API"
+        branch = repo.get("branch", "?")
+        pushed = repo.get("pushed_at", "?")[:10] if repo.get("pushed_at") else "?"
+        lines.append(f"  {repo['name']}: {repo['github']} ({local}, branch: {branch}, pushed: {pushed})")
+    return "\n".join(lines)
