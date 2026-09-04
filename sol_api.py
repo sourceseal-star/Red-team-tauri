@@ -251,16 +251,18 @@ async def chat(request: Request):
 # VOZ — TTS (gTTS en Replit, termux-tts-speak en Termux)
 # ═══════════════════════════════════════════════════════════════
 @app.get("/api/sol/tts")
-def tts(text: str = ""):
+def tts(text: str = "", lang: str = "es"):
     clean = re.sub(r"[^\w áéíóúñü,\.?!:-]", "", text).strip()
     if not clean:
         return JSONResponse({"error": "texto vacío"}, status_code=400)
+    if lang not in ("es", "zh", "en", "ja"):
+        lang = "es"
 
-    # gTTS funciona en ambos entornos
+    # gTTS funciona en ambos entornos (zh = chino mandarín para SIL escucha)
     try:
         from gtts import gTTS
         buf = io.BytesIO()
-        gTTS(clean, lang="es").write_to_fp(buf)
+        gTTS(clean, lang=lang).write_to_fp(buf)
         buf.seek(0)
         return StreamingResponse(buf, media_type="audio/mpeg",
                                  headers={"Content-Disposition": "inline; filename=sol.mp3"})
@@ -270,9 +272,13 @@ def tts(text: str = ""):
     # Fallback Termux: termux-tts-speak
     if not IS_REPLIT and SOL_CORE_OK:
         try:
-            sol_core.speak(clean)
+            import subprocess as _sp
+            _sp.run(["termux-tts-speak", "-l", lang, clean], timeout=10)
         except Exception:
-            pass
+            try:
+                sol_core.speak(clean)
+            except Exception:
+                pass
     return JSONResponse({"ok": True, "note": "TTS no disponible"})
 
 @app.post("/api/sol/speak")
@@ -427,7 +433,11 @@ except Exception as e:
 def sil_lessons(language: str = "chino"):
     if not _sil_ok:
         return {"lessons": []}
-    return {"lessons": sil.list_lessons(language)}
+    lessons = list(sil.list_lessons(language))
+    if language == "chino":
+        lessons += ["hsk3", "hsk4", "hsk5", "chengyu", "gramatica",
+                   "profesional", "tech", "clasificadores"]
+    return {"lessons": lessons}
 
 @app.get("/api/sol/sil/lesson")
 def sil_lesson(language: str = "chino", name: str = "saludos"):
@@ -578,6 +588,164 @@ def sil_stats():
         return sil.get_learning_stats()
     except Exception:
         return {"srs": {"total_items": 0, "due_today": 0}}
+
+# ═══════════════════════════════════════════════════════════════
+# SIL EJERCICIOS — escucha / escritura / emparejar / estándar / mixto
+# (Pendiente Regla #17 del LEEME_PRIMERO — implementado 2026-09-03)
+# ═══════════════════════════════════════════════════════════════
+import random as _rand
+
+ADV_LESSON_KEYS = {
+    "hsk3": "chino_hsk3", "hsk4": "chino_hsk4", "hsk5": "chino_hsk5",
+    "chengyu": "chino_chengyu", "gramatica": "chino_gramatica",
+    "profesional": "chino_profesional", "tech": "chino_tech",
+    "clasificadores": "chino_量词",
+}
+
+def _sil_pool(language: str, lesson: str):
+    """Items unificados {word, pinyin, meaning} de una lección (básica o avanzada)."""
+    items = []
+    if lesson in ADV_LESSON_KEYS:
+        if not sil_advanced:
+            return []
+        adv = sil_advanced.get_advanced_lessons().get(ADV_LESSON_KEYS[lesson], {})
+        for v in adv.get("vocabulary", []):
+            w = v.get("word", "")
+            if not w:
+                continue
+            items.append({"word": w, "pinyin": v.get("pinyin", ""),
+                          "meaning": v.get("meaning", ""),
+                          "example": v.get("example", ""),
+                          "example_tr": v.get("example_tr", "")})
+        for p in adv.get("phrases", []):
+            items.append({"word": p.get("chinese", ""), "pinyin": p.get("pinyin", ""),
+                          "meaning": p.get("spanish", p.get("meaning", "")),
+                          "example": "", "example_tr": ""})
+        return items
+    l = sil.get_lesson(language, lesson)
+    if not l:
+        return []
+    for v in l.get("vocabulary", []):
+        items.append({"word": v.get("word", v.get("chinese", "")),
+                      "pinyin": v.get("pinyin", v.get("romaji", "")),
+                      "meaning": v.get("meaning", v.get("spanish", "")),
+                      "example": "", "example_tr": ""})
+    for p in l.get("phrases", []):
+        items.append({"word": p.get("chinese", p.get("japanese", "")),
+                      "pinyin": p.get("pinyin", p.get("romaji", "")),
+                      "meaning": p.get("spanish", ""), "example": "", "example_tr": ""})
+    return [i for i in items if i["word"]]
+
+def _sil_distractor_meanings(language: str, correct: str, n: int = 3):
+    """Significados distractores sacados de TODO el SIL de ese idioma."""
+    pool = []
+    try:
+        for lk, lv in sil._load_lessons().items():
+            if not lk.startswith(f"{language}_"):
+                continue
+            for v in lv.get("vocabulary", []):
+                m = v.get("meaning", v.get("es", ""))
+                if m and m != correct:
+                    pool.append(m)
+            for p in lv.get("phrases", []):
+                m = p.get("spanish", p.get("es", ""))
+                if m and m != correct:
+                    pool.append(m)
+    except Exception:
+        pass
+    try:
+        for lk, lv in (sil_advanced.get_advanced_lessons() if sil_advanced else {}).items():
+            if language != "chino":
+                break
+            for v in lv.get("vocabulary", []):
+                m = v.get("meaning", "")
+                if m and m != correct:
+                    pool.append(m)
+            for p in lv.get("phrases", []):
+                m = p.get("spanish", p.get("meaning", ""))
+                if m and m != correct:
+                    pool.append(m)
+    except Exception:
+        pass
+    _rand.shuffle(pool)
+    return pool[:n]
+
+@app.post("/api/sol/sil/exercise")
+async def sil_exercise(request: Request):
+    """Genera un ejercicio según modo: estandar | escucha | escritura | emparejar | mixto."""
+    if not _sil_ok:
+        return {"error": "SIL no disponible"}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    language = body.get("language", "chino")
+    lesson = body.get("lesson", "saludos")
+    mode = body.get("mode", "estandar")
+
+    pool = _sil_pool(language, lesson)
+    if len(pool) < 4:
+        return {"error": f"La lección '{lesson}' necesita al menos 4 palabras para ejercicios"}
+
+    if mode == "mixto":
+        mode = _rand.choice(["estandar", "escucha", "escritura"])
+
+    item = _rand.choice(pool)
+
+    if mode == "escucha":
+        # Se OYE el audio (zh) y se elige el hanzi correcto entre 4
+        options = [item["word"]]
+        for other in _rand.sample(pool, len(pool)):
+            if other["word"] != item["word"] and other["word"] not in options:
+                options.append(other["word"])
+            if len(options) >= 4:
+                break
+        _rand.shuffle(options)
+        return {"mode": "escucha", "audio_text": item["word"], "options": options,
+                "correct": item["word"], "pinyin": item["pinyin"],
+                "meaning": item["meaning"], "item_id": item["word"], "type": "escucha"}
+
+    if mode == "escritura":
+        # Se ve pinyin + significado; hay que ESCRIBIR el hanzi
+        return {"mode": "escritura", "prompt_pinyin": item["pinyin"],
+                "prompt_meaning": item["meaning"], "answer": item["word"],
+                "length": len(item["word"]), "item_id": item["word"], "type": "escritura"}
+
+    if mode == "emparejar":
+        # 4 pares hanzi ↔ significado para emparejar
+        sample = _rand.sample(pool, 4)
+        return {"mode": "emparejar", "type": "emparejar",
+                "pairs": [{"hanzi": s["word"], "pinyin": s["pinyin"],
+                           "meaning": s["meaning"]} for s in sample]}
+
+    # estandar: se ve el hanzi y se elige el significado entre 4 opciones
+    options = [item["meaning"]]
+    options.extend(_sil_distractor_meanings(language, item["meaning"]))
+    while len(options) < 4:
+        options.append(f"(opción {len(options)+1})")
+    _rand.shuffle(options)
+    return {"mode": "estandar", "hanzi": item["word"], "pinyin": item["pinyin"],
+            "options": options, "correct": item["meaning"],
+            "item_id": item["word"], "type": "estandar"}
+
+@app.post("/api/sol/sil/exercise/check")
+async def sil_exercise_check(request: Request):
+    """Valida una respuesta de escritura server-side (no expone el hanzi antes de contestar)."""
+    if not _sil_ok:
+        return {"error": "SIL no disponible"}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    user = str(body.get("answer", "")).strip()
+    correct = str(body.get("correct", "")).strip()
+    quality = 5 if user == correct else (5 if user.replace(" ", "") == correct.replace(" ", "") else 2)
+    item_id = body.get("item_id", correct)
+    try:
+        sil.process_practice_answer("exercise", item_id, quality)
+    except Exception:
+        pass
+    return {"correct": quality == 5, "correct_answer": correct}
 
 @app.get("/api/sol/sil/export")
 def sil_export():

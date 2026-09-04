@@ -331,3 +331,40 @@ flotante (expresiones happy/curious/listening/etc), se necesitaría portar
 todo el sistema setExpr() al React state — pero la burbuja es solo 56px
 y las expresiones sutiles no se distinguirían. El panel expandido ya las
 tiene todas vía el iframe.
+
+## Sesión 2026-09-03 (4) — SIL: ejercicios escucha/escritura/emparejar (pendiente Regla #17)
+
+**Lo pedido:** terminar el pendiente del LEEME_PRIMERO — ejercicios de
+escucha/escritura/emparejar sobre chengyu/gramática/niveles avanzados.
+
+**Hecho y verificado en vivo (servidor de prueba + test DOM jsdom):**
+
+1. **`/api/sol/sil/exercise`** (POST) — genera ejercicios por modo:
+   - `estandar`: hanzi → elegir significado entre 4 opciones
+   - `escucha`: audio zh (gTTS mandarín) → elegir el hanzi que sonó entre 4
+   - `escritura`: pinyin + significado → escribir el hanzi (valida el
+     server vía `/api/sol/sil/exercise/check`, reporta al SRS)
+   - `emparejar`: 4 pares hanzi ↔ significado (juego de columnas)
+   - `mixto`: el server sortea uno de los tres primeros
+   Pool unificado: lecciones básicas + los 8 niveles de sil_advanced
+   (hsk3/hsk4/hsk5/chengyu/gramatica/profesional/tech/clasificadores).
+
+2. **`/api/sol/tts?lang=zh`** — TTS en mandarín para la escucha (antes
+   solo es). Fallback Termux: `termux-tts-speak -l zh`.
+
+3. **`/api/sol/sil/lessons`** ahora incluye los 8 niveles avanzados en
+   el dropdown (antes solo saludos/comida/numeros).
+
+4. **UI en sol.html**: barra de 5 modos (📖🎧✍️🔗🎲), botones de opción,
+   juego de emparejar con estados sel/ok/bad, feedback con pinyin al
+   fallar escucha, reporte SRS de cada respuesta. Sincronizado a
+   tauri-frontend/public y dist.
+
+**Pendiente de Harold (decisión, no código):**
+- El bot de Telegram (@sol_amg_bot): el fix del conflicto con C2 ya está
+  (commit Sesión 2026-09-02), pero activar el puente con el token del
+  `.env` requiere SU confirmación explícita. Mientras tanto queda off.
+- `RELE_TERMUX.castell` vive en `~/sol` (repo privado) — revisado desde
+  aquí el relay que lo implementa (omni.sh §10 + sol_tools.py variante
+  HTTP). El documento mismo no es accesible sin clonar el repo sol.
+

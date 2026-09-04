@@ -246,6 +246,17 @@
   .sil-tabs { display: flex; gap: 6px; margin: 10px 0; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
   .sil-tab { flex: 1; background: transparent; border: none; border-radius: 8px; padding: 6px; color: var(--muted); cursor: pointer; }
   .sil-tab.active { background: rgba(255,183,77,0.1); color: var(--amber); font-weight: bold; }
+  .sil-modes { display: flex; gap: 5px; margin: 10px 0; flex-wrap: wrap; }
+  .sil-mode { padding: 6px 10px; background: rgba(255,183,77,0.05); border: 1px solid var(--border); border-radius: 8px; color: var(--muted); cursor: pointer; font-size: 0.7rem; }
+  .sil-mode.active { background: rgba(255,183,77,0.18); color: var(--amber); border-color: rgba(255,183,77,0.45); }
+  .sil-opt { display: block; width: 100%; margin: 5px 0; padding: 10px; background: #111827; border: 1px solid var(--border); border-radius: 10px; color: var(--text); cursor: pointer; font-size: 0.9rem; text-align: left; transition: all .15s; font-family: inherit; }
+  .sil-opt:hover { border-color: rgba(255,183,77,0.4); background: rgba(255,183,77,0.06); }
+  .sil-opt.ok { border-color: #22c55e; background: rgba(34,197,94,0.12); color: #7ee2a8; }
+  .sil-opt.bad { border-color: #ef4444; background: rgba(239,68,68,0.12); color: #f87171; }
+  .sil-pair { padding: 8px 10px; margin: 4px 0; background: #111827; border: 1px solid var(--border); border-radius: 8px; color: var(--text); cursor: pointer; font-size: 0.8rem; transition: all .15s; }
+  .sil-pair.sel { border-color: var(--amber); background: rgba(255,183,77,0.1); }
+  .sil-pair.ok { border-color: #22c55e; background: rgba(34,197,94,0.12); color: #7ee2a8; cursor: default; }
+  .sil-pair.bad { border-color: #ef4444; background: rgba(239,68,68,0.1); }
 </style>
 </head>
 <body>
@@ -327,6 +338,13 @@
       <button class="sil-tab" id="tabProgress" onclick="silSwitchTab('progress')">Progreso</button>
     </div>
     <div id="silPracticePanel">
+      <div class="sil-modes">
+        <button class="sil-mode active" id="silModeEstandar" onclick="silSetMode('estandar')">📖 Estándar</button>
+        <button class="sil-mode" id="silModeEscucha" onclick="silSetMode('escucha')">🎧 Escucha</button>
+        <button class="sil-mode" id="silModeEscritura" onclick="silSetMode('escritura')">✍️ Escritura</button>
+        <button class="sil-mode" id="silModeEmparejar" onclick="silSetMode('emparejar')">🔗 Emparejar</button>
+        <button class="sil-mode" id="silModeMixto" onclick="silSetMode('mixto')">🎲 Mixto</button>
+      </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;">
         <select id="silLang" style="flex:1;padding:8px;background:#111827;border:1px solid var(--border);border-radius:8px;color:var(--text);">
           <option value="chino">Chino</option>
@@ -342,7 +360,8 @@
         <div id="silHint" style="font-size:0.8rem;color:var(--muted);margin-top:4px;"></div>
         <div id="silFeedback" style="margin-top:8px;font-size:0.9rem;"></div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:12px;">
+      <div id="silExerciseArea"></div>
+      <div id="silAnswerRow" style="display:flex;gap:8px;margin-top:12px;">
         <input id="silAnswer" type="text" placeholder="Tu respuesta..." style="flex:1;padding:10px;background:#111827;border:1px solid var(--border);border-radius:10px;color:var(--text);">
         <button onclick="silCheck()" style="background:var(--amber);border:none;border-radius:10px;padding:10px 16px;color:#000;font-weight:bold;">✓</button>
         <button onclick="silNext()" style="background:rgba(255,183,77,0.1);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--amber-soft);">⏭️</button>
@@ -714,6 +733,14 @@ $('openSilBtn').onclick = silOpen;
 
 // ═══ SIL — Inmersión Lingüística (mismo origen: /api/sol/sil/*) ═══
 let silCurrentItem = null;
+let silMode = 'estandar';
+const SIL_MODE_IDS = { estandar:'silModeEstandar', escucha:'silModeEscucha', escritura:'silModeEscritura', emparejar:'silModeEmparejar', mixto:'silModeMixto' };
+function silSetMode(m) {
+  silMode = m;
+  Object.values(SIL_MODE_IDS).forEach(id => $(id).classList.remove('active'));
+  $(SIL_MODE_IDS[m]).classList.add('active');
+  silNext();
+}
 function silOpen() { $('silModal').classList.add('open'); silSwitchTab('practice'); silLoadLessons(); silNext(); }
 function silClose() { $('silModal').classList.remove('open'); }
 function silSwitchTab(tab) {
@@ -734,29 +761,127 @@ async function silLoadLessons() {
 }
 async function silNext() {
   const language = $('silLang').value, lesson = $('silLesson').value;
+  $('silExerciseArea').innerHTML = '';
+  $('silAnswerRow').style.display = 'flex';
   try {
-    const r = await fetch('/api/sol/sil/practice/next', { method: 'POST', headers, body: JSON.stringify({ language, lesson }) });
+    const r = await fetch('/api/sol/sil/exercise', { method: 'POST', headers, body: JSON.stringify({ language, lesson, mode: silMode }) });
     const d = await r.json();
-    if (d.error) { $('silContent').textContent = '⚠️ ' + d.error; return; }
-    silCurrentItem = d.item;
-    const item = d.item;
-    if (item.type === 'vocabulary') { const w = item.data; $('silContent').textContent = w.word || w.kanji || '?'; $('silHint').textContent = (w.pinyin || w.romaji || '') + ' — ¿significado?'; speak(w.word || w.kanji || ''); }
-    else if (item.type === 'phrase') { const p = item.data; $('silContent').textContent = p.chinese || p.japanese || '?'; $('silHint').textContent = (p.pinyin || p.romaji || '') + ' — ¿traducción?'; speak(p.chinese || p.japanese || ''); }
-    else if (item.type === 'srs_review') { const d2 = item.data; $('silContent').textContent = d2.content || '📝 Repaso'; $('silHint').textContent = 'Recuerda: ' + (d2.meaning || ''); }
+    if (d.error) { $('silContent').textContent = '⚠️ ' + d.error; $('silHint').textContent = ''; $('silAnswerRow').style.display = 'none'; return; }
+    silCurrentItem = d;
     $('silFeedback').textContent = ''; $('silAnswer').value = '';
-  } catch {}
+
+    if (d.mode === 'escucha') {
+      $('silContent').innerHTML = '🔊 <span style="cursor:pointer;text-decoration:underline;" onclick="silPlayAudio(silCurrentItem.audio_text)">Escuchar otra vez</span>';
+      $('silHint').textContent = '¿Qué palabra escuchaste?';
+      $('silAnswerRow').style.display = 'none';
+      let html = '';
+      d.options.forEach(o => html += `<button class="sil-opt" onclick="silAnswerOption(this, '${o.replace(/'/g,"\\'")}')">${o}</button>`);
+      $('silExerciseArea').innerHTML = html;
+      silPlayAudio(d.audio_text);
+    } else if (d.mode === 'escritura') {
+      $('silContent').textContent = d.prompt_pinyin;
+      $('silHint').textContent = `Significado: ${d.prompt_meaning} — escribe el hanzi (${d.length} caracteres)`;
+      $('silAnswer').placeholder = 'Escribe el hanzi…';
+    } else if (d.mode === 'emparejar') {
+      $('silContent').textContent = '🔗 Empareja cada hanzi con su significado';
+      $('silHint').textContent = 'Toca uno de cada columna';
+      $('silAnswerRow').style.display = 'none';
+      const meanings = d.pairs.map(p => p.meaning).sort(() => Math.random() - 0.5);
+      let col = '<div style="display:flex;gap:8px;margin-top:8px;">';
+      col += '<div style="flex:1;text-align:center;font-size:1.1rem;">';
+      d.pairs.forEach((p, i) => col += `<div class="sil-pair" id="pairL${i}" onclick="silPairPick('L',${i})">${p.hanzi}</div>`);
+      col += '</div><div style="flex:1;text-align:center;font-size:0.75rem;">';
+      meanings.forEach((m, j) => col += `<div class="sil-pair" id="pairR${j}" data-meaning="${m.replace(/"/g,'&quot;')}" onclick="silPairPick('R',${j})">${m}</div>`);
+      col += '</div></div>';
+      $('silExerciseArea').innerHTML = col;
+      silMatchState = { sel: null, matched: 0, total: d.pairs.length };
+    } else {
+      // estandar
+      $('silContent').textContent = d.hanzi;
+      $('silHint').textContent = `${d.pinyin} — ¿qué significa?`;
+      $('silAnswerRow').style.display = 'none';
+      let html = '';
+      d.options.forEach(o => html += `<button class="sil-opt" onclick="silAnswerOption(this, '${o.replace(/'/g,"\\'")}')">${o}</button>`);
+      $('silExerciseArea').innerHTML = html;
+      silPlayAudio(d.hanzi);
+    }
+  } catch { $('silContent').textContent = '⚠️ Error de conexión'; }
+}
+let silMatchState = { sel: null, matched: 0, total: 4 };
+function silPairPick(side, idx) {
+  const el = $(`pair${side}${idx}`);
+  if (!el || el.classList.contains('ok')) return;
+  if (!silMatchState.sel) { el.classList.add('sel'); silMatchState.sel = { side, idx, meaning: el.dataset.meaning || null }; return; }
+  if (silMatchState.sel.side === side) {
+    $(`pair${silMatchState.sel.side}${silMatchState.sel.idx}`).classList.remove('sel');
+    el.classList.add('sel');
+    silMatchState.sel = { side, idx, meaning: el.dataset.meaning || null };
+    return;
+  }
+  // intento de pareja: L trae el hanzi, R el significado
+  const l = silMatchState.sel.side === 'L' ? $(`pairL${silMatchState.sel.idx}`) : el;
+  const r = silMatchState.sel.side === 'R' ? $(`pairR${silMatchState.sel.idx}`) : el;
+  const lText = l ? l.textContent : '';
+  const rText = r ? r.dataset.meaning : '';
+  const pair = (silCurrentItem.pairs || []).find(p => p.hanzi === lText);
+  const ok = pair && (pair.meaning === rText || pair.hanzi === rText || (r && r.textContent === pair.meaning));
+  if (ok) {
+    l.classList.remove('sel'); l.classList.add('ok');
+    el.classList.remove('sel'); el.classList.add('ok');
+    silMatchState.sel = null; silMatchState.matched++;
+    silReport(pair.hanzi, 5);
+    $('silFeedback').textContent = `✅ ${silMatchState.matched}/${silMatchState.total} emparejados`; $('silFeedback').style.color = '#66bb6a';
+    if (silMatchState.matched >= silMatchState.total) {
+      $('silFeedback').textContent = '🎉 ¡Todos emparejados! Siguiente →';
+      setTimeout(silNext, 1200);
+    }
+  } else {
+    l.classList.add('bad'); el.classList.add('bad');
+    silReport(silCurrentItem.pairs.find(p => p.hanzi === lText)?.hanzi || lText, 2);
+    setTimeout(() => { l.classList.remove('bad'); el.classList.remove('bad'); }, 600);
+    if (silMatchState.sel) $(`pair${silMatchState.sel.side}${silMatchState.sel.idx}`).classList.remove('sel');
+    el.classList.remove('sel');
+    silMatchState.sel = null;
+  }
+}
+function silPlayAudio(text) {
+  try { new Audio(`/api/sol/tts?text=${encodeURIComponent(text)}&lang=${$('silLang').value === 'japones' ? 'ja' : 'zh'}`).play(); } catch {}
+}
+function silAnswerOption(btn, chosen) {
+  const d = silCurrentItem;
+  const ok = chosen === d.correct;
+  btn.classList.add(ok ? 'ok' : 'bad');
+  if (!ok) { [...document.querySelectorAll('.sil-opt')].forEach(b => { if (b.textContent === d.correct) b.classList.add('ok'); }); }
+  let extra = '';
+  if (d.mode === 'escucha') extra = ` (${d.pinyin}) — ${d.meaning}`;
+  silFeedbackShow(ok, ok ? `✅ ¡Correcto!${d.mode === 'escucha' ? ' ' + d.pinyin : ''}` : `❌ Era: ${d.correct}${extra}`);
+  silReport(d.item_id, ok ? 5 : 2);
+  if (ok) setTimeout(silNext, 900);
+}
+function silFeedbackShow(ok, msg) {
+  const fb = $('silFeedback'); fb.textContent = msg; fb.style.color = ok ? '#66bb6a' : '#ef4444';
+  if (ok) { setMood('joy'); showThought('✅ ¡Bien!', 2000); } else setMood('concern');
+}
+async function silReport(itemId, quality) {
+  try { await fetch('/api/sol/sil/practice/answer', { method: 'POST', headers, body: JSON.stringify({ type: 'exercise', item_id: itemId, quality }) }); } catch {}
 }
 async function silCheck() {
   const answer = $('silAnswer').value.trim();
   if (!answer || !silCurrentItem) return;
-  const fb = $('silFeedback'); const item = silCurrentItem;
-  let correct = false;
-  if (item.type === 'vocabulary') correct = (item.data.meaning || '').toLowerCase().includes(answer.toLowerCase());
-  else if (item.type === 'phrase') correct = (item.data.spanish || '').toLowerCase().includes(answer.toLowerCase());
-  const itemId = item.data.word || item.data.chinese || item.data.japanese || 'item';
-  if (correct) { fb.textContent = '✅ ¡Correcto!'; fb.style.color = '#66bb6a'; setMood('joy'); showThought('✅ ¡Bien!', 2000); }
-  else { fb.textContent = '❌ Intenta de nuevo'; fb.style.color = '#ef4444'; setMood('concern'); }
-  try { await fetch('/api/sol/sil/practice/answer', { method: 'POST', headers, body: JSON.stringify({ type: item.type, item_id: itemId, quality: correct ? 5 : 2 }) }); } catch {}
+  const d = silCurrentItem;
+  if (d.mode === 'escritura') {
+    try {
+      const r = await fetch('/api/sol/sil/exercise/check', { method: 'POST', headers, body: JSON.stringify({ answer, correct: d.answer, item_id: d.item_id }) });
+      const res = await r.json();
+      silFeedbackShow(res.correct, res.correct ? '✅ ¡Correcto!' : `❌ Era: ${res.correct_answer}`);
+      if (res.correct) setTimeout(silNext, 1200);
+    } catch { silFeedbackShow(false, '⚠️ Error'); }
+    return;
+  }
+  const ok = answer.toLowerCase() === (d.correct || '').toLowerCase();
+  silFeedbackShow(ok, ok ? '✅ ¡Correcto!' : `❌ Era: ${d.correct || d.hanzi}`);
+  silReport(d.item_id || d.hanzi, ok ? 5 : 2);
+  if (ok) setTimeout(silNext, 1200);
 }
 async function silLoadLessonContent() {
   const language = $('silLang').value, name = $('silLesson').value;
