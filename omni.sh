@@ -376,6 +376,83 @@ termux_guard() {
   return 0
 }
 
+
+# ═══════════════════════════════════════════════════════════════════════
+#  _pids_on_port — encuentra PIDs escuchando en un puerto TCP sin depender
+#  de fuser/lsof/ss (que Termux NO trae instalados por defecto). Lee
+#  /proc/net/tcp[6] + /proc/*/fd directamente. Solo necesita python3,
+#  que siempre esta disponible porque todo el stack corre sobre el.
+# ═══════════════════════════════════════════════════════════════════════
+_pids_on_port() {
+  python3 -c "
+import sys, os, glob, re
+port = int(sys.argv[1])
+port_hex = format(port, '04X')
+inodes = set()
+for tcp_file in ('/proc/net/tcp', '/proc/net/tcp6'):
+    try:
+        with open(tcp_file) as f:
+            lines = f.readlines()[1:]
+    except Exception:
+        continue
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 10:
+            continue
+        local, state, inode = parts[1], parts[3], parts[9]
+        _, hexport = local.split(':')
+        if hexport.upper() == port_hex and state == '0A':
+            inodes.add(inode)
+if inodes:
+    for fd_link in glob.glob('/proc/[0-9]*/fd/*'):
+        try:
+            target = os.readlink(fd_link)
+        except Exception:
+            continue
+        m = re.match(r'socket:\[(\d+)\]', target)
+        if m and m.group(1) in inodes:
+            print(fd_link.split('/')[2])
+" "$1" 2>/dev/null | sort -u
+}
+
+# ═══════════════════════════════════════════════════════════════════════
+#  kill_by_pidfile_or_port — mata un servicio de forma GARANTIZADA:
+#  1) por el PID exacto guardado cuando lo arrancamos (mas confiable)
+#  2) por pkill -f al patron (red de seguridad, por si el pidfile falta)
+#  3) por PUERTO via _pids_on_port (funciona SIN fuser/lsof/ss instalados)
+#  Antes solo existia (2), y el patron de pkill nunca coincidia porque el
+#  proceso se lanza con ruta RELATIVA (cd + python3 archivo.py) — nunca
+#  se moria, y "restart" dejaba el proceso viejo y roto corriendo para
+#  siempre mientras el nuevo fallaba en silencio al intentar bindear el
+#  puerto ya ocupado. Asi Sol se quedaba "Offline" sin importar cuantas
+#  veces se reiniciara.
+# ═══════════════════════════════════════════════════════════════════════
+kill_by_pidfile_or_port() {
+  local label="$1" pidfile="$2" pkill_pattern="$3" port="$4"
+  local killed=""
+  if [ -n "$pidfile" ] && [ -f "$pidfile" ]; then
+    local saved_pid="$(cat "$pidfile" 2>/dev/null)"
+    if [ -n "$saved_pid" ] && kill -0 "$saved_pid" 2>/dev/null; then
+      kill -9 "$saved_pid" 2>/dev/null && killed="pidfile($saved_pid)"
+    fi
+    rm -f "$pidfile" 2>/dev/null
+  fi
+  if [ -n "$pkill_pattern" ] && pkill -f "$pkill_pattern" 2>/dev/null; then
+    killed="${killed:+$killed+}pkill"
+  fi
+  if [ -n "$port" ]; then
+    local port_pids="$(_pids_on_port "$port")"
+    if [ -n "$port_pids" ]; then
+      kill -9 $port_pids 2>/dev/null && killed="${killed:+$killed+}port($port_pids)"
+    fi
+  fi
+  if [ -n "$killed" ]; then
+    ok "$label detenido [$killed]"
+  else
+    ok "$label ya estaba detenido"
+  fi
+}
+
 start() {
   banner
   load_env
@@ -436,6 +513,11 @@ start() {
     if [ -z "$pids" ] && command -v ss >/dev/null 2>&1; then
       pids="$(ss -H -ltnp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
     fi
+    # Fallback puro-python — Termux base no trae fuser/lsof/ss instalados,
+    # asi que sin esto free_port no hacia NADA en la mayoria de los casos.
+    if [ -z "$pids" ]; then
+      pids="$(_pids_on_port "$port")"
+    fi
     if [ -n "$pids" ]; then
       info "Liberando puerto $port (PIDs: $pids)"
       kill -9 $pids 2>/dev/null || true
@@ -446,6 +528,7 @@ start() {
   free_port 8002
   free_port 8004 2>/dev/null || true
   free_port 8005 2>/dev/null || true
+  free_port 8006 2>/dev/null || true
 
   # ── Limpiar procesos previos ──
   pkill -f "$ROOT/redteam/scripts/dashboard_server.py" 2>/dev/null || true
@@ -469,6 +552,7 @@ start() {
       PYTHONUNBUFFERED=1 nohup python3 dashboard_server.py \
       >> "$LOG_DIR/dash.log" 2>&1 &
     DASH_PID=$!
+    echo "$DASH_PID" > "$SOL_DIR/dash.pid"
     # Esperar a que responda
     for i in $(seq 1 30); do
       curl -s -m 2 http://127.0.0.1:8001/api/health >/dev/null 2>&1 && break
@@ -499,6 +583,7 @@ start() {
     BACKEND_API="http://127.0.0.1:8001" MASTER_PORT=8002 \
       nohup python3 master.py >> "$LOG_DIR/ghost.log" 2>&1 &
     GHOST_PID=$!
+    echo "$GHOST_PID" > "$SOL_DIR/ghost.pid"
     for i in $(seq 1 20); do
       curl -s -m 2 http://127.0.0.1:8002/api/status >/dev/null 2>&1 && break
       sleep 1
@@ -525,6 +610,7 @@ start() {
     cd "$ROOT"
     nohup python3 nexus_omni_v9.py >> "$LOG_DIR/nexus.log" 2>&1 &
     NEXUS_PID=$!
+    echo "$NEXUS_PID" > "$SOL_DIR/nexus.pid"
     for i in $(seq 1 15); do
       curl -s -m 2 http://127.0.0.1:8004/ >/dev/null 2>&1 && break
       sleep 1
@@ -544,6 +630,7 @@ start() {
     cd "$ROOT"
     C2_PORT="${C2_PORT:-8005}" nohup python3 c2_unified_pro.py >> "$LOG_DIR/c2.log" 2>&1 &
     C2_PID=$!
+    echo "$C2_PID" > "$SOL_DIR/c2.pid"
     for i in $(seq 1 15); do
       curl -s -m 2 http://127.0.0.1:8005/api/health >/dev/null 2>&1 && break
       sleep 1
@@ -693,6 +780,8 @@ start() {
     if [ -f "$SOL_REPO/sol_api.py" ] && ! pgrep -f "sol_api.py" >/dev/null 2>&1; then
       cd "$SOL_REPO"
       nohup python3 sol_api.py >> "$LOG_DIR/sol_api.log" 2>&1 &
+      echo "$!" > "$SOL_DIR/sol_api.pid"
+      cd "$ROOT"
       sleep 1
     fi
   else
@@ -748,15 +837,20 @@ stop() {
   pkill -f "sol_telegram_bridge" 2>/dev/null && ok "Puente Telegram detenido" || true
   pkill -f "sol_telegram_bot.py" 2>/dev/null && ok "Miniapp Telegram detenida" || true
   rm -f "$SOL_DIR/tg_bot.pid" 2>/dev/null || true
-  pkill -f "nexus_omni_v9" 2>/dev/null && ok "Nexus detenido" || true
-  pkill -f "c2_unified_pro" 2>/dev/null && ok "C2 detenido" || true
+  kill_by_pidfile_or_port "Nexus"          "$SOL_DIR/nexus.pid"   "nexus_omni_v9"                8004
+  kill_by_pidfile_or_port "C2"             "$SOL_DIR/c2.pid"      "c2_unified_pro"               8005
   pkill -f "seal_orchestrator" 2>/dev/null && ok "Seal IA detenido" || true
   pkill -f "ghost_hunter_phantom/node" 2>/dev/null && ok "GHOST Node detenido" || true
-  pkill -f "ghost_hunter_phantom/master" 2>/dev/null && ok "GHOST Master detenido" || true
-  pkill -f "redteam/scripts/dashboard_server" 2>/dev/null && ok "Dashboard detenido" || true
+  kill_by_pidfile_or_port "GHOST Master"   "$SOL_DIR/ghost.pid"   "ghost_hunter_phantom/master"  8002
+  # ── Dashboard (:8001) — EL CRITICO. Antes solo tenia el pkill de abajo,
+  # que NUNCA coincidia (el proceso corre como "python3 dashboard_server.py"
+  # con ruta relativa, no "redteam/scripts/dashboard_server.py"). Por eso
+  # "restart" jamas mataba el proceso viejo y Sol se quedaba Offline para
+  # siempre sin importar cuantas veces se reiniciara.
+  kill_by_pidfile_or_port "Dashboard"      "$SOL_DIR/dash.pid"    "redteam/scripts/dashboard_server" 8001
   pkill -f "sol_daemon.py" 2>/dev/null && ok "Sol autónoma detenida" || true
   rm -f "$SOL_DIR/sol.pid" 2>/dev/null || true
-  pkill -f "sol_api.py" 2>/dev/null && ok "Sol API detenida" || true
+  kill_by_pidfile_or_port "Sol API (8006)" "$SOL_DIR/sol_api.pid" "sol_api.py"                   8006
   pkill -f "sol_relay.py" 2>/dev/null && ok "Relé Termux detenido" || true
   pkill -f "sol_body.sh" 2>/dev/null && ok "Sol cuerpo detenido" || true
   pkill -f "sol_watchdog.sh" 2>/dev/null && ok "Sol watchdog detenido" || true
