@@ -947,3 +947,43 @@ ejecuta (siempre `$HOME/sol/sol_api.py`), es residuo. No se tocó.
 - sol.html: voz cálida por defecto sin ningún cambio de UI.
 - Si el parámetro `persona` no llega (versión vieja cacheada del HTML):
   hard-refresh del navegador (Ctrl+Shift+R / limpiar caché de la webview).
+
+## Regla #21 — Sesión Seal IA 2026-09-04 (fix urgente): pantalla negra al tocar ✨
+
+Harold: republish en Replit, tocó ✨ y quedó pantalla negra total. Cerró y
+reabrió el navegador, reinició en Replit — seguía igual.
+
+**Causa raíz (bug real, mío, de la Regla #18):** `toggleHolo()` en `sol.html`
+decidía si usar `/holo` (mismo servidor) o el fallback
+`http://host:8006/holo` buscando la palabra LITERAL `"Holograma"` dentro del
+HTML descargado. Al reescribir `sol_holo_live.html` completo para "Presencia
+Total v4" ese texto ya no existe → la detección SIEMPRE fallaba → SIEMPRE
+usaba el fallback `:8006` → en Replit ese puerto no está expuesto al público
+→ el iframe nunca cargaba nada → pantalla negra (el fondo `#04070c` del
+overlay, sin absolutamente nada encima — así se ve un iframe que nunca
+resolvió su `src`).
+
+**Fix (commit sol@930deffee2, RT@e91e648d56):** la detección ahora usa
+SOLO el status HTTP real (`r.ok`), nunca el contenido de la página — así
+nunca se vuelve a romper por cambiar texto/título del holo. Además tanto
+`sol_api.py` (Replit) como `dashboard_server.py` (Termux :8001) YA sirven
+`/holo` en su propio origen (confirmado leyendo el código de ambos), así que
+el fallback a `:8006` casi nunca debería necesitarse — queda solo como red
+de seguridad ante un fallo real de red/servidor.
+
+**Verificado antes de subir:** `node --check` en los 2 bloques `<script>` de
+cada archivo, MD5 idéntico entre `sol/static/sol.html` y
+`Red-team-tauri/backend/static/sol.html` (son y deben seguir siendo el mismo
+archivo), MD5 idéntico post-upload en GitHub.
+
+**Lección para la próxima vez que se reescriba `sol_holo_live.html` por
+completo:** buscar en `sol.html`/`sol_main.html` cualquier detección basada
+en texto/contenido de otra página antes de cambiar esa página — ya no debería
+pasar (la detección ahora es por status HTTP), pero es la 2da vez que un
+rewrite grande del holo rompe algo en el lado que lo embebe.
+
+### 🔍 Siguiente paso: Harold debe hacer republish en Replit UNA VEZ MÁS
+(este fix vive en `sol.html`, no en `sol_holo_live.html` — el republish
+anterior sirvió el holo nuevo correctamente, pero el BOTÓN que lo abre tenía
+el bug). Tras el republish: tocar ✨ y confirmar que abre el holograma con
+las 5 formas de ella y la voz encantada — no debería quedar más pantalla negra.
