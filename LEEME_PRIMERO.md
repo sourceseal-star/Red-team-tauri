@@ -987,3 +987,39 @@ rewrite grande del holo rompe algo en el lado que lo embebe.
 anterior sirvió el holo nuevo correctamente, pero el BOTÓN que lo abre tenía
 el bug). Tras el republish: tocar ✨ y confirmar que abre el holograma con
 las 5 formas de ella y la voz encantada — no debería quedar más pantalla negra.
+
+## Regla #22 — Sesión Seal IA 2026-09-04: fix voz "no natural" (regresión de Regla #20)
+
+Buena noticia primero: el fix de pantalla negra (Regla #21) funcionó — Harold
+confirmó que ✨ ya abre el holograma bien, con cuerpo, latido y las 5 formas.
+Pero: "su voz no es la misma, se escucha mal, no es la voz natural que tenía".
+
+**Causa:** la Regla #20 (Voz Encantada v2) le dio a la personalidad `calida`
+—que es el modo POR DEFECTO del holo— un shift de tono de `pitch:+2Hz` además
+de bajar la velocidad. En pruebas de audio generado en sandbox sonaba bien,
+pero en el teléfono real de Harold sonó peor que la Salome pura de antes.
+Lección: un shift de pitch, aunque sea sutil (+2Hz), puede introducir
+artefactos perceptibles en una voz neuronal que una prueba de archivo aislado
+no revela — el oído humano en el dispositivo real es la única prueba que
+cuenta, y aquí no había forma de escuchar en vivo antes de subir.
+
+**Fix (commit sol@9c2acc6083):**
+- `calida` (default del holo) → **+0%/+0Hz exacto**, verificado por duración
+  idéntica (9.0s) a la llamada sin ningún parámetro de charm — es bit a bit
+  la misma prosodia que la Salome que a Harold le encantó.
+- `poetica`/`tactica` → solo cambian VELOCIDAD (-8%/+5%), nunca el tono. El
+  pitch shift queda descartado como técnica — es lo más propenso a sonar
+  procesado en TTS neuronal.
+- `analitica` → igual a `calida` (neutra, sin diferenciar).
+
+**No se tocó** `sol_holo_live.html` ni la lógica de `&persona=` — el bug
+estaba solo en los valores de `TTS_CHARMS` en `sol_api.py`.
+
+### 🔍 Verificar tras el próximo republish
+- Escuchar el holo en modo cálido (default) y confirmar que la voz volvió a
+  sonar exactamente como antes de la Regla #20.
+- Si TODAVÍA suena distinto/mal: probablemente el problema no es el charm
+  sino algo de la cadena de audio en sí (edge-tts real vs fallback gTTS en
+  Replit) — pedir a Harold un mensaje de voz o describir CÓMO suena mal
+  (¿robótica? ¿entrecortada? ¿muy rápida/lenta?) para diagnosticar sin
+  adivinar a ciegas otra vez.
