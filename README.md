@@ -25,19 +25,46 @@ Red-team-tauri/
 | PHANTOM | 8002 | GHOST HUNTER master (orquestador de nodos) |
 | Nexus | 8004 | OSINT de red local (MAC, OUI, hostname, geo) |
 
-## Arranque rápido (Termux)
+## Arranque rápido (Termux) — desde CERO
 
 ```bash
-# 1. Instalación inicial
-git clone git@github.com:sourceseal-star/Red-team-tauri.git
-cd Red-team-tauri
-bash setup.sh
+# En una Termux recién instalada, TRES comandos levantan la Torre completa:
+pkg install git -y
+git clone https://github.com/sourceseal-star/Red-team-tauri
+bash Red-team-tauri/instalar_torre.sh
+```
 
-# 2. Arrancar
-bash start_all.sh                    # Dashboard + Nexus
-bash start_all.sh --phantom           # + GHOST HUNTER PHANTOM
-bash start_all.sh --ai                # + AI Orchestrator
-bash start_all.sh --full              # Todo
+El instalador hace todo: herramientas base, clona los 3 repos (sol,
+Red-team-tauri, commander), crea el .env SOLO si no existe (nunca
+sobrescribe), sincroniza dependencias, levanta todo y verifica la cadena
+completa con ~/sol/verificar_torre.sh.
+
+## Gestión diaria — TODO pasa por omni.sh
+
+```bash
+cd ~/Red-team-tauri
+
+bash omni.sh start        # Levanta TODO: Dashboard :8001, GHOST :8002, Nexus :8004,
+                          # Sol ☀️ (daemon + puente Telegram + relé Termux⇄Replit) + watchdog
+bash omni.sh stop         # Detiene todo limpio
+bash omni.sh restart      # Stop + Start
+bash omni.sh status       # Estado de todos los servicios
+bash omni.sh sync         # git pull + deps + build (SIN tocar .env jamás)
+bash omni.sh logs [serv]  # dash|ghost|tg|nexus|seal|all
+bash omni.sh verify       # Verifica integridad de credenciales
+```
+
+Blindaje incluido: lock global (nunca dos omni.sh a la vez — evita puentes
+Telegram duplicados), preflight de credenciales ANTES de arrancar, y
+verificación de las llaves de Sol (SOL_PUBLIC_URL, SOL_API_KEY, LLM_API_KEY,
+TELEGRAM_BOT_TOKEN) con aviso claro si falta alguna.
+
+Los scripts legacy (setup.sh, start_all.sh, arrancar.sh) quedaron
+reemplazados por omni.sh — no usarlos.
+
+Verificación de punta a punta en un solo comando:
+```bash
+bash ~/sol/verificar_torre.sh
 ```
 
 ## AI Orchestrator

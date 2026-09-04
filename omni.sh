@@ -42,6 +42,33 @@
 
 set -uo pipefail
 
+# ═══════════════════════════════════════════════════════════════════
+#  LOCK GLOBAL — blindaje contra doble ejecución
+#  Si omni.sh corre dos veces a la vez (ej: dos terminales), se levantan
+#  procesos duplicados: dos puentes Telegram (conflicto de token), dos
+#  relés, dos dashboards. mkdir es atómico: solo una instancia gana.
+# ═══════════════════════════════════════════════════════════════════
+OMNI_LOCK="${TMPDIR:-/tmp}/omni-singleton.lock"
+CLEAN_LOCK() { rm -r "$OMNI_LOCK" 2>/dev/null; }
+acquire_lock() {
+  if mkdir "$OMNI_LOCK" 2>/dev/null; then
+    echo "$$" > "$OMNI_LOCK/pid"
+    trap 'CLEAN_LOCK' EXIT INT TERM
+    return 0
+  fi
+  # ¿la instancia anterior sigue viva?
+  OLD_PID="$(cat "$OMNI_LOCK/pid" 2>/dev/null)"
+  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    echo -e "${R}⛔ Otro omni.sh corre (PID $OLD_PID). Espera a que termine o mátalo con: kill $OLD_PID${N}" >&2
+    exit 1
+  fi
+  # candado huérfano de una instancia muerta — limpiar y tomar
+  rm -r "$OMNI_LOCK" 2>/dev/null
+  mkdir "$OMNI_LOCK" 2>/dev/null || { echo -e "${R}⛔ No pude tomar el lock de omni.sh${N}" >&2; exit 1; }
+  echo "$$" > "$OMNI_LOCK/pid"
+  trap 'CLEAN_LOCK' EXIT INT TERM
+}
+
 # ── Paths absolutos ──
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOL_DIR="$HOME/.sol"
@@ -148,6 +175,25 @@ load_env() {
 #  VERIFY — Verificar que las credenciales críticas existen
 #  Esto evita que nexus_credentials.py regenere credenciales sin permiso
 # ═══════════════════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  SOL VARS — ¿están las llaves del relé y del LLM? (warn, no fatal)
+# ═══════════════════════════════════════════════════════════════════
+verify_sol_vars() {
+  local sol_env="$HOME/sol/.env"
+  [ -f "$sol_env" ] || { warn "~/sol/.env no existe — Sol correrá sin relé ni LLM (ver ~/sol/.env.example)"; return 0; }
+  grep -q "^SOL_PUBLIC_URL=https" "$sol_env" 2>/dev/null \
+    || warn "Falta SOL_PUBLIC_URL en ~/sol/.env — el relé Termux⇄Replit quedará apagado"
+  grep -q "^SOL_API_KEY=" "$sol_env" 2>/dev/null \
+    || warn "Falta SOL_API_KEY en ~/sol/.env — el relé no podrá autenticarse con Replit"
+  grep -q "^LLM_API_KEY=" "$sol_env" 2>/dev/null \
+    || warn "Falta LLM_API_KEY en ~/sol/.env — Sol caerá a plantillas locales (respuestas genéricas)"
+  grep -q "^TELEGRAM_BOT_TOKEN=" "$sol_env" 2>/dev/null \
+    || warn "Falta TELEGRAM_BOT_TOKEN en ~/sol/.env — Sol no hablará por Telegram"
+  return 0
+}
+
 verify_credentials() {
   echo -e "${BOLD}── Verificación de credenciales ──${N}"
   echo ""
@@ -350,7 +396,9 @@ start() {
 # ── Preflight: puente Termux:API (guard anti-desincronización) ──
   # Detecta si el CLI termux-api quedó desincronizado de la app
   # Termux:API (F-Droid) ANTES de arrancar. Ver docs/TERMUX_API_SALUD.md
-  termux_guard
+  verify_sol_vars
+
+    termux_guard
 
   # ── Preflight: auth_bootstrap (sincronizar password.json desde .env) ──
   if [ -f "$ROOT/auth_bootstrap.py" ]; then
@@ -1373,11 +1421,11 @@ start_sol_stack() {
 #  DISPATCH
 # ═══════════════════════════════════════════════════════════════════════
 case "${1:-help}" in
-  start)          start ;;
-  stop)           stop ;;
-  restart)        restart ;;
+  start)          acquire_lock; start ;;
+  stop)           acquire_lock; stop ;;
+  restart)        acquire_lock; restart ;;
   status)         status ;;
-  sync)           sync ;;
+  sync)           acquire_lock; sync ;;
   sync-deps)      sync_deps ;;
   sync-frontend)  sync_frontend ;;
   logs)           logs "${2:-all}" ;;
