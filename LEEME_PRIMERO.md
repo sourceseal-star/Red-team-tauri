@@ -1186,3 +1186,53 @@ un rebuild limpio). Pasos al despertar, EN ORDEN:
 4. **Después:** bot de Telegram mostraba "C2 UNIFIED PRO" en vez de Sol —
    sospecha: dos bots/scripts compitiendo por el mismo token. Pendiente
    para sesión siguiente, con `bash omni.sh logs telegram` en la mano.
+
+## Regla #35 — "Página vieja / parece un blog" en :8001/sol.html (2026-09-05, investigación de la noche)
+
+**Síntoma:** Harold ve en `localhost:8001/sol.html` una página CLARA, sin
+chat, con círculos orbitando arriba y 3 tarjetas ("Recuerdos sellados 15",
+"Integridad Íntegra", "Personalidad activa Cálida") — parece un blog, no
+la Sol de siempre. Dice que lleva días así y no lo pudo quitar.
+
+**Investigación (con los repos completos, sin acceso al teléfono):**
+1. Confirmado con `git log` + contenido histórico: ese diseño (fondo
+   claro, tarjetas, círculos) es el look de la v5.1 original de Sol
+   (commit `00b93d5b`, 2026-09-02) — la primera versión, con tabs
+   "Recuerdos/Personalidad" en vez del chat + habitaciones de hoy.
+2. **El `static/sol.html` ACTUAL (verificado byte a byte en GitHub, el
+   que sirve esta app) YA NO es esa página** — es el chat oscuro con
+   habitaciones (🧠 Memoria, 🎭 Personalidad, etc.), confirmado sin la
+   menor duda. El contenido equivalente ("Recuerdos recientes",
+   "Integridad SHA-256") SÍ sigue existiendo, pero DENTRO de la
+   habitación 🧠 Memoria del chat oscuro — no como página suelta clara.
+3. **Conclusión más probable:** el archivo en el DISCO de Termux
+   (`~/sol/static/sol.html`, la ruta canónica que lee `dashboard_server.py`
+   en `/sol.html`) sigue con una copia vieja — el mismo patrón de
+   "cambios locales sin commitear bloquean git pull" que ya vimos anoche
+   con `backend/static/sol.html` de Red-team-tauri. `dashboard_server.py`
+   YA tiene headers no-cache en esa ruta (no es problema del navegador).
+4. **Pista secundaria, sin confirmar:** existe un Service Worker PWA en
+   `redteam/dashboard/sw.js` (cache-first para todo lo que no sea /api/)
+   — pero su `index.html` vive en `redteam/dashboard/`, NO en el frontend
+   que sirve dashboard_server.py en `/` (ese usa `_FRONTEND_DIST`, un
+   build de Vite distinto). Es decir: probablemente NO es el culpable,
+   pero si el fix de abajo no alcanza, revisar en el navegador de Harold
+   (chrome://serviceworker-internals o Ajustes del sitio → Borrar datos)
+   si hay algún SW registrado para localhost:8001.
+
+**FIX recomendado (alto nivel de confianza, no verificado en el
+dispositivo real todavía):**
+```bash
+cd ~/sol && git fetch origin && git reset --hard origin/main
+cd ~/Red-team-tauri && git fetch origin && git reset --hard origin/main
+bash omni.sh sync && bash omni.sh restart
+```
+Después, en el navegador: recarga forzada (Ctrl+Shift+R / en Android
+mantener el botón de recargar) y si AÚN sale la página clara, ir a
+Ajustes de Chrome → Configuración del sitio → localhost:8001 → Borrar
+datos (esto también mata cualquier Service Worker fantasma).
+
+**Pendiente para la próxima sesión:** confirmar en vivo con
+`cat ~/sol/static/sol.html | grep -c "tab-mem"` (debe dar 1, no más) y
+`grep -o "class=\"room\" id=\"room-mem\"" ~/sol/static/sol.html` para
+verificar que el archivo en disco ya es la versión con habitaciones.
