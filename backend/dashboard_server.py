@@ -3269,7 +3269,19 @@ async def ai_history(limit: int = 20):
 # SOL — Testigo personal (HTML estático local, sin dependencias)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_SOL_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol.html")
+# (2026-09-05) FIX RAÍZ: Sol vive en SU PROPIO repo (~/sol) desde hace
+# tiempo (decisión ya tomada de centralización), pero esta página seguía
+# serviendo una COPIA CONGELADA en backend/static/sol.html que nadie
+# volvía a sincronizar — cada edición nueva en ~/sol/static/sol.html
+# (botones, modos de personalidad, termómetro) nunca llegaba a la
+# pantalla real de Harold, Y además esa copia local desincronizada
+# causaba conflictos de 'git pull' cada vez que GitHub traía cambios.
+# Ahora se sirve DIRECTO desde ~/sol/static/sol.html (fuente de verdad
+# única); backend/static/sol.html queda solo como fallback si ~/sol
+# no existiera en este entorno (ej. deploy limpio sin clonar aún).
+_SOL_PATH_CANONICO = os.path.expanduser("~/sol/static/sol.html")
+_SOL_PATH_FALLBACK = os.path.join(PROJECT_ROOT, "backend", "static", "sol.html")
+_SOL_PATH = _SOL_PATH_CANONICO if os.path.isfile(_SOL_PATH_CANONICO) else _SOL_PATH_FALLBACK
 _SOL_AVATAR_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_avatar.jpg")
 
 # Sin esto el navegador puede quedarse con una copia vieja de sol.html
@@ -3283,11 +3295,14 @@ _NO_CACHE_HEADERS = {
 
 @app.get("/sol")
 async def sol_page():
-    """Página de Sol — HTML estático en backend/static/ (fuera de tauri-frontend/dist,
-    que vite build vacía por completo con emptyOutDir:true)."""
-    if os.path.isfile(_SOL_PATH):
-        return FileResponse(_SOL_PATH, media_type="text/html", headers=_NO_CACHE_HEADERS)
-    raise HTTPException(404, "Sol no encuentra su página en backend/static/sol.html")
+    """Página de Sol — servida SIEMPRE desde ~/sol/static/sol.html (fuente de
+    verdad, 2026-09-05) si existe; si no, cae al respaldo congelado en
+    backend/static/. Re-resuelve en cada request para no depender del
+    orden de arranque (omni.sh clona ~/sol) ni de un reinicio manual."""
+    path = _SOL_PATH_CANONICO if os.path.isfile(_SOL_PATH_CANONICO) else _SOL_PATH_FALLBACK
+    if os.path.isfile(path):
+        return FileResponse(path, media_type="text/html", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "Sol no encuentra su página (ni en ~/sol/static/ ni en backend/static/)")
 
 @app.get("/sol.html")
 async def sol_page_alt():

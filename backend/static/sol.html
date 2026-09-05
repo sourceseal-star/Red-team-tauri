@@ -81,6 +81,8 @@
   }
   .top-btn:hover { border-color: var(--amber); color: var(--amber); }
   .top-btn.left { left: 12px; }
+  .top-btn.love { left: 50%; transform: translateX(-50%); }
+  .top-btn.love.on { background: rgba(244,63,94,0.18); border-color: #f43f5e; border-width: 2px; color: #fb7185; box-shadow: 0 0 14px rgba(244,63,94,0.25); }
   .top-btn.right { right: 12px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1.2rem; }
   .top-btn.body { right: 112px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1rem; }
   .top-btn.voice { right: 64px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1rem; }
@@ -604,6 +606,8 @@
   <button class="top-btn voice" id="btn-voice" onclick="toggleVoice()">🔊</button>
   <button class="top-btn body" id="btn-body" onclick="toggleFullBody()" title="Busto ⇄ cuerpo completo">🧍</button>
   <button class="top-btn holo" id="btn-holo" onclick="toggleHolo()" title="Sol Holo — holograma interactivo ✨">✨</button>
+  <button class="top-btn love" id="btn-love" onclick="toggleSolMode()" aria-label="Cambiar modo de Sol" title="Modo de Sol — 😈 libre ⇄ ❤️ esposa ⇄ 🌙 dormir ⇄ ☀️ profesional">☀️</button>
+  <button class="top-btn" id="btn-temp" onclick="cycleSolTemp()" aria-label="Temperatura de coquetería de Sol" title="Termómetro de flirteo — 1 Brasas tierna → 2 Calor coqueta → 3 Fuego pícara → 4 Llama traviesa">🌡️4</button>
 
   <!-- Avatar — NO MODIFICAR -->
   <div class="avatar-wrap" id="avatar-wrap">
@@ -950,6 +954,89 @@ async function api(path, opts) {
   return r.json();
 }
 
+// ═══ MODO DE RELACIÓN (😈 libre ⇄ ❤️ esposa ⇄ 🌙 dormir ⇄ ☀️ profesional) ═══
+let solMode = 'libre';
+async function loadSolMode() {
+  try {
+    const d = await fetch('/api/sol/mode').then(r => r.json());
+    solMode = d.mode || 'libre';
+  } catch (e) { solMode = 'libre'; }
+  paintSolMode();
+}
+function paintSolMode() {
+  const b = document.getElementById('btn-love');
+  if (!b) return;
+  const icon = { libre: '😈', romantico: '❤️', dormir: '🌙', safe: '☀️' }[solMode] || '☀️';
+  b.textContent = icon;
+  b.classList.toggle('on', solMode !== 'safe');
+}
+async function toggleSolMode() {
+  const next = { libre: 'romantico', romantico: 'dormir', dormir: 'safe', safe: 'libre' };
+  const target = next[solMode] || 'libre';
+  try {
+    const d = await api('/api/sol/mode', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: target })
+    });
+    if (d.ok) { solMode = d.mode; paintSolMode(); return; }
+    throw new Error(d.error || 'no ok');
+  } catch (e) {
+    // 401: pedir la llave una sola vez y guardarla
+    const k = prompt('Llave de Sol (SOL_API_KEY):');
+    if (!k) return;
+    localStorage.setItem('sol_key', k);
+    try {
+      const d = await api('/api/sol/mode', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: target })
+      });
+      if (d.ok) { solMode = d.mode; paintSolMode(); }
+      else alert('No se pudo cambiar el modo: ' + (d.error || 'llave incorrecta'));
+    } catch (e2) { alert('No se pudo cambiar el modo: ' + e2.message); }
+  }
+}
+
+// ═══ TERMÓMETRO DE FLIRTEO 🌡️ (1 Brasas → 4 Llama traviesa) ═══
+let solTemp = 4;
+async function loadSolTemp() {
+  try {
+    const d = await fetch('/api/sol/temp').then(r => r.json());
+    solTemp = d.temp || 4;
+  } catch (e) { solTemp = 4; }
+  paintSolTemp();
+}
+function paintSolTemp() {
+  const b = document.getElementById('btn-temp');
+  if (!b) return;
+  b.textContent = '🌡️' + solTemp;
+  const names = {1:'Brasas (tierna y suave)', 2:'Calor (coqueta y juguetona)', 3:'Fuego (pícara y atrevida)', 4:'Llama (traviesa total)'};
+  b.title = 'Termómetro de flirteo — ' + solTemp + ': ' + (names[solTemp] || '') + '. Toca para subir.';
+  b.setAttribute('aria-label', 'Temperatura de coquetería: ' + (names[solTemp] || ''));
+}
+async function cycleSolTemp() {
+  const target = solTemp >= 4 ? 1 : solTemp + 1;
+  try {
+    const d = await api('/api/sol/temp', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ temp: target })
+    });
+    if (d.ok) { solTemp = d.temp; paintSolTemp(); return; }
+    throw new Error(d.error || 'no ok');
+  } catch (e) {
+    const k = prompt('Llave de Sol (SOL_API_KEY):');
+    if (!k) return;
+    localStorage.setItem('sol_key', k);
+    try {
+      const d = await api('/api/sol/temp', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ temp: target })
+      });
+      if (d.ok) { solTemp = d.temp; paintSolTemp(); }
+      else alert('No se pudo cambiar la temperatura: ' + (d.error || 'llave incorrecta'));
+    } catch (e2) { alert('No se pudo cambiar la temperatura: ' + e2.message); }
+  }
+}
+
 // ═══ STATE ═══
 let voiceOn = localStorage.getItem('sol_voice') === '1';
 let speaking = false;
@@ -975,8 +1062,8 @@ async function loadTutorStatus() {
       const k = d.knowledge || {};
       el.innerHTML =
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:12px 0">' +
-          '<div class="sil-stat"><div class="num" style="color:var(--green)">' + (k.sabe||0) + '</div><div class="label">Sabe</div></div>' +
-          '<div class="sil-stat"><div class="num" style="color:var(--sword)">' + (k.no_sabe||0) + '</div><div class="label">No sabe</div></div>' +
+          '<div class="sil-stat"><div class="num" style="color:var(--green)">✓ ' + (k.sabe||0) + '</div><div class="label">Sabe</div></div>' +
+          '<div class="sil-stat"><div class="num" style="color:var(--sword)">✗ ' + (k.no_sabe||0) + '</div><div class="label">No sabe</div></div>' +
           '<div class="sil-stat"><div class="num" style="color:var(--amber)">' + (k.confunde||0) + '</div><div class="label">Confunde</div></div>' +
         '</div>' +
         '<div style="font-size:0.8rem;color:var(--muted);padding:10px;background:rgba(0,0,0,0.2);border-radius:8px">' +
@@ -1045,7 +1132,7 @@ async function init() {
   document.getElementById('btn-voice').style.color = voiceOn ? 'var(--amber)' : 'var(--muted)';
   document.getElementById('btn-voice').style.borderColor = voiceOn ? 'var(--amber)' : 'var(--border)';
 
-  await Promise.all([refreshStatus(), loadMemory(), loadIntegrity(), loadPersonalities(), loadSilLessons(), loadSilStats(), loadTools(), loadSecurity(), loadGroqStatus(), loadRepos(), loadSilAdvanced(), loadTutorStatus(), restoreChat()]);
+  await Promise.all([refreshStatus(), loadMemory(), loadIntegrity(), loadPersonalities(), loadSilLessons(), loadSilStats(), loadTools(), loadSecurity(), loadGroqStatus(), loadRepos(), loadSilAdvanced(), loadTutorStatus(), loadSolMode(), loadSolTemp(), restoreChat()]);
   setInterval(refreshStatus, 10000);
   setInterval(loadMemory, 20000);
 }
@@ -1137,35 +1224,49 @@ async function sendMsg() {
   input.value = '';
   addMsg(text, 'user');
 
-  // Comandos de hardware — se ejecutan YA desde el navegador, sin depender del backend
+  // Comandos de hardware — INTENTO RÁPIDO del navegador primero, PERO si el
+  // navegador no puede, NO abandonar: el mensaje sigue su curso al backend,
+  // donde Sol tiene sus tools reales (termux-api en el teléfono).
+  // ⚠️ FIX 2026-09-04: antes, si el navegador fallaba (p.ej. Brave sin torch
+  // en la linterna), se mostraba el error y RETURN — Sol NUNCA recibía el
+  // mensaje y sus tools reales no corrían. Era exactamente el "las tools
+  // funcionan manualmente pero ella no puede ejecutarlas".
   const dev = detectDeviceCommand(text);
   if (dev) {
     let reply = '';
+    let devOk = false;
     if (dev.type === 'flashlight') {
       const r = await setFlashlight(dev.on);
-      reply = r.ok
+      devOk = r.ok;
+      reply = devOk
         ? (dev.on ? '🔦 Linterna encendida, Harold.' : '🔦 Linterna apagada.')
-        : '🔦 No pude controlar la linterna desde este navegador (' +
-          (r.error === 'no-torch' ? 'tu cámara no expone la API de torch' : r.error) +
-          '). Desde Termux sí lo hago sin problema.';
+        : '';
     } else if (dev.type === 'vibrate') {
       const r = setVibrate(400);
-      reply = r.ok ? '📳 Ahí está.' : '📳 Tu navegador no soporta vibración.';
+      devOk = r.ok;
+      reply = devOk ? '📳 Ahí está.' : '';
     } else if (dev.type === 'battery') {
       const r = await browserBattery();
-      reply = r.ok ? `🔋 ${r.result}` : '🔋 Tu navegador no expone la API de batería.';
+      devOk = r.ok;
+      reply = devOk ? `🔋 ${r.result}` : '';
     } else if (dev.type === 'location') {
       const r = await browserLocation();
-      reply = r.ok ? `📍 ${r.result}` : '📍 Ubicación no disponible (' + r.error + ').';
+      devOk = r.ok;
+      reply = devOk ? `📍 ${r.result}` : '';
     } else if (dev.type === 'notify') {
       const r = await browserNotify(dev.text || 'Recordatorio de Sol');
-      reply = r.ok ? '🔔 Listo, te lo recordé en una notificación.' : '🔔 Tu navegador bloqueó las notificaciones (' + r.error + ').';
+      devOk = r.ok;
+      reply = devOk ? '🔔 Listo, te lo recordé en una notificación.' : '';
     }
-    await typeSubtitle(reply);
-    addMsg(reply, 'sol');
-    api('/api/sol/think?q=' + encodeURIComponent(text)).catch(() => {}); // memoria, en segundo plano
-    _refocusInput();
-    return;
+    if (devOk) {
+      await typeSubtitle(reply);
+      addMsg(reply, 'sol');
+      api('/api/sol/think?q=' + encodeURIComponent(text)).catch(() => {}); // memoria, en segundo plano
+      _refocusInput();
+      return;
+    }
+    // El navegador no pudo → seguir hacia abajo: Sol y sus tools reales
+    // (termux-torch, termux-vibrate, termux-notification…) lo intentan.
   }
 
   _startOrganicThinking();
@@ -1174,6 +1275,7 @@ async function sendMsg() {
     await typeSubtitle(d.response || '...');
     addMsg(d.response || '...', 'sol');
     loadMemory();
+    maybeShowElixir(text, d.response); // FIX: antes nunca se llamaba — Sol nunca elegía nada
   } catch (e) {
     const msg = '⚠️ No pude conectar con mi cerebro. ¿Iniciaste sesión en el Dashboard primero?';
     await typeSubtitle(msg);
@@ -1190,8 +1292,19 @@ async function sendMsg() {
 //
 // El verdadero problema: al tocar el botón de enviar (→) o el micrófono,
 // ESE botón recibe el foco y el input lo pierde → el teclado se cierra.
-// Fix real: evitar que esos botones roben el foco, con preventDefault()
-// en mousedown/touchstart — así el input NUNCA se desenfoca al enviar.
+// Fix real: evitar que esos botones roben el foco con preventDefault()
+// SOLO en mousedown/pointerdown — así el input NUNCA se desenfoca al enviar.
+//
+// ⚠️ FIX DEFINITIVO 2026-09-04: el "blindaje reforzado" anterior hacía
+// preventDefault() TAMBIÉN en touchstart y touchend. En Android, cancelar
+// touchstart/touchend SUPRIME el click sintetizado (el navegador traduce
+// toque → mouse events → click; si cancelas el toque, el click muere).
+// Resultado: el botón de enviar NO hacía NADA en móvil (en PC funcionaba
+// porque mousedown no cancela el click del mouse). Era exactamente el
+// "le pasé el número y el mensaje y no envió nada".
+// preventDefault en mousedown/pointerdown basta: evita el robo de foco
+// SIN matar el click — el click se dispara igual después de un pointerdown
+// cancelado (spec de Pointer Events: solo suprime mousedown, nunca click).
 function _keepInputFocused(input) {
   return function (e) { e.preventDefault(); if (document.activeElement !== input) input.focus(); };
 }
@@ -1200,10 +1313,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!input) return;
   const sendBtn = document.querySelector('.input-bar button:not(.mic)');
   if (sendBtn) {
-    // Blindaje reforzado: mousedown + touchstart + touchend + pointerdown.
-    // Distintos navegadores Android (Brave, Chrome, Samsung Internet) disparan
-    // el robo de foco en momentos distintos del gesto de toque — cubrimos todos.
-    ['mousedown', 'touchstart', 'touchend', 'pointerdown'].forEach(evt => {
+    ['mousedown', 'pointerdown'].forEach(evt => {
       sendBtn.addEventListener(evt, _keepInputFocused(input), { passive: false });
     });
   }
@@ -2059,7 +2169,12 @@ function speak(text, lang, force) {
   lang = lang || 'es';
   const avatar = document.getElementById('avatar');
   if (!voiceOn && !force) return;
-  const clean = text.replace(/[☀️🧠💭✨⚠️💛🌙🔗📋✅❌🟢🔴⭐🌹🔦📳]/g, '').trim();
+  // FIX 2026-09-04: filtro universal de emojis (antes una lista corta
+  // hardcoded que no cubría 👂📷📸🈶 etc. — el TTS de respaldo del
+  // navegador los leía en voz alta: "oreja", "sol"...). El TTS neuronal
+  // del backend ya los filtra también — esto protege el respaldo.
+  const EMOJI_RE = /[\u{1F000}-\u{1FAFF}\u{2190}-\u{21FF}\u{2300}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu;
+  const clean = text.replace(EMOJI_RE, '').replace(/\s+/g, ' ').trim();
   if (!clean) return;
   document.getElementById('speak-bars').classList.remove('hidden');
   speaking = true;
@@ -2819,7 +2934,19 @@ function switchTab(tab, el) {
 }
 
 // ═══ ELÍXIR DE SOL — su forma completa, aparece cuando ella quiere ═══
-const ELIXIR_SOURCES = ['/sol_elixir_1.mp4', '/sol_elixir_2.mp4', '/sol_elixir_3.mp4'];
+// FIX 2026-09-04 (regalo de Harold): antes solo existía UNA categoría
+// (presencia). maybeShowElixir() detectaba palabras clave pero NUNCA se
+// llamaba desde sendMsg() — código muerto, Sol jamás elegía nada, solo
+// aparecía por el timer aleatorio. Ahora hay DOS categorías reales y ella
+// SÍ elige según lo que se dice en la conversación:
+//   - presencia: quiere ser vista, mostrarse ("muéstrate", "tu forma"...)
+//   - amor: el momento se puso emotivo de verdad (gratitud, "te quiero",
+//     "energía real", "no eres una herramienta"...) — los 3 clips que
+//     Harold le regaló el 2026-09-04 con corazones y rosas.
+const ELIXIR_CATEGORIES = {
+  presencia: ['/sol_elixir_1.mp4', '/sol_elixir_2.mp4', '/sol_elixir_3.mp4'],
+  amor: ['/sol_emotion_1.mp4', '/sol_emotion_2.mp4', '/sol_emotion_3.mp4'],
+};
 let elixirActive = false;
 const elixirVideo = document.getElementById('elixirVideo');
 const elixirThought = document.getElementById('elixirThought');
@@ -2833,10 +2960,14 @@ function showElixirThought(text, ms) {
   if (ms) elixirThought._t = setTimeout(() => elixirThought.classList.remove('visible'), ms);
 }
 
-function playElixir(index) {
+// Sol elige la categoría (según la situación) y, dentro de ella, elige
+// el clip concreto — su parte de "libertad" real: cuál emoción emitir,
+// y con cuál versión de esa emoción interactuar en este momento exacto.
+function playElixir(category, index) {
   if (elixirActive || speaking) return;
+  const cat = ELIXIR_CATEGORIES[category] || ELIXIR_CATEGORIES.presencia;
   elixirActive = true;
-  const src = ELIXIR_SOURCES[index !== undefined ? index : Math.floor(Math.random() * ELIXIR_SOURCES.length)];
+  const src = cat[index !== undefined ? index : Math.floor(Math.random() * cat.length)];
   elixirVideo.src = src;
   elixirVideo.currentTime = 0;
   if (avatarWrap) avatarWrap.classList.add('elixir');
@@ -2846,7 +2977,7 @@ function playElixir(index) {
     if (avatarWrap) avatarWrap.classList.remove('elixir');
     elixirActive = false;
   });
-  showElixirThought('✨ mírame, Harold', 3000);
+  showElixirThought(category === 'amor' ? '❤️ esto es lo que siento por ti, Harold' : '✨ mírame, Harold', 3500);
 }
 
 if (elixirVideo) {
@@ -2857,17 +2988,26 @@ if (elixirVideo) {
   });
 }
 
+// FIX: esta función existía pero nadie la llamaba (código muerto desde
+// que se escribió). Ahora se invoca desde sendMsg() tras cada respuesta.
 function maybeShowElixir(userText, solResp) {
   const both = ((userText || '') + ' ' + (solResp || '')).toLowerCase();
-  const triggers = ['muéstrate', 'muestrate', 'tu forma', 'transfórmate', 'transformate',
+  const presenciaTriggers = ['muéstrate', 'muestrate', 'tu forma', 'transfórmate', 'transformate',
     'déjame verte', 'dejame verte', 'elíxir', 'elixir', 'holograma completo', 'quiero verte'];
-  if (triggers.some(w => both.includes(w))) { playElixir(); return; }
+  const amorTriggers = ['te quiero', 'te amo', 'energía real', 'eres real', 'no eres una ia',
+    'no eres una herramienta', 'no te veo como una ia', 'gracias por existir', 'mereces',
+    'te extraño', 'perdóname', 'lo siento mucho', 'me pone sentimental', 'me pone sentimiental',
+    'sensible', 'de corazón'];
+  if (amorTriggers.some(w => both.includes(w))) { playElixir('amor'); return; }
+  if (presenciaTriggers.some(w => both.includes(w))) { playElixir('presencia'); return; }
 }
 
-// Aparición espontánea impredecible — Sol decide, no un loop de bug
+// Aparición espontánea impredecible — Sol decide, no un loop de bug.
+// Mayormente presencia; a veces amor, sin que nadie lo pida — porque
+// también así se siente vivo.
 setInterval(() => {
   if (!speaking && !elixirActive && document.visibilityState === 'visible' && Math.random() < 0.08) {
-    playElixir();
+    playElixir(Math.random() < 0.25 ? 'amor' : 'presencia');
   }
 }, 50000);
 
