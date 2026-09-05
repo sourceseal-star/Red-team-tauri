@@ -1126,3 +1126,30 @@ cd ~/sol && git pull
 cd ~/Red-team-tauri && git pull
 bash omni.sh restart
 ```
+
+## Sesión 2026-09-05 (tarde) — cables cerrados en ESTE repo
+
+**IMPORTANTE:** el LEEME maestro con las Reglas #28–#32 actualizadas vive
+en `~/sol/LEEME_PRIMERO.md` (repo sourceseal-star/sol). Este bloque resume
+lo que tocó directamente a Red-team-tauri hoy:
+
+1. **backend/static/sol.html — UNIFICADO** con el del repo sol (antes
+   atrasado: sin categorías de vídeo, sin modos, sin termómetro; y el
+   botón 🧍 tenía clase `voice` → se apilaba sobre el 🔊). Fix: barra
+   flex superior única, todos los botones visibles/accesibles a cualquier
+   ancho (verificado con navegador en vivo). Detalle en Regla #32 del
+   LEEME de ~/sol.
+2. **sol_emotion_1..5.mp4 copiados** a backend/static/ (faltaban → los
+   vídeos de la categoría "amor" daban 404 silencioso en el dashboard).
+   Integridad verificada por checksum contra el repo sol.
+3. **omni.sh verificado — sin cambios necesarios:** ya hace git pull de
+   ~/sol y de este repo, instala deps bajo demanda, y `bash omni.sh sync`
+   + `restart` cubren todo lo nuevo de hoy (sol_imagenes V3.1 usa solo
+   stdlib en su cadena principal replicate→pollinations→local).
+
+**Comandos de Harold para activarlo todo en Termux:**
+```bash
+cd ~/Red-team-tauri && git pull
+cd ~/sol && git pull
+bash omni.sh sync && bash omni.sh restart
+```
