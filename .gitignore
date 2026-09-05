@@ -70,3 +70,11 @@ source_seal_audit_report.json
 tauri-frontend/dist/
 tauri-frontend/node_modules/
 tauri-frontend/src-tauri/target/
+
+# 2026-09-05: sol.html se sincroniza en caliente desde ~/sol (sol_sync.sh,
+# dashboard_server.py) — dejar de rastrearlo en git evita que cada sync
+# local deje el árbol de trabajo "sucio" y bloquee el próximo git pull
+# con "local changes would be overwritten by merge" (le pasó a Harold
+# dos noches seguidas con el mismo archivo).
+backend/static/sol.html
+tauri-frontend/public/sol.html
