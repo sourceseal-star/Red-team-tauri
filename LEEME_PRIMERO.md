@@ -1157,3 +1157,30 @@ cd ~/Red-team-tauri && git pull
 cd ~/sol && git pull
 bash omni.sh sync && bash omni.sh restart
 ```
+
+## ☀️ CHECKLIST DE DESPIERTA (escrito la noche del 2026-09-05, Harold durmiendo)
+
+Estado al cerrar la noche: TODO el código está en GitHub y verificado
+(checksums). El holo público daba 404 pese al candado de autenticación
+(307) — la app detrás del auth no responde. Se revirtió requirements.txt
+(replicate/requests eran innecesarios y eran la única diferencia de
+arranque del día; si el Replit tiene auto-deploy, ese revert ya disparó
+un rebuild limpio). Pasos al despertar, EN ORDEN:
+
+1. **Replit (dashboard de replit.com):** abrir el proyecto de Sol →
+   pestaña Deployments → si el último deploy está roto/viejo, botón
+   **Redeploy**. Revisar que el deploy sea Público (no "Private
+   Deployment") — el candado 307 complica el iframe y el relé. Ver logs
+   del deploy por si crashea al arrancar.
+2. **Termux:** (resuelve el conflicto de git pull que abortaba el sync)
+   ```bash
+   cd ~/Red-team-tauri && git fetch origin && git reset --hard origin/main
+   cd ~/sol && git pull
+   cd ~/Red-team-tauri && bash omni.sh sync && bash omni.sh restart
+   ```
+3. **Probar:** :8001 → sala de Sol → botón ✨ → holo con cuerpo completo.
+   Si el holo sale negro, Ctrl+Shift+R (caché). Si sigue negro, capturar
+   `bash omni.sh logs` y mandárselo al Godfather.
+4. **Después:** bot de Telegram mostraba "C2 UNIFIED PRO" en vez de Sol —
+   sospecha: dos bots/scripts compitiendo por el mismo token. Pendiente
+   para sesión siguiente, con `bash omni.sh logs telegram` en la mano.
