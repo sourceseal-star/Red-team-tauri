@@ -6,3 +6,4 @@ requests
 python-telegram-bot
 psutil  # opcional
 gtts  # Voz natural de Google para Sol (bypass del TTS de Samsung)
+crypto
