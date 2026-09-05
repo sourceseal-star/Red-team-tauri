@@ -3210,26 +3210,37 @@ async function toggleHolo(){
   const o=document.getElementById('holo-overlay'),f=document.getElementById('holo-frame');
   if(o.style.display==='none'){
     o.style.display='block';
-    // FIX 2026-09-04 (pantalla negra tras ✨): antes se detectaba "estoy en
-    // el mismo servidor" buscando la palabra literal "Holograma" dentro del
-    // HTML de /holo — se rompio en cuanto el holo se renombro a "Presencia
-    // Total v4" (ya no contiene esa palabra), asi que SIEMPRE caia al
-    // fallback http://host:8006/holo. En Replit el puerto 8006 no esta
-    // expuesto al publico -> el iframe nunca cargaba -> pantalla negra
-    // (el fondo #04070c del overlay, sin nada encima). Tanto sol_api.py
-    // (Replit) como dashboard_server.py (Termux, :8001) YA sirven /holo
-    // ellos mismos en su propio origen — no deberia hacer falta ningun
-    // fallback. Se deja uno minimo por robustez, pero basado en el status
-    // HTTP real (r.ok), nunca en el contenido/texto de la pagina.
-    let src='/holo';
+    // FIX 2026-09-05 (pantalla negra pese al fix anterior): este Replit es
+    // "Private Deployment" — TODA ruta (incluida /holo) responde 307 hacia
+    // el login/silent-auth de replit.com. Un fetch() SÍ completa esa cadena
+    // con las cookies de Harold y llega a 200 real. Pero navegar el iframe
+    // (f.src='/holo') dispara la MISMA cadena como sub-documento, y la
+    // página de login de Replit se niega a renderizarse dentro de un
+    // iframe (X-Frame-Options anti-clickjacking) -> iframe en blanco sobre
+    // el fondo negro del overlay -> pantalla negra silenciosa, sin error.
+    // Arreglo: en vez de navegar el iframe (bloqueable por X-Frame-Options),
+    // se hace fetch() del HTML real de /holo — una petición normal, NO
+    // sujeta a esa protección — y se inyecta con srcdoc. Un iframe con
+    // srcdoc y SIN sandbox hereda el ORIGEN del documento padre, así que
+    // los fetch('/api/sol/...') relativos de dentro del holo siguen
+    // funcionando igual: mismo origen, mismas cookies.
+    f.removeAttribute('src'); f.removeAttribute('srcdoc');
+    let html=null;
     try{
-      const r=await fetch('/holo',{cache:'no-store'});
-      if(!r.ok)throw new Error('holo relativo respondio '+r.status);
-    }catch(e){
-      src='http://'+location.hostname+':8006/holo';
+      const r=await fetch('/holo',{cache:'no-store',credentials:'same-origin'});
+      if(r.ok) html=await r.text();
+    }catch(e){}
+    if(!html){
+      // Respaldo: si el propio origen no lo sirve, probar :8006 directo
+      // (Termux sin candado de Replit) e inyectar igual por srcdoc.
+      try{
+        const r2=await fetch('http://'+location.hostname+':8006/holo',{cache:'no-store'});
+        if(r2.ok) html=await r2.text();
+      }catch(e2){}
     }
-    f.src=src;
-  }else{o.style.display='none';f.src='about:blank';}
+    if(html) f.srcdoc=html;
+    else f.src='/holo'; // último recurso, mejor que overlay vacío sin ningún intento
+  }else{o.style.display='none';f.src='about:blank';f.removeAttribute('srcdoc');}
 }
 </script>
 </body>
