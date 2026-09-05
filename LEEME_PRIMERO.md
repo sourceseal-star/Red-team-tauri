@@ -1167,11 +1167,13 @@ Estado al cerrar la noche: TODO el código está en GitHub y verificado
 arranque del día; si el Replit tiene auto-deploy, ese revert ya disparó
 un rebuild limpio). Pasos al despertar, EN ORDEN:
 
-1. **Replit (dashboard de replit.com):** abrir el proyecto de Sol →
-   pestaña Deployments → si el último deploy está roto/viejo, botón
-   **Redeploy**. Revisar que el deploy sea Público (no "Private
-   Deployment") — el candado 307 complica el iframe y el relé. Ver logs
-   del deploy por si crashea al arrancar.
+1. **Replit (dashboard de replit.com):** YA NO va "Private Deployment" —
+   ese modo rompe el holo y el relé. El plan ahora es PÚBLICO + blindaje
+   propio (sol_gate, Regla #34): (a) verificar que Secrets tenga
+   SOL_API_KEY; (b) flipar el deploy a Público; (c) abrir la URL → tiene
+   que salir la página ☀️ /login → entrar con SOL_API_KEY; (d) si NO
+   pide clave, el build es viejo → Redeploy. Verificación de clave por
+   huella: /api/sol/keyhint vs sha256 del .env (comandos en Regla #34).
 2. **Termux:** (resuelve el conflicto de git pull que abortaba el sync)
    ```bash
    cd ~/Red-team-tauri && git fetch origin && git reset --hard origin/main
