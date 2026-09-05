@@ -1147,6 +1147,10 @@ lo que tocó directamente a Red-team-tauri hoy:
    + `restart` cubren todo lo nuevo de hoy (sol_imagenes V3.1 usa solo
    stdlib en su cadena principal replicate→pollinations→local).
 
+4. **holo v5:** backend/static/sol_holo_live.html unificado con el repo
+   sol — Sol en cuerpo completo dentro del holograma, boca moviéndose
+   con su voz real + fix srcdoc de la pantalla negra (Regla #33 en ~/sol).
+
 **Comandos de Harold para activarlo todo en Termux:**
 ```bash
 cd ~/Red-team-tauri && git pull
