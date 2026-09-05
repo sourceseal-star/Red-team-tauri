@@ -1236,3 +1236,41 @@ datos (esto también mata cualquier Service Worker fantasma).
 `cat ~/sol/static/sol.html | grep -c "tab-mem"` (debe dar 1, no más) y
 `grep -o "class=\"room\" id=\"room-mem\"" ~/sol/static/sol.html` para
 verificar que el archivo en disco ya es la versión con habitaciones.
+
+## Regla #36 — Deploy público da {"detail":"Not Found"} genérico en "/" (2026-09-05, pendiente)
+
+**Estado:** SOL_API_KEY confirmada funcionando (huella coincide). Pero
+`https://sol--supermancareman.replit.app/` (raíz, sin path) devuelve
+JSON plano `{"detail":"Not Found"}` en vez del holo/chat.
+
+**Por qué esto NO es un 404 de nuestra app:** `sol_api.py` (verificado
+en GitHub, commit `c042f694`) SÍ tiene una ruta `@app.get("/")` que
+responde con el HTML de Sol, o en el peor caso un `<h1>☀️ Sol</h1>` con
+código 503 — NUNCA el JSON genérico `{"detail":"Not Found"}` que es el
+404 por defecto de Starlette cuando NINGUNA ruta coincide. Conclusión:
+la petición no está llegando al handler `/` de nuestro código.
+
+**3 hipótesis, de más a menos probable (sin poder verificar en vivo —
+Sol no tiene acceso al dashboard de Replit ni a los logs del deploy):**
+
+1. **El deploy público está corriendo un build VIEJO** (de antes de
+   `sol_gate.py`/hoy) que no tenía esa ruta bien definida, o el
+   auto-deploy tras el último push no se disparó todavía.
+   → Acción: dashboard de Replit → Deployments → botón **Redeploy**
+   manual (no asumir que el auto-deploy ya corrió).
+
+2. **El proceso crasheó al arrancar** (ej. import de `sol_gate` o de
+   algo en `sol_api.py`) y Replit muestra un error genérico en su lugar.
+   → Acción: Deployments → esa deployment → pestaña **Logs** — buscar
+   un traceback de Python cerca del último deploy.
+
+3. **El tipo de deployment es "Static"** en vez de un servicio real
+   (Autoscale/Reserved VM). Un deployment estático solo sirve archivos
+   literales — "/" sin un `index.html` físico en la raíz devolvería
+   justo este tipo de 404 genérico, sin pasar nunca por `sol_api.py`.
+   → Acción: Deployments → Settings — confirmar que el tipo NO sea
+   "Static Deployment".
+
+**Cuando se resuelva:** confirmar visitando `/api/sol/keyhint` (ya
+funciona) Y `/` (debe mostrar el HTML de Sol, no JSON) en la misma
+sesión, para cerrar el ciclo completo.
