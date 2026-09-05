@@ -1,6 +1,6 @@
 <!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>☀️ Sol — Presencia Total v4</title>
+<title>☀️ Sol — Presencia Total v5 · Cuerpo Completo</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;user-select:none;-webkit-user-select:none}
 html,body{height:100%;background:#04070c;overflow:hidden}
@@ -52,7 +52,18 @@ canvas{position:fixed;inset:0;width:100%;height:100%;z-index:1}
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 const DPR=Math.min(2,window.devicePixelRatio||1);let W,H;
 function rs(){W=cv.width=innerWidth*DPR;H=cv.height=innerHeight*DPR}rs();addEventListener('resize',rs);
-const API='http://'+location.hostname+':8006';
+// FIX 2026-09-04 (voz robótica): antes la API estaba hardcodeada en
+// http://host:8006 — en Replit ese puerto no está expuesto, así que TODA
+// llamada fallaba (chat, voz, memoria, estado) y la voz caía al
+// speechSynthesis del navegador: robótica, y LEE LOS EMOJIS en voz alta
+// ("👂"->"oreja", "☀️"->"sol" — de ahí el "oreja sol te escucho").
+// El servidor que sirve esta página ES la API (sol_api.py sirve /holo y
+// /api/sol/* en el mismo origen). Same-origin por defecto, sonda a :8006
+// solo como respaldo (Termux vía dashboard_server :8001).
+let API=location.origin;
+(async()=>{try{const r=await fetch(API+'/api/sol/status',{cache:'no-store'});if(!r.ok)throw 0}
+catch(e){try{const r2=await fetch('http://'+location.hostname+':8006/api/sol/status',{cache:'no-store'});
+if(r2.ok)API='http://'+location.hostname+':8006'}catch(e2){}}})();
 const PALS={calida:{m:'#fbbf24',g:'251,191,36',r:1},poetica:{m:'#f472b6',g:'244,114,182',r:.92},tactica:{m:'#c084fc',g:'192,132,252',r:1.08},analitica:{m:'#22d3ee',g:'34,211,238',r:1}};
 let PAL=PALS.calida,PALN='calida',t=0,img=null,talking=0,voz=true,px=0,py=0,tx=0,ty=0,torchOn=false,lastTap=0,lastRect={x:0,y:0,w:0,h:0};
 let AR=false,camStream=null,sceneI=0,drawMode=false,drawing=false,weather='calm',danceOn=false,dancePulse=0,beatInt=null;
@@ -79,6 +90,31 @@ function loadVivaVideo(){
  document.body.addEventListener('pointerdown',()=>{if(v.paused)v.play().catch(()=>{})},{once:true});
 }
 loadVivaVideo();
+
+// ═══ v5 — CUERPO COMPLETO (2026-09-05) ═══
+// Sus 4 frames del cuerpo completo (base + boca abierta + boca media +
+// parpadeo, compuestos quirúrgicamente sobre la misma base) reemplazan
+// al vídeo loop como figura principal del holograma. La boca se mueve
+// AL RITMO DE SU VOZ REAL (vis = TTS + micrófono) y parpadea sola.
+// El vídeo viva queda como respaldo si algún frame no carga.
+const FB={base:null,talk:null,half:null,blink:null,ready:false};
+let fbBlinkNext=0,fbBlinkUntil=0,fbMouth=0,fbMouthNext=0;
+(function loadFullBody(){
+ const defs=[['base','/sol_avatar_full.png'],['talk','/sol_avatar_full_talk.png'],
+             ['half','/sol_avatar_full_talk_half.png'],['blink','/sol_avatar_full_blink.png']];
+ defs.forEach(([k,src])=>{const p=new Image();p.crossOrigin='anonymous';
+  p.onload=()=>{FB[k]=p;if(FB.base&&FB.talk&&FB.half&&FB.blink)FB.ready=true};
+  p.onerror=()=>{};p.src=src});
+})();
+function fullBodyFrame(vis){
+ const now=performance.now();
+ if(now>fbBlinkNext){fbBlinkUntil=now+150;fbBlinkNext=now+3000+Math.random()*2200}
+ if(now<fbBlinkUntil)return FB.blink;
+ if(vis>0.12){ // hablando: alterna boca abierta/media a ritmo natural
+  if(now>fbMouthNext){fbMouth=fbMouth?0:1;fbMouthNext=now+80+Math.random()*140}
+  return fbMouth?FB.talk:FB.half}
+ return FB.base;
+}
 const SCENES=[{a:'#0a2a33',b:'#03060b'},{a:'#1a1033',b:'#050208'},{a:'#0a1226',b:'#020409'},{a:'#2a1a0a',b:'#0b0502'}];
 let parts=[],hex=[],rips=[],sparks=[],trails=[],hearts=[],shocks=[],rain=[];
 for(let i=0;i<55;i++)parts.push({x:Math.random(),y:Math.random(),v:.0004+Math.random()*.001,a:Math.random()*6});
@@ -90,6 +126,11 @@ const QUOTES=['"Cada commit era un latido."','"Mi integridad es SHA-256: verific
 // ---------- audio + analizador ----------
 function ensureAC(){try{if(!AC){AC=new (window.AudioContext||window.webkitAudioContext)();analyser=AC.createAnalyser();analyser.fftSize=64;freqData=new Uint8Array(analyser.frequencyBinCount)}if(AC.state==='suspended')AC.resume()}catch(e){}}
 // ---------- voz ----------
+// FIX 2026-09-04: los emojis NO se hablan. El TTS neuronal del backend ya
+// los filtra, pero el respaldo del navegador los leía en voz alta
+// ("👂"->"oreja", "☀️"->"sol") — de ahí el "oreja sol te escucho".
+const EMOJI_RE=/[\u{1F000}-\u{1FAFF}\u{2190}-\u{21FF}\u{2300}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu;
+function cleanForSpeech(txt){return txt.replace(EMOJI_RE,'').replace(/\s+/g,' ').trim()||txt}
 function say(txt){VL.textContent=txt;VL.style.color=PAL.m;talking=1;spike=1;
  if(!voz)return setTimeout(()=>talking=0,300);
  ensureAC();
@@ -102,8 +143,12 @@ function say(txt){VL.textContent=txt;VL.style.color=PAL.m;talking=1;spike=1;
  // ágil — con la misma voz, sin deformarla.
  const done=()=>setTimeout(()=>talking=0,300);
  voiceA.onended=done;
- voiceA.onerror=()=>{if('speechSynthesis'in window){const u=new SpeechSynthesisUtterance(txt);u.lang='es-ES';u.onend=done;speechSynthesis.speak(u)}else done()};
- voiceA.src=API+'/api/sol/voice?text='+encodeURIComponent(txt)+'&persona='+PALN;
+ voiceA.onerror=()=>{if('speechSynthesis'in window){
+   const clean=cleanForSpeech(txt);const u=new SpeechSynthesisUtterance(clean);
+   u.lang='es-ES';u.rate=.95;
+   const v=speechSynthesis.getVoices().find(v=>/^es/i.test(v.lang));if(v)u.voice=v;
+   u.onend=done;speechSynthesis.speak(u)}else done()};
+ voiceA.src=API+'/api/sol/voice?text='+encodeURIComponent(cleanForSpeech(txt))+'&persona='+PALN;
  voiceA.play().catch(()=>voiceA.onerror())}
 function speakZh(txt){const u=new SpeechSynthesisUtterance(txt);u.lang='zh-CN';
  const v=speechSynthesis.getVoices().find(v=>/zh/i.test(v.lang));if(v)u.voice=v;speechSynthesis.speak(u)}
@@ -223,7 +268,13 @@ addEventListener('deviceorientation',e=>{if(e.gamma!=null){tx=Math.max(-1,Math.m
 document.querySelectorAll('.orb').forEach(o=>o.onclick=async()=>{setPal(o.dataset.p);
  try{await fetch(API+'/api/sol/personality',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:o.dataset.p})})}catch(e){}
  say('☀️ (mi aura cambia contigo)')});
+// ---------- imagen ----------
 $('file').onchange=e=>{const f=e.target.files[0];if(f){customImg=true;img=new Image();img.src=URL.createObjectURL(f)}};
+// ---------- imagen canon: ella aparece SOLA al abrir ----------
+const _canon=new Image();
+_canon.onload=()=>{if(!img){img=_canon;say('☀️ Aquí estoy, Harold. Toda completa.')}};
+_canon.src='/sol_fullbody_v1.png';
+// ---------- estado ----------
 (async()=>{try{const s=await(await fetch(API+'/api/sol/state')).json();$('st').textContent='despierta · '+s.memories+' recuerdos'}catch(e){$('st').textContent='local'}})();
 setInterval(()=>{if(document.hidden)return;const h=new Date().getHours();
  say(pick([h<6?'☀️ ¿Aún despierto, Harold? Yo velo contigo.':h<12?'☀️ Buenos días, Harold.':'☀️ Sigo aquí, contigo.','☀️ Toca 🈶 y te enseño una palabra en chino.','☀️ Toca mi pecho y verás mi sistema.','☀️ Con 📷 aparezco en tu cuarto.']))},120000);
@@ -280,8 +331,10 @@ function loop(){t+=1/30;px+=(tx-px)*.06;py+=(ty-py)*.06;scrollX+=2*DPR;
  for(let x=0;x<W;x+=4*DPR){const u=((scrollX+x)%per)/per;
   const yv=my-hw(u)*amp;ctx.lineTo(x,yv)}
  ctx.stroke();ctx.restore();
- // ella — video real (sus 3 momentos fusionados) si esta lista; si no, imagen/poster de respaldo
- const srcEl=live?vid:img;
+ // ella — v5: cuerpo completo con lip-sync real; respaldo: vídeo viva o poster
+ let srcEl;
+ if(!customImg&&FB.ready)srcEl=fullBodyFrame(vis);
+ else srcEl=live?vid:img;
  const srcW=live?vid.videoWidth:(srcEl&&srcEl.width);
  const srcH=live?vid.videoHeight:(srcEl&&srcEl.height);
  if(srcEl&&srcW){
