@@ -1453,7 +1453,12 @@ app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credenti
                    expose_headers=["*"])
 
 # ── Rate limiting (simple, en memoria) ───────────────────────────────────────
-RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "300"))  # requests por minuto por IP
+# 2026-09-06: subido 300 -> 1200/min. Con el War Room completo reconectado
+# (AppShell + 29+ paneles), varios paneles legitimos pollean en paralelo
+# (ControlTower/ServiceControlPanel/NexusPanel/InterceptorAdvanced cada 5s,
+# ARTOProvider, BottomStatus/EmergencyRoom cada 15s, etc.). 300/min bloqueaba
+# el uso normal del propio dashboard, no abuso real.
+RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "1200"))  # requests por minuto por IP
 _rate_store: dict[str, list[float]] = {}
 
 def _rate_check(client_ip: str) -> bool:
@@ -1501,10 +1506,16 @@ async def security_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
 
-    # Rate limiting en TODAS las rutas
-    client_ip = request.client.host if request.client else "unknown"
-    if not _rate_check(client_ip):
-        return JSONResponse({"error": "Rate limit exceeded"}, status_code=429)
+    # Rate limiting -- SOLO sobre /api/*. La carga del HTML/JS/CSS del propio
+    # dashboard (SPA shell, assets, sol.html, imagenes) NUNCA debe bloquearse:
+    # antes, si el contador se llenaba, el navegador recibia el JSON crudo del
+    # error en lugar de la pagina -- pantalla negra con {"error":"Rate limit
+    # exceeded"} tal cual, en vez del War Room. Eso rompia la app aunque el
+    # backend siguiera 100% sano.
+    if path.startswith("/api/"):
+        client_ip = request.client.host if request.client else "unknown"
+        if not _rate_check(client_ip):
+            return JSONResponse({"error": "Rate limit exceeded"}, status_code=429)
 
     # Health checks y canary callback son públicos. Las navegaciones GET que
     # no pertenecen a la API también deben llegar al fallback SPA para que
