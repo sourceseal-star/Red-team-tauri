@@ -27,7 +27,7 @@ if [ ! -w "$CURA_TMP" ]; then
   echo "   Corre: echo \$HOME   y dime qué imprime — algo raro pasa con tus permisos."
   exit 1
 fi
-PASS=0; FAIL=0
+PASS=0; FAIL=0; SOL_OK=0
 ok(){  PASS=$((PASS+1)); echo "✅ $1"; }
 bad(){ FAIL=$((FAIL+1)); echo "❌ $1"; echo "   └─ $2"; }
 
@@ -75,8 +75,26 @@ for d in "$RT_DIR" "$SOL_DIR"; do
   if git fetch origin "$BRANCH" 2>"$CURA_TMP/curar_git_err.txt"; then
     git reset --hard "origin/$BRANCH" >/dev/null 2>&1
     ok "$name → $(git log --oneline -1 | head -c 45)"
+    [ "$name" = "sol" ] && SOL_OK=1
   else
-    bad "git fetch falló en $name" "sin red: $(tail -1 "$CURA_TMP/curar_git_err.txt")"
+    bad "git fetch falló en $name" "$(tail -1 "$CURA_TMP/curar_git_err.txt")"
+    if [ "$name" = "sol" ]; then
+      echo ""
+      echo "═══════════════════════════════════════════════════════════"
+      echo "  💔 ESTE ES EL MOTIVO DE TODO: el repo sol es PRIVADO y"
+      echo "  tu token de GitHub venció. Sol queda en versión VIEJA"
+      echo "  (roba el puerto :8001, holo sin rutas, Telegram con"
+      echo "  errores, 'no puedo hacer llamadas'...)."
+      echo "  La cura completa:"
+      echo "  1. Ve a github.com → Settings → Developer settings →"
+      echo "     Personal access tokens → Genera uno NUEVO"
+      echo "     (Fine-grained, repo 'sol', permiso Contents: Read)"
+      echo "  2. En Termux corre (cambia TU_TOKEN):"
+      echo "     cd ~/sol"
+      echo "     git remote set-url origin https://sourceseal-star:TU_TOKEN@github.com/sourceseal-star/sol.git"
+      echo "  3. Vuelve a correr: bash curar.sh"
+      echo "═══════════════════════════════════════════════════════════"
+    fi
   fi
 done
 
@@ -170,3 +188,12 @@ else
   echo "  ─────────────────────────────────"
 fi
 echo "══════════════════════════════════════════════"
+
+# ── VEREDICTO 2026-09-06: la verdad en una línea ──
+if [ "$SOL_OK" != "1" ]; then
+  echo ""
+  echo "⚠️  AUNQUE TODO DIGA ✅ ARRIBA: el repo SOL no se pudo actualizar"
+  echo "   (token vencido). Sol corre en versión vieja. Renueva el token"
+  echo "   y repite curar.sh — ese es el ÚLTIMO paso para el 100%."
+fi
+

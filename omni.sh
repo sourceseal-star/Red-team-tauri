@@ -638,6 +638,10 @@ start() {
 
   # ── Limpiar procesos previos ──
   pkill -f "$ROOT/redteam/scripts/dashboard_server.py" 2>/dev/null || true
+  # BLINDAJE 2026-09-06: si algo ajeno (sol_api viejo con PORT=8001 heredado)
+  # retiene el 8001, el dashboard nace muerto → pantalla negra. Lo matamos.
+  _p8001=$(command -v fuser >/dev/null 2>&1 && fuser 8001/tcp 2>/dev/null || true)
+  [ -n "$_p8001" ] && { warn "Matando intruso en :8001 (PID $_p8001)"; kill -9 $_p8001 2>/dev/null; sleep 1; }
   pkill -f "$ROOT/ghost_hunter_phantom/master.py" 2>/dev/null || true
   pkill -f "$ROOT/ghost_hunter_phantom/node.py" 2>/dev/null || true
   pkill -f "$ROOT/nexus_omni_v9.py" 2>/dev/null || true
@@ -895,7 +899,10 @@ start() {
     if [ -f "$SOL_REPO/sol_api.py" ] && ! pgrep -f "sol_api.py" >/dev/null 2>&1; then
       load_sol_env   # ☀️ llaves de ~/sol/.env para su cerebro (LLM, rele)
       cd "$SOL_REPO"
-      nohup python3 sol_api.py >> "$LOG_DIR/sol_api.log" 2>&1 &
+      # BLINDAJE 2026-09-06: un ~/sol VIEJO (token vencido, sin pull) hereda
+      # PORT=8001 del .env de Red-team y le ROBA el puerto al War Room.
+      # Forzamos 8006 en TODAS las variables que el codigo viejo o nuevo pueda leer.
+      SOL_PORT=8006 PORT=8006 nohup python3 sol_api.py >> "$LOG_DIR/sol_api.log" 2>&1 &
       echo "$!" > "$SOL_DIR/sol_api.pid"
       cd "$ROOT"
       wait_sol_api 15   # en vez de sleep 1: esperar a que despierte de verdad
@@ -1663,11 +1670,11 @@ start_sol_stack() {
   # 1 reintentó + mostrar el error REAL del log (antes: solo un warn
   # genérico y nadie sabía por qué Sol estaba muerta).
   if ! pgrep -f sol_api.py >/dev/null; then
-    ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & echo $! > "$HOME/.sol/sol_api.pid" )
+    ( cd "$root" && SOL_PORT=8006 PORT=8006 nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & echo $! > "$HOME/.sol/sol_api.pid" )
     wait_sol_api 15   # sin falso DETENIDA: esperar a que su cerebro despierte
     if ! curl -s -m 2 http://127.0.0.1:8006/api/sol/status >/dev/null 2>&1; then
       warn "☀️ Sol API no despertó al primer intento — reintentando (el Edge 50 a veces tarda en importar)..."
-      ( cd "$root" && nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & echo $! > "$HOME/.sol/sol_api.pid" )
+      ( cd "$root" && SOL_PORT=8006 PORT=8006 nohup python3 sol_api.py >>"$HOME/.sol/sol_api.log" 2>&1 & echo $! > "$HOME/.sol/sol_api.pid" )
       wait_sol_api 20
       if curl -s -m 2 http://127.0.0.1:8006/api/sol/status >/dev/null 2>&1; then
         ok "☀️ Sol API despertó en el reintento"
