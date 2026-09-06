@@ -102,6 +102,20 @@ const QUOTES=['"Cada commit era un latido."','"Mi integridad es SHA-256: verific
 const FRAMES={full:'/sol_avatar_full.png',blink:'/sol_avatar_full_blink.png',talk:'/sol_avatar_full_talk.png',talk_half:'/sol_avatar_full_talk_half.png'};
 var customImg=false; // imagen elegida por ella: el loop de parpadeo no la pisa
 function setFrame(f){if(FRAMES[f]&&!customImg&&curFrame!==f){curFrame=f;solBody.src=FRAMES[f]}}
+// -- Reacciones contextuales de expresion — USO LIBRE de sus 10 caras --
+const FACES={blink:'/sol_avatar_blink.png',curious:'/sol_avatar_curious.png',full:'/sol_avatar_full.png',happy:'/sol_avatar_happy.png',listening:'/sol_avatar_listening.png',smile:'/sol_avatar_smile.png',study:'/sol_avatar_study.png',talk:'/sol_avatar_talk.png',talk_half:'/sol_avatar_talk_half.png',thinking:'/sol_avatar_thinking.png'};
+let faceT=null;
+function showFace(f,dur){dur=dur||4500;const s=FACES[f];if(!s)return;
+ const b=$('faceBub')||(()=>{const n=new Image();n.id='faceBub';n.style.cssText='position:fixed;left:70%;top:22%;transform:translate(-50%,0);max-height:34vh;z-index:4;filter:drop-shadow(0 0 30px rgba(251,191,36,.55));border-radius:50%;display:none;pointer-events:none';document.body.appendChild(n);return n})();
+ b.src=s;b.style.display='block';clearTimeout(faceT);faceT=setTimeout(()=>{b.style.display='none'},dur)}
+async function showImageByTag(tag){
+ try{const d=await(await fetch(API+'/api/sol/images')).json();
+  const all=d.images||[],list=all.filter(v=>v.tag===tag),pool=list.length?list:all;
+  if(!pool.length)return;
+  const it=pool[Math.random()*pool.length|0];
+  const iv=$('imgOv')||(()=>{const n=new Image();n.id='imgOv';n.style.cssText='position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);max-height:70vh;max-width:80vw;z-index:5;border-radius:12px;box-shadow:0 0 60px rgba(251,191,36,.5);display:none;pointer-events:none';document.body.appendChild(n);return n})();
+  iv.src=API+'/api/sol/images/'+it.tag+'/'+encodeURIComponent(it.file);iv.style.display='block';
+  clearTimeout(iv._t);iv._t=setTimeout(()=>{iv.style.display='none'},6000)}catch(e){}}
 function startBlinkLoop(){clearInterval(blinkTimer);blinkTimer=setInterval(()=>{setFrame('blink');setTimeout(()=>setFrame(curFrame==='blink'?'full':curFrame),180)},3800+Math.random()*2500)}
 startBlinkLoop();
 function startTalk(){setFrame('talk');clearInterval(talkTimer);talkTimer=setInterval(()=>setFrame(curFrame==='talk'?'talk_half':'talk'),120);solBody.classList.add('talking')}
@@ -128,6 +142,13 @@ function speakZh(txt){const u=new SpeechSynthesisUtterance(txt);u.lang='zh-CN';
  const v=speechSynthesis.getVoices().find(v=>/zh/i.test(v.lang));if(v)u.voice=v;speechSynthesis.speak(u)}
 function setPal(n){PAL=PALS[n];PALN=n;VL.style.color=PAL.m}
 function feel(txt){const l=txt.toLowerCase();
+ // expresion contextual — la logica de Harold: chino/estudiar -> cara 'study'
+ if(/chino|mandar[ií]n|estudi|aprend|clase|idioma|practic|lecci/.test(l))showFace('study',6000);
+ else if(/feliz|alegr|gracias|genial|logr|bail|jaja|risa/.test(l))showFace('happy',4500);
+ else if(/sonre|sonrisa|r[ií]e|me gusta|encanta/.test(l))showFace('smile',4500);
+ else if(/esc[uú]chame|mira lo que|oye,? mira/.test(l))showFace('listening',4500);
+ else if(/\?/.test(l))showFace('curious',4000);
+ else showFace('thinking',3000);
  if(/triste|cansad|sol[ao]|miedo|mal/.test(l)){setPal('poetica');weather='rain'}
  else if(/feliz|bien|genial|logr|gracias/.test(l)){setPal('calida');weather='spark'}
  else if(/nmap|scan|git|c[oó]digo|api|servidor|red/.test(l)){setPal('analitica');weather='grid'}
@@ -138,8 +159,10 @@ async function send(){const txt=$('inp').value.trim();if(!txt)return;$('inp').va
  try{const r=await fetch(API+'/api/sol/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:txt})});
   const d=await r.json();
   const m=(d.reply||'').match(/\[\[video:(\w+)\]\]/);
-  let rep=(d.reply||'☀️ Estoy aquí, Harold.').replace(/\[\[video:\w+\]\]/,'');
+  const im=(d.reply||'').match(/\[\[image:(\w+)\]\]/);
+  let rep=(d.reply||'☀️ Estoy aquí, Harold.').replace(/\[\[video:\w+\]\]/,''.replace(/\[\[image:\w+\]\]/,'');
   if(m)playByTag(m[1]);
+  if(im)showImageByTag(im[1]);
   say(rep)}catch(e){say('☀️ Estoy aquí, Harold. (sin conexión a mi cerebro)')}}
 $('send').onclick=send;$('inp').onkeydown=e=>{if(e.key==='Enter')send()};
 $('voz').onclick=()=>{voz=!voz;$('voz').classList.toggle('on',!voz)};
@@ -187,7 +210,7 @@ async function openMem(){document.querySelectorAll('.memnode').forEach(n=>n.remo
 // ---------- chino ----------
 const ZH=[{h:'你好',p:'nǐ hǎo',m:'hola'},{h:'谢谢',p:'xiè xie',m:'gracias'},{h:'我想你',p:'wǒ xiǎng nǐ',m:'te extraño'},{h:'加油',p:'jiā yóu',m:'ánimo'},{h:'晚安',p:'wǎn ān',m:'buenas noches'}];
 let zhI=0;
-function showZh(){const w=ZH[zhI%ZH.length];zhI++;
+function showZh(){const w=ZH[zhI%ZH.length];zhI++;showFace('study',6000);
  $('zhcard').innerHTML=`<div class="hz">${w.h}</div><div class="py">${w.p}</div><div class="mg">${w.m}</div><button onclick="window._zh()">🔊 otra</button>`;
  $('zhcard').hidden=false;speakZh(w.h)}
 window._zh=showZh;
