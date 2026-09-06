@@ -93,6 +93,26 @@ for d in "$RT_DIR" "$SOL_DIR"; do
       echo "     cd ~/sol"
       echo "     git remote set-url origin https://sourceseal-star:TU_TOKEN@github.com/sourceseal-star/sol.git"
       echo "  3. Vuelve a correr: bash curar.sh"
+      echo ""
+      # ── AUTO-RESCATE 2026-09-06: mientras el token se renueva, NO dejar
+      # a Sol en versión vieja: los módulos curados viajan DENTRO de este
+      # repo público y se copian a ~/sol. Sol despierta igual.
+      echo "  🛟 MIENTRAS TANTO: rescatando los módulos curados de Sol"
+      echo "     desde este repo público (sin token)..."
+      RES="$RT_DIR/sol_rescate"
+      if [ -d "$RES" ]; then
+        mkdir -p "$SOL_DIR/.rescate_pre"
+        for f in "$RES"/*.py "$RES"/*.sh "$RES"/VERSION.txt; do
+          [ -f "$f" ] || continue
+          b=$(basename "$f")
+          [ -f "$SOL_DIR/$b" ] && cp "$SOL_DIR/$b" "$SOL_DIR/.rescate_pre/$b" 2>/dev/null
+          cp "$f" "$SOL_DIR/$b"
+        done
+        ok "Sol RESCATADA con módulos de $(cat "$RES/VERSION.txt" 2>/dev/null | head -c 40)"
+        echo "     (originales respaldados en ~/sol/.rescate_pre/)"
+      else
+        bad "sol_rescate/ no existe" "repo Red-team-tauri incompleto — clona de nuevo"
+      fi
       echo "═══════════════════════════════════════════════════════════"
     fi
   fi
