@@ -3455,6 +3455,84 @@ async def _proxy_to_sol(prefix: str, rest: str, request: Request):
     except Exception as e:
         return JSONResponse({"error": f"Proxy Sol falló: {e}"}, status_code=502)
 
+# ═══════════════════════════════════════════════════════════════
+# STORAGE.SOL — biblioteca multimedia LOCAL de Harold (su celular).
+# Carpeta literal: ~/storage.sol (todo minuscula). Ruta configurable:
+# SOL_STORAGE_DIR en .env (ej. /sdcard/storage.sol). Los videos/imagenes
+# pesados se sirven del celular directamente, NO viajan por el Replit.
+# Estos endpoints van ANTES del proxy para que la galeria del holo
+# (:8001) vea el storage local completo.
+# ═══════════════════════════════════════════════════════════════
+_SOL_STORAGE = os.environ.get("SOL_STORAGE_DIR", os.path.join(os.path.expanduser("~"), "storage.sol"))
+_RT_VID_EXTS = (".mp4", ".webm", ".mov", ".m4v")
+
+def _storage_sources():
+    out = {}
+    if os.path.isdir(_SOL_STORAGE):
+        out["storage"] = _SOL_STORAGE
+        for sub in sorted(os.listdir(_SOL_STORAGE)):
+            sp = os.path.join(_SOL_STORAGE, sub)
+            if os.path.isdir(sp):
+                out["storage_" + sub] = sp
+    return out
+
+@app.get("/api/sol/videos")
+async def local_videos_list(request: Request):
+    out = []
+    # fusionar lista remota (su video viva en el cerebro real) + storage.sol local
+    try:
+        r = await _proxy_to_sol("/api/sol", "videos", request)
+        if getattr(r, "status_code", 502) == 200 and getattr(r, "body", None):
+            out.extend(json.loads(r.body).get("videos", []))
+    except Exception:
+        pass
+    for tag, d in _storage_sources().items():
+        try:
+            for f in sorted(os.listdir(d)):
+                if f.lower().endswith(_RT_VID_EXTS):
+                    out.append({"tag": tag, "file": f, "source": "storage.sol"})
+        except OSError:
+            pass
+    return JSONResponse({"ok": True, "videos": out})
+
+@app.get("/api/sol/images")
+async def local_images_list():
+    out = []
+    _RT_IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+    for tag, d in _storage_sources().items():
+        try:
+            for f in sorted(os.listdir(d)):
+                if f.lower().endswith(_RT_IMG_EXTS):
+                    out.append({"tag": tag, "file": f, "source": "storage.sol"})
+        except OSError:
+            pass
+    return JSONResponse({"ok": True, "images": out})
+
+@app.get("/api/sol/images/{tag}/{file}")
+async def local_images_serve(tag: str, file: str):
+    if "/" in file or ".." in file or "/" in tag or ".." in tag:
+        return JSONResponse({"error": "ruta invalida"}, status_code=400)
+    d = _storage_sources().get(tag)
+    if not d:
+        return JSONResponse({"error": "tag desconocido"}, status_code=404)
+    p = os.path.join(d, file)
+    if not os.path.isfile(p):
+        return JSONResponse({"error": "no existe"}, status_code=404)
+    mt = "image/png" if file.endswith(".png") else ("image/webp" if file.endswith(".webp") else "image/jpeg")
+    return FileResponse(p, media_type=mt, headers={"Cache-Control": "no-store"})
+
+@app.get("/api/sol/videos/{tag}/{file}")
+async def local_videos_serve(tag: str, file: str):
+    if "/" in file or ".." in file or "/" in tag or ".." in tag:
+        return JSONResponse({"error": "ruta invalida"}, status_code=400)
+    d = _storage_sources().get(tag)
+    if not d:
+        return JSONResponse({"error": "tag desconocido"}, status_code=404)
+    p = os.path.join(d, file)
+    if not os.path.isfile(p):
+        return JSONResponse({"error": "no existe"}, status_code=404)
+    return FileResponse(p, media_type="video/mp4", headers={"Cache-Control": "no-store"})
+
 @app.api_route("/api/sol/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def sol_api_proxy(rest: str, request: Request):
     return await _proxy_to_sol("/api/sol", rest, request)
