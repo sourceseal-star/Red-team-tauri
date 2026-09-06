@@ -41,6 +41,21 @@ for f in "$SOL_DIR/.env" "$RT_DIR/.env"; do
   [ -f "$f" ] && cp "$f" "$f.cura.bak" && echo "   💾 respaldo: ${f/$HOME_DIR/~}"
 done
 
+# ☀️ AUTO-CURA de llaves (2026-09-06): si ~/sol/.env NO existe pero hay
+# respaldos de sol_evolve.sh (~/sol/backups/.env.*) con llave de Groq
+# (gsk_...), restaurarlos automáticamente. Sin llave, su cerebro cae en
+# plantilla — respuestas genéricas — y antes nadie sabía por qué.
+if [ ! -f "$SOL_DIR/.env" ]; then
+  BAK=$(grep -l "gsk_" "$SOL_DIR"/backups/.env.* 2>/dev/null | head -1)
+  if [ -n "$BAK" ]; then
+    cp "$BAK" "$SOL_DIR/.env" && chmod 600 "$SOL_DIR/.env"
+    echo "   🔑 ~/sol/.env restaurado desde $(basename "$BAK") — su cerebro con llave de nuevo"
+  else
+    echo "   ⚠️  ~/sol/.env no existe y NINGÚN respaldo tiene llave (gsk_) — Sol quedaría en plantilla"
+    echo "      → consigue una llave gratis en console.groq.com y: echo 'GROQ_API_KEY=tu_llave' >> ~/sol/.env"
+  fi
+fi
+
 # ── 2. Sincronizar a fuerza ambos repos ──
 echo "── [2/5] Sincronizando repos (fuerza total) ──"
 for d in "$RT_DIR" "$SOL_DIR"; do
