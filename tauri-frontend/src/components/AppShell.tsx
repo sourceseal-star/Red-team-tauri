@@ -62,6 +62,17 @@ const MODULES = [
   { id: 'arto', label: 'ARTO AI', icon: Cpu, color: 'text-orange-400', badge: 'AI' },
   { id: 'seal', label: 'SEAL Pack', icon: Fingerprint, color: 'text-cyan-400', badge: 'NEW' },
   { id: 'leviathan', label: 'LEVIATHAN', icon: Shield, color: 'text-purple-400', badge: 'v3.0' },
+  // ── Añadidos 2026-09-06: rutas que ya existían y funcionaban en el
+  // dashboard simplificado — se agregan aquí para que NO desaparezcan
+  // al reconectar el War Room completo. Nada se quita, solo se suma. ──
+  { id: 'reports', label: 'Reports', icon: FileText, color: 'text-slate-400', badge: null },
+  { id: 'deception', label: 'Deception', icon: Bug, color: 'text-orange-400', badge: null },
+  { id: 'soar', label: 'SOAR', icon: Zap, color: 'text-yellow-400', badge: null },
+  { id: 'geo', label: 'Geo / Intel', icon: MapPin, color: 'text-cyan-400', badge: null },
+  { id: 'rasp', label: 'RASP', icon: Smartphone, color: 'text-green-400', badge: null },
+  { id: 'ventas', label: 'Ventas', icon: Activity, color: 'text-emerald-400', badge: null },
+  { id: 'sysconfig', label: 'Settings', icon: Settings, color: 'text-slate-400', badge: null },
+  { id: 'about', label: 'About', icon: FileText, color: 'text-slate-500', badge: null },
 ];
 
 // Secciones agrupadas para sidebar colapsable
@@ -72,6 +83,7 @@ const SIDEBAR_SECTIONS = [
   { id: 'laboratorio', title: '⚔️ Laboratorio', moduleIds: ['osint', 'leviathan', 'interceptor', 'tactical'] },
   { id: 'campo', title: '📡 Campo', moduleIds: ['comlink', 'emergency', 'commander', 'android'] },
   { id: 'sistema', title: '⚙️ Sistema', moduleIds: ['alerts', 'export', 'settings', 'seal', 'cameras', 'ultra'] },
+  { id: 'mas', title: '📁 Más', moduleIds: ['reports', 'deception', 'soar', 'geo', 'rasp', 'ventas', 'sysconfig', 'about'] },
 ];
 
 const MODULE_DESCRIPTIONS: Record<string, string> = {
@@ -98,6 +110,14 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
   alerts: 'Alertas y eventos del sistema',
   export: 'Exportación de resultados y evidencias',
   settings: 'Configuración local del dashboard',
+  reports: 'Informes generados de escaneos y auditorías',
+  deception: 'Honeypots y señuelos activos',
+  soar: 'Orquestación y respuesta automatizada',
+  geo: 'Inteligencia geográfica de IPs y dispositivos',
+  rasp: 'Protección de aplicaciones en tiempo de ejecución',
+  ventas: 'Motor de Cierre — seguimiento comercial',
+  sysconfig: 'Ajustes generales del sistema',
+  about: 'Información de la suite SourceSeal',
   osint_adv: 'Investigación OSINT avanzada',
   interceptor: 'Interceptor avanzado y análisis de flujos',
   arto: 'ARTO AI · análisis y priorización',
