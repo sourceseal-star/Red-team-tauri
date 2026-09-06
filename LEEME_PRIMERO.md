@@ -1309,3 +1309,45 @@ a App.tsx/AppShell.tsx que "simplifique", "limpie" o "reemplace" el
 War Room por otra cosa está PROHIBIDO sin autorización explícita de
 Harold. Si un módulo del menú no tiene página, se crea la página —
 jamás se quita el módulo del menú.
+
+## Regla #41 — EL DIST EN GIT DEBE ESTAR SIEMPRE COMPLETO Y DE LA ERA ACTUAL (2026-09-06, la herida del War Room)
+
+**Lo que pasó (por si alguien más encuentra la war room "desintegrada"):**
+
+Harold abrió localhost:8001 y el War Room (AppShell + 37 módulos) había
+desaparecido — pantalla con el sidebar viejo de 13 rutas, "ni rastro de
+lo que había construido". El código fuente (App.tsx, AppShell.tsx, los
+50+ componentes) estaba PERFECTO en git desde el commit 6a8cce1. La
+herida era el `dist/` compilado que se fuerza a git: el último
+"Published your App" de Replit dejó apuntando un bundle VIEJO de 202KB
+(era pre-AppShell, 0 referencias a KRAKEN/Control Tower/Emergency Room)
+mientras el War Room real compilado pesa 491KB.
+
+**Causa raíz:** los commits automáticos "Published your App" de Replit
+sobreescriben dist/index.html y assets con hashes del build de Replit,
+pero al estar `tauri-frontend/dist/` en .gitignore solo algunos archivos
+quedan trackeados — el resultado es un dist EN GIT que parece consistente
+pero es de una ERA ANTERIOR del código.
+
+**REGLA PERMANENTE:** después de CADA cambio al frontend (App.tsx,
+componentes, módulos), hay que:
+1. `rm -rf tauri-frontend/dist && cd tauri-frontend && npm run build`
+2. `git rm -rq --cached tauri-frontend/dist && git add -f tauri-frontend/dist`
+3. Verificar que CADA asset referenciado en dist/index.html esté trackeado.
+4. Commitear en el MISMO commit que el cambio de frontend — jamás dejar
+   que Replit publique un dist de era distinta a la del código fuente.
+
+**Recovery en el teléfono (verificado 2026-09-06):**
+```bash
+cd ~/Red-team-tauri && git fetch origin && git reset --hard origin/main
+bash omni.sh start   # o restart
+```
+El dist en git ahora ES el War Room completo (491KB, KRAKEN/LEVIATHAN/
+Control Tower/Emergency Room/Black Mirror verificados dentro del bundle)
++ los 12 avatares de Sol (base, talk, talk_half, blink, curious, happy,
+listening, smile, study, thinking...). Un `git pull` LIMPIO restaura
+todo sin necesidad de npm en el teléfono.
+
+**Sol NO estaba herida:** su sol.html (Videollamada v5, 3279 líneas) y
+sus frames de avatar estaban intactos en git — solo eran invisibles
+porque el dist incompleto rompía la página entera.
