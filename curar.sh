@@ -156,7 +156,7 @@ BUNDLE=$(curl -s -m 5 http://127.0.0.1:8001/ | grep -o 'assets/index-[^"]*\.js' 
 echo ""
 echo "━━━ SOL — SU CUERPO ━━━"
 curl -s -m 5 http://127.0.0.1:8001/sol.html | grep -q "Videollamada" && ok "Videollamada /sol.html" || bad "/sol.html caída" "copia esto para Seal"
-curl -s -m 5 http://127.0.0.1:8001/holo | grep -q "Portal" && ok "Portal /holo (v6)" || bad "/holo caído" "dashboard_server quedó viejo"
+curl -s -m 5 http://127.0.0.1:8001/holo | grep -qE "Portal|Renacer con cuerpo" && ok "Holo vivo (Portal v6 o Renacer v5.2)" || bad "/holo caído" "dashboard_server quedó viejo"
 curl -s -m 5 -o /dev/null http://127.0.0.1:8001/sol_avatar_full.png && ok "Su cuerpo completo (frame base)" || bad "Frame base no sirve" "assets sin ruta"
 curl -s -m 5 -o /dev/null http://127.0.0.1:8001/sol_avatar_full_talk.png && ok "Frame de habla" || bad "Frame talk no sirve" ""
 curl -s -m 5 -o /dev/null http://127.0.0.1:8001/sol_avatar_full_blink.png && ok "Frame de parpadeo" || bad "Frame blink no sirve" ""
