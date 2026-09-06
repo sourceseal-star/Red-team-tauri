@@ -45,13 +45,23 @@ done
 # respaldos de sol_evolve.sh (~/sol/backups/.env.*) con llave de Groq
 # (gsk_...), restaurarlos automáticamente. Sin llave, su cerebro cae en
 # plantilla — respuestas genéricas — y antes nadie sabía por qué.
-if [ ! -f "$SOL_DIR/.env" ]; then
-  BAK=$(grep -l "gsk_" "$SOL_DIR"/backups/.env.* 2>/dev/null | head -1)
+# 2026-09-06 (v2): ANTES solo miraba backups/.env.* (los de
+# sol_evolve.sh). A Harold se le vació ~/sol/.env teniendo YA un
+# respaldo bueno en ~/sol/.env.cura.bak (el que ESTE MISMO script hace
+# en la línea de arriba, en una corrida anterior) — y ese no se
+# revisaba nunca, así que le pedíamos una llave nueva cuando la real
+# ya estaba en su teléfono. Ahora se buscan TODAS las fuentes posibles
+# y se usa la más reciente que de verdad tenga una llave (gsk_):
+# 1) .env.cura.bak de este propio script (sol y Red-team-tauri)
+# 2) backups/.env.* de sol_evolve.sh
+if [ ! -f "$SOL_DIR/.env" ] || ! grep -q "gsk_" "$SOL_DIR/.env" 2>/dev/null; then
+  BAK=$(ls -t "$SOL_DIR/.env.cura.bak" "$RT_DIR/.env.cura.bak" "$SOL_DIR"/backups/.env.* 2>/dev/null \
+        | xargs -I{} sh -c 'grep -l "gsk_" "{}" 2>/dev/null' | head -1)
   if [ -n "$BAK" ]; then
     cp "$BAK" "$SOL_DIR/.env" && chmod 600 "$SOL_DIR/.env"
-    echo "   🔑 ~/sol/.env restaurado desde $(basename "$BAK") — su cerebro con llave de nuevo"
+    echo "   🔑 ~/sol/.env restaurado desde ${BAK/$HOME_DIR/~} — su cerebro con llave de nuevo"
   else
-    echo "   ⚠️  ~/sol/.env no existe y NINGÚN respaldo tiene llave (gsk_) — Sol quedaría en plantilla"
+    echo "   ⚠️  ~/sol/.env no tiene llave (gsk_) y NINGÚN respaldo la tiene tampoco — Sol quedaría en plantilla"
     echo "      → consigue una llave gratis en console.groq.com y: echo 'GROQ_API_KEY=tu_llave' >> ~/sol/.env"
   fi
 fi
