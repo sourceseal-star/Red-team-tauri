@@ -1,0 +1,44 @@
+Traceback (most recent call last):
+  File "/data/data/com.termux/files/home/Red-team-tauri/c2_unified_pro.py", line 45, in <module>
+    import psutil
+ModuleNotFoundError: No module named 'psutil'
+Traceback (most recent call last):
+  File "/data/data/com.termux/files/home/Red-team-tauri/c2_unified_pro.py", line 45, in <module>
+    import psutil
+ModuleNotFoundError: No module named 'psutil'
+Traceback (most recent call last):
+  File "/data/data/com.termux/files/home/Red-team-tauri/c2_unified_pro.py", line 615, in <module>
+    watchdog = Watchdog()
+  File "/data/data/com.termux/files/home/Red-team-tauri/c2_unified_pro.py", line 566, in __init__
+    self.last_net = psutil.net_io_counters()
+                    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/site-packages/psutil/__init__.py", line 2178, in net_io_counters
+    rawdict = _psplatform.net_io_counters()
+  File "/data/data/com.termux/files/usr/lib/python3.14/site-packages/psutil/_pslinux.py", line 955, in net_io_counters
+    with open_text(f"{get_procfs_path()}/net/dev") as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/site-packages/psutil/_common.py", line 692, in open_text
+    fobj = open(  # noqa: SIM115
+        fname,
+    ...<2 lines>...
+        errors=ENCODING_ERRS,
+    )
+PermissionError: [Errno 13] Permission denied: '/proc/net/dev'
+Traceback (most recent call last):
+  File "/data/data/com.termux/files/home/Red-team-tauri/c2_unified_pro.py", line 615, in <module>
+    watchdog = Watchdog()
+  File "/data/data/com.termux/files/home/Red-team-tauri/c2_unified_pro.py", line 566, in __init__
+    self.last_net = psutil.net_io_counters()
+                    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/site-packages/psutil/__init__.py", line 2178, in net_io_counters
+    rawdict = _psplatform.net_io_counters()
+  File "/data/data/com.termux/files/usr/lib/python3.14/site-packages/psutil/_pslinux.py", line 955, in net_io_counters
+    with open_text(f"{get_procfs_path()}/net/dev") as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/site-packages/psutil/_common.py", line 692, in open_text
+    fobj = open(  # noqa: SIM115
+        fname,
+    ...<2 lines>...
+        errors=ENCODING_ERRS,
+    )
+PermissionError: [Errno 13] Permission denied: '/proc/net/dev'

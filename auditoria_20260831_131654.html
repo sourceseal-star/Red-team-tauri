@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Auditoría de Red - SourceSeal</title>
+    <style>
+        body { background: #0a0e17; color: #e2e8f0; font-family: monospace; padding: 2rem; max-width: 1200px; margin: 0 auto; }
+        h1, h2 { color: #f59e0b; }
+        .header { border-bottom: 2px solid #f59e0b; padding-bottom: 1rem; margin-bottom: 2rem; }
+        .card { background: #111827; border: 1px solid #1e293b; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .card-title { color: #60a5fa; border-bottom: 1px solid #1e293b; padding-bottom: 0.5rem; margin-bottom: 1rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.5rem; border-bottom: 1px solid #1e293b; text-align: left; }
+        th { color: #94a3b8; font-weight: normal; }
+        .badge { background: #1e293b; padding: 0.1rem 0.5rem; border-radius: 0.25rem; }
+        .badge-success { background: #4ade80; color: #000; }
+        .badge-danger { background: #ef4444; color: #fff; }
+        .badge-warning { background: #f59e0b; color: #000; }
+        .hash { background: #0f172a; padding: 0.5rem 1rem; border-radius: 0.5rem; font-family: monospace; color: #f59e0b; word-break: break-all; }
+        .footer { margin-top: 3rem; border-top: 1px solid #1e293b; padding-top: 1rem; text-align: center; color: #64748b; font-size: 0.8rem; }
+        .text-danger { color: #ef4444; }
+        .text-muted { color: #64748b; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>🔐 SourceSeal - Auditoría de Red</h1>
+    <span class="badge">2026-08-31 13:16:54 UTC</span>
+</div>
+
+<div class="card">
+    <div class="card-title">📊 Resumen</div>
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+        <div style="background: #0f172a; padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+            <div style="font-size: 2rem;">0</div>
+            <div style="color: #64748b; font-size: 0.8rem;">Hosts encontrados</div>
+        </div>
+        <div style="background: #0f172a; padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+            <div style="font-size: 2rem; color: #4ade80;">0</div>
+            <div style="color: #64748b; font-size: 0.8rem;">Cámaras detectadas</div>
+        </div>
+        <div style="background: #0f172a; padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+            <div style="font-size: 2rem; color: #f59e0b;">0</div>
+            <div style="color: #64748b; font-size: 0.8rem;">Credenciales válidas</div>
+        </div>
+        <div style="background: #0f172a; padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+            <div style="font-size: 1.5rem; color: #60a5fa;">🔒</div>
+            <div style="color: #64748b; font-size: 0.8rem;">Evidencia sellada</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-title">🔐 Sello de Integridad</div>
+    <div class="hash">SHA-256: 47763247216e8676430ff3ee5c6891e021614fa9b60181b778576fc15c765b82</div>
+    <p style="color: #94a3b8; font-size: 0.8rem; margin-top: 0.5rem;">Verifica este hash en la blockchain de SourceSeal.</p>
+</div>
+
+<div class="card">
+    <div class="card-title">🖥️ Hosts Detectados</div>
+    <table>
+        <thead><tr><th>IP</th><th>SO</th><th>Puertos</th><th>Vulnerabilidades</th></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<div class="card">
+    <div class="card-title">📷 Cámaras IP Detectadas</div>
+    <table>
+        <thead><tr><th>IP</th><th>Puerto</th><th>Vendor</th><th>Servicio</th></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<div class="card">
+    <div class="card-title">🔑 Credenciales Válidas Encontradas</div>
+    <table>
+        <thead><tr><th>IP</th><th>Puerto</th><th>Usuario</th><th>Contraseña</th><th>Método</th></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<div class="footer">
+    <p>SourceSeal — Auditoría realizada con herramientas de código abierto (nmap).</p>
+    <p>Evidencia inmutable. Verificable en blockchain.</p>
+</div>
+</body>
+</html>
