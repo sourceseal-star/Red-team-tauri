@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { LanguageProvider } from './i18n/LanguageContext'
 import AppShell from './components/AppShell'
 
 // ── Módulos "oficiales" del War Room completo (reconectados 2026-09-06) ──
@@ -123,9 +124,11 @@ function Shell() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Shell />
-    </BrowserRouter>
+    <LanguageProvider>
+      <BrowserRouter>
+        <Shell />
+      </BrowserRouter>
+    </LanguageProvider>
   )
 }
 
