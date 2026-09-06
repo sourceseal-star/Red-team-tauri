@@ -1677,47 +1677,80 @@ function toggleFullBody() {
 })();
 
 // ═══ GAZE TRACKING — los ojos de Sol siguen tu cursor/dedo ═══
+// FIX 2026-09-06: la versión anterior movía LOS 9 FOTOGRAMAS (incluyendo
+// los de la boca hablando: avatar-img-talk / talk-half / blink) en CADA
+// pixel de movimiento, sin límite de frecuencia. Eso peleaba contra el
+// crossfade de la boca al hablar/escribir y se veía como "interferencia"
+// (el síntoma exacto que reportó Harold: el frame se alterna rápido y
+// solo se calma cuando deja de escribir). Ahora: (1) solo se mueve la
+// imagen BASE, nunca los frames de habla/parpadeo/expresión. (2) throttle
+// con requestAnimationFrame. (3) se pausa por completo mientras Sol habla
+// o mientras el input tiene foco.
 let _gazeX = 0, _gazeY = 0;
+let _gazeRAF = null;
+let _gazePendingX = 0, _gazePendingY = 0;
+let _gazePaused = false;
 (function _initGaze() {
   const wrap = document.getElementById('avatar-wrap');
-  if (!wrap) return;
+  const baseAvatar = document.getElementById('avatar');
+  if (!wrap || !baseAvatar) return;
+
+  function _applyGaze() {
+    _gazeRAF = null;
+    if (_gazePaused || speaking) return; // nunca pelear con la boca hablando
+    baseAvatar.style.marginLeft = _gazePendingX + 'px';
+    baseAvatar.style.marginTop = _gazePendingY + 'px';
+  }
+
   function _updateGaze(clientX, clientY) {
+    if (_gazePaused || speaking) return;
     const rect = wrap.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
     const dx = clientX - cx;
     const dy = clientY - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const maxShift = Math.max(6, rect.width * 0.028); // proporcional al tamaño del avatar
+    const maxShift = Math.max(6, rect.width * 0.028);
     const shift = Math.min(maxShift, dist / 50);
     const angle = Math.atan2(dy, dx);
-    _gazeX = Math.cos(angle) * shift;
-    _gazeY = Math.sin(angle) * shift;
-    // Aplicar a las imágenes del avatar (no al wrap que tiene solSway)
-    const imgs = wrap.querySelectorAll('.avatar-img, .avatar-expr, .avatar-img-talk, .avatar-img-talk-half, .avatar-img-blink');
-    imgs.forEach(img => {
-      if (!img.classList.contains('speaking')) {
-        img.style.marginLeft = _gazeX + 'px';
-        img.style.marginTop = _gazeY + 'px';
-        img.style.transition = 'margin 0.3s ease-out, opacity 0.15s ease-in-out, filter 0.4s';
-      }
-    });
+    _gazePendingX = Math.cos(angle) * shift;
+    _gazePendingY = Math.sin(angle) * shift;
+    _gazeX = _gazePendingX; _gazeY = _gazePendingY;
+    if (_gazeRAF === null) _gazeRAF = requestAnimationFrame(_applyGaze);
   }
-  document.addEventListener('mousemove', e => _updateGaze(e.clientX, e.clientY));
+
+  baseAvatar.style.transition = 'margin 0.3s ease-out, filter 0.4s, opacity 0.15s ease-in-out';
+
+  document.addEventListener('mousemove', e => _updateGaze(e.clientX, e.clientY), { passive: true });
   document.addEventListener('touchmove', e => {
     if (e.touches[0]) _updateGaze(e.touches[0].clientX, e.touches[0].clientY);
   }, { passive: true });
-  // Al salir de la ventana, volver al centro
-  document.addEventListener('mouseleave', () => {
-    const wrap2 = document.getElementById('avatar-wrap');
-    if (!wrap2) return;
-    const imgs = wrap2.querySelectorAll('.avatar-img, .avatar-expr, .avatar-img-talk, .avatar-img-talk-half, .avatar-img-blink');
-    imgs.forEach(img => {
-      img.style.marginLeft = '0px';
-      img.style.marginTop = '0px';
-    });
-  });
+
+  function _resetGaze() {
+    if (_gazeRAF) { cancelAnimationFrame(_gazeRAF); _gazeRAF = null; }
+    baseAvatar.style.marginLeft = '0px';
+    baseAvatar.style.marginTop = '0px';
+    _gazePendingX = 0; _gazePendingY = 0;
+  }
+
+  document.addEventListener('mouseleave', _resetGaze);
+
+  const inputEl = document.getElementById('input');
+  if (inputEl) {
+    inputEl.addEventListener('focus', () => { _gazePaused = true; _resetGaze(); });
+    inputEl.addEventListener('blur', () => { _gazePaused = false; });
+  }
 })();
+
+// Pausar/reanudar la mirada automáticamente según el estado de habla.
+setInterval(() => {
+  const baseAvatar = document.getElementById('avatar');
+  if (!baseAvatar) return;
+  if (speaking && (baseAvatar.style.marginLeft !== '0px' || baseAvatar.style.marginTop !== '0px')) {
+    baseAvatar.style.marginLeft = '0px';
+    baseAvatar.style.marginTop = '0px';
+  }
+}, 150);
 
 // ═══ TOUCH INTERACTION — toca su cara y reacciona ═══
 (function _initTouch() {
