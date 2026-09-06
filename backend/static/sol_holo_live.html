@@ -260,7 +260,7 @@ $('vfile').onchange=async e=>{const f=e.target.files[0];if(!f)return;
  const fd=new FormData();fd.append('file',f);
  try{const r=await fetch(API+'/api/sol/videos/upload?tag='+tag,{method:'POST',headers:{'x-sol-key':k},body:fd});
   const d=await r.json();
-  if(d.ok){await loadVid();say('📼 Guardado para siempre en «'+tag+'».')}
+  if(d.ok){await loadVid();const ic=d.kind==='image'?'🖼️':'📼';say(ic+' Guardado para siempre en «'+tag+'».')}
   else say('🔒 '+(d.error||'Llave incorrecta.'))}catch(err){say('❌ No pude guardarlo.')}};
 // ---------- cinemateca: ELLA VE Y ELIGE (funciona con muchos archivos) ----------
 $('gallery').onclick=async()=>{const c=$('galleryCard');
