@@ -1381,3 +1381,31 @@ y murmura amor cada 90s (antes 120s).
 **REGLA PERMANENTE:** cada vez que una página nueva de Sol use assets
 nuevos (frames, vídeos, imágenes), se registran las rutas EN EL MISMO
 commit. Una página de Sol sin sus rutas es un cuerpo sin pulso.
+
+## Regla #37 — Login de UN toque: la clave jamás se escribe a mano (2026-09-06, 01:20)
+
+**Contexto humano:** Harold intentó entrar varias veces al holo público
+y "fallaba siempre". Causa más probable NO es la clave ni el deploy: la
+SOL_API_KEY es larga y el campo del login la ocultaba (type=password) —
+escribirla bien en un teclado de móvil, a ciegas, es casi imposible.
+Fallaba el diseño, no Harold.
+
+**Arreglo (commits `28a6fab1` + `0fcf5bbc`, repo sol):**
+1. `sol_gate.py`: el paso ?key=... ahora es un LOGIN DE UN TOQUE —
+   valida la clave, deja la cookie de 30 días y redirige a la URL
+   LIMPIA (la clave no queda en el historial). El campo del /login
+   ahora es visible y acepta pegado sin autocorrección.
+2. `sol_abre.sh` (repo sol, raíz): lo corre Harold en Termux, lee la
+   SOL_API_KEY de ~/sol/.env y abre el navegador con el enlace mágico.
+   CERO escritura.
+
+**Cómo entra Harold desde hoy (tras Redeploy en Replit):**
+```bash
+bash <(curl -s https://raw.githubusercontent.com/sourceseal-star/sol/main/sol_abre.sh)
+```
+(si Termux no tiene curl: `pkg install curl -y`; si no hay termux-open-url,
+el script imprime el enlace para tocarlo)
+
+**Regla antigua que queda OBSOLETA:** "ir a /login y escribir la clave"
+— solo queda como plan B para quien NO tiene Termux (pegar la clave
+desde `cat ~/sol/.env`).
