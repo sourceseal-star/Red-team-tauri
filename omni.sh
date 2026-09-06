@@ -149,6 +149,26 @@ ensure_sol_repo() {
 }
 
 # ── Detectar entorno ──
+# ═══════════════════════════════════════════════════════════════════════
+#  COMMANDER REPO — tercer repo del ecosistema (~/commander)
+#  2026-09-05: Harold pidió UN solo comando que gobierne los 3 repos.
+#  Si ~/commander no existe, se salta en silencio (no todos los hosts lo tienen).
+#  Si existe: stash (nada se pierde) + pull --ff-only. NUNCA toca .env.
+# ═══════════════════════════════════════════════════════════════════════
+COMMANDER_REPO="${COMMANDER_REPO:-$HOME/commander}"
+
+sync_commander_repo() {
+  if [ ! -d "$COMMANDER_REPO/.git" ]; then
+    info "Commander: ~/commander no existe o no es repo — salto"
+    return 0
+  fi
+  ( cd "$COMMANDER_REPO" \
+    && git stash --quiet 2>/dev/null ; \
+    git pull --ff-only origin main >> "$LOG_DIR/commander_sync.log" 2>&1 ) \
+    && ok "Commander sincronizado con GitHub ($(cd "$COMMANDER_REPO" && git rev-parse --short HEAD 2>/dev/null))" \
+    || warn "git pull de Commander falló — continuando con código local"
+}
+
 detect_env() {
   if [ -n "${TERMUX_VERSION:-}" ] || [ -d "/data/data/com.termux" ]; then
     echo "termux"
@@ -357,11 +377,18 @@ help() {
 ⚡ OMNI.SH — SourceSeal Unified Command
 
 COMANDOS:
-  start          Levanta TODO: Dashboard + GHOST + Nexus + Telegram + Watchdog + Seal
-  stop           Detiene todo limpio
-  restart        Stop + Start
+  start          Levanta TODO (antes sincroniza los 3 repos con GitHub):
+                 Dashboard + GHOST + Nexus + C2 + Telegram + Watchdog +
+                 Seal IA + Sol (daemon, cerebro, cuerpo, relé)
+  stop           Detiene TODO limpio (incluida Sol y su cuerpo)
+  restart        Stop + Start (con auto-sync de los 3 repos)
+  recover        🚑 RESCATE TOTAL: 3 repos a origin/main (duro, stash
+                 primero — nada se pierde, .env jamás se toca) + rebuild
+                 del War Room + restart completo. Para cuando algo
+                 se rompe y no sabes qué.
   status         Estado de todos los servicios
-  sync           git pull + deps + build frontend (SIN tocar .env)
+  sync           git pull de los 3 repos + deps + build frontend +
+                 AUTO-RESTART si el stack está corriendo (aplica YA)
   sync-deps      Solo instalar/actualizar dependencias Python + Node
   sync-frontend  Solo rebuild del frontend (npm run build)
   logs [serv]    Ver logs: dash | ghost | tg | nexus | seal | all
@@ -504,6 +531,9 @@ start() {
   # sol.html VIEJO (botones apilados, sin 🔊) aunque el fix estuviera
   # subido a GitHub. Ahora `start`/`restart` jala ambos repos primero.
   # Cambios locales sin commit: quedan en stash (recuperables).
+  # AUTO-SYNC v2 (2026-09-05): los 3 repos del ecosistema —
+  # Red-team-tauri (este), ~/sol (cerebro de Sol) y ~/commander.
+  # Un solo comando, todo el ecosistema al día. NUNCA toca .env.
   local RT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   if [ -d "$RT_REPO/.git" ]; then
     ( cd "$RT_REPO" \
@@ -512,6 +542,7 @@ start() {
       && ok "Red-team-tauri sincronizado con GitHub (main)" \
       || warn "git pull de Red-team-tauri falló — continuando con código local"
   fi
+  sync_commander_repo   # 🎖️ AUTO-SYNC v2: tercer repo
   banner
   load_env
   load_sol_env   # ☀️ FIX 2026-09-04: cargar llaves de ~/sol ANTES de todo.
@@ -1241,6 +1272,10 @@ sync() {
   elif [ -d "$SOL_REPO/.git" ]; then
     warn "☀️ ~/sol existe pero sin sol_core.py — revisa $LOG_DIR/sol_sync.log"
   fi
+  # 🎖️ Paso 1c: el tercer repo del ecosistema
+  echo -e "${BOLD} Paso 1c: repo de Commander (~/commander)${N}"
+  sync_commander_repo
+
   cd "$ROOT"
 
   echo ""
@@ -1320,8 +1355,26 @@ sync() {
   echo -e "${G}║  ${W}✅ SYNC COMPLETADO${G} — .env intacto               ║${N}"
   echo -e "${G}╚═══════════════════════════════════════════════════════╝${N}"
   echo ""
-  echo -e "  Próximo paso: ${W}bash omni.sh start${N}"
-  log "✅ Sync completado — .env intacto, credenciales verificadas"
+
+  # ── AUTO-APLICAR (2026-09-05): sync que NO aplica los cambios no sirve —
+  # los servicios seguirían corriendo código viejo hasta el próximo restart
+  # (lección de la noche del 'desastre': el fix llegó a GitHub pero el
+  # navegador/servidor seguía con lo viejo). Si algo del stack está
+  # corriendo, se reinicia SOLO para que el código nuevo tome efecto YA.
+  _running=0
+  curl -s -m 2 http://127.0.0.1:8001/api/health >/dev/null 2>&1 && _running=1
+  pgrep -f "sol_daemon.py" >/dev/null 2>&1 && _running=1
+  pgrep -f "dashboard_server.py" >/dev/null 2>&1 && _running=1
+  if [ "$_running" = "1" ]; then
+    echo -e "  ${W}⚡ Stack corriendo — reiniciando para APLICAR el código nuevo…${N}"
+    log "⚡ sync: auto-restart para aplicar cambios"
+    stop
+    sleep 2
+    start
+  else
+    echo -e "  Stack detenido — código listo. Próximo paso: ${W}bash omni.sh start${N}"
+  fi
+  log "✅ Sync completado — .env intacto, credenciales verificadas, cambios aplicados"
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1647,18 +1700,72 @@ start_sol_stack() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+#  RECOVER — rescate total en UN comando (lección de la noche 2026-09-05)
+#  ¿Sol "desapareció"? ¿El dashboard quedó viejo? ¿Algo se rompió y no
+#  sabes qué? Este comando: sincroniza los 3 repos A FUETE (reset --hard
+#  a origin/main, cambios locales a stash — NADA se pierde, .env jamás
+#  se toca porque está en .gitignore), reconstruye el frontend y
+#  reinicia todo el stack. Después solo falta recarga sin caché.
+# ═══════════════════════════════════════════════════════════════════════
+recover() {
+  banner
+  echo ""
+  log "🚑 RECOVER — rescate total — $(date '+%Y-%m-%d %H:%M:%S')"
+  echo -e "${BOLD}── Rescate de emergencia: 3 repos a fuente + rebuild + restart ──${N}"
+  echo ""
+
+  local RT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  for R in "$RT_REPO" "$SOL_REPO" "$COMMANDER_REPO"; do
+    [ -d "$R/.git" ] || { info "$(basename "$R"): no existe o no es repo — salto"; continue; }
+    echo -e "${BOLD} ▪ $(basename "$R") → origin/main (duro)${N}"
+    ( cd "$R" \
+      && git stash -u --quiet 2>/dev/null && log "   ↳ cambios locales de $(basename "$R") en stash (nada se pierde)" \
+      && git fetch origin -q \
+      && git reset --hard origin/main -q \
+      && git clean -fdq -e ".env" \
+    ) && ok "$(basename "$R") en $(cd "$R" && git rev-parse --short HEAD)" \
+      || warn "$(basename "$R"): sin conexión a GitHub — queda como está"
+  done
+
+  echo ""
+  echo -e "${BOLD} ▪ Rebuild del frontend (War Room)${N}"
+  build_frontend || warn "build falló — se usa el dist/ que viene en git"
+
+  echo ""
+  echo -e "${BOLD} ▪ Reinicio completo del stack${N}"
+  stop
+  sleep 2
+  start
+
+  echo ""
+  echo -e "${G}╔═══════════════════════════════════════════════════════╗${N}"
+  echo -e "${G}║  ${W}🚑 RESCATE COMPLETADO${G}                            ║${N}"
+  echo -e "${G}╚═══════════════════════════════════════════════════════╝${N}"
+  echo ""
+  echo -e "  Si el navegador sigue mostrando algo VIEJO, no es el sistema —"
+  echo -e "  es la caché: recarga FORZADA (mantén presionado recargar →"
+  echo -e "  'Recargar sin caché') o Ajustes del sitio → Borrar datos."
+  echo ""
+  echo -e "  ¿Cambios locales rescatados? git stash list en cada repo."
+  log "🚑 Recover completado"
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 #  DISPATCH
 # ═══════════════════════════════════════════════════════════════════════
 case "${1:-help}" in
   start)          acquire_lock; start ;;
   stop)           acquire_lock; stop ;;
   restart)        acquire_lock; restart ;;
+  recover)        acquire_lock; recover ;;
   status)         status ;;
   sync)           acquire_lock; sync ;;
   sync-deps)      sync_deps ;;
   sync-frontend)  sync_frontend ;;
   logs)           logs "${2:-all}" ;;
-  snapshot)       snapshot ;;
+
+snapshot)       snapshot ;;
   verify)         verify ;;
   watchdog)       watchdog ;;
   help|--help|-h) help ;;
