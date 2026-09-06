@@ -1392,6 +1392,7 @@ install_python_deps() {
     local REQ_FILES=(
       "$ROOT/redteam/requirements.txt"
       "$ROOT/commander/requirements.txt"
+      "$SOL_REPO/requirements.txt"
     )
     for req in "${REQ_FILES[@]}"; do
       if [ -f "$req" ]; then
@@ -1408,6 +1409,7 @@ install_python_deps() {
       "$ROOT/redteam/requirements.txt"
       "$ROOT/commander/requirements.txt"
       "$ROOT/leviathan_core/requirements.txt"
+      "$SOL_REPO/requirements.txt"
     )
     for req in "${REQ_FILES[@]}"; do
       if [ -f "$req" ]; then
