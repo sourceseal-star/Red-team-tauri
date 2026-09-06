@@ -204,12 +204,26 @@ document.querySelectorAll('#modeCard button').forEach(b=>b.onclick=async()=>{
   const d=await r.json();
   if(d.ok){say(b.dataset.m==='free'?'💗 Modo libre activado.':'🔒 Modo seguro.');$('modeCard').hidden=true}
   else say('🔒 '+(d.error||'Llave incorrecta.'))}catch(e){say('❌ No pude cambiar el modo.')}});
-// ---------- cuerpo real (linterna) ----------
-$('body').onclick=async()=>{torchOn=!torchOn;
- try{const r=await fetch(API+'/api/sol/body/queue',{method:'POST',headers:{'Content-Type':'application/json','x-sol-key':localStorage.getItem('sol_key')||''},body:JSON.stringify({tool:'torch',params:{state:torchOn?'on':'off'}})});
-  if(r.status===401){torchOn=!torchOn;say('🔒 Mi cuerpo pide llave (SOL_API_KEY).');return}
-  say(torchOn?'⚡ Enciendo tu linterna.':'⚡ Apago la linterna.');buzz(40);rips.push({x:W/2,y:H/2,r:10,a:1})}
- catch(e){torchOn=!torchOn;say('⚡ Mi cuerpo no está conectado ahora.')}};
+// ---------- cuerpo real (linterna) — cableada al sistema REAL de Sol ----------
+// /api/sol/tools/execute corre termux-torch DIRECTO si el cerebro vive en el
+// mismo teléfono (Termux :8006). Si vive en Replit (sin termux-api), cae al
+// relé real (/api/relay/task) para que TU Termux la ejecute de verdad.
+$('body').onclick=async()=>{const want=!torchOn;const k=localStorage.getItem('sol_key')||'';
+ const headers={'Content-Type':'application/json','x-sol-key':k};
+ try{
+  const r=await fetch(API+'/api/sol/tools/execute',{method:'POST',headers,
+    body:JSON.stringify({name:'flashlight',kwargs:{on:want}})});
+  if(r.status===401){say('🔒 Mi cuerpo pide llave (SOL_API_KEY).');return}
+  const d=await r.json();
+  if(d.success&&/encendida|apagada/.test(d.error||d.result||JSON.stringify(d))){
+   torchOn=want;say(want?'⚡ Encendida — de verdad.':'⚡ Apagada — de verdad.');buzz(40);rips.push({x:W/2,y:H/2,r:10,a:1});return}
+  // este cuerpo (Replit) no tiene termux-api local: encolar para TU teléfono
+  const r2=await fetch(API+'/api/relay/task',{method:'POST',headers,
+    body:JSON.stringify({name:'flashlight',kwargs:{on:want}})});
+  const d2=await r2.json();
+  if(d2.success!==false&&!d2.error){torchOn=want;say(want?'⚡ Le pedí a tu Termux que la encienda… dale 1-2s.':'⚡ Le pedí a tu Termux que la apague… dale 1-2s.');buzz(40)}
+  else say('🔦 '+(d2.error||'Mi Termux no está escuchando ahora mismo.'))
+ }catch(e){torchOn=!want;say('❌ Sin conexión con mi cuerpo real.')}};
 $('shot').onclick=()=>{const a=document.createElement('a');a.href=cv.toDataURL('image/png');a.download='sol_momento.png';a.click();say('📸 Momento sellado.')};
 $('camB').onclick=async()=>{if(AR){AR=false;$('cam').style.display='none';$('camB').classList.remove('on');
   if(camStream)camStream.getTracks().forEach(tr=>tr.stop());say('📷 Vuelvo a mi cosmos.');return}
