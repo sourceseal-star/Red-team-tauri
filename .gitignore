@@ -79,3 +79,7 @@ tauri-frontend/src-tauri/target/
 backend/static/sol.html
 tauri-frontend/public/sol.html
 arto_knowledge.json
+
+# curar.sh: temporales del script — nunca deben llegar a GitHub
+.cura_tmp/
+.rescate_pre/

@@ -66,15 +66,49 @@ if [ ! -f "$SOL_DIR/.env" ] || ! grep -q "gsk_" "$SOL_DIR/.env" 2>/dev/null; the
   fi
 fi
 
-# ── 2. Sincronizar a fuerza ambos repos ──
-echo "── [2/5] Sincronizando repos (fuerza total) ──"
+# ── 2. Sincronizar ambos repos (protegiendo tus ediciones locales) ──
+echo "── [2/5] Sincronizando repos ──"
 for d in "$RT_DIR" "$SOL_DIR"; do
   name=$(basename "$d")
   if [ ! -d "$d/.git" ]; then bad "repo $name no existe" "clona: git clone https://github.com/sourceseal-star/$name.git $d"; continue; fi
   cd "$d" || { bad "no pude entrar a $name" "permisos de $d"; continue; }
+
+  # FIX 2026-09-06: ANTES este paso hacía "git reset --hard origin/main"
+  # a ciegas. Si Harold editaba un archivo (p.ej. sol_holo.html) y NO lo
+  # había subido todavía, ese reset lo BORRABA para siempre — justo el
+  # miedo de "que no se destruya todo de nuevo". Ahora: si hay cambios
+  # sin commitear, se guardan en un commit local y se intentan subir a
+  # GitHub PRIMERO. Si el push funciona, el reset de abajo no pierde
+  # nada (origin ya es igual a lo local). Si el push falla (sin
+  # internet, conflicto...), se CANCELA el reset de este repo — mejor
+  # quedarse en versión vieja un momento que borrar una edición que no
+  # existe en ningún otro lado.
+  LOCAL_SAFE=1
+  if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    echo "   📝 tienes cambios locales sin subir en $name — los protejo primero"
+    git add -A
+    if git -c user.email="sol@sourceseal.co" -c user.name="Sol (auto-backup)" \
+           commit -m "auto-backup curar.sh: cambios locales $(date '+%Y-%m-%d %H:%M')" >/dev/null 2>"$CURA_TMP/curar_commit_err.txt"; then
+      if git push origin "$BRANCH" >/dev/null 2>"$CURA_TMP/curar_push_err.txt"; then
+        echo "   ☁️  subidos a GitHub — a salvo, no se pierden"
+      else
+        LOCAL_SAFE=0
+        echo "   ⚠️  no pude subirlos (sin internet o el remoto avanzó) — CANCELO el reset de $name para no borrar tu edición"
+        echo "      └─ $(tail -1 "$CURA_TMP/curar_push_err.txt")"
+        echo "      Tu cambio queda a salvo en un commit local. Corre 'bash curar.sh' otra vez cuando tengas internet."
+      fi
+    else
+      echo "   (nada nuevo que commitear — solo basura ignorada)"
+    fi
+  fi
+
   if git fetch origin "$BRANCH" 2>"$CURA_TMP/curar_git_err.txt"; then
-    git reset --hard "origin/$BRANCH" >/dev/null 2>&1
-    ok "$name → $(git log --oneline -1 | head -c 45)"
+    if [ $LOCAL_SAFE -eq 1 ]; then
+      git reset --hard "origin/$BRANCH" >/dev/null 2>&1
+      ok "$name → $(git log --oneline -1 | head -c 45)"
+    else
+      ok "$name → me quedé en TU versión local (con la edición protegida, sin subir aún)"
+    fi
     [ "$name" = "sol" ] && SOL_OK=1
   else
     bad "git fetch falló en $name" "$(tail -1 "$CURA_TMP/curar_git_err.txt")"
