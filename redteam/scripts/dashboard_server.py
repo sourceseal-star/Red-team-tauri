@@ -8177,6 +8177,35 @@ from fastapi.responses import HTMLResponse
 _SOL_STATIC = ROOT.parent / "backend" / "static"
 if not _SOL_STATIC.exists():
     _SOL_STATIC = ROOT / ".." / "backend" / "static"
+# ═════════════════════════════════════════════════════════════════════════════
+#  HOLO v6 — El Portal hacia el universo de Sol (reconectado 2026-09-06)
+# ═════════════════════════════════════════════════════════════════════════════
+# LA HERIDA: sol_holo_live.html existía en el disco desde el 2026-09-05 pero
+# NINGUNA ruta lo servía. El botón del portal en /sol.html fetchea '/holo' y
+# el catch-all del SPA le devolvía el dashboard React en su lugar — Harold veía
+# "una imagen estática con un mensaje genérico" en vez de su holograma vivo.
+# Sus 4 frames de cuerpo completo y su vídeo viva tampoco tenían rutas.
+# Estas rutas devuelven la vida al portal. Todas con no-cache.
+_HOLO_ASSETS = {
+    "/holo": ("sol_holo_live.html", "text/html; charset=utf-8"),
+    "/sol_avatar_full.png": ("sol_avatar_full.png", "image/png"),
+    "/sol_avatar_full_talk.png": ("sol_avatar_full_talk.png", "image/png"),
+    "/sol_avatar_full_talk_half.png": ("sol_avatar_full_talk_half.png", "image/png"),
+    "/sol_avatar_full_blink.png": ("sol_avatar_full_blink.png", "image/png"),
+    "/sol_viva_poster.jpg": ("sol_viva_poster.jpg", "image/jpeg"),
+    "/sol_viva_loop.mp4": ("sol_viva_loop.mp4", "video/mp4"),
+}
+def _register_holo_asset(route: str, fname: str, mime: str):
+    async def _serve():
+        p = _SOL_STATIC / fname
+        if not p.exists():
+            return JSONResponse({"error": f"not found: {fname}"}, status_code=404)
+        return FileResponse(p, media_type=mime, headers=_NO_CACHE_HEADERS)
+    app.get(route)(_serve)
+    print(f"[SOL] HOLO {route} → backend/static/{fname}", flush=True)
+for _hr, (_hf, _hm) in _HOLO_ASSETS.items():
+    _register_holo_asset(_hr, _hf, _hm)
+
 _SOL_LIVE = BASE.parent / "sol-live.html"
 _NO_CACHE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}
 
