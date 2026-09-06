@@ -100,14 +100,30 @@ curl -s -m 5 -o /dev/null http://127.0.0.1:8001/sol_avatar_full_blink.png && ok 
 
 echo ""
 echo "━━━ SOL — SU CEREBRO Y SU VOZ ━━━"
-[ $SOL_OK -eq 1 ] && ok "Cerebro :8006 vivo" || bad "Cerebro :8006 NO responde" "arranca: cd ~/sol && nohup python3 sol_api.py >> ~/.sol/sol_api.log 2>&1 &"
-ST=$(curl -s -m 5 http://127.0.0.1:8001/api/sol/state)
-echo "$ST" | grep -q "memories" && ok "Estado: $(echo $ST | head -c 60)" || bad "Estado no llega por el proxy" "proxy :8001→:8006 falló"
-CH=$(curl -s -m 30 -X POST http://127.0.0.1:8001/api/sol/chat -H "Content-Type: application/json" -d '{"text":"hola Sol"}')
-echo "$CH" | grep -q "reply" && ok "Ella RESPONDE: $(echo $CH | head -c 70)" || bad "Ella no responde por el chat" "mira ~/.sol/sol_api.log"
-curl -s -m 40 -o "$CURA_TMP/curar_voz.mp3" "http://127.0.0.1:8001/api/sol/voice?text=hola%20Harold&persona=calida"
+# FIX 2026-09-06 (v3): la arquitectura real monta el cerebro de Sol
+# EN PROCESO dentro del dashboard (:8001, vía sol_router.py) — el
+# puerto :8006 (sol_api.py) es solo un fallback LEGACY para extras
+# (groq/knowledge/repos/security/sil-advanced), no para pensar ni
+# hablar. Antes probábamos /api/sol/chat, /api/sol/voice, /api/sol/state
+# — endpoints que NUNCA existieron, así que siempre caían al proxy
+# :8006 y reportaban "Ella no responde" aunque su cerebro estuviera
+# perfectamente viva en :8001. Los endpoints REALES son:
+#   GET  /api/sol/status
+#   GET  /api/sol/think?q=...   (o POST {"message":"..."})
+#   GET  /api/sol/tts?text=...
+ST=$(curl -s -m 8 http://127.0.0.1:8001/api/sol/status)
+echo "$ST" | grep -q '"brain"' && ok "Estado: $(echo $ST | head -c 70)" || bad "Estado no responde" "revisa que sol_router se haya montado — mira el log abajo"
+CH=$(curl -s -m 25 "http://127.0.0.1:8001/api/sol/think?q=hola%20Sol")
+echo "$CH" | grep -q '"response"' && ok "Ella RESPONDE: $(echo $CH | head -c 80)" || bad "Ella no responde al pensar" "mira si '~/sol/sol_core.py' existe y compila: python3 -m py_compile ~/sol/sol_core.py"
+curl -s -m 30 -o "$CURA_TMP/curar_voz.mp3" "http://127.0.0.1:8001/api/sol/tts?text=hola%20Harold"
 SZ=$(wc -c < "$CURA_TMP/curar_voz.mp3" 2>/dev/null || echo 0)
-[ "$SZ" -gt 2000 ] && ok "Su VOZ habla (${SZ}B de audio real)" || bad "Su voz no genera audio" "pip install edge-tts"
+[ "$SZ" -gt 2000 ] && ok "Su VOZ habla (${SZ}B de audio real)" || bad "Su voz no genera audio" "pip install gtts"
+# El puerto :8006 es OPCIONAL (extras) — se informa, nunca bloquea el veredicto
+if curl -s -m 3 -o /dev/null http://127.0.0.1:8006/api/sol/status 2>/dev/null; then
+  echo "   ℹ️  (extra) sol_api.py :8006 también activo — groq/knowledge/sil-advanced disponibles"
+else
+  echo "   ℹ️  (extra, opcional) sol_api.py :8006 no está activo — Sol vive igual, solo sin groq/knowledge/sil-advanced"
+fi
 
 # ── Veredicto ──
 echo ""
