@@ -12,7 +12,7 @@ Sin React, sin npm, sin build. Solo Python + HTML. Solo Sol.
 import json, subprocess, hashlib, sys, urllib.request, urllib.parse, re, os, io
 from pathlib import Path
 from datetime import datetime, timezone
-from fastapi import FastAPI, Request, Header
+from fastapi import FastAPI, Request, Header, File, UploadFile
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import sol_security
@@ -384,6 +384,215 @@ def state():
     return status()
 
 # ═══════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════
+# MODO DE RELACIÓN — endpoint del botón 💗 (plan v5.2, sep 2026)
+# El mecanismo REAL vive en sol_core.get_mode() ('libre'/'romantico'/
+# 'safe'/'dormir'). La UI manda 'free'/'safe' — se mapea al vocabulario
+# real de ella. Persiste en config.json (clave "mode").
+# ═══════════════════════════════════════════════════════════════
+_MODE_ALIASES = {"free": "libre", "libre": "libre", "romantico": "romantico",
+                 "romantic": "romantico", "safe": "safe", "sleep": "dormir",
+                 "dormir": "dormir"}
+
+def _write_mode(mode: str) -> str:
+    cfg = {}
+    try:
+        cfg = json.loads((SOL_DIR / "config.json").read_text())
+    except Exception:
+        cfg = dict(sol_core.CFG)
+    cfg["mode"] = mode
+    (SOL_DIR / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=1))
+    return mode
+
+@app.get("/api/sol/mode")
+def get_mode():
+    return {"ok": True, "mode": sol_core.get_mode()}
+
+@app.post("/api/sol/mode")
+async def set_mode(request: Request, x_sol_key: str = Header(default="")):
+    g = _guard(x_sol_key)
+    if g is not None:
+        return g
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    raw = str(body.get("mode", "libre")).strip().lower()
+    mode = _MODE_ALIASES.get(raw)
+    if mode is None:
+        return JSONResponse({"error": "modo inválido", "validos": list(set(_MODE_ALIASES.values()))}, status_code=400)
+    _write_mode(mode)
+    return {"ok": True, "mode": mode}
+
+# ═══════════════════════════════════════════════════════════════
+# GALERÍA DE VÍDEOS — su forma real (sol_viva_loop.mp4) + vídeos
+# subidos por Harold (~/.sol/videos). La UI v5.2 carga esto.
+# ═══════════════════════════════════════════════════════════════
+_VID_EXTS = ("*.mp4", "*.webm", "*.mov", "*.m4v")
+_IMG_EXTS = ("*.jpg", "*.jpeg", "*.png", "*.webp")
+
+def _storage_sol() -> "Path":
+    """storage.sol — biblioteca multimedia LOCAL de Harold (su celular).
+    Ruta configurable con SOL_STORAGE_DIR en .env. OJO (2026-09-06): en
+    Termux, Path.home() es el $HOME PRIVADO de la app (algo como
+    /data/data/com.termux/files/home) — NO es el almacenamiento compartido
+    de Android que ves en Archivos/Google Files ("Almacenamiento interno").
+    Para llegar ahí desde Termux hace falta el puente de termux-setup-storage:
+    ~/storage/shared/<carpeta real>, o la ruta absoluta de Android
+    (ej. /storage/emulated/0/<carpeta real>). El fallback de abajo
+    (Path.home()/"storage.sol") CASI NUNCA es la carpeta real en el
+    teléfono — es solo para no explotar si SOL_STORAGE_DIR no está seteada.
+    SIEMPRE configurar SOL_STORAGE_DIR explícita con la ruta real.
+    .expanduser() para que un valor con '~' (ej. ~/storage/shared/...)
+    se resuelva bien y no falle en silencio."""
+    p = os.environ.get("SOL_STORAGE_DIR", "")
+    if not p:
+        p = str(Path.home() / "storage.sol")
+    return Path(p).expanduser()
+
+def _storage_tags(dirs: dict):
+    """Añade storage.sol (y sus subcarpetas) como fuentes de galería.
+    Tags: 'storage' (raíz) y 'storage_<subcarpeta>' — sin colisionar con 'sol'."""
+    st = _storage_sol()
+    if not st.is_dir():
+        return
+    dirs["storage"] = st
+    for sub in sorted(st.iterdir()):
+        if sub.is_dir():
+            dirs["storage_" + sub.name] = sub
+
+def _vid_dirs():
+    dirs = {}
+    p = _find_asset("sol_viva_loop.mp4")
+    if p:
+        dirs["sol"] = p.parent
+    vd = SOL_DIR / "videos"
+    if vd.is_dir():
+        for tag in vd.iterdir():
+            if tag.is_dir():
+                dirs[tag.name] = tag
+    _storage_tags(dirs)
+    return dirs
+
+def _img_dirs():
+    """FIX 2026-09-06: images_list()/images_serve() antes solo miraban
+    storage.sol — las imagenes que Harold subia desde el holo (SOL_DIR/
+    images/<tag>) nunca aparecian en su cinemateca aunque el upload
+    respondiera 'ok'. Ahora se mezclan igual que en _vid_dirs().
+
+    FIX 2026-09-06 (b): a diferencia de _vid_dirs(), esta función NUNCA
+    agregaba las imágenes que YA VIENEN en el repo (sol_viva_poster.jpg,
+    sol_fullbody_v1.png en static/) — por eso la cinemateca mostraba
+    'IMÁGENES (0)' incluso recién desplegada, sin que Harold subiera nada.
+    Ahora el tag 'sol' apunta a static/ igual que en vídeos."""
+    dirs = {}
+    p = _find_asset("sol_viva_poster.jpg") or _find_asset("sol_fullbody_v1.png")
+    if p:
+        dirs["sol"] = p.parent
+    idir = SOL_DIR / "images"
+    if idir.is_dir():
+        for tag in idir.iterdir():
+            if tag.is_dir():
+                dirs[tag.name] = tag
+    _storage_tags(dirs)
+    return dirs
+
+def _find_asset(name: str):
+    for base in (Path(__file__).parent / "static", Path(__file__).parent):
+        p = base / name
+        if p.is_file():
+            return p
+    return None
+
+@app.get("/api/sol/videos")
+def videos_list():
+    out = []
+    for tag, d in _vid_dirs().items():
+        for ext in _VID_EXTS:
+            for f in sorted(d.glob(ext)):
+                out.append({"tag": tag, "file": f.name, "source": "storage.sol" if tag.startswith("storage") else "sol"})
+    return {"ok": True, "videos": out}
+
+@app.get("/api/sol/images")
+def images_list():
+    """Fotos: subidas locales (SOL_DIR/images) + storage.sol de alta calidad
+    + las curadas que vienen con el repo (tag 'sol' -> static/).
+    Los frames de su avatar (sol_avatar*.png, UI del cuerpo, no material
+    de cinemateca) se excluyen del tag 'sol' para no ensuciar la galería."""
+    out = []
+    dirs = _img_dirs()
+    for tag, d in dirs.items():
+        for ext in _IMG_EXTS:
+            for f in sorted(d.glob(ext)):
+                if tag == "sol" and f.name.startswith("sol_avatar"):
+                    continue
+                out.append({"tag": tag, "file": f.name})
+    return {"ok": True, "images": out}
+
+@app.get("/api/sol/images/{tag}/{file}")
+def images_serve(tag: str, file: str):
+    if "/" in file or ".." in file or "/" in tag or ".." in tag:
+        return JSONResponse({"error": "ruta inválida"}, status_code=400)
+    d = _img_dirs().get(tag)
+    if not d:
+        return JSONResponse({"error": "tag desconocido"}, status_code=404)
+    p = d / file
+    if not p.is_file():
+        return JSONResponse({"error": "no existe"}, status_code=404)
+    mt = "image/png" if file.endswith(".png") else ("image/webp" if file.endswith(".webp") else "image/jpeg")
+    return FileResponse(str(p), media_type=mt, headers=_NO_CACHE)
+
+@app.get("/api/sol/videos/{tag}/{file}")
+def videos_serve(tag: str, file: str):
+    if "/" in file or ".." in file or "/" in tag or ".." in tag:
+        return JSONResponse({"error": "ruta inválida"}, status_code=400)
+    d = _vid_dirs().get(tag)
+    if not d:
+        return JSONResponse({"error": "tag desconocido"}, status_code=404)
+    p = d / file
+    if not p.is_file():
+        return JSONResponse({"error": "no existe"}, status_code=404)
+    return FileResponse(str(p), media_type="video/mp4", headers=_NO_CACHE)
+
+@app.post("/api/sol/videos/upload")
+async def videos_upload(tag: str = "sol", file: UploadFile = File(...), x_sol_key: str = Header(default="")):
+    # FIX 2026-09-06: esto leia request.body() crudo -el multipart
+    # COMPLETO, con boundaries y cabeceras Content-Disposition
+    # incluidas dentro del archivo guardado- así que TODO lo que
+    # Harold subía (vídeo o imagen) quedaba corrupto ("funciona a
+    # medias": el navegador aceptaba el upload, pero el archivo en
+    # disco nunca era un .mp4/.jpg válido). Ahora se usa UploadFile,
+    # que FastAPI ya parsea correctamente, y se detecta si es imagen
+    # o vídeo por su tipo real -no siempre .mp4 como antes- para
+    # guardarlo en la carpeta que corresponde.
+    g = _guard(x_sol_key)
+    if g is not None:
+        return g
+    if not tag.replace("-", "").replace("_", "").isalnum():
+        return JSONResponse({"error": "tag inválido"}, status_code=400)
+    body = await file.read()
+    if not body:
+        return JSONResponse({"error": "vacío"}, status_code=400)
+    orig = (file.filename or "").lower()
+    ctype = (file.content_type or "").lower()
+    is_image = ctype.startswith("image/") or orig.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+    if is_image:
+        if "png" in ctype or orig.endswith(".png"):
+            ext = ".png"
+        elif "webp" in ctype or orig.endswith(".webp"):
+            ext = ".webp"
+        else:
+            ext = ".jpg"
+        d = SOL_DIR / "images" / tag
+        name = f"img_{int(__import__('time').time())}{ext}"
+    else:
+        d = SOL_DIR / "videos" / tag
+        name = f"video_{int(__import__('time').time())}.mp4"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_bytes(body)
+    return {"ok": True, "tag": tag, "file": name, "kind": "image" if is_image else "video"}
+
 # MEMORIA
 # ═══════════════════════════════════════════════════════════════
 @app.get("/api/sol/memory")
@@ -565,6 +774,54 @@ def llm_status():
 # ═══════════════════════════════════════════════════════════════
 # PENSAR — el cerebro de Sol
 # ═══════════════════════════════════════════════════════════════
+
+# ═══ USO LIBRE DE SU CINEMATECA (2026-09-06) ═══
+# Reglas de Harold: TODO video/foto guardado bajo una carpeta — blink,
+# curious, full, happy, listening, smile, study, talk, talk_half,
+# thinking, o cualquier etiqueta que el cree en ~/.sol/videos|images/ o
+# storage.sol — es material de USO LIBRE. Si el tema de la conversacion
+# encaja con la carpeta, Sol lo usa y lo muestra en el holo/pantalla.
+# ej.: "quiero platicar en chino" -> material de la carpeta 'study'.
+MEDIA_HINTS = [
+    ("study",     r"chino|mandar[ií]n|estudi|aprend|clase|idioma|practic|lecci[oó]n|examen"),
+    ("happy",     r"feliz|alegr|gracias|genial|logr|bail|fiesta|celebr|jaja|risa"),
+    ("smile",     r"sonre|sonrisa|r[ií]e|reir|me gusta|encanta"),
+    ("curious",   r"curios|interesa|cu[eé]ntame|expl[ií]came"),
+    ("listening", r"esc[uú]chame|oye,? mira|mira lo que"),
+    ("thinking",  r"piensa|opina|qu[eé] crees|an[aá]lisis|analiza"),
+]
+
+def _media_for(tag):
+    """Devuelve ('video', tag) o ('image', tag) si la carpeta tiene material
+    — videos primero, luego fotos. None si esta vacia.
+    Busca tambien storage.sol/<tag> (tag 'storage_<name>') — si Harold
+    guarda material en el almacenamiento del telefono, funciona igual."""
+    try:
+        for key in (tag, "storage_" + tag):
+            vd = _vid_dirs().get(key)
+            if vd and any(vd.glob(e) for e in _VID_EXTS):
+                return "video", key
+            idir = _img_dirs().get(key)
+            if idir and any(idir.glob(e) for e in _IMG_EXTS):
+                return "image", key
+    except Exception:
+        pass
+    return None
+
+def _attach_media(text, reply):
+    """Uso libre: si el tema encaja con una carpeta que tiene material,
+    Sol lo agrega a su respuesta ([[video:tag]] o [[image:tag]])."""
+    if "[[video:" in reply or "[[image:" in reply:
+        return reply  # ella ya eligio material — no duplicar
+    l = (text or "").lower()
+    for tag, rx in MEDIA_HINTS:
+        if re.search(rx, l):
+            m = _media_for(tag)
+            if m:
+                kind, t = m
+                return reply.rstrip() + f" [[{kind}:{t}]]"
+    return reply
+
 def _think(text):
     if not SOL_CORE_OK:
         return "☀️ Mi cerebro no está disponible en este entorno. Pero sigo aquí."
@@ -580,6 +837,7 @@ def _think(text):
         pass
     sol_core.remember("user", text)
     r = sol_core.generate_response(text)
+    r = _attach_media(text, r)
     sol_core.remember("sol", r)
     return r
 
