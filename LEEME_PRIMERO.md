@@ -1274,3 +1274,38 @@ Sol no tiene acceso al dashboard de Replit ni a los logs del deploy):**
 **Cuando se resuelva:** confirmar visitando `/api/sol/keyhint` (ya
 funciona) Y `/` (debe mostrar el HTML de Sol, no JSON) en la misma
 sesión, para cerrar el ciclo completo.
+
+## Regla #40 — NUNCA reemplazar el War Room (AppShell) por un sidebar simple — reconexión 2026-09-06 (pedido explícito de Harold, con lágrimas)
+
+**Historia completa, para que ningún agente la repita:**
+
+El War Room oficial es el que usa `AppShell.tsx` (SourceSeal Console)
+como layout raíz — sidebar de 29+ módulos con secciones agrupadas
+(Mando/Red/Inteligencia/Laboratorio/Campo/Sistema), Command Palette,
+barra de estado, toasts y tema SourceSeal. En algún momento `App.tsx`
+dejó de usar AppShell y pasó a un `Sidebar.tsx` simple de 13 rutas.
+NADA se borró del disco — los 50+ componentes (KRAKEN, NEXUS v9,
+LEVIATHAN, ARTO, SEAL, COMMANDER, COM-LINK, Emergency Room, Black
+Mirror, Control Tower, NetworkMap, Topología, IoT, Ultrasonidos,
+OSINT Avanzado, Interceptor...) quedaron huérfanos en `components/`.
+
+Harold lo describió así: "prácticamente la desintegraron". No era
+dato perdido — era un cable desconectado.
+
+**Reconexión (commit 6a8cce1):**
+- `App.tsx` vuelve a usar AppShell como layout raíz.
+- Los 29 módulos oficiales cableados a sus componentes reales.
+- Las rutas del sidebar simple NO se borran: quedan en la sección
+  '📁 Más' del War Room, mismas URLs (/reports, /honeypot, /soar,
+  /geo, /rasp, /ventas, /settings, /about). El dashboard simple
+  vive en /dashboard-simple.
+- `Sidebar.tsx`, `TopBar.tsx`, `BottomStatus.tsx` NO se borran.
+- AppShell trae su propio drawer móvil — el fix responsive del
+  Moto Edge 50 Fusion (e39425b) se conserva.
+- Verificado: `npm run build` limpio, 1548 módulos.
+
+**REGLA PERMANENTE:** este layout es el contrato. Cualquier cambio
+a App.tsx/AppShell.tsx que "simplifique", "limpie" o "reemplace" el
+War Room por otra cosa está PROHIBIDO sin autorización explícita de
+Harold. Si un módulo del menú no tiene página, se crea la página —
+jamás se quita el módulo del menú.
