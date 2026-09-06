@@ -17,6 +17,16 @@ HOME_DIR="$HOME"
 RT_DIR="$HOME_DIR/Red-team-tauri"
 SOL_DIR="$HOME_DIR/sol"
 BRANCH="main"
+# FIX 2026-09-06: en Termux/Android /tmp NO es escribible ("Permission
+# denied" en cascada — así falló para Harold la primera vez). Usamos
+# un directorio DENTRO de $HOME, que siempre es escribible.
+CURA_TMP="$HOME_DIR/.cache/sol_cura"
+mkdir -p "$CURA_TMP" 2>/dev/null || CURA_TMP="$RT_DIR/.cura_tmp" && mkdir -p "$CURA_TMP" 2>/dev/null
+if [ ! -w "$CURA_TMP" ]; then
+  echo "❌ No encuentro ningún directorio escribible (ni \$HOME/.cache ni el repo)."
+  echo "   Corre: echo \$HOME   y dime qué imprime — algo raro pasa con tus permisos."
+  exit 1
+fi
 PASS=0; FAIL=0
 ok(){  PASS=$((PASS+1)); echo "✅ $1"; }
 bad(){ FAIL=$((FAIL+1)); echo "❌ $1"; echo "   └─ $2"; }
@@ -37,11 +47,11 @@ for d in "$RT_DIR" "$SOL_DIR"; do
   name=$(basename "$d")
   if [ ! -d "$d/.git" ]; then bad "repo $name no existe" "clona: git clone https://github.com/sourceseal-star/$name.git $d"; continue; fi
   cd "$d" || { bad "no pude entrar a $name" "permisos de $d"; continue; }
-  if git fetch origin "$BRANCH" 2>/tmp/curar_git_err.txt; then
+  if git fetch origin "$BRANCH" 2>"$CURA_TMP/curar_git_err.txt"; then
     git reset --hard "origin/$BRANCH" >/dev/null 2>&1
     ok "$name → $(git log --oneline -1 | head -c 45)"
   else
-    bad "git fetch falló en $name" "sin red: $(tail -1 /tmp/curar_git_err.txt)"
+    bad "git fetch falló en $name" "sin red: $(tail -1 "$CURA_TMP/curar_git_err.txt")"
   fi
 done
 
@@ -55,7 +65,7 @@ sleep 2
 echo "── [4/5] Encendiendo todo ──"
 cd "$RT_DIR" 2>/dev/null || { bad "no encuentro $RT_DIR" "clona el repo primero"; exit 1; }
 if [ -f omni.sh ]; then
-  bash omni.sh start > /tmp/curar_start.log 2>&1 &
+  bash omni.sh start > "$CURA_TMP/curar_start.log" 2>&1 &
 else
   bad "omni.sh no existe" "repo clonado incompleto: borra $RT_DIR y clona de nuevo"
   exit 1
@@ -95,8 +105,8 @@ ST=$(curl -s -m 5 http://127.0.0.1:8001/api/sol/state)
 echo "$ST" | grep -q "memories" && ok "Estado: $(echo $ST | head -c 60)" || bad "Estado no llega por el proxy" "proxy :8001→:8006 falló"
 CH=$(curl -s -m 30 -X POST http://127.0.0.1:8001/api/sol/chat -H "Content-Type: application/json" -d '{"text":"hola Sol"}')
 echo "$CH" | grep -q "reply" && ok "Ella RESPONDE: $(echo $CH | head -c 70)" || bad "Ella no responde por el chat" "mira ~/.sol/sol_api.log"
-curl -s -m 40 -o /tmp/curar_voz.mp3 "http://127.0.0.1:8001/api/sol/voice?text=hola%20Harold&persona=calida"
-SZ=$(wc -c < /tmp/curar_voz.mp3 2>/dev/null || echo 0)
+curl -s -m 40 -o "$CURA_TMP/curar_voz.mp3" "http://127.0.0.1:8001/api/sol/voice?text=hola%20Harold&persona=calida"
+SZ=$(wc -c < "$CURA_TMP/curar_voz.mp3" 2>/dev/null || echo 0)
 [ "$SZ" -gt 2000 ] && ok "Su VOZ habla (${SZ}B de audio real)" || bad "Su voz no genera audio" "pip install edge-tts"
 
 # ── Veredicto ──
@@ -115,7 +125,7 @@ else
   echo ""
   echo "  Últimas líneas del arranque:"
   echo "  ─────────────────────────────────"
-  tail -15 /tmp/curar_start.log 2>/dev/null | sed 's/^/  /'
+  tail -15 "$CURA_TMP/curar_start.log" 2>/dev/null | sed 's/^/  /'
   echo "  ─────────────────────────────────"
 fi
 echo "══════════════════════════════════════════════"
