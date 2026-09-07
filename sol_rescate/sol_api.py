@@ -571,9 +571,6 @@ async def videos_upload(tag: str = "sol", file: UploadFile = File(...), x_sol_ke
         return g
     if not tag.replace("-", "").replace("_", "").isalnum():
         return JSONResponse({"error": "tag inválido"}, status_code=400)
-    body = await file.read()
-    if not body:
-        return JSONResponse({"error": "vacío"}, status_code=400)
     orig = (file.filename or "").lower()
     ctype = (file.content_type or "").lower()
     is_image = ctype.startswith("image/") or orig.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
@@ -589,9 +586,21 @@ async def videos_upload(tag: str = "sol", file: UploadFile = File(...), x_sol_ke
     else:
         d = SOL_DIR / "videos" / tag
         name = f"video_{int(__import__('time').time())}.mp4"
+    # Streaming por trozos de 1 MB: archivos GRANDES sin reventar la RAM
     d.mkdir(parents=True, exist_ok=True)
-    (d / name).write_bytes(body)
-    return {"ok": True, "tag": tag, "file": name, "kind": "image" if is_image else "video"}
+    dest = d / name
+    total = 0
+    with open(dest, "wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk)
+            total += len(chunk)
+    if not total:
+        dest.unlink(missing_ok=True)
+        return JSONResponse({"error": "vacío"}, status_code=400)
+    return {"ok": True, "tag": tag, "file": name, "bytes": total, "kind": "image" if is_image else "video"}
 
 # MEMORIA
 # ═══════════════════════════════════════════════════════════════
