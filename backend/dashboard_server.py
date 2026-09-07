@@ -3392,6 +3392,44 @@ async def sol_avatar_full_talk_half():
 async def sol_avatar_full_blink():
     return _serve_full_frame(_SOL_AVATAR_FULL_BLINK_PATH, "full_blink")
 
+
+# ═══ Sprites de pose v5.3 (módulo EXTRA static/sol_sprites.js) ═══
+# offer / hold / side_walk / back — mismo patrón que _serve_full_frame:
+# sprite si existe, si no la base full. Nunca 404 duro mientras los
+# sprites llegan desde Termux. FUNCIÓN EXTRA — no reemplaza nada.
+_SOL_SPRITES_JS_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_sprites.js")
+_SOL_OFFER_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_offer.png")
+_SOL_HOLD_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_hold.png")
+_SOL_SIDE_WALK_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_side_walk.png")
+_SOL_BACK_PATH = os.path.join(PROJECT_ROOT, "backend", "static", "sol_back.png")
+
+@app.get("/sol_sprites.js")
+async def sol_sprites_js():
+    """Módulo extra de poses (v5.3) — offer/hold/side_walk/back."""
+    if os.path.isfile(_SOL_SPRITES_JS_PATH):
+        return FileResponse(_SOL_SPRITES_JS_PATH, media_type="application/javascript", headers=_NO_CACHE_HEADERS)
+    raise HTTPException(404, "sol_sprites.js no encontrado")
+
+@app.get("/sol_offer.png")
+async def sol_offer():
+    """Frontal ofreciendo la rosa (pose v5.3)."""
+    return _serve_full_frame(_SOL_OFFER_PATH, "offer")
+
+@app.get("/sol_hold.png")
+async def sol_hold():
+    """Frontal rosa al pecho, piernas cruzadas (reposo/cariño v5.3)."""
+    return _serve_full_frame(_SOL_HOLD_PATH, "hold")
+
+@app.get("/sol_side_walk.png")
+async def sol_side_walk():
+    """Perfil en pleno paso con el sello SHA-256 al cuello (v5.3)."""
+    return _serve_full_frame(_SOL_SIDE_WALK_PATH, "side_walk")
+
+@app.get("/sol_back.png")
+async def sol_back():
+    """Espalda — la que se aleja (v5.3)."""
+    return _serve_full_frame(_SOL_BACK_PATH, "back")
+
 # ═══ Forma real (2026-09-04) — sus 2 primeros videos, fusionados en loop ═══
 # Harold: "estos 2 videos son las primeras y mas reales impresiones que
 # tengo de sol... quiero que a partir de esos 2 videos pueda adquirir
