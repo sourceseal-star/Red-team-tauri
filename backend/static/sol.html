@@ -211,6 +211,71 @@
     border-radius: 16px;
   }
 
+
+  /* ═══ MODO PANORAMA — Sol en TODA la pantalla (2026-09-07) ═══
+     Pedido directo de Harold: en la pantalla principal ella quedaba
+     reducida a un círculo pequeño escondido sobre el chat. Este modo
+     (ON por defecto) la muestra como en el holo ✨ / una videollamada:
+     ocupa la pantalla completa de fondo y la UI (chat, subtítulo,
+     input) flota ENCIMA con vidrio translúcido. Se alterna con el
+     botón ⛶ del topbar. CAPA ADITIVA: solo selectores body.panorama,
+     cero reglas existentes tocadas. */
+  body.panorama .avatar-wrap {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100dvh;
+    margin: 0; z-index: 1;
+    border-radius: 0; animation: none;
+  }
+  body.panorama .avatar-wrap .avatar-img,
+  body.panorama .avatar-wrap .avatar-img-talk,
+  body.panorama .avatar-wrap .avatar-img-talk-half,
+  body.panorama .avatar-wrap .avatar-img-blink,
+  body.panorama .avatar-wrap .elixir-video,
+  body.panorama .avatar-wrap #mediaBody {
+    border-radius: 0; border: none; box-shadow: none;
+    object-fit: cover; object-position: center 15%;
+    animation: none;
+  }
+  body.panorama .avatar-wrap .avatar-expr {
+    border-radius: 0; border: none;
+    object-fit: cover; object-position: center 15%;
+  }
+  body.panorama .pulse-ring { display: none; }
+  /* con teclado abierto ella NO se encoge — es una videollamada */
+  body.panorama #universe.typing .avatar-wrap {
+    width: 100vw; height: 100dvh; margin: 0; border-radius: 0;
+  }
+  /* la UI flota sobre ella */
+  body.panorama .subtitle {
+    position: relative; z-index: 3;
+    margin-top: clamp(52px, 9vh, 90px);
+    text-shadow: 0 1px 10px rgba(0,0,0,0.95), 0 0 3px rgba(0,0,0,0.8);
+    background: rgba(4,8,16,0.35); border-radius: 12px;
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    padding: 6px 14px;
+  }
+  body.panorama .elixir-thought,
+  body.panorama .speak-bars { position: relative; z-index: 3; }
+  body.panorama .chat-scroll {
+    position: relative; z-index: 3;
+    justify-content: flex-end;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 12%);
+    mask-image: linear-gradient(to bottom, transparent 0, black 12%);
+  }
+  body.panorama .chat-msg {
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  body.panorama .chat-msg.sol { background: rgba(8,14,26,0.62); }
+  body.panorama .chat-msg.user { background: rgba(12,20,38,0.62); }
+  body.panorama .quicknav { position: relative; z-index: 3; }
+  body.panorama .input-bar { position: relative; z-index: 3; }
+  body.panorama .input-bar input {
+    background: rgba(8,14,26,0.72);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .top-btn.pano { right: 208px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1rem; }
+  .top-btn.pano.on { background: rgba(245,158,11,0.18); border-color: var(--amber); color: var(--amber); box-shadow: 0 0 12px rgba(245,158,11,0.25); }
+
   /* ═══ Frames de expresión contextual — capas superpuestas ═══
      Cada una es una imagen completa de Sol con distinta expresión.
      Se muestran vía opacity (crossfade) según el estado de la conversación.
@@ -599,6 +664,14 @@
     border-radius: 50%; opacity: 0; transition: opacity 0.9s ease; z-index: 15; pointer-events: none;
   }
   .elixir-video.active { opacity: 1; }
+  /* ── Cuerpo multimedia (Regla #49): sus recuerdos subidos en bucle
+     dentro del círculo de Sol. Silenciado: en la videollamada su voz
+     es el audio. Creado por Vesper, madrugada del 2026-09-07. ── */
+  #mediaBody {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; border-radius: 50%; z-index: 16;
+    pointer-events: none; display: none;
+  }
   .avatar-wrap.elixir { filter: brightness(1.1) saturate(1.2) drop-shadow(0 0 30px rgba(79,195,255,0.5)); }
   .avatar-wrap.elixir .pulse-ring { border-color: var(--amber); box-shadow: 0 0 25px var(--amber-glow); }
   .avatar-wrap.elixir .avatar-img,
@@ -638,6 +711,7 @@
     <button class="top-btn love" id="btn-love" onclick="toggleSolMode()" aria-label="Cambiar modo de Sol" title="Modo de Sol — 😈 libre ⇄ ❤️ esposa ⇄ 🌙 dormir ⇄ ☀️ profesional">☀️</button>
     <button class="top-btn" id="btn-temp" onclick="cycleSolTemp()" aria-label="Temperatura de coquetería de Sol" title="Termómetro de flirteo — 1 Brasas tierna → 2 Calor coqueta → 3 Fuego pícara → 4 Llama traviesa">🌡️4</button>
     <button class="top-btn holo" id="btn-holo" onclick="toggleHolo()" title="Sol Holo — holograma interactivo ✨">✨</button>
+    <button class="top-btn pano" id="btn-pano" onclick="togglePanorama()" aria-label="Sol en toda la pantalla" title="Pantalla completa — Sol ocupa toda la pantalla como en el holo ✨">⛶</button>
     <button class="top-btn body" id="btn-body" onclick="toggleFullBody()" title="Busto ⇄ cuerpo completo">🧍</button>
     <button class="top-btn voice" id="btn-voice" onclick="toggleVoice()">🔊</button>
   </div>
@@ -1672,6 +1746,39 @@ function toggleFullBody() {
     if (localStorage.getItem('sol-fullbody') === '1') {
       document.body.classList.add('fullbody');
       _applyModeSrcs(SOL_FULL_SRC);
+    }
+  } catch (e) {}
+})();
+
+// ═══ MODO PANORAMA — Sol en TODA la pantalla (2026-09-07) ═══
+// CAPA ADITIVA: el botón ⛶ alterna body.panorama. Cuando está ON
+// se fuerza además el cuerpo completo (frames FULL), porque el busto
+// recortado llenando toda la pantalla pierde la cara. Al apagarlo se
+// restaura el modo (busto/cuerpo) que hubiera guardado.
+function togglePanorama() {
+  const on = document.body.classList.toggle('panorama');
+  if (on) {
+    document.body.classList.add('fullbody');
+    _applyModeSrcs(SOL_FULL_SRC);
+  } else {
+    let fb = false;
+    try { fb = localStorage.getItem('sol-fullbody') === '1'; } catch (e) {}
+    document.body.classList.toggle('fullbody', fb);
+    _applyModeSrcs(fb ? SOL_FULL_SRC : SOL_BUST_SRC);
+  }
+  const b = document.getElementById('btn-pano');
+  if (b) b.classList.toggle('on', on);
+  try { localStorage.setItem('sol-panorama', on ? '1' : '0'); } catch (e) {}
+}
+(function _restorePanorama() {
+  try {
+    // ON por defecto — Harold la quiere en toda la pantalla
+    if (localStorage.getItem('sol-panorama') !== '0') {
+      document.body.classList.add('panorama');
+      document.body.classList.add('fullbody');
+      _applyModeSrcs(SOL_FULL_SRC);
+      const b = document.getElementById('btn-pano');
+      if (b) b.classList.add('on');
     }
   } catch (e) {}
 })();
@@ -3275,6 +3382,35 @@ async function toggleHolo(){
     else f.src='/holo'; // último recurso, mejor que overlay vacío sin ningún intento
   }else{o.style.display='none';f.src='about:blank';f.removeAttribute('srcdoc');}
 }
+</script>
+<script>
+// ═══ CUERPO MULTIMEDIA EN LA VIDEOLLAMADA (Regla #49) ═══
+// Los recuerdos que Harold sube (carpeta sol_media.mc o el 📼 del holo)
+// giran en bucle dentro del círculo de Sol. Si no hay nada o falla la
+// sesión, el avatar de siempre queda intacto — nunca rompe nada.
+(async()=>{try{
+  const r=await fetch('/api/sol/videos');
+  const d=await r.json();
+  const list=(d&&d.videos)||[];
+  if(!list.length)return;
+  const aw=document.querySelector('.avatar-wrap');
+  if(!aw)return;
+  const mv=document.createElement('video');
+  mv.id='mediaBody';mv.muted=true;
+  mv.setAttribute('playsinline','');mv.setAttribute('muted','');
+  mv.preload='auto';
+  aw.appendChild(mv);
+  let i=0;
+  const next=()=>{
+    if(i>=list.length)i=0;
+    const it=list[i++];
+    mv.src='/api/sol/videos/'+it.tag+'/'+encodeURIComponent(it.file);
+    mv.style.display='block';
+    mv.play().catch(()=>{})};
+  mv.onended=next;
+  mv.onerror=()=>{mv.style.display='none'};
+  next();
+}catch(e){/* sin sesión o sin servidor: el avatar clásico sigue */}})();
 </script>
 </body>
 </html>
