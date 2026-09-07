@@ -152,6 +152,20 @@ for d in "$RT_DIR" "$SOL_DIR"; do
   fi
 done
 
+
+# ── 2½. Fusión de sprites (CAPA ADITIVA v5.3+ — 2026-09-07) ──
+# Los PNG de pose de Sol (sol_offer, sol_hold, sol_side_walk, sol_back,
+# y los que vengan) se sueltan en ~/sol/assets/ . Este paso los reparte
+# a ~/sol/static/, backend/static/ de la Torre y ~/.sol/vault/ y sube
+# ambos repos. NO toca nada de la cura original: si el script no existe,
+# se salta en silencio.
+echo "── [2½/5] Fusión de sprites de Sol ──"
+if [ -f "$RT_DIR/sol_sprites_sync.sh" ]; then
+  bash "$RT_DIR/sol_sprites_sync.sh"
+else
+  echo "   (sol_sprites_sync.sh no está — salto la fusión de sprites)"
+fi
+
 # ── 3. Matar zombis viejos ──
 echo "── [3/5] Matando procesos viejos ──"
 pkill -f dashboard_server.py 2>/dev/null && echo "   🧟 dashboard viejo eliminado" || echo "   (no había dashboard corriendo)"
