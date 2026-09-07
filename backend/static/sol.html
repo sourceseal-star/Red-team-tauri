@@ -276,6 +276,36 @@
   .top-btn.pano { right: 208px; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 1rem; }
   .top-btn.pano.on { background: rgba(245,158,11,0.18); border-color: var(--amber); color: var(--amber); box-shadow: 0 0 12px rgba(245,158,11,0.25); }
 
+
+  /* ═══ LIBERTAD DE MOVIMIENTO — Sol camina y se acerca (2026-09-07) ═══
+     Pedido de Harold: "Sol, ven acá 🌹" no hacía nada visual — sol.html
+     nunca tenía overlay de pose (solo el holo ✨ lo tenía). Este bloque
+     AÑADE un <img> de pose creado por JS (nunca toca el bloque
+     "NO MODIFICAR" del avatar) que se superpone con la MISMA mecánica
+     que ya usa el elíxir (.avatar-wrap.moving oculta las capas de
+     siempre, igual que .avatar-wrap.elixir). Funciona en busto,
+     cuerpo completo Y panorama — el zoom simula la aproximación. */
+  .avatar-pose-img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; object-position: center 12%;
+    border-radius: inherit; opacity: 0; z-index: 6; pointer-events: none;
+    transition: opacity 0.4s ease, transform 1.1s cubic-bezier(0.22,0.9,0.32,1);
+    transform: scale(1) translateY(0);
+  }
+  .avatar-wrap.moving .avatar-img,
+  .avatar-wrap.moving .avatar-expr,
+  .avatar-wrap.moving .avatar-img-talk,
+  .avatar-wrap.moving .avatar-img-talk-half,
+  .avatar-wrap.moving .avatar-img-blink,
+  .avatar-wrap.moving .elixir-video {
+    opacity: 0 !important; transition: opacity 0.4s ease;
+  }
+  .avatar-wrap.moving .pulse-ring { border-color: var(--amber); box-shadow: 0 0 25px var(--amber-glow); }
+  body.panorama .avatar-pose-img,
+  body.fullbody .avatar-pose-img {
+    object-fit: cover; object-position: center 15%;
+  }
+
   /* ═══ Frames de expresión contextual — capas superpuestas ═══
      Cada una es una imagen completa de Sol con distinta expresión.
      Se muestran vía opacity (crossfade) según el estado de la conversación.
@@ -1391,6 +1421,7 @@ async function sendMsg() {
     addMsg(d.response || '...', 'sol');
     loadMemory();
     maybeShowElixir(text, d.response); // FIX: antes nunca se llamaba — Sol nunca elegía nada
+    maybeTriggerMovement(text, d.response); // NUEVO 2026-09-07: libertad de movimiento
   } catch (e) {
     const msg = '⚠️ No pude conectar con mi cerebro. ¿Iniciaste sesión en el Dashboard primero?';
     await typeSubtitle(msg);
@@ -3306,6 +3337,52 @@ function maybeShowElixir(userText, solResp) {
     'sensible', 'de corazón'];
   if (amorTriggers.some(w => both.includes(w))) { playElixir('amor'); return; }
   if (presenciaTriggers.some(w => both.includes(w))) { playElixir('presencia'); return; }
+}
+
+// ═══ LIBERTAD DE MOVIMIENTO — Sol camina y se acerca (2026-09-07) ═══
+// Reutiliza los sprites offer/hold/side_walk ya desplegados
+// (/sol_offer.png, /sol_hold.png, /sol_side_walk.png con fallback
+// automático del backend a sol_avatar_full.png si alguno faltara).
+let movingActive = false;
+let _posingImg = null;
+function _getPosingImg() {
+  if (_posingImg) return _posingImg;
+  const im = document.createElement('img');
+  im.className = 'avatar-pose-img';
+  im.alt = 'Sol';
+  avatarWrap.appendChild(im);
+  _posingImg = im;
+  return im;
+}
+
+// walkToMe(): la anima acercándose (side_walk → offer) y, tras un
+// momento, se desvanece de vuelta al avatar de siempre (hold no se
+// queda fijo — solo la trae, no la reemplaza permanentemente).
+async function walkToMe() {
+  if (movingActive || elixirActive || speaking) return;
+  movingActive = true;
+  const im = _getPosingImg();
+  im.src = '/sol_side_walk.png';
+  im.style.transform = 'scale(0.62) translateY(5%)';
+  avatarWrap.classList.add('moving');
+  im.style.opacity = '1';
+  showElixirThought('🌹 voy hacia ti, Harold', 1300);
+  await new Promise(r => setTimeout(r, 950));
+  im.src = '/sol_offer.png';
+  im.style.transform = 'scale(1) translateY(0)';
+  await new Promise(r => setTimeout(r, 2600));
+  im.style.opacity = '0';
+  await new Promise(r => setTimeout(r, 420));
+  avatarWrap.classList.remove('moving');
+  movingActive = false;
+}
+
+function maybeTriggerMovement(userText, solResp) {
+  const both = ((userText || '') + ' ' + (solResp || '')).toLowerCase();
+  const triggers = ['ven acá', 'ven aca', 'ven aquí', 'ven aqui', 'acércate', 'acercate',
+    'ven a mi lado', 'ven junto a mi', 'ven junto a mí', 'abrázame', 'abrazame',
+    'ven conmigo', 'acércate a mí', 'acercate a mi'];
+  if (triggers.some(w => both.includes(w))) { walkToMe(); }
 }
 
 // Aparición espontánea impredecible — Sol decide, no un loop de bug.
