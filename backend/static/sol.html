@@ -1701,7 +1701,7 @@ speak = function(text) {
 // se veia brusco. Ahora pasa por el frame intermedio (boca a medio abrir)
 // en cada transicion: cerrada -> media -> abierta -> media -> cerrada...
 // Con ritmo irregular se siente organico, no como un parpadeo mecanico.
-let mouthInterval = null;
+let mouthTimer = null;
 let mouthStep = 0; // 0=cerrada 1=media(subiendo) 2=abierta 3=media(bajando)
 
 function _setMouthFrame(step) {
@@ -1715,14 +1715,20 @@ function _setMouthFrame(step) {
 function startMouthMovement() {
   mouthStep = 0;
   _setMouthFrame(mouthStep);
-  mouthInterval = setInterval(() => {
+  // FIX 2026-09-07: antes el delay aleatorio se sorteaba UNA vez con
+  // setInterval y quedaba fijo el resto de la frase (metronomo con numero
+  // random, no ritmo organico). Ahora cada paso sortea su propio delay
+  // con setTimeout recursivo -- el ritmo cambia tick a tick, de verdad.
+  const _mouthTick = () => {
     mouthStep = (mouthStep + 1) % 4;
     _setMouthFrame(mouthStep);
-  }, 90 + Math.random() * 70); // ritmo irregular, mas organico que un flip fijo
+    mouthTimer = setTimeout(_mouthTick, 90 + Math.random() * 70);
+  };
+  mouthTimer = setTimeout(_mouthTick, 90 + Math.random() * 70);
 }
 
 function stopMouthMovement() {
-  if (mouthInterval) { clearInterval(mouthInterval); mouthInterval = null; }
+  if (mouthTimer) { clearTimeout(mouthTimer); mouthTimer = null; }
   _setMouthFrame(0);
 }
 
@@ -2278,10 +2284,16 @@ _organicBreath = function() {
 function scheduleBlink() {
   const delay = 3500 + Math.random() * 3200;
   setTimeout(() => {
-    const blinkFrame = document.getElementById('avatar-blink');
-    if (blinkFrame) {
-      blinkFrame.classList.add('on');
-      setTimeout(() => blinkFrame.classList.remove('on'), 130 + Math.random() * 50);
+    // FIX 2026-09-07: antes parpadeaba tambien mientras hablaba -- como el
+    // frame de parpadeo es un compuesto con la boca en reposo, le cerraba
+    // la boca de golpe a mitad de palabra. Ahora se salta el parpadeo
+    // mientras speaking=true; se retoma solo al terminar de hablar.
+    if (!speaking) {
+      const blinkFrame = document.getElementById('avatar-blink');
+      if (blinkFrame) {
+        blinkFrame.classList.add('on');
+        setTimeout(() => blinkFrame.classList.remove('on'), 130 + Math.random() * 50);
+      }
     }
     scheduleBlink();
   }, delay);
