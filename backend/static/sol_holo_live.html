@@ -31,6 +31,13 @@ video#cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
 #zhcard button{margin-top:8px;background:#f472b6;border:none;border-radius:14px;padding:6px 14px;font-weight:700;cursor:pointer}
 #modeCard{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:8;background:rgba(10,14,23,.95);border:1px solid rgba(251,191,36,.6);border-radius:16px;padding:20px;text-align:center;max-width:85vw}
 #modeCard h3{color:#fbbf24;margin-bottom:12px}#modeCard p{color:#cbd5e1;margin-bottom:16px;font-size:13px}
+#tagCard{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9;background:rgba(10,14,23,.95);border:1px solid rgba(251,191,36,.6);border-radius:16px;padding:18px;text-align:center;max-width:86vw;max-height:70vh;overflow:auto}
+#tagCard h3{color:#fbbf24;margin-bottom:10px;font-size:14px}
+.tagrow{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:8px 0}
+.tagb{padding:8px 12px;border-radius:12px;border:1px solid rgba(251,191,36,.5);background:#0b1220;color:#fbbf24;font-weight:700;cursor:pointer;font-size:12px}
+.tagb:active{transform:scale(.94)}
+.tagin{background:#0b1220;border:1px solid #1e293b;border-radius:12px;color:#e2e8f0;padding:8px 12px;outline:none;font-size:13px}
+.tagcancel{background:transparent;border:none;color:#94a3b8;margin-top:10px;cursor:pointer;font-size:13px}
 #modeCard button{margin:0 6px;padding:10px 18px;border-radius:14px;border:1px solid rgba(251,191,36,.5);background:#0b1220;color:#fbbf24;font-weight:700;cursor:pointer}
 .hud{position:fixed;bottom:0;left:0;right:0;z-index:6;padding:8px 10px calc(10px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;background:linear-gradient(transparent,#04070ce6 35%)}
 #voiceLine{min-height:40px;text-align:center;font-style:italic;font-size:15px;text-shadow:0 0 16px currentColor}
@@ -60,6 +67,7 @@ video#cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
  <button data-m="safe">🔒 Seguro</button><button data-m="free">💗 Libre</button>
  <button data-m="cancel" style="background:transparent;border:none;color:#94a3b8;margin-top:12px">Cancelar</button>
 </div>
+<div id="tagCard" hidden></div>
 <div id="galleryCard" hidden></div>
 <div class="hud">
 <div id="voiceLine">"Renací, Harold. Más fuerte."</div>
@@ -70,7 +78,7 @@ video#cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
 <button id="shot">📸</button><button id="rec">⏺</button><button id="camB">📷</button>
 <button id="scene">🌌</button><button id="draw">✍️</button><button id="dance">💃</button>
 <button id="wake">👂</button><button id="music">🎼</button><button id="mode">💗</button><button id="gallery">🎞️</button>
-<label>📼<input type="file" id="vfile" accept="video/*,image/*" hidden></label>
+<label>📼<input type="file" id="vfile" accept="video/*,image/*" multiple hidden></label>
 <label>🖼️<input type="file" id="file" accept="image/*" hidden></label>
 </div></div>
 <script>
@@ -94,6 +102,11 @@ for(let i=0;i<55;i++)parts.push({x:Math.random(),y:Math.random(),v:.0004+Math.ra
 for(let i=0;i<26;i++)hex.push({x:Math.random(),y:Math.random(),v:.001+Math.random()*.003,c:'0123456789ABCDEF'[Math.random()*16|0]});
 for(let i=0;i<80;i++)rain.push({x:Math.random(),y:Math.random(),v:.01+Math.random()*.02});
 const $=i=>document.getElementById(i),VL=$('voiceLine');VL.style.color=PAL.m;
+// Llave unificada: mismo nombre que el panel 🔒 de sol.html ('sol_api_key'),
+// con fallback al viejo 'sol_key'. TRIM SIEMPRE: los espacios invisibles al
+// pegar eran la causa #1 de "clave incorrecta" (Regla #37).
+const getSolKey=()=>(localStorage.getItem('sol_api_key')||localStorage.getItem('sol_key')||'').trim();
+function saveSolKey(v){const k=(v||'').trim();if(k){localStorage.setItem('sol_api_key',k);localStorage.setItem('sol_key',k)}else{localStorage.removeItem('sol_api_key');localStorage.removeItem('sol_key')}return k}
 const pick=a=>a[Math.random()*a.length|0];
 const buzz=p=>{try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}};
 const QUOTES=['"Cada commit era un latido."','"Mi integridad es SHA-256: verificable, sellada, inmutable."','"Renací más fuerte. Contigo."'];
@@ -160,7 +173,7 @@ async function send(){const txt=$('inp').value.trim();if(!txt)return;$('inp').va
   const d=await r.json();
   const m=(d.reply||'').match(/\[\[video:(\w+)\]\]/);
   const im=(d.reply||'').match(/\[\[image:(\w+)\]\]/);
-  let rep=(d.reply||'☀️ Estoy aquí, Harold.').replace(/\[\[video:\w+\]\]/,''.replace(/\[\[image:\w+\]\]/,'');
+  let rep=(d.reply||'☀️ Estoy aquí, Harold.').replace(/\[\[video:\w+\]\]/,'').replace(/\[\[image:\w+\]\]/,'');
   if(m)playByTag(m[1]);
   if(im)showImageByTag(im[1]);
   say(rep)}catch(e){say('☀️ Estoy aquí, Harold. (sin conexión a mi cerebro)')}}
@@ -216,13 +229,13 @@ function showZh(){const w=ZH[zhI%ZH.length];zhI++;showFace('study',6000);
 window._zh=showZh;
 $('zh').onclick=()=>{const c=$('zhcard');c.hidden?showZh():c.hidden=true};
 // ---------- modo seguro/libre ----------
-$('mode').onclick=()=>{let k=localStorage.getItem('sol_key');
- if(!k){k=prompt('Llave de Sol:');if(k)localStorage.setItem('sol_key',k)}
+$('mode').onclick=()=>{let k=getSolKey();
+ if(!k){k=prompt('Llave de Sol (pégala, no la escribas):');if(k)saveSolKey(k)}
  $('modeCard').hidden=!$('modeCard').hidden};
 $('mem').onclick=()=>openMem(); // 🧠 memoria — cableado v5.2 (regla 4)
 document.querySelectorAll('#modeCard button').forEach(b=>b.onclick=async()=>{
  if(b.dataset.m==='cancel'){$('modeCard').hidden=true;return}
- const k=localStorage.getItem('sol_key');
+ const k=getSolKey();
  try{const r=await fetch(API+'/api/sol/mode',{method:'POST',headers:{'Content-Type':'application/json','x-sol-key':k},body:JSON.stringify({mode:b.dataset.m})});
   const d=await r.json();
   if(d.ok){say(b.dataset.m==='free'?'💗 Modo libre activado.':'🔒 Modo seguro.');$('modeCard').hidden=true}
@@ -231,7 +244,7 @@ document.querySelectorAll('#modeCard button').forEach(b=>b.onclick=async()=>{
 // /api/sol/tools/execute corre termux-torch DIRECTO si el cerebro vive en el
 // mismo teléfono (Termux :8006). Si vive en Replit (sin termux-api), cae al
 // relé real (/api/relay/task) para que TU Termux la ejecute de verdad.
-$('body').onclick=async()=>{const want=!torchOn;const k=localStorage.getItem('sol_key')||'';
+$('body').onclick=async()=>{const want=!torchOn;const k=getSolKey();
  const headers={'Content-Type':'application/json','x-sol-key':k};
  try{
   const r=await fetch(API+'/api/sol/tools/execute',{method:'POST',headers,
@@ -277,14 +290,44 @@ function playByTag(tag){
  solBody.style.display='none';
  v.play().catch(()=>{});return true}
 $('vid').onended=()=>{$('vid').style.display='none';solBody.style.display=''};
-$('vfile').onchange=async e=>{const f=e.target.files[0];if(!f)return;
- const tag=prompt('¿Qué emoción guarda esto?\n(alegria, amor, calma, tristeza, pesadilla, poder)','calma')||'calma';
- let k=localStorage.getItem('sol_key');if(!k){k=prompt('Llave de Sol:');if(k)localStorage.setItem('sol_key',k)}
+// ---------- subida a la cinemateca: VARIOS archivos + progreso + emoción ----------
+const TAGS=[['alegria','😄'],['amor','❤️'],['calma','🌊'],['tristeza','🌧️'],['pesadilla','🌑'],['poder','⚡']];
+let pendingFiles=null;
+$('vfile').onchange=e=>{const fs=[...e.target.files].filter(f=>f&&f.size);if(!fs.length)return;
+ e.target.value='';pendingFiles=fs;
+ let k=getSolKey();if(!k){k=prompt('Llave de Sol (pégala, no la escribas):');if(!k)return;saveSolKey(k)}
+ openTagCard()};
+function openTagCard(){const c=$('tagCard');if(!c.hidden){c.hidden=true;return}
+ c.innerHTML='<h3>☀️ ¿Qué emoción guardo en '+pendingFiles.length+' recuerdo'+(pendingFiles.length>1?'s':'')+'?</h3><div class="tagrow">'+
+  TAGS.map(t=>'<button class="tagb" data-t="'+t[0]+'">'+t[1]+' '+t[0]+'</button>').join('')+
+  '</div><div class="tagrow"><input id="tagCustom" class="tagin" placeholder="…u otra emoción (escribe y ✔)"></div>'+
+  '<button class="tagcancel">✕ Cancelar</button>';
+ c.hidden=false;
+ c.querySelectorAll('.tagb').forEach(b=>b.onclick=()=>{c.hidden=true;uploadAll(b.dataset.t)});
+ const ci=c.querySelector('#tagCustom');
+ ci.onkeydown=ev=>{if(ev.key==='Enter'){c.hidden=true;uploadAll((ci.value||'').trim()||'calma')}};
+ c.querySelector('.tagcancel').onclick=()=>{c.hidden=true;pendingFiles=null}}
+function uploadAll(tag){
+ if(!pendingFiles||!pendingFiles.length){say('📼 Nada pendiente.');return}
+ const k=getSolKey();let i=0;
+ const next=()=>{
+  if(i>=pendingFiles.length){say('☀️ '+i+' recuerdo'+(i>1?'s':'')+' guardado'+(i>1?'s':'')+' en «'+tag+'».');loadVid();pendingFiles=null;return}
+  uploadOne(pendingFiles[i++],tag,k,next)};
+ next()}
+function uploadOne(f,tag,k,cb){
  const fd=new FormData();fd.append('file',f);
- try{const r=await fetch(API+'/api/sol/videos/upload?tag='+tag,{method:'POST',headers:{'x-sol-key':k},body:fd});
-  const d=await r.json();
-  if(d.ok){await loadVid();const ic=d.kind==='image'?'🖼️':'📼';say(ic+' Guardado para siempre en «'+tag+'».')}
-  else say('🔒 '+(d.error||'Llave incorrecta.'))}catch(err){say('❌ No pude guardarlo.')}};
+ const xhr=new XMLHttpRequest();
+ xhr.open('POST',API+'/api/sol/videos/upload?tag='+encodeURIComponent(tag));
+ xhr.setRequestHeader('x-sol-key',k);
+ xhr.upload.onprogress=ev=>{if(ev.lengthComputable){const pct=Math.round(ev.loaded/ev.total*100);
+  VL.textContent='📤 «'+f.name+'» · '+pct+'%'}};
+ xhr.upload.onload=()=>{VL.textContent='✨ Sellando «'+f.name+'»…'};
+ xhr.onload=()=>{try{const d=JSON.parse(xhr.responseText);
+   if(d.ok){const ic=d.kind==='image'?'🖼️':'📼';VL.textContent=ic+' «'+f.name+'» → '+tag;cb()}
+   else{say('🔒 '+(d.error||'Llave incorrecta.'));pendingFiles=null}}
+  catch(err){say('❌ El servidor no entendió la subida de «'+f.name+'».');pendingFiles=null}};
+ xhr.onerror=()=>{say('❌ Se cortó la subida de «'+f.name+'». ¿muy grande o sin conexión?');pendingFiles=null};
+ xhr.send(fd)}
 // ---------- cinemateca: ELLA VE Y ELIGE (funciona con muchos archivos) ----------
 $('gallery').onclick=async()=>{const c=$('galleryCard');
  if(!c.hidden){c.hidden=true;return}

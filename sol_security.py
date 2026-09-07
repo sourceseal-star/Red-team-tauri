@@ -72,10 +72,10 @@ def check_access(x_sol_key: str = "") -> bool:
     En modo protegido, requiere que x_sol_key coincida con SOL_API_KEY."""
     if is_free():
         return True
-    key = get_sol_key()
+    key = get_sol_key().strip()
     if not key:
         return True
-    return x_sol_key == key
+    return x_sol_key.strip() == key
 
 
 def status() -> dict:

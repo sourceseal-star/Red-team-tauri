@@ -1023,9 +1023,9 @@ async function toggleSolMode() {
     throw new Error(d.error || 'no ok');
   } catch (e) {
     // 401: pedir la llave una sola vez y guardarla
-    const k = prompt('Llave de Sol (SOL_API_KEY):');
+    let k = (prompt('Llave de Sol (pégala, no la escribas):') || '').trim();
     if (!k) return;
-    localStorage.setItem('sol_key', k);
+    localStorage.setItem('sol_api_key', k);
     try {
       const d = await api('/api/sol/mode', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1064,9 +1064,9 @@ async function cycleSolTemp() {
     if (d.ok) { solTemp = d.temp; paintSolTemp(); return; }
     throw new Error(d.error || 'no ok');
   } catch (e) {
-    const k = prompt('Llave de Sol (SOL_API_KEY):');
+    let k = (prompt('Llave de Sol (pégala, no la escribas):') || '').trim();
     if (!k) return;
-    localStorage.setItem('sol_key', k);
+    localStorage.setItem('sol_api_key', k);
     try {
       const d = await api('/api/sol/temp', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

@@ -186,8 +186,10 @@ def install(app):
         if tok and check_token(tok):
             # Inyectar la clave como header para que el modo protegido
             # de los endpoints (check_access) también la acepte.
-            scope_headers = request.scope.setdefault("headers", [])
+            scope_headers = [(k, v) for k, v in request.scope.get("headers", [])
+                             if k.lower() != b"x-sol-key"]
             scope_headers.append((b"x-sol-key", _key().encode()))
+            request.scope["headers"] = scope_headers
             return await call_next(request)
 
         # 3) clave por query (?key=...) — login de UN toque (sol_abre.sh):

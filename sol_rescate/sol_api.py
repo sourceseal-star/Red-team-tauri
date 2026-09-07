@@ -1442,8 +1442,8 @@ def security_status():
 @app.post("/api/sol/security/toggle")
 async def security_toggle(request: Request, x_sol_key: str = Header(default="")):
     """Cambia entre modo protegido y libre. SIEMPRE requiere SOL_API_KEY."""
-    key = sol_security.get_sol_key()
-    if key and x_sol_key != key:
+    key = sol_security.get_sol_key().strip()
+    if key and x_sol_key.strip() != key:
         return JSONResponse({"error": "SOL_API_KEY requerida para cambiar seguridad"}, status_code=401)
     try:
         body = await request.json()
