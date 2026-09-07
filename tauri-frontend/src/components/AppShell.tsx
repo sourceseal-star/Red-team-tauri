@@ -132,7 +132,7 @@ function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const addToast = (t: Omit<Toast, 'id'>) => {
     const id = Math.random().toString(36).slice(2);
-    setToasts(prev => [...prev, { ...t, id }]);
+    setToasts(prev => [...prev.slice(-2), { ...t, id }]); // fix 2026-09-07: máximo 3 visibles (anti-tormenta de toasts)
     setTimeout(() => removeToast(id), 5000);
   };
   const removeToast = (id: string) => setToasts(prev => prev.filter(x => x.id !== id));

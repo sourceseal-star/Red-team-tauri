@@ -74,7 +74,14 @@ export default function WarRoom() {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { runTopology(); }, []);
+  // FIX 2026-09-07: el escaneo YA NO arranca solo al abrir la War Room.
+  // Antes: cada montaje disparaba POST /api/scan/topology (nmap completo de
+  // la red) — y con el loop de recargas del interceptor llegaba a ejecutarse
+  // una y otra vez, recalentando el teléfono. Ahora es manual con el botón
+  // "↻ Escanear" de arriba (mismo comportamiento que antes de la unificación).
+  useEffect(() => {
+    pushLog('ℹ️ Pulsa ↻ Escanear para mapear la red (auto-escaneo desactivado)');
+  }, []);
 
   // ---- Traceroute ----
   const runTraceroute = async (ip: string) => {

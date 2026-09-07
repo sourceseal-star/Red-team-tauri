@@ -60,15 +60,58 @@ export function installAuthFetchInterceptor() {
     // Token invalido/vencido (no coincide con la API key actual del backend):
     // limpiar sesion y forzar re-login en vez de dejar la app atascada en 401.
     if (isApiCall && !isAuthCall && (response.status === 401 || response.status === 403)) {
+      // ── GUARD ANTI-LOOP (fix war room 2026-09-07) ──
+      // BUG: antes se recargaba SIEMPRE que llegaba un 401. Como NO existe
+      // pantalla de login montada en el router, tras la recarga la war room
+      // volvía a montar, volvía a disparar /api/*, volvía a llegar 401 y
+      // volvía a recargar -> loop infinito: la pantalla "temblaba", no cargaba
+      // nunca y recalentaba el teléfono (cada recarga relanzaba además el
+      // escaneo nmap automático). Ahora solo se recarga UNA vez cada 15 s;
+      // si en esa ventana sigue llegando 401, se muestra un banner fijo con
+      // opción de pegar el token nuevo a mano (no hay login UI todavía).
+      const now = Date.now()
+      const lastReload = Number(sessionStorage.getItem('auth_reload_ts') || 0)
       const hadToken = !!localStorage.getItem('api_token')
-      if (hadToken) {
-        localStorage.removeItem('api_token')
-        console.warn('[auth] Token invalido/vencido — cerrando sesion automaticamente')
+      if (hadToken) localStorage.removeItem('api_token')
+
+      if (now - lastReload > 15000) {
+        sessionStorage.setItem('auth_reload_ts', String(now))
+        console.warn('[auth] Token invalido/vencido — recargando una sola vez')
+        window.location.reload()
+        return response
       }
-      // Siempre forzar re-login cuando llega 401, sin importar si habia token o no.
-      // Antes, si NO habia token y llegaba 401, la app quedaba colgada mostrando
-      // paneles vacios sin forma de salir al login.
-      window.location.reload()
+
+      // Segundo 401 en <15s: NO recargar de nuevo (era el temblor). Banner manual.
+      if (!document.getElementById('auth-loop-banner')) {
+        const banner = document.createElement('div')
+        banner.id = 'auth-loop-banner'
+        banner.style.cssText =
+          'position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;' +
+          'color:#fecaca;font:12px/1.6 monospace;padding:10px 14px;display:flex;' +
+          'flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between'
+        const msg = document.createElement('span')
+        msg.textContent = '⚠️ Token de sesión inválido — el backend rechaza las llamadas /api/*. Pega el token nuevo (REDTEAM_API_KEY del .env en Termux):'
+        msg.style.flex = '1 1 260px'
+        const btnToken = document.createElement('button')
+        btnToken.textContent = 'Ingresar token'
+        btnToken.style.cssText = 'background:#dc2626;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-weight:bold;cursor:pointer'
+        btnToken.onclick = () => {
+          const t = window.prompt('Pega el valor de REDTEAM_API_KEY del .env (backend Termux):')
+          if (t && t.trim()) {
+            localStorage.setItem('api_token', t.trim())
+            sessionStorage.removeItem('auth_reload_ts')
+            window.location.reload()
+          }
+        }
+        const btnRetry = document.createElement('button')
+        btnRetry.textContent = 'Reintentar'
+        btnRetry.style.cssText = 'background:#450a0a;color:#fecaca;border:1px solid #b91c1c;padding:6px 12px;border-radius:6px;cursor:pointer'
+        btnRetry.onclick = () => { sessionStorage.removeItem('auth_reload_ts'); window.location.reload() }
+        banner.appendChild(msg)
+        banner.appendChild(btnToken)
+        banner.appendChild(btnRetry)
+        document.body.appendChild(banner)
+      }
     }
 
     return response
