@@ -79,8 +79,36 @@ export default function WarRoom() {
   // la red) — y con el loop de recargas del interceptor llegaba a ejecutarse
   // una y otra vez, recalentando el teléfono. Ahora es manual con el botón
   // "↻ Escanear" de arriba (mismo comportamiento que antes de la unificación).
+  //
+  // 2026-09-08 — RESTAURA el último escaneo guardado en el backend
+  // (data/topology_last.json via GET /api/scan/topology/last). Así los
+  // puntos (dispositivos/IP/puertos) siguen en el mapa al reabrir o tras
+  // reiniciar el backend, sin re-escanear. Solo lectura: NO lanza escaneo.
   useEffect(() => {
-    pushLog('ℹ️ Pulsa ↻ Escanear para mapear la red (auto-escaneo desactivado)');
+    (async () => {
+      const hint = 'ℹ️ Pulsa ↻ Escanear para mapear la red (auto-escaneo desactivado)';
+      try {
+        const res = await fetch('/api/scan/topology/last');
+        if (!res.ok) { pushLog(hint); return; }
+        const data = await res.json();
+        const items = (data.results || []).map((h: any) => ({
+          ip: h.ip, mac: h.mac, vendor: h.vendor,
+          ports: h.ports || [], risk: h.risk,
+          risk_reasons: h.risk_reasons || [],
+          first_seen: h.first_seen || data.saved_at || new Date().toISOString(),
+          type: h.type || 'unknown',
+        }));
+        if (items.length > 0) {
+          setHosts(items);
+          const when = data.saved_at ? new Date(data.saved_at).toLocaleString() : 'desconocido';
+          pushLog(`↩️ Restaurado último escaneo: ${items.length} hosts (${when}) — pulsa ↻ Escanear para actualizar`);
+        } else {
+          pushLog(hint);
+        }
+      } catch {
+        pushLog(hint);
+      }
+    })();
   }, []);
 
   // ---- Traceroute ----
