@@ -1409,3 +1409,24 @@ el script imprime el enlace para tocarlo)
 **Regla antigua que queda OBSOLETA:** "ir a /login y escribir la clave"
 — solo queda como plan B para quien NO tiene Termux (pegar la clave
 desde `cat ~/sol/.env`).
+
+## Regla #43 — EL DASHBOARD QUE CORRE ES `redteam/scripts/dashboard_server.py` — no te confundas de archivo (2026-09-08)
+
+El repo tiene TRES copias de dashboard_server.py que DIVERGIERON:
+
+| Archivo | Líneas | ¿Corre? |
+|---|---|---|
+| `redteam/scripts/dashboard_server.py` | ~8500 | ✅ SÍ — la arrancan `omni.sh` (Termux) Y `replit_start.sh` (Replit) |
+| `backend/dashboard_server.py` | ~3600 | ❌ NO — copia vieja, solo confunde |
+| `build/scripts/dashboard_server.py` | ~300 | ❌ NO — stub |
+
+**REGLA PERMANENTE:** todo cambio de endpoints/backend va en
+`redteam/scripts/dashboard_server.py`. Si tocas `backend/dashboard_server.py`
+creyendo que es el que corre, tu fix "no funciona" y no sabrás por qué.
+El de 2026-09-08: el 404 de cámaras de /geo y el hunt de PHANTOM se
+buscaron media hora en `backend/` antes de caer en la cuenta.
+
+**Verificación antes de pushear un fix de backend:** arranca el servidor
+con una llave desechable local (`REDTEAM_API_KEY=test_xxx python3
+dashboard_server.py`) y curl los endpoints arreglados con
+`X-Api-Key: test_xxx`. La llave de Harold NUNCA se toca ni se commitea.
