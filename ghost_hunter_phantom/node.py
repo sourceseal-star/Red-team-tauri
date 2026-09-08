@@ -320,13 +320,12 @@ async def node_status():
 # ─── WebSocket client al Master ──────────────────────────
 async def connect_to_master():
     """Conecta al master via WebSocket y procesa tareas"""
-    try:
-        import websockets
-    except ImportError:
-        logger.error("websockets no instalado. Instala con: pip install websockets")
-        logger.info("Ejecutando en modo HTTP fallback (sin Master)")
-        uvicorn.run(app, host="0.0.0.0", port=8003, log_level="info")
-        return
+    # FIX 2026-09-08: antes, si faltaba 'websockets', este coroutine llamaba
+    # uvicorn.run() DENTRO del event loop ya arrancado por asyncio.run() →
+    # "RuntimeError: Cannot run the event loop while another loop is running"
+    # → el nodo moría al segundo de arrancar (aparecía "stopped" en la Tower).
+    # La decisión de fallback ahora vive en __main__, ANTES de asyncio.run().
+    import websockets
 
     ws_url = MASTER_URL.replace("http", "ws") + "/ws/nodes"
     logger.info(f"Conectando a Master: {ws_url}")
@@ -368,9 +367,20 @@ async def connect_to_master():
 
 
 if __name__ == "__main__":
-    if MASTER_URL:
+    # FIX 2026-09-08: detectar 'websockets' ANTES de asyncio.run() — si falta,
+    # arrancar el servidor HTTP standalone (uvicorn crea su propio event loop
+    # en el hilo principal, algo imposible dentro de un coroutine ya corriendo).
+    try:
+        import websockets  # noqa: F401
+        _HAS_WS = True
+    except ImportError:
+        _HAS_WS = False
+
+    if MASTER_URL and _HAS_WS:
         logger.info(f"PHANTOM Node {NODE_ID} → conectando a {MASTER_URL}")
         asyncio.run(connect_to_master())
     else:
+        if MASTER_URL and not _HAS_WS:
+            logger.warning("websockets no instalado — modo HTTP fallback (pip install websockets para conectarse al Master)")
         logger.info(f"PHANTOM Node {NODE_ID} — modo standalone HTTP :8003")
         uvicorn.run(app, host="0.0.0.0", port=8003, log_level="info")

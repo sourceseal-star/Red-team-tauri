@@ -1775,20 +1775,26 @@ SERVICE_DEFS = {
         "cmd": [sys.executable, "-c", f"import sys; sys.path.insert(0,'{ROOT}'); from deception.mesh import DeceptionMesh; import time; m=DeceptionMesh(); print('[deception] ready'); time.sleep(999999)"],
         "log_file": str(LOGS_DIR / "deception.log")},
     "fake-api": {"description": "Fake API — deceptive API endpoints",
-        "cmd": [sys.executable, str(ROOT / "honeypot" / "fake-api" / "server.py")], "log_file": str(LOGS_DIR / "fake-api.log")},
+        # FIX 2026-09-08: sin "env" propio, este subproceso heredaba el PORT
+        # del propio dashboard (8001) vía {**os.environ,...} en _start_service,
+        # y server.py hace os.environ.get("PORT", 8443) → intentaba bindear
+        # :8001 (YA OCUPADO por el dashboard) → "Address already in use" →
+        # moría al instante, apareciendo "stopped" en la Control Tower.
+        "cmd": [sys.executable, str(ROOT / "honeypot" / "fake-api" / "server.py")], "log_file": str(LOGS_DIR / "fake-api.log"),
+        "env": {"PORT": "8443"}},
     "c2-sinkhole": {"description": "C2 Sinkhole — DNS sinkhole for C2 traffic",
         "cmd": [sys.executable, str(ROOT / "honeypot" / "c2-sinkhole" / "sinkhole.py")], "log_file": str(LOGS_DIR / "c2-sinkhole.log")},
     "canary-monitor": {"description": "Canary Monitor — canary token alerting",
         "cmd": [sys.executable, "-c", f"import sys; sys.path.insert(0,'{ROOT}'); from monitor.canary_monitor import CanaryMonitor; import time; m=CanaryMonitor(); print('[canary] ready'); time.sleep(999999)"],
         "log_file": str(LOGS_DIR / "canary.log")},
     "network-ids": {"description": "Network IDS — intrusion detection",
-        "cmd": [sys.executable, str(ROOT / "honeypot" / "network-ids" / "ids_rules.py")], "log_file": str(LOGS_DIR / "network-ids.log")},
+        "cmd": [sys.executable, str(ROOT / "honeypot" / "network-ids" / "ids_rules.py"), "--daemon"], "log_file": str(LOGS_DIR / "network-ids.log")},
     "ghost-phantom-master": {"description": "GHOST HUNTER PHANTOM — Master orquestador (:8002)",
-        "cmd": [sys.executable, str(ROOT / "ghost_hunter_phantom" / "master.py")],
+        "cmd": [sys.executable, str(PROJECT_ROOT / "ghost_hunter_phantom" / "master.py")],
         "log_file": str(LOGS_DIR / "phantom_master.log"),
         "env": {"BACKEND_API": "http://localhost:8001", "MASTER_PORT": "8002"}},
     "ghost-phantom-node": {"description": "GHOST HUNTER PHANTOM — Node worker (ejecuta playbooks)",
-        "cmd": [sys.executable, str(ROOT / "ghost_hunter_phantom" / "node.py")],
+        "cmd": [sys.executable, str(PROJECT_ROOT / "ghost_hunter_phantom" / "node.py")],
         "log_file": str(LOGS_DIR / "phantom_node.log"),
         "env": {"NODE_ID": "phantom_node_1", "MASTER_URL": "http://localhost:8002", "BACKEND_API": "http://localhost:8001"}},
     "commander": {"description": "COMMANDER — Auditoría de red, OSINT, forense (repo hermano, in-process)",
@@ -1849,10 +1855,23 @@ def _start_service(name: str) -> dict:
     with _svc_lock:
         proc = _svc_procs.get(name)
         if proc and proc.poll() is None: return {"ok": True, "message": f"{name} already running (PID {proc.pid})"}
-        log_f = open(defn["log_file"], "a")
+        # Solo validamos si cmd[1] es un PATH de script real (no un flag
+        # como "-c" o "-m" de los servicios que corren código inline).
+        script_path = defn["cmd"][1] if len(defn["cmd"]) > 1 else ""
+        if script_path and not script_path.startswith("-") and not Path(script_path).exists():
+            return {"ok": False, "message": f"script no encontrado: {script_path}"}
+        try:
+            log_f = open(defn["log_file"], "a")
+        except OSError as e:
+            return {"ok": False, "message": f"log inaccesible ({defn['log_file']}): {e}"}
         _env = {**os.environ, **defn.get("env", {})}
         _cwd = defn.get("cwd", str(ROOT))
-        proc = subprocess.Popen(defn["cmd"], stdout=log_f, stderr=log_f, cwd=_cwd, env=_env)
+        try:
+            proc = subprocess.Popen(defn["cmd"], stdout=log_f, stderr=log_f, cwd=_cwd, env=_env)
+        except FileNotFoundError:
+            return {"ok": False, "message": f"ejecutable o script no encontrado: {' '.join(defn['cmd'])}"}
+        except PermissionError:
+            return {"ok": False, "message": f"sin permisos para ejecutar: {defn['cmd'][1] if len(defn['cmd']) > 1 else defn['cmd']}"}
         _svc_procs[name] = proc; _svc_start_times[name] = time.time()
         return {"ok": True, "message": f"{name} started (PID {proc.pid})"}
 

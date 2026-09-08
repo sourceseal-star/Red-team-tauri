@@ -95,6 +95,9 @@ def match_pcap_payload(payload: bytes) -> List[Dict]:
 
 
 if __name__ == "__main__":
+    import sys as _sys
+    import time as _time
+
     out = write_suricata_rules("honeypot/network-ids/suricata.rules")
     print(f"✓ Reglas Suricata escritas en {out}")
     print(f"  Patrones PCAP: {len(PCAP_PATTERNS)}")
@@ -102,3 +105,43 @@ if __name__ == "__main__":
     test = b"POST /api/v1/checkin HTTP/1.1\r\nX-Device-Fingerprint: abc\r\n"
     hits = match_pcap_payload(test)
     print(f"  Demo match en payload de prueba: {hits}")
+
+    # ── Modo DAEMON (2026-09-08) ─────────────────────────────
+    # El dashboard arranca este servicio con --daemon. Sin el flag el
+    # script sigue siendo one-shot (escribe reglas y sale). Con --daemon
+    # se queda vivo: re-escribe las reglas cada 60s y queda disponible
+    # para consultas de match — así el servicio aparece "running" en la
+    # Control Tower en vez de morir al segundo de arrancar.
+    if "--daemon" in _sys.argv:
+        import threading
+
+        def _serve_matches():
+            """Mini servidor TCP en :8444 — responde matches de payloads."""
+            import socket
+            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                srv.bind(("127.0.0.1", 8444))
+            except OSError:
+                print("[network-ids] puerto 8444 ocupado — match server desactivado")
+                return
+            srv.listen(8)
+            print("[network-ids] daemon vivo — match server en 127.0.0.1:8444")
+            while True:
+                try:
+                    conn, _ = srv.accept()
+                    data = conn.recv(65536)
+                    if data:
+                        hits = match_pcap_payload(data)
+                        conn.sendall(json.dumps(hits).encode())
+                    conn.close()
+                except OSError:
+                    pass
+
+        threading.Thread(target=_serve_matches, daemon=True).start()
+        _i = 0
+        while True:
+            _time.sleep(60)
+            _i += 1
+            write_suricata_rules("honeypot/network-ids/suricata.rules")
+            print(f"[network-ids] reglas refrescadas (ciclo {_i}, {len(PCAP_PATTERNS)} patrones)")
