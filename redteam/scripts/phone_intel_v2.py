@@ -69,6 +69,9 @@ def init_db():
         carrier TEXT, country TEXT, line_type TEXT,
         spam_score INTEGER, risk_level TEXT, tags TEXT,
         UNIQUE(number, call_time))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT, ts TEXT, detail TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS number_intel (
         number TEXT PRIMARY KEY, first_seen TEXT, last_seen TEXT,
         total_calls INTEGER DEFAULT 1, max_risk TEXT,
@@ -194,6 +197,183 @@ def save_analysis(r: dict, call: dict | None = None):
     conn.close()
 
 
+
+
+def log_event(event_type: str, detail: dict):
+    conn = sqlite3.connect(CONFIG["db_path"])
+    conn.execute("INSERT INTO events (event_type, ts, detail) VALUES (?,?,?)",
+                 (event_type, datetime.now().isoformat(timespec="seconds"), json.dumps(detail)))
+    conn.commit()
+    conn.close()
+
+
+# ══════════════════════════════════════════════════════════════════
+# GUARDIA DE RADIO (v2.1) — indicadores locales de anomalía celular
+# ══════════════════════════════════════════════════════════════════
+# HONESTIDAD (leer antes de tocar): esto NO "detecta IMSI catchers".
+# Son INDICADORES locales para revisión humana, con línea base aprendida
+# y cooldown, para no ahogar a Harold en falsos positivos:
+#   1. POSIBLE_SIM_SWAP — ambas SIM muertas con WiFi conectado y habiendo
+#      tenido celdas hace poco. El SIM swap es la amenaza REAL y común
+#      en Colombia (clonan la línea para fraude bancario).
+#   2. POSIBLE_DOWNGRADE_2G — la red pasó de LTE/5G a solo GSM estando
+#      quieto. Técnica clásica de intercepción activa (A5/0).
+#   3. FLAPPING_TORRES — >=4 celdas distintas en 10 min sin moverte.
+#   4. PICO_SENAL — mejora sostenida >=25 dBm contra la base de 10 min.
+# Ninguno es confirmación de ataque: se registra, se avisa, decide el humano.
+
+CELL_CACHE = os.path.expanduser("~/.spectre_cells.json")
+GUARD_STATE = os.path.expanduser("~/.spectre_guard_state.json")
+GUARD_COOLDOWN = 1800  # mismo evento: máx 1 alerta cada 30 min
+
+
+def _termux_json(cmd: list, timeout=8):
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if out.returncode == 0 and out.stdout.strip():
+            return json.loads(out.stdout)
+    except Exception:
+        pass
+    return None
+
+
+def _find_key(obj, names: tuple):
+    """Búsqueda recursiva de una key en JSON de estructura variable."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k.lower() in names and isinstance(v, (int, str)):
+                return v
+        for v in obj.values():
+            r = _find_key(v, names)
+            if r is not None:
+                return r
+    elif isinstance(obj, list):
+        for v in obj:
+            r = _find_key(v, names)
+            if r is not None:
+                return r
+    return None
+
+
+def radio_sample() -> dict:
+    """Una muestra de la radio: celdas crudas + resumen defensivo."""
+    raw = _termux_json(["termux-telephony-cellinfo"])
+    cells = raw if isinstance(raw, list) else []
+    summary = []
+    for c in cells if isinstance(cells, list) else []:
+        try:
+            summary.append({
+                "cid": _find_key(c, ("cid", "ci", "cellid")),
+                "lac": _find_key(c, ("lac", "tac")),
+                "dbm": _find_key(c, ("dbm", "signal_strength")),
+            })
+        except Exception:
+            pass
+    tech_raw = json.dumps(raw).lower() if raw else ""
+    techs = {t for t in ("lte", "nr", "gsm", "umts", "cdma") if t in tech_raw}
+    wifi = _termux_json(["termux-wifi-connectioninfo"]) or {}
+    return {"cells": summary, "techs": sorted(techs), "raw": raw,
+            "wifi_up": bool(wifi.get("ssid"))}
+
+
+def _load_state() -> dict:
+    try:
+        return json.loads(Path(GUARD_STATE).read_text())
+    except Exception:
+        return {"samples": [], "last_alert": {}}
+
+
+def _save_state(st: dict):
+    Path(GUARD_STATE).write_text(json.dumps(st))
+    cell_hist = st["samples"][-15:]
+    Path(CELL_CACHE).write_text(json.dumps(cell_hist))
+
+
+def guard_cycle(st: dict) -> list:
+    """Analiza una muestra contra la línea base. Retorna eventos a avisar."""
+    now = time.time()
+    s = radio_sample()
+    st["samples"].append({"ts": now, "summary": s["cells"], "techs": s["techs"],
+                          "wifi_up": s["wifi_up"], "had_cells": bool(s["cells"])})
+    st["samples"] = st["samples"][-30:]  # ~30 min a 60s
+    _save_state(st)
+    events = []
+
+    def cooled(tag: str) -> bool:
+        if now - st["last_alert"].get(tag, 0) < GUARD_COOLDOWN:
+            return False
+        st["last_alert"][tag] = now
+        return True
+
+    # 1) SIM swap: antes había celdas, ahora ninguna, y el WiFi sigue vivo.
+    recent = [x for x in st["samples"][:-1] if now - x["ts"] < 600]
+    if (not s["cells"] and s["wifi_up"]
+            and any(x["had_cells"] for x in recent[-3:])):
+        if cooled("sim_swap"):
+            events.append(("POSIBLE_SIM_SWAP", {
+                "aviso": "Tus SIM perdieron la red con WiFi activo. Revisa que tus "
+                         "apps bancarias sigan accesibles y llama a tu operador "
+                         "SI notaste caída de señal sin motivo.",
+                "celdas_previas": [x["summary"] for x in recent[-2:]]}))
+
+    # 2) Downgrade 2G: había LTE/5G y ahora solo GSM.
+    prev_techs = set().union(*(set(x["techs"]) for x in recent)) if recent else set()
+    cur = set(s["techs"])
+    if prev_techs & {"lte", "nr"} and cur and cur <= {"gsm"}:
+        if cooled("downgrade_2g"):
+            events.append(("POSIBLE_DOWNGRADE_2G", {
+                "aviso": "La red pasó de LTE/5G a solo GSM estando en el mismo lugar.",
+                "antes": sorted(prev_techs), "ahora": sorted(cur)}))
+
+    # 3) Flapping: >=4 celdas distintas en los últimos 10 min.
+    ids = {c["cid"] for x in recent for c in x["summary"] if c["cid"] is not None}
+    if len(ids) >= 4:
+        if cooled("flapping"):
+            events.append(("FLAPPING_TORRES", {"celdas_10min": sorted(ids)}))
+
+    # 4) Pico de señal: mejora sostenida >=25 dBm vs base de 10 min.
+    old_dbm = [_find_key(x, ("dbm",)) for x in st["samples"][-15:-5]]
+    old_dbm = [d for d in old_dbm if isinstance(d, (int, float))]
+    cur_dbm = [_find_key(c, ("dbm",)) for c in s["cells"]]
+    cur_dbm = [d for d in cur_dbm if isinstance(d, (int, float))]
+    if old_dbm and cur_dbm and max(cur_dbm) - min(old_dbm) >= 25 and max(cur_dbm) >= -60:
+        if cooled("pico_senal"):
+            events.append(("PICO_SENAL", {"dbm_base": min(old_dbm), "dbm_ahora": max(cur_dbm)}))
+
+    return events
+
+
+def guard_loop():
+    print("📶 [SPECTRE GUARD] Guardia de radio activa (muestra cada 60s). Ctrl+C para parar.")
+    print("   Indicadores: SIM swap · downgrade 2G · flapping · pico de señal.")
+    print("   Recordatorio: son INDICADORES para revisión humana, no confirmación.")
+    st = _load_state()
+    # semilla: dos muestras separadas 90s para tener línea base
+    guard_cycle(st)
+    time.sleep(90)
+    while True:
+        try:
+            for tag, detail in guard_cycle(st):
+                line = f"📶 {tag}: {json.dumps(detail, ensure_ascii=False)[:180]}"
+                print(f"🔔 {line}")
+                log_event(tag, detail)
+                sev = "critical" if tag == "POSIBLE_SIM_SWAP" else "warning"
+                alert_warroom({"risk_level": "HIGH" if sev == "critical" else "MEDIUM",
+                               "number": tag, "country": "red local", "carrier": "radio",
+                               "spam_score": 0, "tags": [tag],
+                               **({"anomaly": None} if True else {})})
+                alert_telegram({"risk_level": "HIGH", "number": tag,
+                                "normalized": "", "country": "celular de Harold",
+                                "carrier": "radio", "line_type": tag,
+                                "spam_score": 0, "tags": [tag],
+                                **({"anomaly": None} if True else {})})
+        except KeyboardInterrupt:
+            print("\n🛑 Guardia detenida.")
+            return
+        except Exception as e:
+            print(f"⚠️ guard: {e}")
+        time.sleep(60)
+
 def get_call_log(limit=20) -> list:
     """Lee el log de llamadas vía termux-call-log (Termux:API)."""
     try:
@@ -303,7 +483,9 @@ def cli_analyze(number: str):
 if __name__ == "__main__":
     args = sys.argv[1:]
     init_db()
-    if "--monitor" in args:
+    if "--guard" in args:
+        guard_loop()
+    elif "--monitor" in args:
         monitor()
     elif "--watch" in args:
         monitor(float(args[args.index("--watch") + 1]) if len(args) > args.index("--watch") + 1 else 3600)
