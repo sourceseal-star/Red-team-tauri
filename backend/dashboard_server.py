@@ -351,6 +351,18 @@ if _FRONTEND_BUILT:
     _assets_dir = os.path.join(_FRONTEND_DIST, "assets")
     if os.path.isdir(_assets_dir):
         app.mount("/assets", StaticFiles(directory=_assets_dir), name="frontend-assets")
+
+    # ── Sol Mini (2026-09-08): la miniapp Lovable fusionada con el Sol real ──
+    # Archivos COMPILADOS (vite build) servidos desde backend/static/mini/.
+    # Additivo y removible: borrar la carpeta y no queda rastro.
+    # URL: http://localhost:8001/static/mini
+    # El chat/memoria usan MISMO ORIGEN → el proxy /api/sol/{rest} de esta
+    # misma Tower le habla al cerebro REAL de Sol con la llave del servidor.
+    _mini_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "mini")
+    if os.path.isdir(_mini_dir):
+        app.mount("/static", StaticFiles(directory=os.path.dirname(_mini_dir)), name="tower-static")
+        print(f"[sealctl] Sol Mini montada en /static/mini ✅")
+
     print(f"[sealctl] Frontend compilado detectado en {_FRONTEND_DIST}")
 else:
     print(f"[sealctl][WARN] Frontend no compilado ({_FRONTEND_DIST} sin index.html). "
