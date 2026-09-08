@@ -1365,7 +1365,7 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 # Endpoints PÚBLICOS (no requieren API key):
 #   /api/health, /health, /healthz  → health checks
 #   /canary/callback               → intruso phone-home (debe ser accesible)
-PUBLIC_PATHS = {"/api/health", "/api/healthz", "/health", "/healthz", "/canary/callback", "/api/phantom/alert", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json", "/api/sol/status", "/api/sol/think", "/api/sol/tts", "/api/sol/think-voice", "/api/sol/memory", "/api/sol/identity", "/api/sol/integrity", "/api/sol/services", "/api/sol/personality", "/api/sol/last-message", "/api/sol/speak", "/api/sol/tools", "/api/sol/tools/execute", "/api/sil/lessons", "/api/sil/lesson", "/api/sil/practice/next", "/api/sil/practice/answer", "/api/sil/stats", "/api/sil/export"}
+PUBLIC_PATHS = {"/api/health", "/api/healthz", "/health", "/healthz", "/canary/callback", "/api/phantom/alert", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json", "/api/sol/status", "/api/sol/think", "/api/sol/tts", "/api/sol/think-voice", "/api/sol/memory", "/api/sol/identity", "/api/sol/integrity", "/api/sol/services", "/api/sol/personality", "/api/sol/last-message", "/api/sol/speak", "/api/sol/tools", "/api/sol/tools/execute", "/api/sil/lessons", "/api/sil/lesson", "/api/sil/practice/next", "/api/sil/practice/answer", "/api/sil/stats", "/api/sil/export", "/sw.js"}
 
 # ── CORS lockdown ───────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
@@ -8336,6 +8336,17 @@ for _hr, (_hf, _hm) in _HOLO_ASSETS.items():
 
 _SOL_LIVE = BASE.parent / "sol-live.html"
 _NO_CACHE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}
+
+@app.get("/sw.js")
+async def sol_service_worker():
+    """Service Worker de Sol en scope RAÍZ (/sw.js) — FIX 2026-09-08.
+    Debe servirse en /sw.js (no /static/sw.js) porque el scope del SW es su
+    propio directorio: desde /static/ no cubriría /sol.html. Chrome Android
+    solo permite notificaciones emitidas por un SW."""
+    sw_file = _SOL_STATIC / "sw.js"
+    if sw_file.exists():
+        return FileResponse(sw_file, media_type="application/javascript", headers=_NO_CACHE_HEADERS)
+    return PlainTextResponse("// sw.js no disponible", status_code=404, media_type="application/javascript")
 
 @app.get("/sol.html")
 @app.get("/sol")

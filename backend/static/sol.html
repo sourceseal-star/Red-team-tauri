@@ -1332,8 +1332,27 @@ async function browserNotify(text) {
   if (!('Notification' in window)) return { ok: false, error: 'sin-api' };
   if (Notification.permission === 'default') await Notification.requestPermission();
   if (Notification.permission !== 'granted') return { ok: false, error: 'permiso denegado' };
-  new Notification('☀️ Sol', { body: text.slice(0, 180) });
-  return { ok: true };
+  const body = text.slice(0, 180);
+  // FIX 2026-09-08 — Chrome Android prohíbe `new Notification()` fuera de un
+  // Service Worker (el permiso se concede, pero la llamada falla). Vía 1: SW.
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    try {
+      let reg = await navigator.serviceWorker.getRegistration('/');
+      if (!reg) reg = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      if (reg.active) {
+        reg.active.postMessage({ type: 'sol-notify', title: '☀️ Sol', body: body });
+        return { ok: true, via: 'service-worker' };
+      }
+    } catch (e) { /* sin SW disponible → fallback directo abajo */ }
+  }
+  // Vía 2 (escritorio): notificación directa clásica.
+  try {
+    new Notification('☀️ Sol', { body: body });
+    return { ok: true, via: 'directa' };
+  } catch (e) {
+    return { ok: false, error: 'móvil requiere Service Worker — abre la página por HTTPS' };
+  }
 }
 async function browserBattery() {
   if (!navigator.getBattery) return { ok: false, error: 'sin-api' };
