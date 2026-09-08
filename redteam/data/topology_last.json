@@ -1,0 +1,52 @@
+{
+ "saved_at": "2026-09-08T11:57:41.277242",
+ "subnet": "192.168.1.0/24",
+ "results": [
+  {
+   "ip": "192.168.1.1",
+   "mac": null,
+   "vendor": null,
+   "ports": [
+    {
+     "port": 80,
+     "service": "http",
+     "state": "open",
+     "banner": ""
+    },
+    {
+     "port": 443,
+     "service": "https",
+     "state": "open",
+     "banner": ""
+    }
+   ],
+   "type": "unknown",
+   "status": "up",
+   "risk": "medium",
+   "risk_reasons": [
+    "Panel admin HTTP sin cifrar"
+   ]
+  },
+  {
+   "ip": "192.168.1.2",
+   "mac": null,
+   "vendor": null,
+   "ports": [],
+   "type": "unknown",
+   "status": "up",
+   "risk": "low",
+   "risk_reasons": []
+  },
+  {
+   "ip": "192.168.1.4",
+   "mac": null,
+   "vendor": null,
+   "ports": [],
+   "type": "unknown",
+   "status": "up",
+   "risk": "low",
+   "risk_reasons": []
+  }
+ ],
+ "method": "nmap"
+}

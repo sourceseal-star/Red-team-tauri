@@ -1571,9 +1571,16 @@ async def security_middleware(request: Request, call_next):
 
     # Timeout: los escaneos de red (nmap, ONVIF) pueden tardar hasta 60s en
     # Termux. El resto de endpoints se limita a 25s para evitar cuelgues.
+    # FIX 2026-09-08 (RAÍZ REAL -- 'Request timeout' en Kraken y 'operación
+    # tardó más de 25s' en Android/Campo Wi-Fi): estas rutas NO estaban en la
+    # whitelist de timeout extendido, así que corrían con el default de 25s.
+    # termux-wifi-scaninfo y un NSE scan de Kraken sobre /24 rutinariamente
+    # pasan de 25s. Agregadas: /api/discover/wifi, /api/scan/wifi,
+    # /api/wifi/scan, /api/kraken/scan.
     _scan_paths = ("/api/scan/", "/api/enhanced/discover", "/api/network/cameras",
                    "/api/iot/scan", "/api/capture/", "/api/discover/network",
-                   "/api/android/port-scan")
+                   "/api/android/port-scan", "/api/discover/wifi", "/api/wifi/scan",
+                   "/api/kraken/scan")
     _timeout = 150.0 if any(path.startswith(p) for p in _scan_paths for path in [request.url.path]) else 25.0
     try:
         return await asyncio.wait_for(call_next(request), timeout=_timeout)
@@ -2525,8 +2532,37 @@ async def scan_topology_last():
 CAM_PORTS = [554, 80, 443, 8000, 8080, 37777, 8554]
 
 @app.post("/api/network/cameras")
+@app.get("/api/network/cameras")
 @app.post("/api/scan/cameras")
-async def scan_cameras():
+@app.get("/api/scan/cameras")
+async def scan_cameras(target: str = Query(None), timeout: float = Query(2.0)):
+    """
+    FIX 2026-09-08 (RAÍZ REAL — 404 en /geo al escanear cámaras):
+    GeoIntel.tsx pide GET con ?target=IP&timeout=N (getWithKey hace fetch
+    sin método = GET) — este endpoint SOLO aceptaba POST y no leía ningún
+    parámetro (siempre escaneaba la subred entera de la interfaz, ignorando
+    lo que el usuario escribía). El choque de método causaba el 404/405 en
+    /geo. Ahora acepta GET y POST, y si viene 'target' explícito (una IP,
+    lo que el usuario escribe en /geo) escanea SOLO esa IP — si no viene,
+    conserva el comportamiento viejo (barrido de toda la subred, usado por
+    el módulo de topología). También agrega 'elapsed_seconds' — GeoIntel.tsx
+    lo muestra en la tarjeta 'Tiempo escaneo' y antes quedaba vacío.
+    """
+    t0 = time.monotonic()
+    if target:
+        ip = target.strip()
+        tasks = [tcp_check(ip, p, timeout=timeout) for p in CAM_PORTS]
+        banners = await asyncio.gather(*tasks)
+        ports_map = {p: b for p, b in zip(CAM_PORTS, banners) if b is not None}
+        cams = []
+        if ports_map:
+            cams.append({"ip": ip, "rtsp": ports_map.get(554), "ports": ports_map,
+                         "type": "camera", "first_seen": datetime.now().isoformat()})
+        elapsed = round(time.monotonic() - t0, 2)
+        return {"target": ip, "results": cams, "count": len(cams),
+                "hosts_with_services": len(cams), "cameras_found": len(cams),
+                "elapsed_seconds": elapsed}
+
     subnet = await asyncio.to_thread(subnet_from_iface)
     base = subnet.rsplit(".", 1)[0] + "."
     rtsp_tasks = [tcp_check(f"{base}{i}", 554, timeout=1.0) for i in range(1, 255)]
@@ -2542,7 +2578,9 @@ async def scan_cameras():
         cams.append({"ip": ip, "rtsp": banner, "ports": ports_map,
                      "type": "camera", "first_seen": datetime.now().isoformat()})
     await broadcast({"type": "progress", "payload": f"Cámaras encontradas: {len(cams)}"})
-    return {"results": cams, "count": len(cams)}
+    elapsed = round(time.monotonic() - t0, 2)
+    return {"results": cams, "count": len(cams), "hosts_with_services": len(cams),
+            "cameras_found": len(cams), "elapsed_seconds": elapsed}
 
 # ── Routers ──────────────────────────────────────────────────────────────────
 ROUTER_PORTS = [80, 443, 22, 23, 8080, 8443, 1900]
@@ -2599,30 +2637,43 @@ RADIO_PORTS = [(8000, "Icecast/ShoutCast"), (8001, "ShoutCast-alt"), (8080, "HTT
 @app.post("/api/scan/antenna")
 @app.post("/api/scan/radio")
 @app.get("/api/network/radio")
-async def scan_radio():
-    subnet = subnet_from_iface()
-    base = subnet.rsplit(".", 1)[0] + "."
-    # Paralelizar: lanzar todos los tcp_check a la vez con un semaphore
-    # para no saturar el event loop (254 IPs × 10 puertos = 2540 checks)
+async def scan_radio(target: str = Query(None), timeout: float = Query(0.3)):
+    """
+    FIX 2026-09-08 (RAÍZ REAL — 'Tiempo escaneo: S' vacío en /geo):
+    faltaba 'elapsed_seconds' en la respuesta — GeoIntel.tsx lo imprime
+    directo y sin ese campo solo queda la 's' suelta. También ahora honra
+    'target': si el usuario escribe una IP en /geo, escanea SOLO esa IP en
+    vez de siempre barrer la subred entera (por eso antes salía un host
+    distinto al que se tecleaba).
+    """
+    t0 = time.monotonic()
     sem = asyncio.Semaphore(200)
 
     async def check_one(ip, port, label):
         async with sem:
-            banner = await tcp_check(ip, port, timeout=0.3)
+            banner = await tcp_check(ip, port, timeout=timeout)
             if banner is not None:
                 return {"ip": ip, "port": port, "protocol": label,
                         "banner": banner[:80], "type": "radio"}
             return None
 
-    tasks = []
-    for i in range(1, 255):
-        ip = f"{base}{i}"
-        for port, label in RADIO_PORTS:
-            tasks.append(check_one(ip, port, label))
+    if target:
+        ip = target.strip()
+        tasks = [check_one(ip, port, label) for port, label in RADIO_PORTS]
+    else:
+        subnet = subnet_from_iface()
+        base = subnet.rsplit(".", 1)[0] + "."
+        tasks = []
+        for i in range(1, 255):
+            ip = f"{base}{i}"
+            for port, label in RADIO_PORTS:
+                tasks.append(check_one(ip, port, label))
 
     raw = await asyncio.gather(*tasks)
     results = [r for r in raw if r is not None]
-    return {"results": results, "count": len(results)}
+    elapsed = round(time.monotonic() - t0, 2)
+    return {"results": results, "count": len(results), "hosts_with_streams": len(results),
+            "radios_found": len(results), "elapsed_seconds": elapsed}
 
 # ── IoT scan por CIDR (escanear red específica) ────────────────────────────────
 @app.post("/api/iot/scan-network")
@@ -7088,13 +7139,21 @@ class DatabaseV2:
 
 db_v2 = DatabaseV2(DB_PATH_V2)
 
-# ── Seed demo data (solo si la DB está vacía) ──
+# ── Seed demo data (solo si la DB está vacía Y se pide explícitamente) ──
+# FIX 2026-09-08 (RAÍZ REAL -- contradice el pedido explícito de "datos
+# reales, sin simulaciones"): esto sembraba 6 hosts FALSOS (router.local,
+# cam-sala.local, printer-hp.local, unknown-device...) en CUALQUIER
+# instalación nueva, sin avisar. Harold los vio en el Grafo y parecían su
+# red real. Ahora requiere REDTEAM_SEED_DEMO=1 explícito (para demos/dev);
+# por defecto la topología arranca vacía de verdad hasta el primer escaneo.
 def _seed_v2_if_empty():
+    if os.environ.get("REDTEAM_SEED_DEMO", "") != "1":
+        return
     with db_v2._conn() as c:
         count = c.execute("SELECT COUNT(*) FROM v2_hosts").fetchone()[0]
     if count > 0:
         return
-    print("[DB-V2] Seeding demo data...")
+    print("[DB-V2] Seeding demo data (REDTEAM_SEED_DEMO=1)...")
     demo_hosts = [
         ("192.168.1.1", "router.local", "", "Router/AP", 10, [80, 443, 22]),
         ("192.168.1.10", "cam-sala.local", "", "IP Camera Hikvision", 65, [80, 554, 8000]),
@@ -7127,7 +7186,13 @@ def _seed_v2_if_empty():
 
 @app.get("/api/v2/topology/hosts")
 async def v2_list_hosts(
-    limit: int = Query(100, ge=1, le=500),
+    # FIX 2026-09-08 (RAÍZ REAL — 'HOSTS 0' en /topology con el Grafo lleno):
+    # TopologyPanel.tsx pide ?limit=2000 pero el tope aquí era le=500 -> FastAPI
+    # respondía 422 (JSON válido, sin 'hosts'). El fetch del frontend no revisa
+    # response.ok, hace data.hosts||[] sobre el error 422 -> pantalla en blanco
+    # con 0 en las 4 tarjetas mientras el Grafo (endpoint sin límite) sí mostraba
+    # los nodos reales. Antes le=500, ahora le=5000 (cubre el limit=2000 real).
+    limit: int = Query(100, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     search: str = Query(""),
     risk_min: int = Query(0, ge=0, le=100),
@@ -7947,6 +8012,27 @@ async def phantom_status():
         }
     except Exception as exc:
         return {"available": False, "status": None, "error": str(exc)[:160]}
+
+
+@app.post("/api/phantom/hunt")
+async def phantom_hunt(payload: dict = Body(...)):
+    """
+    FIX 2026-09-08 (RAÍZ REAL — módulo IoT Phantom en Commander sin cacería):
+    CommanderPanel.tsx llama a POST /api/phantom/hunt (query, playbook,
+    max_results) y esta ruta nunca existió — solo estaba /api/phantom/status
+    (lectura) y /api/phantom/alert (para RECIBIR hallazgos). Faltaba el
+    puente hacia POST /api/hunt/start del Master real en :8002.
+    """
+    try:
+        import httpx as _hx
+        async with _hx.AsyncClient(timeout=8) as client:
+            response = await client.post("http://127.0.0.1:8002/api/hunt/start", json=payload)
+        try:
+            return response.json()
+        except Exception:
+            return {"status": "error", "message": f"Respuesta no-JSON del Master (HTTP {response.status_code})"}
+    except Exception as exc:
+        return {"status": "error", "message": f"PHANTOM Master (:8002) no disponible: {exc}"}
 
 
 # ── NEXUS OMNI v9.0 proxy ───────────────────────────────────

@@ -41,6 +41,7 @@ export default function TopologyPanel() {
   const [selectedTag, setSelectedTag] = useState("");
   const [expandedHost, setExpandedHost] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "graph">("table");
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
 
@@ -53,10 +54,21 @@ export default function TopologyPanel() {
     setLoading(true);
     try {
       const res = await fetch("/api/v2/topology/hosts?limit=2000");
+      // FIX 2026-09-08 (RAÍZ REAL -- 'HOSTS 0' silencioso con el Grafo lleno):
+      // antes no se revisaba res.ok -- un 422/500 del backend (JSON válido,
+      // solo sin 'hosts') pasaba directo a data.hosts||[] y la pantalla
+      // mostraba 0 en todo sin ningún aviso, aunque el Grafo (otro endpoint)
+      // sí tuviera datos reales. Ahora se detecta y se avisa.
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.detail ? JSON.stringify(errBody.detail) : `HTTP ${res.status}`);
+      }
       const data = await res.json();
       setHosts(data.hosts || []);
-    } catch (e) {
+      setFetchError(null);
+    } catch (e: any) {
       console.error("Failed to fetch hosts", e);
+      setFetchError(e?.message || "No se pudieron cargar los hosts");
     }
     setLoading(false);
   };
@@ -332,7 +344,10 @@ export default function TopologyPanel() {
               </tbody>
             </table>
           </div>
-          {filteredHosts.length === 0 && !loading && (
+          {fetchError && !loading && (
+            <div className="p-8 text-center text-red-400 text-sm">⚠ Error cargando hosts: {fetchError}</div>
+          )}
+          {!fetchError && filteredHosts.length === 0 && !loading && (
             <div className="p-8 text-center text-slate-500 text-sm">No se encontraron hosts con los filtros aplicados.</div>
           )}
           {loading && (
