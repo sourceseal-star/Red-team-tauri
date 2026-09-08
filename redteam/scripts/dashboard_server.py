@@ -231,6 +231,16 @@ try:
 except Exception as _ib_err:
     print(f"[WARN] interceptor_bridge v2 import fallo: {_ib_err}", flush=True)
 
+# ── NDR Bridge (sniffer LAN + detección C2/exfiltración/túneles) ────────────
+# Monta el módulo NDR que existía huérfano (2026-09-08): captura Scapy real +
+# flujos bidireccionales + motor de anomalías. /api/ndr/* — ver ndr_bridge.py
+try:
+    from ndr.ndr_bridge import router as ndr_bridge_router
+    app.include_router(ndr_bridge_router)
+    print("[NDR-BRIDGE] Router montado en /api/ndr/* (sniffer LAN + C2/exfil/tunnel)")
+except Exception as _ndr_err:
+    print(f"[WARN] ndr_bridge import fallo: {_ndr_err}", flush=True)
+
 # ── ARTO — Automated Red Team Operations (AI autónomo) ────────────────────
 _ARTO_OK = False
 try:
