@@ -14,3 +14,5 @@ from .evolution import EvolutionEngine
 from .learning import LearningEngine
 from .wrapper import AutonomousSol
 from .observability import get_sol_health
+from .seed import seed_initial_knowledge
+from .llm import deep_insight

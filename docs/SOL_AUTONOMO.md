@@ -56,3 +56,9 @@ mini-reflexión cada 10 tareas del día.
 - Endpoints nuevos `/api/sol-autonomy/health|briefing|evolve` (solo lectura + POST).
 - Cron de Termux: `0 9 * * * python3 sol_awakening.py --evolve`.
 - Seeding opcional: cargar SIL/tutor stats como skills iniciales.
+
+## Mejoras 2.0 añadidas (2026-09-08, tarde)
+- **`llm.py` — reflexión profunda**: los insights importantes se destilan con el mismo LLM de Sol (`GROQ_API_KEY` + `GROQ_MODEL`, endpoint de sol_groq.py). Sin llave o sin red → insight local, idéntico comportamiento (nunca bloquea).
+- **`seed.py` — siembra honesta**: cerebro nuevo se auto-siembra con lo que Sol YA sabe (8 habilidades reales: TTS, SIL, tutoría, escaneo nmap+TCP fallback…) y 4 lecciones pagadas de la historia del repo (Regla #41, temblor del token, validación con navegador real). Idempotente: nunca pisa un cerebro con datos.
+- **Briefing matutino con salud**: `❤️ Salud: X/100 · N experiencias · M patrones` + metas + top habilidades + última lección.
+- Todo probado en sandbox: siembra → escaneo → aprendizaje → briefing ✔

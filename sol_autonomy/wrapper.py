@@ -9,6 +9,8 @@ from .goals import GoalManager
 from .reflection import ReflectionEngine
 from .evolution import EvolutionEngine
 from .learning import LearningEngine
+from .seed import seed_initial_knowledge
+from .observability import get_sol_health
 
 class AutonomousSol:
     def __init__(self, db_path: Optional[str] = None):
@@ -17,6 +19,12 @@ class AutonomousSol:
         self.reflection = ReflectionEngine(self.memory)
         self.evolution = EvolutionEngine(self.memory)
         self.learning = LearningEngine(self.memory, self.goals)
+        try:
+            seeded = seed_initial_knowledge(self.memory)  # honesta: solo si esta vacio
+            if seeded:
+                print("[SOL-AUTONOMY] cerebro nuevo → sembrado con lo que Sol ya sabe")
+        except Exception:
+            pass  # nunca bloquear el arranque
 
     def pre_task(self, task_name: str, context: Dict) -> Dict:
         similar = self.memory.recall_similar(f"{task_name} {context.get('target', '')}")
@@ -46,7 +54,16 @@ class AutonomousSol:
                self.evolution.evolve() + "\n" + self.reflection.generate_self_report()
 
     def morning_briefing(self) -> str:
-        r = "🌅 BUENOS DIAS HAROLD\n\n" + self.goals.reflect_on_goals() + "\n"
+        h = get_sol_health()
+        r = "🌅 BUENOS DIAS HAROLD\n\n"
+        r += f"❤️ Salud: {h['health_score']}/100 · {h['total_experiences']} experiencias · {h['strong_patterns']} patrones fuertes\n\n"
+        r += self.goals.reflect_on_goals() + "\n"
+        top = self.memory.get_top_skills(3)
+        if top:
+            r += "🏆 Mis habilidades mas fuertes hoy:\n"
+            for s_ in top:
+                r += f"  • {s_['name']}: {s_['proficiency']:.0f}% (exito {s_['success_rate']:.0f}%)\n"
+            r += "\n"
         weak = self.memory.get_weak_skills()
         if weak:
             r += "📚 Hoy deberia practicar:\n"

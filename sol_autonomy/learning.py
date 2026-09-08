@@ -2,6 +2,7 @@
 from datetime import datetime
 from typing import Dict
 from .memory import Experience, ExperienceType
+from .llm import deep_insight
 
 class LearningEngine:
     def __init__(self, memory, goal_manager):
@@ -23,15 +24,17 @@ class LearningEngine:
         if success:
             self.goal_manager.update_task_progress(task_name, 1.0)
         if importance >= 7.0:
-            self._generate_insight(lesson)
+            self._generate_insight(lesson, task_name=task_name, success=success, outcome=outcome)
 
     def _extract_lesson(self, context: Dict, outcome: str, success: bool) -> str:
         if success:
             return f"La estrategia '{context.get('strategy', 'default')}' funciono"
         return f"El error fue: {outcome[:100]}"
 
-    def _generate_insight(self, lesson: str):
+    def _generate_insight(self, lesson: str, task_name: str = "", success: bool = False, outcome: str = ""):
+        # Reflexion profunda con LLM (si hay GROQ_API_KEY); si no, insight local.
+        deep = deep_insight(task_name, success, outcome, lesson) or lesson
         self.memory.remember_experience(Experience(
             id=None, timestamp=datetime.now().isoformat(), type=ExperienceType.INSIGHT,
-            context="insight automatico", action="reflexion", outcome=lesson,
-            lesson=lesson, importance=8.0, tags=["insight"]))
+            context="insight automatico", action="reflexion", outcome=deep,
+            lesson=deep, importance=8.0, tags=["insight"]))
