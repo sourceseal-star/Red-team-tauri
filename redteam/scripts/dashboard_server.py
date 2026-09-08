@@ -107,6 +107,10 @@ DEVICES_FILE  = DATA_DIR / "rasp_devices.json"
 HONEYPOT_FILE = DATA_DIR / "honeypot.json"
 SOAR_FILE     = DATA_DIR / "soar_dags.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"
+# 2026-09-08 — persistencia del último escaneo de topología: la War Room
+# restaura los hosts (IP/MAC/puertos) al reabrir, aunque el backend se
+# haya reiniciado. Puro caché de lectura; el archivo nunca bloquea nada.
+TOPOLOGY_CACHE = DATA_DIR / "topology_last.json"
 
 def _load_json(path: Path, default):
     if path.exists():
@@ -2491,12 +2495,31 @@ async def scan_topology(subnet: str = ""):
                 h["vendor"] = fp["vendor"]
 
     await broadcast({"type": "progress", "payload": f"Topología: {len(hosts)} hosts en {subnet}" + (" (via TCP fallback)" if used_tcp_fallback else "")})
+    # 2026-09-08 — guardar el último escaneo en disco (aditivo, no bloquea):
+    # permite que la War Room restaure los puntos al reabrir el navegador.
+    try:
+        with open(TOPOLOGY_CACHE, "w", encoding="utf-8") as _tf:
+            json.dump({"saved_at": datetime.now().isoformat(), "subnet": subnet,
+                      "results": hosts, "method": "tcp-connect" if used_tcp_fallback else "nmap"},
+                     _tf, ensure_ascii=False, indent=1)
+    except Exception as _te:
+        print(f"[TOPO-CACHE] no se pudo guardar el escaneo: {_te}")
     local_ip = _detect_local_network().get("ip", "")
     local_hostname = socket.gethostname() if hasattr(socket, "gethostname") else ""
     return {"results": hosts, "hosts_up": len(hosts), "subnet": subnet,
             "local_ip": local_ip, "local_hostname": local_hostname,
             "method": "tcp-connect" if used_tcp_fallback else "nmap",
             "nmap_note": nmap_note if used_tcp_fallback else None}
+
+@app.get("/api/scan/topology/last")
+async def scan_topology_last():
+    """Último escaneo de topología guardado en disco (2026-09-08).
+    Devuelve results vacíos si nunca se ha escaneado — nunca error."""
+    try:
+        with open(TOPOLOGY_CACHE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"results": [], "saved_at": None, "subnet": None}
 
 # ── Cámaras ──────────────────────────────────────────────────────────────────
 CAM_PORTS = [554, 80, 443, 8000, 8080, 37777, 8554]
