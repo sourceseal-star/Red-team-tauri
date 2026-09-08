@@ -102,7 +102,8 @@ def analyze_number(number: str, context: dict | None = None) -> dict:
         r["spam_score"] += 60
         r["tags"].append("numero_corto_sospechoso")
 
-    # ── Colombia
+    # ── Colombia con código de país explícito (+57...)
+    digits = n.replace("+", "")
     if n.startswith("+57") and len(n) >= 12:
         r["country"] = "Colombia"
         pref = n[3:6]
@@ -114,14 +115,30 @@ def analyze_number(number: str, context: dict | None = None) -> dict:
         else:
             r["line_type"] = "Móvil (prefijo no mapeado)"
 
-    # ── Números de 10-11 dígitos sin código de país (típico VoIP scam NANP/US)
-    digits = n.replace("+", "")
-    if len(digits) == 11 and digits.startswith("1") and not n.startswith("+"):
+    # ── Colombia SIN código de país: móviles locales son 10 dígitos y
+    #    empiezan en 3 (300-350). Hay que chequear esto ANTES de asumir NANP,
+    #    porque prefijos como 323 (Movistar) y 350 (WOM) son válidos en
+    #    AMBOS esquemas y se confunden con área codes de EE.UU./Canadá.
+    elif len(digits) == 10 and digits.startswith("3") and not n.startswith("+"):
+        pref = digits[:3]
+        matched = False
+        for carrier, prefs in CO_PREFIXES.items():
+            if pref in prefs:
+                r["country"], r["carrier"], r["line_type"] = "Colombia", carrier, "Móvil (local, sin +57)"
+                matched = True
+                break
+        if not matched:
+            r["country"], r["line_type"] = "Colombia (prefijo móvil no mapeado)", "Móvil"
+        r["tags"].append("colombia_sin_codigo_pais")
+
+    # ── Números de 10-11 dígitos sin código de país que NO calzan con
+    #    Colombia (típico VoIP scam NANP/US)
+    elif len(digits) == 11 and digits.startswith("1") and not n.startswith("+"):
         r["country"] = US_AREA_HINTS.get(digits[1:4], "US/CA con código de país '1'")
         r["line_type"] = "VoIP/fijo NANP"
         r["spam_score"] += 15
         r["tags"].append("nanp_con_codigo_pais")
-    if len(digits) == 10 and not n.startswith("+"):
+    elif len(digits) == 10 and not n.startswith("+"):
         r["country"] = US_AREA_HINTS.get(digits[:3], "Formato NANP (US/CA) sin país")
         r["line_type"] = "VoIP/fijo NANP"
         r["spam_score"] += 15
@@ -228,6 +245,9 @@ def process_call(raw: dict) -> dict | None:
     if number in ("", "-1", "Unknown", "unknown"):
         return None
     duration = int(raw.get("duration", 0) or 0)
+    # simid/sim_slot lo entrega termux-call-log: es la LÍNEA de Harold que
+    # recibió la llamada (SIM física / eSIM), NUNCA el operador de quien llama.
+    sim_hint = raw.get("simid") or raw.get("sim_slot")
     context = {"anomaly": "instant_hangup" if duration == 0 else None}
     r = analyze_number(number, context)
     r["call_time"] = datetime.fromtimestamp(
