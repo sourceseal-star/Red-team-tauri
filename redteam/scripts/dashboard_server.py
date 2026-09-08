@@ -1571,9 +1571,16 @@ async def security_middleware(request: Request, call_next):
 
     # Timeout: los escaneos de red (nmap, ONVIF) pueden tardar hasta 60s en
     # Termux. El resto de endpoints se limita a 25s para evitar cuelgues.
+    # FIX 2026-09-08 (RAÍZ REAL -- 'Request timeout' en Kraken y 'operación
+    # tardó más de 25s' en Android/Campo Wi-Fi): estas rutas NO estaban en la
+    # whitelist de timeout extendido, así que corrían con el default de 25s.
+    # termux-wifi-scaninfo y un NSE scan de Kraken sobre /24 rutinariamente
+    # pasan de 25s. Agregadas: /api/discover/wifi, /api/scan/wifi,
+    # /api/wifi/scan, /api/kraken/scan.
     _scan_paths = ("/api/scan/", "/api/enhanced/discover", "/api/network/cameras",
                    "/api/iot/scan", "/api/capture/", "/api/discover/network",
-                   "/api/android/port-scan")
+                   "/api/android/port-scan", "/api/discover/wifi", "/api/wifi/scan",
+                   "/api/kraken/scan")
     _timeout = 150.0 if any(path.startswith(p) for p in _scan_paths for path in [request.url.path]) else 25.0
     try:
         return await asyncio.wait_for(call_next(request), timeout=_timeout)
@@ -7132,13 +7139,21 @@ class DatabaseV2:
 
 db_v2 = DatabaseV2(DB_PATH_V2)
 
-# ── Seed demo data (solo si la DB está vacía) ──
+# ── Seed demo data (solo si la DB está vacía Y se pide explícitamente) ──
+# FIX 2026-09-08 (RAÍZ REAL -- contradice el pedido explícito de "datos
+# reales, sin simulaciones"): esto sembraba 6 hosts FALSOS (router.local,
+# cam-sala.local, printer-hp.local, unknown-device...) en CUALQUIER
+# instalación nueva, sin avisar. Harold los vio en el Grafo y parecían su
+# red real. Ahora requiere REDTEAM_SEED_DEMO=1 explícito (para demos/dev);
+# por defecto la topología arranca vacía de verdad hasta el primer escaneo.
 def _seed_v2_if_empty():
+    if os.environ.get("REDTEAM_SEED_DEMO", "") != "1":
+        return
     with db_v2._conn() as c:
         count = c.execute("SELECT COUNT(*) FROM v2_hosts").fetchone()[0]
     if count > 0:
         return
-    print("[DB-V2] Seeding demo data...")
+    print("[DB-V2] Seeding demo data (REDTEAM_SEED_DEMO=1)...")
     demo_hosts = [
         ("192.168.1.1", "router.local", "", "Router/AP", 10, [80, 443, 22]),
         ("192.168.1.10", "cam-sala.local", "", "IP Camera Hikvision", 65, [80, 554, 8000]),
@@ -7171,7 +7186,13 @@ def _seed_v2_if_empty():
 
 @app.get("/api/v2/topology/hosts")
 async def v2_list_hosts(
-    limit: int = Query(100, ge=1, le=500),
+    # FIX 2026-09-08 (RAÍZ REAL — 'HOSTS 0' en /topology con el Grafo lleno):
+    # TopologyPanel.tsx pide ?limit=2000 pero el tope aquí era le=500 -> FastAPI
+    # respondía 422 (JSON válido, sin 'hosts'). El fetch del frontend no revisa
+    # response.ok, hace data.hosts||[] sobre el error 422 -> pantalla en blanco
+    # con 0 en las 4 tarjetas mientras el Grafo (endpoint sin límite) sí mostraba
+    # los nodos reales. Antes le=500, ahora le=5000 (cubre el limit=2000 real).
+    limit: int = Query(100, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     search: str = Query(""),
     risk_min: int = Query(0, ge=0, le=100),
