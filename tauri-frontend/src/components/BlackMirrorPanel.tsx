@@ -17,7 +17,19 @@ export default function BlackMirrorPanel() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
-  const forgeCanary = async () => {
+  // FIX 2026-09-08 (RAÍZ REAL — Black Mirror 401 en el teléfono): todos los
+// fetch de este panel salían SIN llave y el middleware global del servidor
+// responde 401 Unauthorized cuando REDTEAM_API_KEY está configurada (que es
+// el caso del teléfono de Harold) — el panel entero daba "Error" silencioso.
+// Mismo patrón que EmergencyRoomPanel (localStorage 'api_token' → Bearer).
+function headers(): Record<string, string> {
+  const token = localStorage.getItem('api_token')
+  const result: Record<string, string> = {}
+  if (token) result.Authorization = `Bearer ${token}`
+  return result
+}
+
+const forgeCanary = async () => {
     if (!recipient.trim()) return;
     setLoading(true);
     setStatus(null);
@@ -26,7 +38,7 @@ export default function BlackMirrorPanel() {
         recipient, doc_type: docType, title: docTitle,
         content: 'Documento altamente confidencial. Distribucion restringida.'
       });
-      const res = await fetch(`/api/blackmirror/canary/forge?${params}`, { method: 'POST' });
+      const res = await fetch(`/api/blackmirror/canary/forge?${params}`, { method: 'POST', headers: headers() });
       const data = await res.json();
       setStatus(`Canary forjado: ${data.recipient} | Token: ${data.token?.slice(0, 16)}...`);
       loadCanaries();
@@ -40,7 +52,7 @@ export default function BlackMirrorPanel() {
 
   const loadCanaries = async () => {
     try {
-      const res = await fetch('/api/blackmirror/canary/status');
+      const res = await fetch('/api/blackmirror/canary/status', { headers: headers() });
       const data = await res.json();
       setCanaries(data.canaries || []);
     } catch {}
@@ -51,8 +63,8 @@ export default function BlackMirrorPanel() {
     setStatus('Analizando patron temporal...');
     try {
       const [profileRes, windowRes] = await Promise.all([
-        fetch(`/api/blackmirror/ghostprint/profile/${ghostHost}`),
-        fetch(`/api/blackmirror/ghostprint/window/${ghostHost}`)
+        fetch(`/api/blackmirror/ghostprint/profile/${ghostHost}`, { headers: headers() }),
+        fetch(`/api/blackmirror/ghostprint/window/${ghostHost}`, { headers: headers() })
       ]);
       setGhostProfile(await profileRes.json());
       setGhostWindow(await windowRes.json());
@@ -67,7 +79,7 @@ export default function BlackMirrorPanel() {
     setLoading(true);
     setStatus(null);
     try {
-      const res = await fetch(`/api/blackmirror/chaos/apply?real_port=${chaosPort}&fake_os=${encodeURIComponent(chaosOS)}`, { method: 'POST' });
+      const res = await fetch(`/api/blackmirror/chaos/apply?real_port=${chaosPort}&fake_os=${encodeURIComponent(chaosOS)}`, { method: 'POST', headers: headers() });
       const data = await res.json();
       setStatus(`Chaos aplicado: puerto ${data.real_port} ahora simula ${data.fake_os}`);
     } catch (e: any) {

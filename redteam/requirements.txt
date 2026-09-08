@@ -11,3 +11,4 @@ httpx>=0.25
 PyJWT>=2.8
 structlog>=23.2
 websockets>=12.0
+reportlab>=4.0  # canary PDF forge (Black Mirror)
