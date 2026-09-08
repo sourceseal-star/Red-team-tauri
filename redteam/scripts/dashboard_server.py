@@ -2525,8 +2525,37 @@ async def scan_topology_last():
 CAM_PORTS = [554, 80, 443, 8000, 8080, 37777, 8554]
 
 @app.post("/api/network/cameras")
+@app.get("/api/network/cameras")
 @app.post("/api/scan/cameras")
-async def scan_cameras():
+@app.get("/api/scan/cameras")
+async def scan_cameras(target: str = Query(None), timeout: float = Query(2.0)):
+    """
+    FIX 2026-09-08 (RAÍZ REAL — 404 en /geo al escanear cámaras):
+    GeoIntel.tsx pide GET con ?target=IP&timeout=N (getWithKey hace fetch
+    sin método = GET) — este endpoint SOLO aceptaba POST y no leía ningún
+    parámetro (siempre escaneaba la subred entera de la interfaz, ignorando
+    lo que el usuario escribía). El choque de método causaba el 404/405 en
+    /geo. Ahora acepta GET y POST, y si viene 'target' explícito (una IP,
+    lo que el usuario escribe en /geo) escanea SOLO esa IP — si no viene,
+    conserva el comportamiento viejo (barrido de toda la subred, usado por
+    el módulo de topología). También agrega 'elapsed_seconds' — GeoIntel.tsx
+    lo muestra en la tarjeta 'Tiempo escaneo' y antes quedaba vacío.
+    """
+    t0 = time.monotonic()
+    if target:
+        ip = target.strip()
+        tasks = [tcp_check(ip, p, timeout=timeout) for p in CAM_PORTS]
+        banners = await asyncio.gather(*tasks)
+        ports_map = {p: b for p, b in zip(CAM_PORTS, banners) if b is not None}
+        cams = []
+        if ports_map:
+            cams.append({"ip": ip, "rtsp": ports_map.get(554), "ports": ports_map,
+                         "type": "camera", "first_seen": datetime.now().isoformat()})
+        elapsed = round(time.monotonic() - t0, 2)
+        return {"target": ip, "results": cams, "count": len(cams),
+                "hosts_with_services": len(cams), "cameras_found": len(cams),
+                "elapsed_seconds": elapsed}
+
     subnet = await asyncio.to_thread(subnet_from_iface)
     base = subnet.rsplit(".", 1)[0] + "."
     rtsp_tasks = [tcp_check(f"{base}{i}", 554, timeout=1.0) for i in range(1, 255)]
@@ -2542,7 +2571,9 @@ async def scan_cameras():
         cams.append({"ip": ip, "rtsp": banner, "ports": ports_map,
                      "type": "camera", "first_seen": datetime.now().isoformat()})
     await broadcast({"type": "progress", "payload": f"Cámaras encontradas: {len(cams)}"})
-    return {"results": cams, "count": len(cams)}
+    elapsed = round(time.monotonic() - t0, 2)
+    return {"results": cams, "count": len(cams), "hosts_with_services": len(cams),
+            "cameras_found": len(cams), "elapsed_seconds": elapsed}
 
 # ── Routers ──────────────────────────────────────────────────────────────────
 ROUTER_PORTS = [80, 443, 22, 23, 8080, 8443, 1900]
@@ -2599,30 +2630,43 @@ RADIO_PORTS = [(8000, "Icecast/ShoutCast"), (8001, "ShoutCast-alt"), (8080, "HTT
 @app.post("/api/scan/antenna")
 @app.post("/api/scan/radio")
 @app.get("/api/network/radio")
-async def scan_radio():
-    subnet = subnet_from_iface()
-    base = subnet.rsplit(".", 1)[0] + "."
-    # Paralelizar: lanzar todos los tcp_check a la vez con un semaphore
-    # para no saturar el event loop (254 IPs × 10 puertos = 2540 checks)
+async def scan_radio(target: str = Query(None), timeout: float = Query(0.3)):
+    """
+    FIX 2026-09-08 (RAÍZ REAL — 'Tiempo escaneo: S' vacío en /geo):
+    faltaba 'elapsed_seconds' en la respuesta — GeoIntel.tsx lo imprime
+    directo y sin ese campo solo queda la 's' suelta. También ahora honra
+    'target': si el usuario escribe una IP en /geo, escanea SOLO esa IP en
+    vez de siempre barrer la subred entera (por eso antes salía un host
+    distinto al que se tecleaba).
+    """
+    t0 = time.monotonic()
     sem = asyncio.Semaphore(200)
 
     async def check_one(ip, port, label):
         async with sem:
-            banner = await tcp_check(ip, port, timeout=0.3)
+            banner = await tcp_check(ip, port, timeout=timeout)
             if banner is not None:
                 return {"ip": ip, "port": port, "protocol": label,
                         "banner": banner[:80], "type": "radio"}
             return None
 
-    tasks = []
-    for i in range(1, 255):
-        ip = f"{base}{i}"
-        for port, label in RADIO_PORTS:
-            tasks.append(check_one(ip, port, label))
+    if target:
+        ip = target.strip()
+        tasks = [check_one(ip, port, label) for port, label in RADIO_PORTS]
+    else:
+        subnet = subnet_from_iface()
+        base = subnet.rsplit(".", 1)[0] + "."
+        tasks = []
+        for i in range(1, 255):
+            ip = f"{base}{i}"
+            for port, label in RADIO_PORTS:
+                tasks.append(check_one(ip, port, label))
 
     raw = await asyncio.gather(*tasks)
     results = [r for r in raw if r is not None]
-    return {"results": results, "count": len(results)}
+    elapsed = round(time.monotonic() - t0, 2)
+    return {"results": results, "count": len(results), "hosts_with_streams": len(results),
+            "radios_found": len(results), "elapsed_seconds": elapsed}
 
 # ── IoT scan por CIDR (escanear red específica) ────────────────────────────────
 @app.post("/api/iot/scan-network")
@@ -7947,6 +7991,27 @@ async def phantom_status():
         }
     except Exception as exc:
         return {"available": False, "status": None, "error": str(exc)[:160]}
+
+
+@app.post("/api/phantom/hunt")
+async def phantom_hunt(payload: dict = Body(...)):
+    """
+    FIX 2026-09-08 (RAÍZ REAL — módulo IoT Phantom en Commander sin cacería):
+    CommanderPanel.tsx llama a POST /api/phantom/hunt (query, playbook,
+    max_results) y esta ruta nunca existió — solo estaba /api/phantom/status
+    (lectura) y /api/phantom/alert (para RECIBIR hallazgos). Faltaba el
+    puente hacia POST /api/hunt/start del Master real en :8002.
+    """
+    try:
+        import httpx as _hx
+        async with _hx.AsyncClient(timeout=8) as client:
+            response = await client.post("http://127.0.0.1:8002/api/hunt/start", json=payload)
+        try:
+            return response.json()
+        except Exception:
+            return {"status": "error", "message": f"Respuesta no-JSON del Master (HTTP {response.status_code})"}
+    except Exception as exc:
+        return {"status": "error", "message": f"PHANTOM Master (:8002) no disponible: {exc}"}
 
 
 # ── NEXUS OMNI v9.0 proxy ───────────────────────────────────

@@ -129,13 +129,18 @@ export function ARTOProvider({
   }, [loadInitialData]);
 
   // 🔄 Actualizar datos periódicamente
+  // FIX 2026-09-08 (RAÍZ REAL — ARTO "Sistema Inactivo" congelado):
+  // antes el polling SOLO corría si systemStats?.running ya era true. Si la
+  // primera consulta caía mientras ARTO todavía inicializaba (arranca con
+  // el servidor y tarda varios segundos), running venía false, el badge
+  // decía "Sistema Inactivo" y NUNCA más se volvía a consultar — el panel
+  // quedaba congelado en falso aunque ARTO ya estuviera corriendo. Ahora:
+  // mientras no esté running se reintenta cada 15s (ARTO puede haber
+  // terminado de arrancar); cuando ya está activo, cada 60s como antes.
   useEffect(() => {
     const interval = setInterval(() => {
-      // Solo polling si ARTO está activo — evita rate limit cuando está inactivo
-      if (systemStats?.running) {
-        loadInitialData();
-      }
-    }, 60000); // Cada 60 segundos — reduce rate limit pressure
+      loadInitialData();
+    }, systemStats?.running ? 60000 : 15000);
 
     return () => clearInterval(interval);
   }, [loadInitialData]);
