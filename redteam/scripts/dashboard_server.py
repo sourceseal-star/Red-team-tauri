@@ -2126,6 +2126,70 @@ def _get_scan_timeout() -> float:
     except Exception:
         return 0.5
 
+
+def _arp_ping_sweep(subnet: str, max_hosts: int = 256, wait: float = 4.0) -> dict:
+    """Ping sweep con el binario 'ping' del sistema + tabla ARP del kernel.
+    SIN ROOT: el ping de toybox/system no usa raw sockets propios, y
+    /proc/net/arp es legible por cualquier app. Los pings corren EN PARALELO
+    (Popen) y el kernel va llenando la tabla ARP con cada respuesta.
+    Por que importa: los CELULARES no escuchan ningun puerto TCP en la LAN,
+    asi que _discover_hosts_tcp() jamas los ve; pero SI responden a ICMP echo.
+    Este barrido hace que aparezcan en la tabla ARP y sean descubiertos.
+    Devuelve {ip: mac} con las entradas alcanzables dentro de la subred."""
+    import ipaddress as _ipa
+    import subprocess as _sp
+    import time as _time
+    result: dict = {}
+
+    def _read_arp():
+        try:
+            net = _ipa.ip_network(subnet, strict=False)
+        except Exception:
+            return result
+        try:
+            with open("/proc/net/arp") as f:
+                lines = f.read().strip().splitlines()[1:]
+            for line in lines:
+                parts = line.split()
+                if (len(parts) >= 6 and parts[3] != "00:00:00:00:00:00"
+                        and _ipa.ip_address(parts[0]) in net):
+                    result[parts[0]] = parts[3]
+        except Exception:
+            pass
+        return result
+
+    try:
+        net = _ipa.ip_network(subnet, strict=False)
+        targets = [str(h) for h in net.hosts()][:max_hosts]
+    except Exception:
+        return _read_arp()
+
+    procs = []
+    try:
+        for ip in targets:
+            try:
+                procs.append(_sp.Popen(
+                    ["ping", "-c", "1", "-W", "1", "-n", ip],
+                    stdout=_sp.DEVNULL, stderr=_sp.DEVNULL))
+            except FileNotFoundError:
+                # No hay binario ping -> solo devolver la tabla ARP actual
+                break
+        # Esperar a que los pings terminen (corren en paralelo; cap total)
+        deadline = _time.time() + wait
+        for pr in procs:
+            try:
+                pr.wait(timeout=max(0.1, deadline - _time.time()))
+            except Exception:
+                pr.kill()
+    except Exception:
+        pass
+    finally:
+        for pr in procs:
+            if pr.poll() is None:
+                try: pr.kill()
+                except Exception: pass
+    return _read_arp()
+
 async def _discover_hosts_tcp(subnet: str) -> list:
     """Escanea cualquier red CIDR (/24, /22, /16, etc.) via TCP connect puro.
     Funciona en Termux sin root. Usa chunking para no saturar la memoria
@@ -2223,6 +2287,19 @@ async def scan_network_stream(subnet: str = ""):
             # Broadcast por WebSocket tambien
             await broadcast({"type": "scan_progress", "scanned": scanned, "total": total, "found": found})
 
+        # ── MERGE ARP/PING (2026-09-08): hosts que TCP no ve pero ping si ──
+        # Los celulares no escuchan puertos TCP -> _tcp_host_alive() nunca los
+        # encuentra. El ping sweep llena /proc/net/arp y aqui los rescatamos.
+        try:
+            swept_arp = await asyncio.to_thread(_arp_ping_sweep, subnet)
+        except Exception:
+            swept_arp = {}
+        arp_only = {ip: mac for ip, mac in swept_arp.items() if ip not in set(alive_hosts)}
+        for ip in sorted(arp_only):
+            found += 1
+            yield f"data: {json.dumps({'type': 'host', 'ip': ip, 'found': found, 'via': 'arp'})}\n\n"
+            await broadcast({"type": "scan_progress", "scanned": total, "total": total, "found": found})
+
         # Fingerprint de hosts encontrados (en paralelo, sin bloquear)
         if alive_hosts:
             fp_sem = asyncio.Semaphore(16)
@@ -2245,6 +2322,18 @@ async def scan_network_stream(subnet: str = ""):
                     "risk_reasons": fp["risk_reasons"],
                     "vendor": fp.get("vendor"),
                     "status": "up"
+                }
+                hosts_data.append(host)
+                yield f"data: {json.dumps({'type': 'host_detail', 'host': host})}\n\n"
+
+            # Hosts vistos SOLO por ARP/ping: sin fingerprint de puertos
+            # (no tienen puertos abiertos), con nota de metodo honesta.
+            for ip, mac in sorted(arp_only.items()):
+                host = {
+                    "ip": ip, "type": "unknown", "ports": [], "risk": "low",
+                    "risk_reasons": ["Detectado via ping/ARP: responde ICMP pero "
+                                    "no tiene puertos TCP abiertos (tipico de celulares)"],
+                    "vendor": None, "status": "up", "mac": mac, "via": "arp",
                 }
                 hosts_data.append(host)
                 yield f"data: {json.dumps({'type': 'host_detail', 'host': host})}\n\n"
@@ -2393,6 +2482,22 @@ async def discover_network(subnet: str = ""):
                     arp_macs[parts[0]] = parts[3]
         except Exception:
             pass
+
+    # PING SWEEP (2026-09-08): la tabla ARP solo tiene hosts con los que el
+    # telefono hablo RECIENTEMENTE (por eso la topologia veia 3-4 dispositivos
+    # cuando habian 8). Barrimos toda la subred con pings en paralelo: cada
+    # respuesta ICMP llena la tabla ARP del kernel, y las releemos. Los
+    # celulares NO escuchan puertos TCP pero SI responden ping -> ahora
+    # aparecen. ~4-5 segundos extra, sin root (ping de sistema + /proc/net/arp).
+    try:
+        swept = await asyncio.to_thread(_arp_ping_sweep, subnet)
+        for ip, mac in swept.items():
+            arp_macs.setdefault(ip, mac)
+        if swept:
+            await broadcast({"type": "progress",
+                             "payload": f"Ping sweep ARP: {len(swept)} hosts respondieron ICMP"})
+    except Exception:
+        pass  # sin ping o sin /proc/net/arp -> seguir como antes
 
     # 2. Descubrimiento REAL: TCP connect() en toda la subred (SIEMPRE corre,
     # sin importar el resultado de ARP -- este es el fix del bug).
