@@ -74,6 +74,15 @@ export default function EmergencyRoomPanel() {
   const [quickSending, setQuickSending] = useState(false)
   const [quickResult, setQuickResult] = useState<any>(null)
 
+  // FIX SEGURIDAD (2026-09-08): esta pantalla es de EMERGENCIA/SOS — no puede
+  // quedarse pegada mostrando canales verdes viejos si el backend se cayó.
+  // Antes: si el fetch fallaba, no se actualizaba nada y el usuario veía el
+  // último estado bueno como si fuera el actual (falsa sensación de "listo").
+  // Ahora: cualquier fallo marca isStale=true y el banner se pone rojo
+  // "SIN CONEXIÓN" encima de los datos viejos, en vez de ocultarlo.
+  const [isStale, setIsStale] = useState(false)
+  const [lastGoodAt, setLastGoodAt] = useState<number | null>(null)
+
   const fetchStatus = useCallback(async () => {
     setLoading(true)
     try {
@@ -85,6 +94,12 @@ export default function EmergencyRoomPanel() {
       if (statusRes.ok) {
         const s = await statusRes.json()
         setStatus(s)
+        setIsStale(false)
+        setLastGoodAt(Date.now())
+      } else {
+        // El backend respondió pero con error (503/504/etc) — NO nos quedamos
+        // con el estado viejo mostrando canales verdes falsos.
+        setIsStale(true)
       }
       if (contactsRes.ok) {
         const c = await contactsRes.json()
@@ -95,7 +110,8 @@ export default function EmergencyRoomPanel() {
         setLastEmergency(d.last_emergency || null)
       }
     } catch {
-      // offline
+      // Ni siquiera hubo respuesta de red — mismo tratamiento: marcar caído.
+      setIsStale(true)
     } finally {
       setLoading(false)
     }
@@ -198,13 +214,26 @@ export default function EmergencyRoomPanel() {
         </button>
       </div>
 
+      {/* Aviso de desconexión — NO se oculta, aunque haya datos viejos abajo */}
+      {isStale && (
+        <Card className="border border-red-600 bg-red-950/40">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-sm font-bold text-red-300">
+              SIN CONEXIÓN con COM-LINK — lo que ves abajo es el último estado conocido
+              {lastGoodAt ? ` (hace ${Math.max(0, Math.round((Date.now() - lastGoodAt) / 1000))}s)` : ''}, NO el estado actual.
+            </span>
+          </div>
+        </Card>
+      )}
+
       {/* Status overview */}
-      <Card className={`border ${readyCount > 0 ? 'border-green-500/30' : 'border-red-500/30'}`}>
+      <Card className={`border ${isStale ? 'border-slate-700 opacity-60' : readyCount > 0 ? 'border-green-500/30' : 'border-red-500/30'}`}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${readyCount > 0 ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+            <div className={`w-3 h-3 rounded-full ${isStale ? 'bg-slate-500' : readyCount > 0 ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
             <span className="text-sm font-semibold text-slate-200">
-              {readyCount > 0 ? `${readyCount}/7 canales listos` : 'Sin canales disponibles'}
+              {isStale ? `${readyCount}/7 canales (desactualizado)` : readyCount > 0 ? `${readyCount}/7 canales listos` : 'Sin canales disponibles'}
             </span>
           </div>
           <span className="text-xs text-slate-500">
@@ -248,6 +277,12 @@ export default function EmergencyRoomPanel() {
           Envía un mensaje a todos los contactos de confianza usando todos los canales disponibles.
           Incluye tu ubicación GPS automáticamente.
         </p>
+        {isStale && (
+          <p className="text-xs font-semibold text-amber-400 mb-2">
+            ⚠ No podemos confirmar el estado real de los canales ahora mismo — si
+            envías el SOS, verifica por otro medio (llamada, otra app) que llegó.
+          </p>
+        )}
         <div className="space-y-3">
           <input
             type="text"
