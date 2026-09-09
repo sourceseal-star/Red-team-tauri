@@ -543,6 +543,43 @@ async def api_headers(url: str = Query(..., description="URL completa a escanear
     return await header_fingerprint(url)
 
 
+
+def _fuentes_summary(sub_result: dict) -> dict:
+    """HONESTIDAD (2026-09-08): resume de dónde salió cada dato del OSINT.
+    Todos los datos de este módulo son de APIs reales o resolución DNS real —
+    esto lo deja explícito para el operador, sin adivinar."""
+    subs = (sub_result or {}).get("subdomains") or (sub_result or {}).get("results") or []
+    n_dns = len(subs)
+    fuentes = {
+        "whois": {"fuente": "RDAP / python-whois", "tipo": "API pública real, sin key", "real": True},
+        "dns": {"fuente": "resolución DNS activa", "tipo": "consulta de red real", "real": True},
+        "subdominios": {
+            "fuente": "brute-force DNS local (resolución real, cada subdominio verificado contra DNS)",
+            "tipo": f"{n_dns} subdominios resueltos",
+            "real": True,
+        },
+        "crt_sh": {
+            "fuente": "crt.sh (API pública, sin key)",
+            "tipo": "disponible en el motor OSINT del dashboard (/api/osint — MÓDULO 4)",
+            "real": True,
+        },
+    }
+    # Fuentes de intel que NO se consultan en esta vista (con su motivo honesto)
+    for nombre, env, url in [
+        ("shodan", "SHODAN_API_KEY", "api.shodan.io"),
+        ("virustotal", "VIRUSTOTAL_API_KEY", "virustotal.com"),
+        ("censys", "CENSYS_API_ID", "search.censys.io"),
+        ("hunter", "HUNTER_API_KEY", "hunter.io"),
+    ]:
+        activo = bool(os.environ.get(env, "").strip())
+        fuentes[nombre] = {
+            "fuente": url,
+            "real": activo,
+            "nota": "API real con key configurada" if activo else f"NO consultado: falta {env}",
+        }
+    return fuentes
+
+
 @osint_router.get("/full/{domain}")
 async def api_full_osint(domain: str):
     """
@@ -559,6 +596,8 @@ async def api_full_osint(domain: str):
         "whois": whois_result,
         "dns": dns_result,
         "subdomains": sub_result,
+        "fuentes": _fuentes_summary(sub_result),
+        "nota_honestidad": "Cada dato lleva su campo 'source'. Lo que no es API real se marca abajo en 'fuentes'.",
         "timestamp": datetime.utcnow().isoformat(),
     }
 

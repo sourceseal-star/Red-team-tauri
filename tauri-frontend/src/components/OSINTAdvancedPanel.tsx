@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   Globe, Search, Server, Mail, Shield, FileText, Database,
   Download, RefreshCw, Loader2, AlertCircle, CheckCircle2,
@@ -74,6 +74,16 @@ export default function OSINTAdvancedPanel() {
   const [selectedEngine, setSelectedEngine] = useState<SearchEngine>('all');
   const [fullScanLoading, setFullScanLoading] = useState(false);
   const [fullScanResult, setFullScanResult] = useState<any>(null);
+
+  // ── HONESTIDAD (2026-09-08): qué fuentes de intel están ACTIVAS de verdad.
+  //    Cada resultado de OSINT lleva su campo 'source' — esto lo resume arriba.
+  const [intelStatus, setIntelStatus] = useState<any>(null);
+  useEffect(() => {
+    fetch('/api/ops/intel-status', { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => setIntelStatus(d))
+      .catch(() => setIntelStatus(null));
+  }, []);
 
   const runFullScanV2 = async () => {
     if (!input.trim()) return;
@@ -263,6 +273,31 @@ export default function OSINTAdvancedPanel() {
               {eng.label}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Fuentes de datos — honestidad en vivo */}
+      {intelStatus && (
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-800">
+          <span className="text-xs font-semibold text-slate-300">
+            {intelStatus.active_count}/{intelStatus.total_sources} fuentes de intel activas
+          </span>
+          {Object.entries(intelStatus.sources as Record<string, { active: boolean; note?: string }>).map(([name, s]: [string, any]) => (
+            <span
+              key={name}
+              title={s?.note || (s?.active ? 'API real activa' : 'Sin API key configurada')}
+              className={`px-2 py-0.5 text-[10px] rounded border ${
+                s?.active
+                  ? 'bg-emerald-900/40 border-emerald-700/60 text-emerald-300'
+                  : 'bg-slate-900 border-slate-700 text-slate-500'
+              }`}
+            >
+              {s?.active ? '✓' : '✗'} {name}
+            </span>
+          ))}
+          <span className="text-[10px] text-slate-600 ml-auto">
+            ✓ = API real con key · ✗ = falta configurar
+          </span>
         </div>
       )}
 
