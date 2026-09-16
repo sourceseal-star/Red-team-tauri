@@ -136,7 +136,7 @@ for d in "$RT_DIR" "$SOL_DIR"; do
       RES="$RT_DIR/sol_rescate"
       if [ -d "$RES" ]; then
         mkdir -p "$SOL_DIR/.rescate_pre"
-        for f in "$RES"/*.py "$RES"/*.sh "$RES"/VERSION.txt; do
+        for f in "$RES"/*.py "$RES"/*.sh "$RES"/*.md "$RES"/VERSION.txt; do
           [ -f "$f" ] || continue
           b=$(basename "$f")
           [ -f "$SOL_DIR/$b" ] && cp "$SOL_DIR/$b" "$SOL_DIR/.rescate_pre/$b" 2>/dev/null
@@ -166,7 +166,35 @@ else
   echo "   (sol_sprites_sync.sh no está — salto la fusión de sprites)"
 fi
 
-# ── 3. Matar zombis viejos ──
+# ── 2¾. Verificación determinista del Bestiario del Qalam ──
+    # Qalam es local y no depende del LLM: si el cerebro está caído, la
+    # alfabetización, transliteración y sello siguen siendo comprobables.
+    verify_qalam() {
+    local qalam_py="$SOL_DIR/sol_qalam.py"
+    local qalam_md="$SOL_DIR/bestiario-qalam.v1.md"
+    if [ ! -f "$qalam_py" ] || [ ! -f "$qalam_md" ]; then
+      bad "Bestiario Qalam incompleto" "faltan sol_qalam.py o bestiario-qalam.v1.md en ~/sol"
+      return 1
+    fi
+    if ! python3 -m py_compile "$qalam_py" >/dev/null 2>&1; then
+      bad "Qalam no compila" "python3 -m py_compile ~/sol/sol_qalam.py"
+      return 1
+    fi
+    local qalam_check
+    qalam_check=$(cd "$SOL_DIR" && python3 -c 'import sol_qalam; r=sol_qalam.verify(); print(str(r["valid"]) + ":" + str(r["count"]) + ":" + sol_qalam.stamp("خخخ")["code"] + ":" + sol_qalam.stamp("بسم")["code"])' 2>/dev/null)
+    local qalam_lines
+    qalam_lines=$(grep -cE '^[[:space:]]*[0-9]{2}[[:space:]]' "$qalam_md" 2>/dev/null || echo 0)
+    if [ "$qalam_check" = "True:38:404 FAIL ✗✗:200 OK ✓" ] && [ "$qalam_lines" = "38" ]; then
+      ok "Bestiario Qalam v1 verificado (38 entradas; 200/404)"
+      return 0
+    fi
+    bad "Bestiario Qalam inválido" "resultado: $qalam_check; entradas canónicas: $qalam_lines"
+    return 1
+    }
+
+    verify_qalam
+
+    # ── 3. Matar zombis viejos ──
 echo "── [3/5] Matando procesos viejos ──"
 pkill -f dashboard_server.py 2>/dev/null && echo "   🧟 dashboard viejo eliminado" || echo "   (no había dashboard corriendo)"
 pkill -f sol_api.py         2>/dev/null && echo "   🧟 sol_api viejo eliminado"   || echo "   (no había sol_api corriendo)"
@@ -229,7 +257,11 @@ echo "$CH" | grep -q '"response"' && ok "Ella RESPONDE: $(echo $CH | head -c 80)
 curl -s -m 30 -o "$CURA_TMP/curar_voz.mp3" "http://127.0.0.1:8001/api/sol/tts?text=hola%20Harold"
 SZ=$(wc -c < "$CURA_TMP/curar_voz.mp3" 2>/dev/null || echo 0)
 [ "$SZ" -gt 2000 ] && ok "Su VOZ habla (${SZ}B de audio real)" || bad "Su voz no genera audio" "pip install gtts"
-# El puerto :8006 es OPCIONAL (extras) — se informa, nunca bloquea el veredicto
+if [ "$SOL_OK" -eq 1 ]; then
+    QALAM_API=$(curl -s -m 8 http://127.0.0.1:8006/api/sol/qalam)
+    echo "$QALAM_API" | grep -q '"count":38' && ok "API Qalam responde con 38 entradas" || bad "API Qalam no responde correctamente" "revisa /api/sol/qalam"
+    fi
+    # El puerto :8006 es OPCIONAL (extras) — se informa, nunca bloquea el veredicto
 if curl -s -m 3 -o /dev/null http://127.0.0.1:8006/api/sol/status 2>/dev/null; then
   echo "   ℹ️  (extra) sol_api.py :8006 también activo — groq/knowledge/sil-advanced disponibles"
 else

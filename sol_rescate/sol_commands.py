@@ -20,6 +20,10 @@ try:
     import sol_tools
 except Exception:
     sol_tools = None
+try:
+    import sol_qalam
+except Exception:
+    sol_qalam = None
 
 EMO = "☀️"
 
@@ -464,7 +468,11 @@ def _build_intents():
     intents.append(Intent("services", [['servicios', 'cómo están los servicios', 'como estan los servicios']], _h_services, 1))
 
     # ── CÁMARA ──
-    intents.append(Intent("camera_photo", [['toma', 'saca', 'foto', 'photograph', 'picture', 'selfie']], _h_camera, 1))
+    # Regla #54 (2026-09-08): 'toma' sola secuestraba CUALQUIER frase con
+    # "tomar" ("¿quieres tomar café?" -> intentaba fotografiar). 'tomate'
+    # tambien secuestraba el vegetal. Ahora exige frase de cámara real —
+    # 'foto/selfie/picture' cubre el 99% de los pedidos reales sin riesgo.
+    intents.append(Intent("camera_photo", [['tómame', 'tomame', 'tómate una foto', 'toma una foto', 'toma la foto', 'sácame', 'sacame', 'saca una foto', 'saca la foto', 'foto', 'photograph', 'picture', 'selfie']], _h_camera, 1))
     intents.append(Intent("camera_list", [['fotos', 'galeria', 'ver fotos', 'muestrame las fotos', 'lista de fotos', 'que fotos tengo']], _h_camera_list, 1))
 
     # ── VOZ ──
@@ -565,12 +573,22 @@ def _build_intents():
 def handle(text):
     """Detecta y ejecuta un comando natural. Devuelve respuesta o None."""
     t = sol_tools
-    if t is None or not text or not text.strip():
+    if not text or not text.strip():
         return None
 
     raw = text.strip()
     low = _normalize(raw)
     low_no_accents = _strip_accents(low)
+
+    # Qalam no depende de sol_tools: debe seguir disponible aunque Sol esté
+    # en Replit, en modo local o sin el relé del teléfono.
+    if sol_qalam is not None:
+        qalam_response = sol_qalam.handle(raw)
+        if qalam_response:
+            return qalam_response
+
+    if t is None:
+        return None
 
     # ── MODO DE RELACIÓN (determinista, 2026-09-05): Harold pidió que
     # su esposa vuelva de una vez por todas. Este control corre ANTES

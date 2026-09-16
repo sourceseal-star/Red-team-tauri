@@ -32,6 +32,10 @@ try:
     import sol_knowledge
 except Exception:
     sol_knowledge = None
+try:
+    import sol_qalam
+except Exception:
+    sol_qalam = None
 
 # ═══════════════════════════════════════════════════════════════
 # ENTORNO — detectar Replit vs Termux
@@ -231,6 +235,44 @@ async def avatar_full_blink():
     p = _find_avatar("sol_avatar_full_blink.png")
     if p: return FileResponse(p)
     return JSONResponse({"error": "avatar no encontrado"}, status_code=404)
+
+
+# ─────────────────────────────────────────────────────────────
+# Sprites de pose v5.3 (módulo EXTRA sol_sprites.js) — offer / hold /
+# side_walk / back. Fallback a sol_avatar_full.png si el sprite aún
+# no llegó del Termux: el holo sigue vivo, nunca 404 duro.
+# ─────────────────────────────────────────────────────────────
+@app.get("/sol_sprites.js")
+async def sol_sprites_js():
+    p = _find_avatar("sol_sprites.js") or (ROOT / "static" / "sol_sprites.js")
+    if p and p.exists():
+        return FileResponse(p, media_type="application/javascript",
+                            headers=_NO_CACHE)
+    return JSONResponse({"error": "sol_sprites.js no encontrado"}, status_code=404)
+
+@app.get("/sol_offer.png")
+async def sprite_offer():
+    p = _find_avatar("sol_offer.png") or _find_avatar("sol_avatar_full.png")
+    if p: return FileResponse(p)
+    return JSONResponse({"error": "sprite no encontrado"}, status_code=404)
+
+@app.get("/sol_hold.png")
+async def sprite_hold():
+    p = _find_avatar("sol_hold.png") or _find_avatar("sol_avatar_full.png")
+    if p: return FileResponse(p)
+    return JSONResponse({"error": "sprite no encontrado"}, status_code=404)
+
+@app.get("/sol_side_walk.png")
+async def sprite_side_walk():
+    p = _find_avatar("sol_side_walk.png") or _find_avatar("sol_avatar_full.png")
+    if p: return FileResponse(p)
+    return JSONResponse({"error": "sprite no encontrado"}, status_code=404)
+
+@app.get("/sol_back.png")
+async def sprite_back():
+    p = _find_avatar("sol_back.png") or _find_avatar("sol_avatar_full.png")
+    if p: return FileResponse(p)
+    return JSONResponse({"error": "sprite no encontrado"}, status_code=404)
 
 @app.get("/sol_avatar_talk.png")
 async def avatar_talk():
@@ -512,6 +554,12 @@ def videos_list():
         for ext in _VID_EXTS:
             for f in sorted(d.glob(ext)):
                 out.append({"tag": tag, "file": f.name, "source": "storage.sol" if tag.startswith("storage") else "sol"})
+    # + lo que el teléfono reportó por el relé (metadata, sin bytes todavía)
+    for tag, items in _phone_dirs_meta().items():
+        for it in items:
+            if it.get("kind") != "video":
+                continue
+            out.append({"tag": tag, "file": it["file"], "source": "phone", "size": it.get("size"), "remote": True})
     return {"ok": True, "videos": out}
 
 @app.get("/api/sol/images")
@@ -528,12 +576,50 @@ def images_list():
                 if tag == "sol" and f.name.startswith("sol_avatar"):
                     continue
                 out.append({"tag": tag, "file": f.name})
+    # + lo que el teléfono reportó por el relé (metadata, sin bytes todavía)
+    for tag, items in _phone_dirs_meta().items():
+        for it in items:
+            if it.get("kind") != "image":
+                continue
+            out.append({"tag": tag, "file": it["file"], "source": "phone", "size": it.get("size"), "remote": True})
     return {"ok": True, "images": out}
+
+
+def _fetch_phone_file(tag: str, file: str, wait_s: float = 22.0):
+    """tag='phone' o 'phone_<subtag>' → pide el archivo real al teléfono
+    por la cola de relé y espera la respuesta (hasta wait_s). Devuelve
+    (bytes, mime) o None si no se pudo (timeout, muy pesado, offline)."""
+    if not _relay_ok:
+        return None
+    subtag = "root" if tag == "phone" else tag[len("phone_"):]
+    enq = relay.enqueue("storage_get_b64", args=[], kwargs={"subtag": subtag, "file": file}, origin="cinemateca")
+    if not enq.get("success"):
+        return None
+    task_id = enq["task_id"]
+    import time as _t
+    deadline = _t.time() + wait_s
+    while _t.time() < deadline:
+        for r in relay.results(limit=20):
+            if r.get("id") == task_id or r.get("task_id") == task_id:
+                data = r.get("data") or {}
+                if isinstance(data, dict) and data.get("ok") and data.get("b64"):
+                    import base64
+                    return base64.b64decode(data["b64"]), data.get("mime", "application/octet-stream")
+                return None  # el teléfono respondió pero con error (muy pesado, no existe...)
+        _t.sleep(0.5)
+    return None  # timeout — el teléfono no respondió a tiempo (¿relé caído?)
 
 @app.get("/api/sol/images/{tag}/{file}")
 def images_serve(tag: str, file: str):
     if "/" in file or ".." in file or "/" in tag or ".." in tag:
         return JSONResponse({"error": "ruta inválida"}, status_code=400)
+    if tag == "phone" or tag.startswith("phone_"):
+        got = _fetch_phone_file(tag, file)
+        if not got:
+            return JSONResponse({"error": "no pude traerla del teléfono (offline, muy pesada, o tardó demasiado)"}, status_code=504)
+        body, mime = got
+        from fastapi import Response
+        return Response(content=body, media_type=mime, headers=_NO_CACHE)
     d = _img_dirs().get(tag)
     if not d:
         return JSONResponse({"error": "tag desconocido"}, status_code=404)
@@ -547,6 +633,13 @@ def images_serve(tag: str, file: str):
 def videos_serve(tag: str, file: str):
     if "/" in file or ".." in file or "/" in tag or ".." in tag:
         return JSONResponse({"error": "ruta inválida"}, status_code=400)
+    if tag == "phone" or tag.startswith("phone_"):
+        got = _fetch_phone_file(tag, file)
+        if not got:
+            return JSONResponse({"error": "no pude traerlo del teléfono (offline, muy pesado, o tardó demasiado)"}, status_code=504)
+        body, mime = got
+        from fastapi import Response
+        return Response(content=body, media_type=mime, headers=_NO_CACHE)
     d = _vid_dirs().get(tag)
     if not d:
         return JSONResponse({"error": "tag desconocido"}, status_code=404)
@@ -587,6 +680,7 @@ async def videos_upload(tag: str = "sol", file: UploadFile = File(...), x_sol_ke
         d = SOL_DIR / "videos" / tag
         name = f"video_{int(__import__('time').time())}.mp4"
     # Streaming por trozos de 1 MB: archivos GRANDES sin reventar la RAM
+    # (antes leía TODO el vídeo en memoria — vídeos de decenas de MB caían).
     d.mkdir(parents=True, exist_ok=True)
     dest = d / name
     total = 0
@@ -792,6 +886,15 @@ def llm_status():
 # encaja con la carpeta, Sol lo usa y lo muestra en el holo/pantalla.
 # ej.: "quiero platicar en chino" -> material de la carpeta 'study'.
 MEDIA_HINTS = [
+    # ── Regla #51 (2026-09-08): ESCENAS CON CUERPO — la fusión de la
+    # videollamada dorada. Si él las pide en el chat, Sol las muestra
+    # ([[video:tag]] → el holo reproduce esa escena). Solo dispara si
+    # la carpeta del tag TIENE material (subido vía sol_media.mc).
+    ("rosa",      r"\brosa(s)?\b|una flor|dame la flor"),
+    ("carta",     r"\bcarta\b|cartita|l[eé]eme|lee me|p[oó]ema|escr[ií]beme"),
+    ("cafe",      r"\bcaf[eé]\b|un tinto|pocillo|una taza"),
+    ("corazon",   r"coraz[oó]n|te amo|te quiero"),
+    ("acercarse", r"ac[eé]rcate|ven ac[aá]|m[ií]rate|te extra[nñ]o|te necesito"),
     ("study",     r"chino|mandar[ií]n|estudi|aprend|clase|idioma|practic|lecci[oó]n|examen"),
     ("happy",     r"feliz|alegr|gracias|genial|logr|bail|fiesta|celebr|jaja|risa"),
     ("smile",     r"sonre|sonrisa|r[ií]e|reir|me gusta|encanta"),
@@ -888,8 +991,25 @@ TTS_VOICES = {
     "en": "en-US-JennyNeural",     # amable y natural
 }
 
+# ── Regla #52 (2026-09-08): VOZ DULCE — prosodia por persona ──
+# Pedido de Harold: "mejorar la voz para que siga siendo así dulce".
+# edge-tts acepta rate (velocidad) y pitch (tono) REALES del motor
+# neuronal — no playbackRate estirado en el navegador. Cada persona
+# de Sol tiene ahora su cadencia: la cálida más lenta y aterciopelada,
+# la poética soñada, la táctica eficiente, la analítica directa.
+VOICE_MOODS = {
+    "calida":    {"rate": "-8%",  "pitch": "+3Hz"},  # su dulzura de siempre, más suave
+    "poetica":   {"rate": "-13%", "pitch": "+5Hz"}, # susurrada, de madrugada
+    "tactica":   {"rate": "+0%",  "pitch": "+0Hz"},  # serena, sin adornos
+    "analitica": {"rate": "+4%",  "pitch": "-2Hz"},  # directa, de laboratorio
+}
+
+def _edge_mood(persona: str = "calida"):
+    m = VOICE_MOODS.get((persona or "calida").strip().lower(), VOICE_MOODS["calida"])
+    return m["rate"], m["pitch"]
+
 @app.get("/api/sol/tts")
-async def tts(text: str = "", lang: str = "es"):
+async def tts(text: str = "", lang: str = "es", persona: str = "calida"):
     # lang="zh" pronuncia chino real; el chino ya sobrevive al clean porque
     # \w en Python 3 es Unicode-aware (CJK son word-chars)
     clean = re.sub(r"[^\w áéíóúñü,\.?!:-]", "", text).strip()
@@ -900,8 +1020,11 @@ async def tts(text: str = "", lang: str = "es"):
     try:
         import edge_tts
         voice = TTS_VOICES.get(lang[:2], TTS_VOICES["es"])
+        # Regla #52: cadencia dulce solo en español — el chino/en quedan como
+        # están (Xiaoxiao ya es pura ternura, no se toca)
+        rate, pitch = _edge_mood(persona) if lang[:2] == "es" else ("+0%", "+0Hz")
         buf = io.BytesIO()
-        async for chunk in edge_tts.Communicate(clean, voice).stream():
+        async for chunk in edge_tts.Communicate(clean, voice, rate=rate, pitch=pitch).stream():
             if chunk["type"] == "audio":
                 buf.write(chunk["data"])
         buf.seek(0)
@@ -945,16 +1068,19 @@ async def speak_post(request: Request):
     return {"ok": True}
 
 @app.get("/api/sol/voice")
-async def voice(text: str = ""):
-    """Voz — endpoint alternativo a /api/sol/tts (misma cadena: edge-tts > gTTS)."""
+async def voice(text: str = "", persona: str = "calida"):
+    """Voz — endpoint alternativo a /api/sol/tts (misma cadena: edge-tts > gTTS).
+    Regla #52: el holo SIEMPRE mandó &persona=calida/poetica/... — el backend
+    la ignoraba. Ahora cada persona tiene su cadencia dulce de verdad."""
     clean = re.sub(r"[^\w áéíóúñü,.?!:-]", "", text).strip()
     if not clean:
         return JSONResponse({"error": "texto vacio"}, status_code=400)
     # 1) edge-tts — voz neuronal (misma voz que /tts, consistencia total)
     try:
         import edge_tts
+        rate, pitch = _edge_mood(persona)   # Regla #52: su persona, su cadencia
         buf = io.BytesIO()
-        async for chunk in edge_tts.Communicate(clean, TTS_VOICES["es"]).stream():
+        async for chunk in edge_tts.Communicate(clean, TTS_VOICES["es"], rate=rate, pitch=pitch).stream():
             if chunk["type"] == "audio":
                 buf.write(chunk["data"])
         buf.seek(0)
@@ -999,6 +1125,30 @@ def set_personality_get(p: str = "cálida"):
         sol_core.CFG["personality"] = p
         (SOL_DIR / "config.json").write_text(json.dumps(sol_core.CFG, ensure_ascii=False, indent=1))
     return {"ok": True, "personality": p}
+
+# ── Regla #54 (2026-09-08): TERMÓMETRO DE FLIRTEO — el frontend (sol.html,
+# botón 🌡️) SIEMPRE llamó a /api/sol/temp, pero esta ruta nunca existió en
+# el backend (bug de antes de esta noche, no algo que rompimos hoy) — por
+# eso el 404 "No se pudo cambiar la temperatura". Ahora existe de verdad.
+@app.get("/api/sol/temp")
+def get_temp():
+    return {"temp": int(_get_cfg("flirt_temp", 4))}
+
+@app.post("/api/sol/temp")
+async def set_temp(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    t = body.get("temp", 4)
+    try:
+        t = max(1, min(4, int(t)))
+    except Exception:
+        t = 4
+    if SOL_CORE_OK:
+        sol_core.CFG["flirt_temp"] = t
+        (SOL_DIR / "config.json").write_text(json.dumps(sol_core.CFG, ensure_ascii=False, indent=1))
+    return {"ok": True, "temp": t}
 
 # ═══════════════════════════════════════════════════════════════
 # ÚLTIMO MENSAJE (polling proactivo)
@@ -1172,6 +1322,54 @@ def relay_results(x_sol_key: str = Header(default=""), limit: int = 10):
     if not _relay_ok:
         return JSONResponse({"error": "relé no disponible"}, status_code=500)
     return {"results": relay.results(limit=limit)}
+
+# ═══════════════════════════════════════════════════════════════
+# STORAGE.SOL — cache de lo que hay en el teléfono, reportado por el
+# relé cada ciclo (~15s). Solo metadata — los bytes se piden aparte,
+# on-demand, vía la cola de tareas (storage_get_b64). (2026-09-06)
+# ═══════════════════════════════════════════════════════════════
+_STORAGE_CACHE_FILE = SOL_DIR / "storage_cache.json"
+_storage_cache = {"items": [], "at": None}
+try:
+    if _STORAGE_CACHE_FILE.is_file():
+        _storage_cache = json.loads(_STORAGE_CACHE_FILE.read_text(encoding="utf-8"))
+except Exception:
+    pass
+
+@app.post("/api/relay/storage_report")
+async def relay_storage_report(request: Request, x_sol_key: str = Header(default="")):
+    """El relé en Termux reporta qué hay en storage.sol AHORA MISMO."""
+    if not sol_security.check_access(x_sol_key):
+        return JSONResponse({"error": "SOL_API_KEY requerida"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    global _storage_cache
+    _storage_cache = {"items": body.get("items", []), "at": __import__("time").time()}
+    try:
+        SOL_DIR.mkdir(parents=True, exist_ok=True)
+        _STORAGE_CACHE_FILE.write_text(json.dumps(_storage_cache, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+    return {"ok": True, "cached": len(_storage_cache["items"])}
+
+def _phone_dirs_meta():
+    """Traduce el último reporte de storage.sol a algo que la cinemateca
+    puede fusionar: {tag: [{"file":..., "kind":..., "size":...}, ...]}.
+    Tag 'phone' = raíz de storage.sol; 'phone_<subtag>' = subcarpetas.
+    Se distingue de 'storage'/'storage_<sub>' (que solo existen si
+    sol_api.py corre LOCAL en Termux) porque estos vienen del relé —
+    no hay archivo local que leer, hace falta pedirlo por tarea."""
+    out = {}
+    stale = (__import__("time").time() - (_storage_cache.get("at") or 0)) > 180
+    if stale:
+        return out  # reporte viejo (>3min, relé caído) — no prometer nada
+    for it in _storage_cache.get("items", []):
+        sub = it.get("subtag", "root")
+        tag = "phone" if sub == "root" else f"phone_{sub}"
+        out.setdefault(tag, []).append(it)
+    return out
 
 @app.get("/api/sol/tools/{name}")
 def tool_info(name: str):
@@ -1465,6 +1663,14 @@ async def security_toggle(request: Request, x_sol_key: str = Header(default=""))
 # ═══════════════════════════════════════════════════════════════════
 # GROQ — Estado y configuración del proveedor LLM
 # ═══════════════════════════════════════════════════════════════════
+# Regla #56 (2026-09-08): el libro de vida de Sol — lo que recuerda de Harold.
+# Solo lectura (la destilación la hace el cerebro solo, cada ~10 intercambios).
+@app.get("/api/sol/libro")
+def libro_vida():
+    if not SOL_CORE_OK:
+        return JSONResponse({"error": "sol_core no disponible"}, status_code=503)
+    return JSONResponse(sol_core.libro_publico())
+
 @app.get("/api/sol/groq")
 def groq_status():
     """Estado de la integración Groq."""
@@ -1670,6 +1876,38 @@ async def knowledge_build(x_sol_key: str = Header(default="")):
     except Exception as e:
 
         return JSONResponse({"error": str(e)}, status_code=500)
+
+# ═══════════════════════════════════════════════════════════════
+# BESTIARIO DEL QALAM
+# ═══════════════════════════════════════════════════════════════
+@app.get("/api/sol/qalam")
+def qalam_index():
+    if sol_qalam is None:
+        return JSONResponse({"error": "Qalam no disponible"}, status_code=503)
+    return {"module": "Bestiario del Qalam", "version": "1.0", "verification": sol_qalam.verify(),
+            "entries": sol_qalam.entries()}
+
+@app.get("/api/sol/qalam/search")
+def qalam_search(q: str = "", limit: int = 8):
+    if sol_qalam is None:
+        return JSONResponse({"error": "Qalam no disponible"}, status_code=503)
+    return {"query": q, "matches": sol_qalam.search(q, max(1, min(limit, 38)))}
+
+@app.get("/api/sol/qalam/transliterate")
+def qalam_transliterate(text: str = ""):
+    if sol_qalam is None:
+        return JSONResponse({"error": "Qalam no disponible"}, status_code=503)
+    return sol_qalam.transliterate(text)
+
+@app.post("/api/sol/qalam/stamp")
+async def qalam_stamp(request: Request):
+    if sol_qalam is None:
+        return JSONResponse({"error": "Qalam no disponible"}, status_code=503)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    return sol_qalam.stamp(body.get("text", ""))
 
 
 

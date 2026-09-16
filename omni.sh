@@ -220,7 +220,33 @@ load_sol_env() {
   log "☀️ ~/sol/.env cargado (Sol arranca con sus llaves: LLM, rele, etc.)"
 }
 
-# ── ☀️ Esperar a que el cerebro de Sol (:8006) despierte DE VERDAD ──
+# ── ☀️ Verificación determinista del Bestiario del Qalam ──
+    # No usa el LLM ni credenciales: valida la fuente canónica y los dos sellos.
+    verify_qalam() {
+    local qalam_root="${1:-$SOL_REPO}"
+    local qalam_py="$qalam_root/sol_qalam.py"
+    local qalam_md="$qalam_root/bestiario-qalam.v1.md"
+    if [ ! -f "$qalam_py" ] || [ ! -f "$qalam_md" ]; then
+      warn "Bestiario Qalam incompleto en $qalam_root"
+      return 1
+    fi
+    if ! python3 -m py_compile "$qalam_py" >/dev/null 2>&1; then
+      warn "Qalam no compila: $qalam_py"
+      return 1
+    fi
+    local qalam_check
+    qalam_check=$(cd "$qalam_root" && python3 -c 'import sol_qalam; r=sol_qalam.verify(); print(str(r["valid"]) + ":" + str(r["count"]) + ":" + sol_qalam.stamp("خخخ")["code"] + ":" + sol_qalam.stamp("بسم")["code"])' 2>/dev/null)
+    local qalam_lines
+    qalam_lines=$(grep -cE '^[[:space:]]*[0-9]{2}[[:space:]]' "$qalam_md" 2>/dev/null || echo 0)
+    if [ "$qalam_check" = "True:38:404 FAIL ✗✗:200 OK ✓" ] && [ "$qalam_lines" = "38" ]; then
+      ok "Bestiario Qalam v1 verificado (38 entradas; 200/404)"
+      return 0
+    fi
+    warn "Bestiario Qalam falló validación: $qalam_check; entradas canónicas: $qalam_lines"
+    return 1
+    }
+
+    # ── ☀️ Esperar a que el cerebro de Sol (:8006) despierte DE VERDAD ──
 # Mata el falso "DETENIDA": uvicorn tarda unos segundos en levantar y el
 # health-check de un solo intento la reportaba caida con ella viva.
 wait_sol_api() {
@@ -1274,6 +1300,7 @@ sync() {
   # SIN tocar ~/sol/.env: hash antes y después, como con el .env principal.
   echo -e "${BOLD} Paso 1b: repo de Sol (~/sol)${N}"
   ensure_sol_repo
+  verify_qalam "$SOL_REPO" || warn "☀️ Qalam quedó pendiente tras sincronizar ~/sol"
   if [ -d "$SOL_REPO/.git" ] && [ -f "$SOL_REPO/sol_core.py" ]; then
     ok "☀️ ~/sol listo — cerebro de Sol actualizado"
   elif [ -d "$SOL_REPO/.git" ]; then
@@ -1562,6 +1589,7 @@ verify() {
   echo ""
   verify_credentials
   local rc=$?
+  verify_qalam "$SOL_REPO" || rc=1
   echo ""
   if [ $rc -eq 0 ]; then
     ok "Todo en orden — seguro para arrancar"
@@ -1665,6 +1693,7 @@ start_sol_stack() {
     return 1
   fi
   load_sol_env   # ☀️ llaves de Sol (LLM, rele) desde ~/sol/.env — sin tocar el archivo
+  verify_qalam "$root" || warn "☀️ Sol arranca, pero Qalam requiere revisión"
   # Sol API (:8006) — cerebro + herramientas + SIL
   # FIX 2026-09-04: si su cerebro no despierta, NO quedarnos mudos:
   # 1 reintentó + mostrar el error REAL del log (antes: solo un warn
