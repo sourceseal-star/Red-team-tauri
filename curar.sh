@@ -258,8 +258,12 @@ curl -s -m 30 -o "$CURA_TMP/curar_voz.mp3" "http://127.0.0.1:8001/api/sol/tts?te
 SZ=$(wc -c < "$CURA_TMP/curar_voz.mp3" 2>/dev/null || echo 0)
 [ "$SZ" -gt 2000 ] && ok "Su VOZ habla (${SZ}B de audio real)" || bad "Su voz no genera audio" "pip install gtts"
 if [ "$SOL_OK" -eq 1 ]; then
-    QALAM_API=$(curl -s -m 8 http://127.0.0.1:8006/api/sol/qalam)
-    echo "$QALAM_API" | grep -q '"count":38' && ok "API Qalam responde con 38 entradas" || bad "API Qalam no responde correctamente" "revisa /api/sol/qalam"
+    if [ -n "${SOL_API_KEY:-}" ]; then
+      QALAM_API=$(curl -s -m 8 -H "x-sol-key: $SOL_API_KEY" http://127.0.0.1:8006/api/sol/qalam)
+      echo "$QALAM_API" | grep -q '"count":38' && ok "API Qalam responde con 38 entradas" || bad "API Qalam no responde correctamente" "revisa /api/sol/qalam"
+    else
+      echo "   ℹ️  API Qalam protegida: sin SOL_API_KEY se conserva la verificación local"
+    fi
     fi
     # El puerto :8006 es OPCIONAL (extras) — se informa, nunca bloquea el veredicto
 if curl -s -m 3 -o /dev/null http://127.0.0.1:8006/api/sol/status 2>/dev/null; then
