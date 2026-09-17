@@ -55,7 +55,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query, Depends, HTTPException, Security, Body
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query, Depends, HTTPException, Security, Body, BackgroundTasks
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, Response, PlainTextResponse, StreamingResponse
@@ -8543,82 +8543,7 @@ async def sol_api_fallback_proxy(rest: str, request: Request):
 
 print(f"[SOL] Proxy fallback /api/sol/* → {_SOL_PROXY_BASE} (para groq/knowledge/repos/security/sil-advanced)", flush=True)
 
-# ═════════════════════════════════════════════════════════════════════════════
-#  FRONTEND ESTÁTICO — SPA
-# ═════════════════════════════════════════════════════════════════════════════
-# Este catch-all debe registrarse después de TODAS las rutas API. Si se registra
-# antes, FastAPI captura las rutas declaradas más abajo y devuelve un 404 JSON.
-if DIST.exists() and DIST.is_dir():
-    assets_dir = DIST / "assets"
-    if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    @app.get("/{full_path:path}")
-    async def spa_fallback(full_path: str):
-        # index.html: SIEMPRE no-cache (referencia los bundles con hash actuales)
-        if not full_path:
-            index = DIST / "index.html"
-            return FileResponse(index, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
-        if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/", "leviathan/")):
-            return JSONResponse({"error": "not found"}, status_code=404)
-        if full_path.startswith("assets/"):
-            # /assets/*: nombres con hash de contenido (Vite) -> cachear fuerte es seguro
-            candidate = DIST / full_path
-            if candidate.exists() and candidate.is_file():
-                return FileResponse(candidate)
-            return JSONResponse({"error": "not found"}, status_code=404)
-        candidate = DIST / full_path
-        if candidate.exists() and candidate.is_file():
-            return FileResponse(candidate)
-        # Fallback SPA (rutas de React Router) -> también index.html, también no-cache
-        index = DIST / "index.html"
-        return FileResponse(index, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
-else:
-    @app.get("/{full_path:path}")
-    async def no_dist_fallback(full_path: str):
-        if full_path.startswith(("api/", "canary/", "ws", "health", "motor/", "hls/")):
-            return JSONResponse({"error": "not found"}, status_code=404)
-        return JSONResponse({"status": "ok", "backend": "red-team-tauri-unified",
-                            "dist_built": False, "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})"})
-
-if __name__ == "__main__":
-    import uvicorn
-    import socket as _socket
-    host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "8001"))
-
-    # GUARDIA ANTI-ZOMBIE: si ya hay algo escuchando en este puerto (un
-    # proceso viejo que "pkill" no logro matar a tiempo), NO arrancar un
-    # segundo proceso encima. Dos backends vivos en el mismo puerto
-    # producen 401 al azar segun cual atienda cada request -> paneles
-    # "rotos" de forma intermitente e imposible de diagnosticar a ojo.
-    _probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-    _probe.settimeout(0.5)
-    try:
-        _probe.connect(("127.0.0.1", port))
-        print(f"[FATAL] Ya hay un proceso escuchando en el puerto {port}.", flush=True)
-        print(f"[FATAL] Mata todos los procesos viejos antes de arrancar uno nuevo:", flush=True)
-        print(f"[FATAL]   pkill -9 -f dashboard_server.py", flush=True)
-        print(f"[FATAL] Si Termux esta cerrado y el puerto sigue ocupado, cierra la app", flush=True)
-        print(f"[FATAL] Termux por completo (quitala de apps recientes) y reintenta.", flush=True)
-        raise SystemExit(1)
-    except (ConnectionRefusedError, OSError):
-        pass  # puerto libre, seguir normal
-    finally:
-        _probe.close()
-    print("═" * 60, flush=True)
-    print(f"  RED-TEAM-TAURI · Unified Dashboard Backend v3.0", flush=True)
-    print(f"  → Escuchando en  http://{host}:{port}", flush=True)
-    print(f"  → Frontend dist/ {'OK' if DIST.exists() else 'FALTA'}: {DIST}", flush=True)
-    print(f"  → WebSocket:     ws://{host}:{port}/ws", flush=True)
-    print(f"  → psutil: {'OK' if HAS_PSUTIL else 'NOT AVAILABLE'}", flush=True)
-    print(f"  → geo_intel: {'OK' if _GEO_INTEL_OK else 'NOT AVAILABLE'}", flush=True)
-    print(f"  → Sin mocks. Sin dummy data. Solo datos reales.", flush=True)
-    print(f"  → ARTO AI: {'OK' if _ARTO_OK else 'NOT AVAILABLE'}", flush=True)
-    print(f"  → LEVIATHAN: {'OK' if _LEVIATHAN_OK else 'NOT AVAILABLE'}", flush=True)
-    _seed_v2_if_empty()
-    print("═" * 60, flush=True)
-    uvicorn.run(app, host=host, port=port, log_level="info")
 
 # === MÓDULO D — TACTICAL EXECUTOR (Ejecución real: scan + creds + informe) ===
 # Integrado al dashboard: usa el mismo motor TCP que discover_network, pero
@@ -8639,6 +8564,155 @@ try:
 except Exception as _tactical_err:
     _TACTICAL_OK = False
     print(f"[WARN] tactical_executor import falló: {_tactical_err}", flush=True)
+
+# ── Auditoría táctica ASÍNCRONA multi-subred ──────────────────────
+# Patrón del orquestador LEVIATHAN (leviathan_core/orchestrator.py):
+# POST responde en milisegundos con job_id; el pipeline pesado corre en
+# background; GET /status/{job_id} para polling. Anti-OOM de Android:
+# pausa de 0.5s entre subredes (misma regla que el orquestador).
+TACTICAL_JOBS: Dict[str, Dict[str, Any]] = {}
+
+
+async def _tactical_discover_subnet(subnet: str) -> list:
+    """Descubrimiento TCP + fingerprint de una subred (sin root, Termux-friendly)."""
+    local_ip = _detect_local_network().get("ip", "")
+    gateway = await asyncio.to_thread(_detect_gateway, subnet)
+    tcp_ips = set(await _discover_hosts_tcp(subnet))
+    if gateway:
+        tcp_ips.add(gateway)
+    tcp_ips.discard(local_ip)
+    hosts = []
+    if tcp_ips:
+        ip_list = sorted(tcp_ips)
+        fp_results = await asyncio.gather(*[_fingerprint_host(ip) for ip in ip_list])
+        for ip, fp in zip(ip_list, fp_results):
+            hosts.append({
+                "ip": ip, "mac": None, "type": fp["type"],
+                "ports": [{"port": p, "service": SERVICE_NAMES.get(p, "unknown"),
+                           "state": "open"} for p in fp["ports"]],
+                "vendor": fp.get("vendor"),
+                "risk": fp["risk"], "risk_reasons": fp["risk_reasons"],
+            })
+    return hosts
+
+
+async def _tactical_job(job_id: str, payload: dict) -> None:
+    """Worker en background: recorre las subredes UNA por UNA (anti-OOM Android)."""
+    subnets = payload.get("subnets") or [""]
+    scan_ports = [int(p) for p in payload.get("ports")] if payload.get("ports") else None
+    notify_tg = payload.get("notify_telegram", True)
+    J = TACTICAL_JOBS[job_id]
+    J["status"] = "running"
+    J["started_at"] = time.time()
+    total = len(subnets)
+    agg = {"hosts_scanned": 0, "hosts": [], "cameras": [],
+           "credentials_found": [], "elapsed_seconds": 0.0}
+    J["reports"] = []
+    J["subnets_done"] = []
+    for i, subnet in enumerate(subnets):
+        label = subnet or "auto"
+        J["progress"] = {"current": i + 1, "total": total, "subnet": label,
+                         "percent": int(i * 100 / total)}
+        try:
+            if not subnet:
+                subnet = await asyncio.to_thread(subnet_from_iface)
+            hosts = await _tactical_discover_subnet(subnet)
+
+            async def _progress(idx, n, ip, _s=label, _i=i):
+                msg = f"[{job_id}] {_i+1}/{total} {_s}: {idx+1}/{n} — {ip}"
+                await broadcast({"type": "tactical_progress", "payload": msg})
+
+            results = await _tactical_run(hosts, scan_ports=scan_ports,
+                                         progress_callback=_progress)
+            report_info = _tactical_report(results, REPORTS)
+            J["reports"].append({"subnet": label, **report_info})
+            J["subnets_done"].append({
+                "subnet": label, "hosts_found": len(hosts),
+                "cameras": len(results.get("cameras", [])),
+                "credentials_found": len(results.get("credentials_found", [])),
+                "report": report_info.get("filename", ""),
+            })
+            agg["hosts_scanned"] += results.get("hosts_scanned", 0)
+            agg["hosts"] += results.get("hosts", [])
+            agg["cameras"] += results.get("cameras", [])
+            agg["credentials_found"] += results.get("credentials_found", [])
+            agg["elapsed_seconds"] += results.get("elapsed_seconds", 0.0)
+        except Exception as e:
+            J.setdefault("errors", []).append({"subnet": label, "error": str(e)})
+        if i < total - 1:
+            await asyncio.sleep(0.5)  # anti-OOM Android (regla del orquestador)
+    J["progress"] = {"current": total, "total": total, "subnet": "done",
+                     "percent": 100}
+    J["results"] = agg
+    # Telegram: UN solo resumen agregado (no spam por subred)
+    if notify_tg and _TELEGRAM_CONFIG["token"] and _TELEGRAM_CONFIG["chat_id"]:
+        summary = ("🎯 Auditoría táctica multi-subred completada\n"
+                   f"🌐 Subredes: {', '.join(s or 'auto' for s in subnets)}\n"
+                   f"📦 Hosts: {agg['hosts_scanned']}\n"
+                   f"📷 Cámaras: {len(agg['cameras'])}\n"
+                   f"🔑 Credenciales válidas: {len(agg['credentials_found'])}\n"
+                   f"📄 Informes sellados: {len(J['reports'])}")
+        await _telegram_send(summary)
+    # Alertas de credenciales (mismo criterio que el endpoint síncrono)
+    for cred in agg["credentials_found"][:3]:
+        await broadcast({
+            "type": "alert", "severity": "critical",
+            "payload": (f"🔑 CREDENCIALES VÁLIDAS: {cred['ip']}:{cred['port']} → "
+                        f"{cred['user']}:{cred['password']} ({cred['method']})"),
+        })
+    await broadcast({"type": "tactical_complete", "payload": agg})
+    J["status"] = "completed"
+    J["finished_at"] = time.time()
+    J["elapsed"] = round(J["finished_at"] - J["started_at"], 2)
+
+
+@app.post("/api/tactical/scan/async")
+async def tactical_scan_async(background_tasks: BackgroundTasks,
+                              payload: dict = Body(default={})):
+    """Lanza una auditoría táctica multi-subred SIN bloquear la petición.
+
+    Body: {"subnets": ["192.168.1.0/24", "10.0.0.0/24"],   # vacío = auto-detect
+           "ports": null, "notify_telegram": true}
+    Responde en milisegundos con job_id; el pipeline corre en background.
+    """
+    if not _TACTICAL_OK:
+        return JSONResponse({"error": "Módulo tactical_executor no disponible"},
+                             status_code=503)
+    subnets = payload.get("subnets")
+    if isinstance(subnets, str):
+        subnets = [s.strip() for s in subnets.split(",") if s.strip()]
+    subnets = [s for s in (subnets or []) if s]
+    if not subnets:
+        subnets = [""]  # auto-detect
+    for s in subnets:
+        if s:
+            try:
+                ipaddress.ip_network(s, strict=False)
+            except ValueError:
+                return JSONResponse({"error": f"CIDR inválido: {s}"},
+                                    status_code=400)
+    job_id = uuid.uuid4().hex[:12]
+    TACTICAL_JOBS[job_id] = {
+        "status": "queued", "subnets": subnets,
+        "created_at": time.time(),
+        "progress": {"current": 0, "total": len(subnets), "percent": 0},
+    }
+    background_tasks.add_task(_tactical_job, job_id, {
+        "subnets": subnets,
+        "ports": payload.get("ports"),
+        "notify_telegram": payload.get("notify_telegram", True),
+    })
+    return {"status": "accepted", "job_id": job_id,
+            "poll": f"/api/tactical/status/{job_id}"}
+
+
+@app.get("/api/tactical/status/{job_id}")
+async def tactical_job_status(job_id: str):
+    job = TACTICAL_JOBS.get(job_id)
+    if job is None:
+        return JSONResponse({"error": "job no existe"}, status_code=404)
+    return job
+
 
 @app.post("/api/tactical/scan")
 async def tactical_scan(payload: dict = Body(default={})):
@@ -8666,29 +8740,7 @@ async def tactical_scan(payload: dict = Body(default={})):
     # 1. Descubrir hosts (reutiliza el endpoint discover_network)
     if not subnet:
         subnet = await asyncio.to_thread(subnet_from_iface)
-    local_info = _detect_local_network()
-    local_ip = local_info.get("ip", "")
-
-    # Wake-up sweep + TCP discovery
-    gateway = await asyncio.to_thread(_detect_gateway, subnet)
-    tcp_ips = set(await _discover_hosts_tcp(subnet))
-    if gateway:
-        tcp_ips.add(gateway)
-    tcp_ips.discard(local_ip)
-
-    # Fingerprint de cada host
-    hosts = []
-    if tcp_ips:
-        ip_list = sorted(tcp_ips)
-        fp_results = await asyncio.gather(*[_fingerprint_host(ip) for ip in ip_list])
-        for ip, fp in zip(ip_list, fp_results):
-            hosts.append({
-                "ip": ip, "mac": None, "type": fp["type"],
-                "ports": [{"port": p, "service": SERVICE_NAMES.get(p, "unknown"),
-                            "state": "open"} for p in fp["ports"]],
-                "vendor": fp.get("vendor"),
-                "risk": fp["risk"], "risk_reasons": fp["risk_reasons"],
-            })
+    hosts = await _tactical_discover_subnet(subnet)
 
     # 2. Scan táctico con prueba de credenciales
     progress_log = []
@@ -8754,3 +8806,82 @@ async def tactical_credential_dict():
 async def tactical_default_ports():
     """Devuelve los puertos que escanea el tactical executor por defecto."""
     return {"ports": _TACTICAL_PORTS} if _TACTICAL_OK else {"error": "no disponible"}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  FRONTEND ESTÁTICO — SPA
+# ═════════════════════════════════════════════════════════════════════════════
+# Este catch-all debe registrarse después de TODAS las rutas API. Si se registra
+# antes, FastAPI captura las rutas declaradas más abajo y devuelve un 404 JSON.
+if DIST.exists() and DIST.is_dir():
+    assets_dir = DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        # index.html: SIEMPRE no-cache (referencia los bundles con hash actuales)
+        if not full_path:
+            index = DIST / "index.html"
+            return FileResponse(index, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}) if index.exists() else JSONResponse({"error": "dist/ empty"}, status_code=404)
+        if full_path.startswith(("api/", "canary/", "ws", "motor/", "hls/", "leviathan/")):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if full_path.startswith("assets/"):
+            # /assets/*: nombres con hash de contenido (Vite) -> cachear fuerte es seguro
+            candidate = DIST / full_path
+            if candidate.exists() and candidate.is_file():
+                return FileResponse(candidate)
+            return JSONResponse({"error": "not found"}, status_code=404)
+        candidate = DIST / full_path
+        if candidate.exists() and candidate.is_file():
+            return FileResponse(candidate)
+        # Fallback SPA (rutas de React Router) -> también index.html, también no-cache
+        index = DIST / "index.html"
+        return FileResponse(index, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}) if index.exists() else JSONResponse({"error": "dist/index.html missing"}, status_code=404)
+else:
+    @app.get("/{full_path:path}")
+    async def no_dist_fallback(full_path: str):
+        if full_path.startswith(("api/", "canary/", "ws", "health", "motor/", "hls/")):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return JSONResponse({"status": "ok", "backend": "red-team-tauri-unified",
+                            "dist_built": False, "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})"})
+
+
+if __name__ == "__main__":
+    import uvicorn
+    import socket as _socket
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8001"))
+
+    # GUARDIA ANTI-ZOMBIE: si ya hay algo escuchando en este puerto (un
+    # proceso viejo que "pkill" no logro matar a tiempo), NO arrancar un
+    # segundo proceso encima. Dos backends vivos en el mismo puerto
+    # producen 401 al azar segun cual atienda cada request -> paneles
+    # "rotos" de forma intermitente e imposible de diagnosticar a ojo.
+    _probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    _probe.settimeout(0.5)
+    try:
+        _probe.connect(("127.0.0.1", port))
+        print(f"[FATAL] Ya hay un proceso escuchando en el puerto {port}.", flush=True)
+        print(f"[FATAL] Mata todos los procesos viejos antes de arrancar uno nuevo:", flush=True)
+        print(f"[FATAL]   pkill -9 -f dashboard_server.py", flush=True)
+        print(f"[FATAL] Si Termux esta cerrado y el puerto sigue ocupado, cierra la app", flush=True)
+        print(f"[FATAL] Termux por completo (quitala de apps recientes) y reintenta.", flush=True)
+        raise SystemExit(1)
+    except (ConnectionRefusedError, OSError):
+        pass  # puerto libre, seguir normal
+    finally:
+        _probe.close()
+    print("═" * 60, flush=True)
+    print(f"  RED-TEAM-TAURI · Unified Dashboard Backend v3.0", flush=True)
+    print(f"  → Escuchando en  http://{host}:{port}", flush=True)
+    print(f"  → Frontend dist/ {'OK' if DIST.exists() else 'FALTA'}: {DIST}", flush=True)
+    print(f"  → WebSocket:     ws://{host}:{port}/ws", flush=True)
+    print(f"  → psutil: {'OK' if HAS_PSUTIL else 'NOT AVAILABLE'}", flush=True)
+    print(f"  → geo_intel: {'OK' if _GEO_INTEL_OK else 'NOT AVAILABLE'}", flush=True)
+    print(f"  → Sin mocks. Sin dummy data. Solo datos reales.", flush=True)
+    print(f"  → ARTO AI: {'OK' if _ARTO_OK else 'NOT AVAILABLE'}", flush=True)
+    print(f"  → LEVIATHAN: {'OK' if _LEVIATHAN_OK else 'NOT AVAILABLE'}", flush=True)
+    _seed_v2_if_empty()
+    print("═" * 60, flush=True)
+    uvicorn.run(app, host=host, port=port, log_level="info")

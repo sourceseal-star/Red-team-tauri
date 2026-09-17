@@ -5,26 +5,35 @@ import { Crosshair, Play, FileDown, RefreshCw, Shield, AlertTriangle, CheckCircl
 // TACTICAL PANEL — Auditoría táctica integral
 // ==========================================
 
-interface ScanResult {
+// Formas REALES que devuelve /api/tactical/status/{job_id} (sin cosmética)
+interface JobProgress {
+  current: number
+  total: number
+  subnet?: string
+  percent: number
+}
+
+interface SubnetReport {
+  subnet: string
+  hosts_found: number
+  cameras: number
+  credentials_found: number
+  report: string
+}
+
+interface ScanSummary {
   status: string
-  target?: string
-  hosts_found?: number
-  ports_scanned?: number
-  cameras_identified?: number
-  credentials_tested?: number
-  credentials_found?: number
-  cves_found?: number
-  report_id?: string
-  report_sha256?: string
-  report_files?: string[]
-  error?: string
-  findings?: Array<{
+  subnets_done: SubnetReport[]
+  reports: Array<{ subnet?: string; filename: string; hash: string }>
+  hosts_found: number
+  ports_open: number
+  cameras_identified: number
+  credentials_found: number
+  findings: Array<{
     host: string
-    port: number
-    service: string
+    ports: string
     vendor: string
     credentials: string
-    cves: string[]
   }>
 }
 
@@ -37,7 +46,8 @@ interface LogEntry {
 export default function TacticalPanel() {
   const [scanning, setScanning] = useState(false)
   const [subnet, setSubnet] = useState('')
-  const [result, setResult] = useState<ScanResult | null>(null)
+  const [result, setResult] = useState<ScanSummary | null>(null)
+  const [progress, setProgress] = useState<JobProgress | null>(null)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [credentials, setCredentials] = useState<Record<string, number> | null>(null)
   const [ports, setPorts] = useState<Array<{ port: number; service: string; vendor: string }> | null>(null)
@@ -71,48 +81,75 @@ export default function TacticalPanel() {
       .catch(() => {})
   }, [])
 
-  // Ejecutar scan con WebSocket para progreso en vivo
+  // Ejecutar auditoría ASÍNCRONA multi-subred + polling cada 3s (patrón LEVIATHAN)
   const runScan = async () => {
     setScanning(true)
     setResult(null)
+    setProgress(null)
     setLogs([])
-    addLog('🚀 Iniciando auditoría táctica...', 'info')
-    addLog(`📡 Subnet: ${subnet || 'auto-detectar'}`, 'info')
+    addLog('🚀 Iniciando auditoría táctica (asíncrona)...', 'info')
+    const subnets = subnet.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)
+    addLog(`📡 Subredes: ${subnets.length ? subnets.join(', ') : 'auto-detectar'}`, 'info')
 
     try {
-      // Lanzar scan con POST
-      const resp = await fetch('/api/tactical/scan', {
+      const resp = await fetch('/api/tactical/scan/async', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(subnet ? { subnet } : {})
+        body: JSON.stringify(subnets.length ? { subnets } : {})
       })
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ detail: 'Error desconocido' }))
-        addLog(`❌ Error: ${err.detail}`, 'error')
+        addLog(`❌ Error: ${err.error || err.detail}`, 'error')
         setScanning(false)
         return
       }
 
-      const data: ScanResult = await resp.json()
-      setResult(data)
+      const { job_id: jobId } = await resp.json()
+      addLog(`🎫 Job aceptado: ${jobId} — polling cada 3s`, 'info')
 
-      if (data.status === 'completed' || data.status === 'success') {
-        addLog(`✅ Auditoría completada`, 'success')
-        if (data.hosts_found) addLog(`📦 Hosts encontrados: ${data.hosts_found}`, 'info')
-        if (data.ports_scanned) addLog(`🔌 Puertos escaneados: ${data.ports_scanned}`, 'info')
-        if (data.cameras_identified) addLog(`📷 Cámaras identificadas: ${data.cameras_identified}`, 'info')
-        if (data.credentials_tested) addLog(`🔑 Credenciales probadas: ${data.credentials_tested}`, 'info')
-        if (data.credentials_found) addLog(`⚠️ Credenciales encontradas: ${data.credentials_found}`, 'warning')
-        if (data.cves_found) addLog(`🛡️ CVEs encontrados: ${data.cves_found}`, 'warning')
-        if (data.report_id) addLog(`📄 Reporte: ${data.report_id}`, 'success')
-        if (data.report_sha256) addLog(`🔐 Sello SHA-256: ${data.report_sha256.substring(0, 16)}...`, 'success')
-      } else if (data.error) {
-        addLog(`❌ ${data.error}`, 'error')
-      }
+      await new Promise<void>((resolve) => {
+        const iv = setInterval(async () => {
+          try {
+            const r = await fetch(`/api/tactical/status/${jobId}`)
+            const job = await r.json()
+            if (job.progress) setProgress(job.progress)
+            if (job.status === 'completed') {
+              clearInterval(iv)
+              const agg = job.results || {}
+              const findings = (agg.cameras || []).map((c: any) => ({
+                host: c.ip || '-',
+                ports: (c.ports || []).join(', '),
+                vendor: c.vendor || 'unknown',
+                credentials: c.credentials ? `${c.credentials.user}:${c.credentials.password}` : ''
+              }))
+              const portsOpen = (agg.hosts || []).reduce(
+                (n: number, h: any) => n + (h.ports || []).length, 0)
+              setResult({
+                status: 'completed',
+                subnets_done: job.subnets_done || [],
+                reports: job.reports || [],
+                hosts_found: agg.hosts_scanned || 0,
+                ports_open: portsOpen,
+                cameras_identified: (agg.cameras || []).length,
+                credentials_found: (agg.credentials_found || []).length,
+                findings
+              })
+              addLog('✅ Auditoría completada', 'success')
+              for (const s of job.subnets_done || []) {
+                addLog(`🌐 ${s.subnet}: ${s.hosts_found} hosts · ${s.cameras} cámaras · ${s.credentials_found} creds → ${s.report}`, 'info')
+              }
+              if (job.errors?.length) {
+                for (const e of job.errors) addLog(`❌ ${e.subnet}: ${e.error}`, 'error')
+              }
+              setScanning(false)
+              resolve()
+            }
+          } catch { /* reintenta en el próximo tick */ }
+        }, 3000)
+      })
     } catch (err) {
       addLog(`❌ Error de conexión: ${err}`, 'error')
-    } finally {
       setScanning(false)
     }
   }
@@ -139,12 +176,12 @@ export default function TacticalPanel() {
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
-            <label className="text-xs text-slate-400 mb-1 block">Subnet / CIDR (vacío = auto-detectar)</label>
+            <label className="text-xs text-slate-400 mb-1 block">Subredes / CIDR (separadas por coma = multi-red, vacío = auto-detectar)</label>
             <input
               type="text"
               value={subnet}
               onChange={e => setSubnet(e.target.value)}
-              placeholder="192.168.1.0/24"
+              placeholder="192.168.1.0/24, 192.168.0.0/24"
               disabled={scanning}
               className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-600 focus:border-orange-500 focus:outline-none disabled:opacity-50"
             />
@@ -174,6 +211,22 @@ export default function TacticalPanel() {
         </div>
       </div>
 
+      {/* BARRA DE PROGRESO (async multi-subred) */}
+      {scanning && progress && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
+            <span>Subred {progress.current}/{progress.total}: {progress.subnet || 'auto'}</span>
+            <span className="font-mono text-orange-400">{progress.percent}%</span>
+          </div>
+          <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-red-600 to-orange-600 rounded-full transition-all duration-500"
+              style={{ width: `${progress.percent}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* LIVE LOG */}
       {logs.length > 0 && (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
@@ -201,13 +254,11 @@ export default function TacticalPanel() {
       {result && (
         <div className="space-y-3">
           {/* Summary cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard label="Hosts" value={result.hosts_found || 0} icon={Shield} color="text-cyan-400" />
-            <StatCard label="Puertos" value={result.ports_scanned || 0} icon={Activity} color="text-blue-400" />
+            <StatCard label="Puertos abiertos" value={result.ports_open || 0} icon={Activity} color="text-blue-400" />
             <StatCard label="Cámaras" value={result.cameras_identified || 0} icon={Crosshair} color="text-orange-400" />
-            <StatCard label="Creds Probadas" value={result.credentials_tested || 0} icon={Shield} color="text-slate-400" />
-            <StatCard label="Creds Encontradas" value={result.credentials_found || 0} icon={AlertTriangle} color="text-red-400" />
-            <StatCard label="CVEs" value={result.cves_found || 0} icon={AlertTriangle} color="text-red-400" />
+            <StatCard label="Creds válidas" value={result.credentials_found || 0} icon={AlertTriangle} color="text-red-400" />
           </div>
 
           {/* Findings table */}
@@ -222,32 +273,22 @@ export default function TacticalPanel() {
                   <thead>
                     <tr className="border-b border-slate-800">
                       <th className="px-3 py-2 text-left text-xs text-slate-500 font-medium">Host</th>
-                      <th className="px-3 py-2 text-left text-xs text-slate-500 font-medium">Port</th>
-                      <th className="px-3 py-2 text-left text-xs text-slate-500 font-medium">Servicio</th>
+                      <th className="px-3 py-2 text-left text-xs text-slate-500 font-medium">Puertos</th>
                       <th className="px-3 py-2 text-left text-xs text-slate-500 font-medium">Vendor</th>
                       <th className="px-3 py-2 text-left text-xs text-slate-500 font-medium">Credenciales</th>
-                      <th className="px-3 py-2 text-left text-xs text-slate-500 font-medium">CVEs</th>
                     </tr>
                   </thead>
                   <tbody>
                     {result.findings.map((f, i) => (
                       <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30">
                         <td className="px-3 py-2 font-mono text-cyan-400">{f.host}</td>
-                        <td className="px-3 py-2 font-mono text-slate-400">{f.port}</td>
-                        <td className="px-3 py-2 text-slate-300">{f.service}</td>
+                        <td className="px-3 py-2 font-mono text-slate-400">{f.ports}</td>
                         <td className="px-3 py-2 text-orange-400">{f.vendor}</td>
                         <td className="px-3 py-2">
                           {f.credentials ? (
                             <span className="text-red-400 font-mono text-xs">{f.credentials}</span>
                           ) : (
                             <CheckCircle className="w-4 h-4 text-emerald-400" />
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                          {f.cves?.length > 0 ? (
-                            <span className="text-amber-400 font-mono text-xs">{f.cves.join(', ')}</span>
-                          ) : (
-                            <span className="text-slate-600 text-xs">—</span>
                           )}
                         </td>
                       </tr>
@@ -258,33 +299,27 @@ export default function TacticalPanel() {
             </div>
           )}
 
-          {/* Reporte sellado */}
-          {result.report_files && result.report_files.length > 0 && (
+          {/* Reportes sellados (uno por subred) */}
+          {result.reports && result.reports.length > 0 && (
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <FileDown className="w-4 h-4 text-emerald-400" />
-                <span className="text-sm font-semibold text-slate-300">Reporte Sellado</span>
+                <span className="text-sm font-semibold text-slate-300">Reportes Sellados ({result.reports.length})</span>
               </div>
-              <div className="space-y-2">
-                {result.report_id && (
-                  <div className="text-xs text-slate-500">
-                    Report ID: <span className="font-mono text-slate-300">{result.report_id}</span>
+              <div className="space-y-3">
+                {result.reports.map((r, i) => (
+                  <div key={i} className="space-y-1">
+                    <button
+                      onClick={() => downloadReport(r.filename)}
+                      className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 border border-emerald-600/30 rounded-lg text-sm text-emerald-400 hover:bg-emerald-600/30 transition-colors"
+                    >
+                      <FileDown className="w-4 h-4" />
+                      {r.subnet ? `${r.subnet}: ` : ''}Descargar {r.filename}
+                    </button>
+                    <div className="text-xs text-slate-500">
+                      SHA-256: <span className="font-mono text-emerald-400">{r.hash?.substring(0, 32)}...</span>
+                    </div>
                   </div>
-                )}
-                {result.report_sha256 && (
-                  <div className="text-xs text-slate-500">
-                    SHA-256: <span className="font-mono text-emerald-400">{result.report_sha256}</span>
-                  </div>
-                )}
-                {result.report_files.map((file, i) => (
-                  <button
-                    key={i}
-                    onClick={() => downloadReport(file.split('/').pop() || file)}
-                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 border border-emerald-600/30 rounded-lg text-sm text-emerald-400 hover:bg-emerald-600/30 transition-colors"
-                  >
-                    <FileDown className="w-4 h-4" />
-                    Descargar {file.split('/').pop()}
-                  </button>
                 ))}
               </div>
             </div>
