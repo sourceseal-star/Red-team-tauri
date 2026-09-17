@@ -41,9 +41,11 @@ class NetworkScanner:
         self.version = "3.0.0"
         
         # Puertos comunes
-        self.common_ports = [21, 22, 23, 25, 53, 80, 110, 139, 443, 445, 554, 1935, 
-                           3306, 3389, 5432, 6379, 8000, 8080, 8443, 8554, 8888, 37777, 3702]
-        self.camera_ports = [80, 443, 554, 8000, 8080, 37777]
+        # 2026-09-17: +8899 (Dahua HTTP) y +34567 (Hikvision services) —
+        # puertos de DVR más comunes que faltaban (auditoría multi-subred)
+        self.common_ports = [21, 22, 23, 25, 53, 80, 110, 139, 443, 445, 554, 1935,
+                           3306, 3389, 5432, 6379, 8000, 8080, 8443, 8554, 8888, 8899, 34567, 37777, 3702]
+        self.camera_ports = [80, 443, 554, 8000, 8080, 8899, 34567, 37777]
         
     def is_applicable(self, target: str, context: Dict = None) -> bool:
         """Verifica si el scanner es aplicable al objetivo."""

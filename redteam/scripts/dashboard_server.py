@@ -317,8 +317,10 @@ try:
     import leviathan_core
     from leviathan_core.api.leviathan_router import router as leviathan_router
     from leviathan_core.api.integration_router import router as leviathan_integration
+    from leviathan_core.orchestrator import router as leviathan_orchestrator
     app.routes.extend(leviathan_router.routes)
     app.routes.extend(leviathan_integration.routes)
+    app.routes.extend(leviathan_orchestrator.routes)
     _LEVIATHAN_OK = True
 
     # Mostrar el banner ASCII de LEVIATHAN (existia en leviathan_core/banner.py
@@ -329,6 +331,7 @@ try:
         pass
 
     print("[LEVIATHAN] Router montado: /api/leviathan/* + /api/v1/* (unified)", flush=True)
+    print("[LEVIATHAN] Orquestador montado: /api/leviathan/command + /status/{job_id} + /jobs (asíncrono multi-subred)", flush=True)
 
     # Auto-inicializar LEVIATHAN al arrancar el servidor (mismo patron que ARTO)
     # Pre-carga scanners/exploiters/analyzers/reporters en memoria para que el
