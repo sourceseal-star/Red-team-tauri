@@ -49,3 +49,15 @@
 - `404 FAIL ✗✗` significa que la línea no pasa el sello del módulo.
 - `200 OK ✓` significa que todas sus unidades son reconocibles.
 - El registro es cronológico: una corrección posterior no contradice el sello anterior.
+
+## Puente egipcio · Holo
+
+- El Bestiario conserva sus 38 entradas canónicas; el modo egipcio es una capa
+  de pronunciación y conversación, no una modificación del inventario.
+- Locale de voz: `ar-EG`, con voz neuronal `ar-EG-SalmaNeural`.
+- En egipcio, `ق` puede realizarse como corte glotal (`ʔ`) en habla urbana; la
+  entrada 21 lo conserva como pista `ʔ EG / q en canto`.
+- El Holo puede alternar entre español y árabe egipcio, enviar `language=ar-EG`
+  al cerebro y usar la misma elección para entrada de voz y TTS.
+- Las frases básicas egipcias tienen respuesta determinista para que Qalam
+  siga funcionando sin LLM ni red.
