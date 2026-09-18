@@ -934,8 +934,18 @@ def _attach_media(text, reply):
                 return reply.rstrip() + f" [[{kind}:{t}]]"
     return reply
 
-def _think(text):
+def _think(text, language="es"):
+    language = str(language or "es").lower()
+    # Qalam es una capacidad de Sol, no una función exclusiva del panel.
+    # Resolverlo aquí evita que una acción de tools o la ausencia del cerebro
+    # local impida consultar el alfabeto y el modo egipcio.
+    if sol_qalam is not None:
+        qalam_resp = sol_qalam.handle(text)
+        if qalam_resp:
+            return qalam_resp
     if not SOL_CORE_OK:
+        if language.startswith("ar") and sol_qalam is not None:
+            return sol_qalam.egyptian_reply(text)
         return "☀️ Mi cerebro no está disponible en este entorno. Pero sigo aquí."
     # ── ACCIÓN REAL PRIMERO (ver sol_tools.try_execute_action) ──
     try:
@@ -948,16 +958,23 @@ def _think(text):
     except Exception:
         pass
     sol_core.remember("user", text)
-    r = sol_core.generate_response(text)
+    prompt = text
+    if language.startswith("ar") and sol_qalam is not None:
+        prompt = sol_qalam.egyptian_prompt(text)
+    r = sol_core.generate_response(prompt)
+    # Si no hay LLM y la plantilla local no pudo contestar en árabe, no
+    # fingimos una traducción: damos una respuesta egipcia determinista.
+    if language.startswith("ar") and not re.search(r"[\u0600-\u06ff]", r or ""):
+        r = sol_qalam.egyptian_reply(text) if sol_qalam is not None else r
     r = _attach_media(text, r)
     sol_core.remember("sol", r)
     return r
 
 @app.get("/api/sol/think")
-def think_get(q: str = ""):
+def think_get(q: str = "", lang: str = "es"):
     if not q:
         return {"response": "☀️ Dime algo, Harold."}
-    return {"response": _think(q)}
+    return {"response": _think(q, lang), "language": lang}
 
 @app.post("/api/sol/think")
 async def think_post(request: Request):
@@ -966,7 +983,8 @@ async def think_post(request: Request):
     except Exception:
         body = {"text": ""}
     text = body.get("text", body.get("q", ""))
-    return {"response": _think(text)}
+    lang = body.get("language", body.get("lang", "es"))
+    return {"response": _think(text, lang), "language": lang}
 
 @app.post("/api/sol/chat")
 async def chat(request: Request):
@@ -974,8 +992,10 @@ async def chat(request: Request):
         body = await request.json()
     except Exception:
         body = {"text": ""}
-    r = _think(body.get("text", ""))
-    return {"reply": r, "emotion": "warm"}
+    text = body.get("text", "")
+    lang = body.get("language", body.get("lang", "es"))
+    r = _think(text, lang)
+    return {"reply": r, "emotion": "warm", "language": lang}
 
 # ═══════════════════════════════════════════════════════════════
 # VOZ — TTS (edge-tts > gTTS > termux-tts-speak)
@@ -989,6 +1009,7 @@ TTS_VOICES = {
     "es": "es-CO-SalomeNeural",    # Colombia ☀️ la voz de Sol en casa
     "zh": "zh-CN-XiaoxiaoNeural",  # cálida, la clásica voz china femenina
     "en": "en-US-JennyNeural",     # amable y natural
+    "ar": "ar-EG-SalmaNeural",     # árabe egipcio, modo Masri del Holo
 }
 
 # ── Regla #52 (2026-09-08): VOZ DULCE — prosodia por persona ──
@@ -1008,6 +1029,17 @@ def _edge_mood(persona: str = "calida"):
     m = VOICE_MOODS.get((persona or "calida").strip().lower(), VOICE_MOODS["calida"])
     return m["rate"], m["pitch"]
 
+
+def _tts_code(lang: str = "es") -> str:
+    value = str(lang or "es").strip().lower()
+    if value.startswith("zh"):
+        return "zh"
+    if value.startswith("ar"):
+        return "ar"
+    if value.startswith("en"):
+        return "en"
+    return "es"
+
 @app.get("/api/sol/tts")
 async def tts(text: str = "", lang: str = "es", persona: str = "calida"):
     # lang="zh" pronuncia chino real; el chino ya sobrevive al clean porque
@@ -1019,10 +1051,11 @@ async def tts(text: str = "", lang: str = "es", persona: str = "calida"):
     # 1) edge-tts — voz neuronal real (Microsoft, gratis). Es OTRO nivel de voz.
     try:
         import edge_tts
-        voice = TTS_VOICES.get(lang[:2], TTS_VOICES["es"])
+        lang_code = _tts_code(lang)
+        voice = TTS_VOICES[lang_code]
         # Regla #52: cadencia dulce solo en español — el chino/en quedan como
         # están (Xiaoxiao ya es pura ternura, no se toca)
-        rate, pitch = _edge_mood(persona) if lang[:2] == "es" else ("+0%", "+0Hz")
+        rate, pitch = _edge_mood(persona) if lang_code == "es" else ("+0%", "+0Hz")
         buf = io.BytesIO()
         async for chunk in edge_tts.Communicate(clean, voice, rate=rate, pitch=pitch).stream():
             if chunk["type"] == "audio":
@@ -1035,7 +1068,7 @@ async def tts(text: str = "", lang: str = "es", persona: str = "calida"):
         pass
 
     # 2) gTTS — fallback clásico (robótico pero funciona sin edge-tts)
-    gtts_lang = "zh-CN" if lang.startswith("zh") else lang
+    gtts_lang = "zh-CN" if _tts_code(lang) == "zh" else _tts_code(lang)
     try:
         from gtts import gTTS
         buf = io.BytesIO()
@@ -1068,11 +1101,11 @@ async def speak_post(request: Request):
     return {"ok": True}
 
 @app.get("/api/sol/voice")
-async def voice(text: str = "", persona: str = "calida"):
+async def voice(text: str = "", persona: str = "calida", lang: str = "es"):
     """Voz — endpoint alternativo a /api/sol/tts (misma cadena: edge-tts > gTTS).
     Regla #52: el holo SIEMPRE mandó &persona=calida/poetica/... — el backend
     la ignoraba. Ahora cada persona tiene su cadencia dulce de verdad."""
-    clean = re.sub(r"[^\w áéíóúñü,.?!:-]", "", text).strip()
+    clean = re.sub(r"[^\w áéíóúñü,.?!:،؛؟-]", "", text).strip()
     if not clean:
         return JSONResponse({"error": "texto vacio"}, status_code=400)
     # 1) edge-tts — voz neuronal (misma voz que /tts, consistencia total)
@@ -1080,7 +1113,9 @@ async def voice(text: str = "", persona: str = "calida"):
         import edge_tts
         rate, pitch = _edge_mood(persona)   # Regla #52: su persona, su cadencia
         buf = io.BytesIO()
-        async for chunk in edge_tts.Communicate(clean, TTS_VOICES["es"], rate=rate, pitch=pitch).stream():
+        lang_code = _tts_code(lang)
+        rate, pitch = _edge_mood(persona) if lang_code == "es" else ("+0%", "+0Hz")
+        async for chunk in edge_tts.Communicate(clean, TTS_VOICES[lang_code], rate=rate, pitch=pitch).stream():
             if chunk["type"] == "audio":
                 buf.write(chunk["data"])
         buf.seek(0)
@@ -1093,7 +1128,7 @@ async def voice(text: str = "", persona: str = "calida"):
     try:
         from gtts import gTTS
         buf = io.BytesIO()
-        gTTS(clean, lang="es").write_to_fp(buf)
+        gTTS(clean, lang=_tts_code(lang)).write_to_fp(buf)
         buf.seek(0)
         return StreamingResponse(buf, media_type="audio/mpeg",
                                  headers={"Content-Disposition": "inline; filename=sol_voice.mp3"})
