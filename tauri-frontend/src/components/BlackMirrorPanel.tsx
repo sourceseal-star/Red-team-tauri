@@ -16,6 +16,7 @@ export default function BlackMirrorPanel() {
   const [docType, setDocType] = useState<'pdf' | 'html'>('html');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [chaosRules, setChaosRules] = useState<any[]>([]);
 
   // FIX 2026-09-08 (RAÍZ REAL — Black Mirror 401 en el teléfono): todos los
 // fetch de este panel salían SIN llave y el middleware global del servidor
@@ -29,6 +30,14 @@ function headers(): Record<string, string> {
   return result
 }
 
+async function responseJson(res: Response): Promise<any> {
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || data.detail || `HTTP ${res.status}`)
+  }
+  return data
+}
+
 const forgeCanary = async () => {
     if (!recipient.trim()) return;
     setLoading(true);
@@ -39,7 +48,7 @@ const forgeCanary = async () => {
         content: 'Documento altamente confidencial. Distribucion restringida.'
       });
       const res = await fetch(`/api/blackmirror/canary/forge?${params}`, { method: 'POST', headers: headers() });
-      const data = await res.json();
+      const data = await responseJson(res);
       setStatus(`Canary forjado: ${data.recipient} | Token: ${data.token?.slice(0, 16)}...`);
       loadCanaries();
     } catch (e: any) {
@@ -53,9 +62,23 @@ const forgeCanary = async () => {
   const loadCanaries = async () => {
     try {
       const res = await fetch('/api/blackmirror/canary/status', { headers: headers() });
-      const data = await res.json();
-      setCanaries(data.canaries || []);
-    } catch {}
+      const data = await responseJson(res);
+      setCanaries(Array.isArray(data.canaries) ? data.canaries : []);
+    } catch (e: any) {
+      setCanaries([]);
+      setStatus(`Error: ${e?.message || 'No se pudieron cargar los canaries'}`);
+    }
+  };
+
+  const loadChaosStatus = async () => {
+    try {
+      const res = await fetch('/api/blackmirror/chaos/status', { headers: headers() });
+      const data = await responseJson(res);
+      setChaosRules(Array.isArray(data.rules) ? data.rules : []);
+    } catch (e: any) {
+      setChaosRules([]);
+      setStatus(`Error: ${e?.message || 'No se pudieron cargar las reglas Chaos'}`);
+    }
   };
 
   const analyzeGhost = async () => {
@@ -66,8 +89,12 @@ const forgeCanary = async () => {
         fetch(`/api/blackmirror/ghostprint/profile/${ghostHost}`, { headers: headers() }),
         fetch(`/api/blackmirror/ghostprint/window/${ghostHost}`, { headers: headers() })
       ]);
-      setGhostProfile(await profileRes.json());
-      setGhostWindow(await windowRes.json());
+      const [profile, window] = await Promise.all([
+        responseJson(profileRes),
+        responseJson(windowRes),
+      ]);
+      setGhostProfile(profile);
+      setGhostWindow(window);
       setStatus(null);
     } catch (e: any) {
       setStatus(`Error: ${e.message}`);
@@ -80,8 +107,9 @@ const forgeCanary = async () => {
     setStatus(null);
     try {
       const res = await fetch(`/api/blackmirror/chaos/apply?real_port=${chaosPort}&fake_os=${encodeURIComponent(chaosOS)}`, { method: 'POST', headers: headers() });
-      const data = await res.json();
+      const data = await responseJson(res);
       setStatus(`Chaos aplicado: puerto ${data.real_port} ahora simula ${data.fake_os}`);
+      loadChaosStatus();
     } catch (e: any) {
       setStatus(`Error: ${e.message}`);
     } finally {
@@ -90,7 +118,10 @@ const forgeCanary = async () => {
     }
   };
 
-  useEffect(() => { loadCanaries(); }, []);
+  useEffect(() => {
+    loadCanaries();
+    loadChaosStatus();
+  }, []);
 
   const days = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
 
@@ -294,6 +325,26 @@ const forgeCanary = async () => {
                 <div>- El atacante perdera tiempo con exploits equivocados</div>
                 <div>- Censys mostrara datos falsos</div>
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[9px] text-gray-500 font-mono">
+                <span className="text-gray-400 font-bold">Reglas registradas</span>
+                <span>{chaosRules.length}</span>
+              </div>
+              {chaosRules.map(rule => (
+                <div key={rule.id} className="flex items-center justify-between gap-2 p-1.5 rounded bg-[var(--ss-bg-3)] border border-[var(--ss-border)] text-[9px] font-mono">
+                  <span className="text-gray-400">:{rule.port} → {rule.fake_os}</span>
+                  <span className={rule.active ? 'text-pink-300' : 'text-gray-600'}>
+                    {rule.active ? 'ACTIVA' : 'INACTIVA'}
+                  </span>
+                </div>
+              ))}
+              {chaosRules.length === 0 && (
+                <div className="text-center text-gray-600 text-[10px] py-2 font-mono">
+                  No hay reglas Chaos registradas.
+                </div>
+              )}
             </div>
           </div>
         )}

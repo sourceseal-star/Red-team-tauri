@@ -6,6 +6,7 @@
 import { getBaseUrl, getApiKey } from '../lib/api';
 
 const OSINT_BASE = `${getBaseUrl()}/api/osint`;
+const OSINT_V2_BASE = `${getBaseUrl()}/api/osint/v2`;
 
 function authH(json = false): Record<string, string> {
   const h: Record<string, string> = {}
@@ -16,15 +17,19 @@ function authH(json = false): Record<string, string> {
 }
 
 export const osintApi = {
-  // GET /api/osint/full/{target} — funciona con IPs y dominios
+  // POST /api/osint/v2/full-scan — combina el escaneo según el tipo de objetivo
   fullScan: async (target: string): Promise<any> => {
-    const r = await fetch(`${OSINT_BASE}/full/${encodeURIComponent(target)}`, { headers: authH() })
+    const r = await fetch(`${OSINT_V2_BASE}/full-scan`, {
+      method: 'POST',
+      headers: authH(true),
+      body: JSON.stringify({ target }),
+    })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()
   },
 
   quickScan: async (target: string): Promise<any> => {
-    const r = await fetch(`${OSINT_BASE}/full/${encodeURIComponent(target)}`, { headers: authH() })
+    const r = await fetch(`${OSINT_V2_BASE}/quick-scan/${encodeURIComponent(target)}`, { headers: authH() })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.json()
   },
@@ -35,9 +40,9 @@ export const osintApi = {
     return r.json()
   },
 
-  // GET /api/osint/whois/{domain} (whois cubre DNS)
+  // GET /api/osint/dns/{domain}
   dns: async (domain: string) => {
-    const r = await fetch(`${OSINT_BASE}/whois/${encodeURIComponent(domain)}`, { headers: authH() })
+    const r = await fetch(`${OSINT_BASE}/dns/${encodeURIComponent(domain)}`, { headers: authH() })
     return r.json()
   },
 
@@ -47,15 +52,19 @@ export const osintApi = {
     return r.json()
   },
 
-  // GET /api/osint/emails/{domain}
-  emails: async (domain: string) => {
-    const r = await fetch(`${OSINT_BASE}/emails/${encodeURIComponent(domain)}`, { headers: authH() })
+  // POST /api/osint/email — accepts an email address, not only a domain
+  emails: async (email: string) => {
+    const r = await fetch(`${OSINT_BASE}/email`, {
+      method: 'POST',
+      headers: authH(true),
+      body: JSON.stringify({ target: email }),
+    })
     return r.json()
   },
 
-  // GET /api/osint/full/{entity} — threat intel para IPs y dominios
+  // GET /api/osint/threat-intel/{ip}
   threatIntel: async (entity: string) => {
-    const r = await fetch(`${OSINT_BASE}/full/${encodeURIComponent(entity)}`, { headers: authH() })
+    const r = await fetch(`${OSINT_BASE}/threat-intel/${encodeURIComponent(entity)}`, { headers: authH() })
     return r.json()
   },
 
