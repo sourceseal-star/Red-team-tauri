@@ -182,13 +182,15 @@ fi
     fi
     local qalam_check
     qalam_check=$(cd "$SOL_DIR" && python3 -c 'import sol_qalam; r=sol_qalam.verify(); print(str(r["valid"]) + ":" + str(r["count"]) + ":" + sol_qalam.stamp("خخخ")["code"] + ":" + sol_qalam.stamp("بسم")["code"])' 2>/dev/null)
+    local qalam_egyptian
+    qalam_egyptian=$(cd "${qalam_root:-$SOL_DIR}" && python3 -c 'import sol_qalam; r=sol_qalam.egyptian_status(); print(str(r["valid"]) + ":" + str(r["locale"]) + ":" + str(r["phrases"]))' 2>/dev/null)
     local qalam_lines
     qalam_lines=$(grep -cE '^[[:space:]]*[0-9]{2}[[:space:]]' "$qalam_md" 2>/dev/null || echo 0)
-    if [ "$qalam_check" = "True:38:404 FAIL ✗✗:200 OK ✓" ] && [ "$qalam_lines" = "38" ]; then
-      ok "Bestiario Qalam v1 verificado (38 entradas; 200/404)"
+    if [ "$qalam_check" = "True:38:404 FAIL ✗✗:200 OK ✓" ] && [ "$qalam_lines" = "38" ] && echo "$qalam_egyptian" | grep -q '^True:ar-EG:'; then
+      ok "Bestiario Qalam v1 verificado (38 entradas; 200/404; voz ar-EG)"
       return 0
     fi
-    bad "Bestiario Qalam inválido" "resultado: $qalam_check; entradas canónicas: $qalam_lines"
+    bad "Bestiario Qalam inválido" "resultado: $qalam_check; idioma: $qalam_egyptian; entradas canónicas: $qalam_lines"
     return 1
     }
 
