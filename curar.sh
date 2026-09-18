@@ -137,12 +137,17 @@ for d in "$RT_DIR" "$SOL_DIR"; do
       if [ -d "$RES" ]; then
         mkdir -p "$SOL_DIR/.rescate_pre"
         for f in "$RES"/*.py "$RES"/*.sh "$RES"/*.md "$RES"/VERSION.txt; do
-          [ -f "$f" ] || continue
-          b=$(basename "$f")
-          [ -f "$SOL_DIR/$b" ] && cp "$SOL_DIR/$b" "$SOL_DIR/.rescate_pre/$b" 2>/dev/null
-          cp "$f" "$SOL_DIR/$b"
-        done
-        ok "Sol RESCATADA con módulos de $(cat "$RES/VERSION.txt" 2>/dev/null | head -c 40)"
+            [ -f "$f" ] || continue
+            b=$(basename "$f")
+            [ -f "$SOL_DIR/$b" ] && cp "$SOL_DIR/$b" "$SOL_DIR/.rescate_pre/$b" 2>/dev/null
+            cp "$f" "$SOL_DIR/$b"
+          done
+          if [ -f "$RES/static/sol_holo_live.html" ]; then
+            mkdir -p "$SOL_DIR/static"
+            [ -f "$SOL_DIR/static/sol_holo_live.html" ] && cp "$SOL_DIR/static/sol_holo_live.html" "$SOL_DIR/.rescate_pre/sol_holo_live.html" 2>/dev/null
+            cp "$RES/static/sol_holo_live.html" "$SOL_DIR/static/sol_holo_live.html"
+          fi
+            ok "Sol RESCATADA con módulos de $(cat "$RES/VERSION.txt" 2>/dev/null | head -c 40)"
         echo "     (originales respaldados en ~/sol/.rescate_pre/)"
       else
         bad "sol_rescate/ no existe" "repo Red-team-tauri incompleto — clona de nuevo"
