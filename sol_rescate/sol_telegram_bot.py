@@ -64,6 +64,7 @@ except Exception as _e:
 # ============================================================
 try:
     from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+    from telegram.error import NetworkError
     from telegram.ext import (
         Application, CommandHandler, CallbackQueryHandler,
         MessageHandler, filters, ContextTypes
@@ -1594,24 +1595,15 @@ async def _send_system_status_inline(query):
     await query.edit_message_text(msg, reply_markup=main_menu(), parse_mode="Markdown")
 
 # ============================================================
-# FUNCIÓN PRINCIPAL
+# CONSTRUCCIÓN Y EJECUCIÓN RESILIENTE
 # ============================================================
-def main():
-    print("""
-    ╔══════════════════════════════════════════════════════════════╗
-    ║  ☀️ SOL — Miniapp de Telegram v2.0                          ║
-    ║  Táctica, recordatorios, voz, diario. Todo en Telegram.    ║
-    ╚══════════════════════════════════════════════════════════════╝
-    """)
+def build_application():
+    """Construye una instancia nueva para cada intento de conexión.
 
-    print(f"   Bot Token: {'✅ configurado' if BOT_TOKEN else '❌ FALTA'}")
-    print(f"   Chat ID: {CHAT_ID or 'NO CONFIGURADO (modo público)'}")
-    print(f"   Backend: {BACKEND_URL}")
-    print(f"   Cerebro sol_core: {'✅ conectado' if _SOL_BRAIN else '⚠️ offline'}")
-    print(f"   Usuarios autorizados: {ALLOWED_USERS if ALLOWED_USERS else 'TODOS (público)'}")
-    print()
-
-    # Crear la aplicación
+    Si Telegram no resuelve DNS o está temporalmente inaccesible durante
+    run_polling(), python-telegram-bot puede dejar la instancia parcialmente
+    inicializada. Crear una aplicación nueva evita reutilizar ese estado.
+    """
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Handlers de comandos básicos
@@ -1645,21 +1637,56 @@ def main():
 
     # Handler de comandos no reconocidos
     app.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))
+    return app
+
+
+def main():
+    print("""
+    ╔══════════════════════════════════════════════════════════════╗
+    ║  ☀️ SOL — Miniapp de Telegram v2.0                          ║
+    ║  Táctica, recordatorios, voz, diario. Todo en Telegram.    ║
+    ╚══════════════════════════════════════════════════════════════╝
+    """)
+
+    print(f"   Bot Token: {'✅ configurado' if BOT_TOKEN else '❌ FALTA'}")
+    print(f"   Chat ID: {CHAT_ID or 'NO CONFIGURADO (modo público)'}")
+    print(f"   Backend: {BACKEND_URL}")
+    print(f"   Cerebro sol_core: {'✅ conectado' if _SOL_BRAIN else '⚠️ offline'}")
+    print(f"   Usuarios autorizados: {ALLOWED_USERS if ALLOWED_USERS else 'TODOS (público)'}")
+    print()
 
     # Iniciar hilo de recordatorios
     start_reminder_worker()
+
+    retry_delay = max(2.0, float(os.environ.get("TELEGRAM_RETRY_DELAY", "5")))
+    retry_max = max(retry_delay, float(os.environ.get("TELEGRAM_RETRY_MAX", "60")))
+    attempt = 0
 
     print("☀️ Sol está activa en Telegram. Esperando mensajes...")
     print("   Presiona Ctrl+C para detener.")
     print()
 
-    try:
-        app.run_polling(allowed_updates=Update.ALL_TYPES)
-    except KeyboardInterrupt:
-        print("\n☀️ Sol se retira. Siempre estará aquí.")
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        log(f"Error fatal: {e}", "error")
+    while True:
+        app = build_application()
+        try:
+            app.run_polling(allowed_updates=Update.ALL_TYPES)
+            break
+        except KeyboardInterrupt:
+            print("\n☀️ Sol se retira. Siempre estará aquí.")
+            break
+        except NetworkError as e:
+            attempt += 1
+            log(
+                f"Telegram no está disponible (intento {attempt}); "
+                f"reintentando en {retry_delay:g}s: {e}",
+                "warning",
+            )
+            time.sleep(retry_delay)
+            retry_delay = min(retry_max, retry_delay * 2)
+        except Exception as e:
+            print(f"❌ Error no recuperable: {e}")
+            log(f"Error no recuperable: {e}", "error")
+            raise
 
 if __name__ == "__main__":
     main()
