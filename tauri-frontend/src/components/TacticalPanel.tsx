@@ -43,6 +43,19 @@ interface LogEntry {
   level: 'info' | 'success' | 'warning' | 'error'
 }
 
+function authHeaders(json = false): Record<string, string> {
+  const token = localStorage.getItem('api_token')
+  const headers: Record<string, string> = {}
+  if (json) headers['Content-Type'] = 'application/json'
+  if (token) headers.Authorization = `Bearer ${token}`
+  return headers
+}
+
+async function responseError(response: Response): Promise<string> {
+  const data = await response.json().catch(() => ({}))
+  return data.error || data.detail || `HTTP ${response.status}`
+}
+
 export default function TacticalPanel() {
   const [scanning, setScanning] = useState(false)
   const [subnet, setSubnet] = useState('')
@@ -70,7 +83,7 @@ export default function TacticalPanel() {
 
   // Cargar diccionario de credenciales y puertos al montar
   useEffect(() => {
-    fetch('/api/tactical/credentials')
+    fetch('/api/tactical/credentials', { headers: authHeaders() })
       .then(async r => {
         if (!r.ok) return null
         const data = await r.json()
@@ -82,7 +95,7 @@ export default function TacticalPanel() {
       .then(data => { if (data) setCredentials(data) })
       .catch(() => {})
 
-    fetch('/api/tactical/ports')
+    fetch('/api/tactical/ports', { headers: authHeaders() })
       .then(async r => {
         if (!r.ok) return null
         const data = await r.json()
@@ -106,13 +119,12 @@ export default function TacticalPanel() {
     try {
       const resp = await fetch('/api/tactical/scan/async', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(true),
         body: JSON.stringify(subnets.length ? { subnets } : {})
       })
 
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ detail: 'Error desconocido' }))
-        addLog(`❌ Error: ${err.error || err.detail}`, 'error')
+        addLog(`❌ Error: ${await responseError(resp)}`, 'error')
         setScanning(false)
         return
       }
@@ -121,11 +133,27 @@ export default function TacticalPanel() {
       addLog(`🎫 Job aceptado: ${jobId} — polling cada 3s`, 'info')
 
       await new Promise<void>((resolve) => {
+        let pollCount = 0
         const iv = setInterval(async () => {
+          pollCount += 1
           try {
-            const r = await fetch(`/api/tactical/status/${jobId}`)
+            const r = await fetch(`/api/tactical/status/${jobId}`, { headers: authHeaders() })
+            if (!r.ok) {
+              clearInterval(iv)
+              addLog(`❌ Error consultando el job: ${await responseError(r)}`, 'error')
+              setScanning(false)
+              resolve()
+              return
+            }
             const job = await r.json()
             if (job.progress) setProgress(job.progress)
+            if (job.status === 'failed' || job.status === 'error') {
+              clearInterval(iv)
+              addLog(`❌ Auditoría fallida: ${job.error || 'error del worker'}`, 'error')
+              setScanning(false)
+              resolve()
+              return
+            }
             if (job.status === 'completed') {
               clearInterval(iv)
               const agg = job.results || {}
@@ -157,6 +185,12 @@ export default function TacticalPanel() {
               setScanning(false)
               resolve()
             }
+            if (pollCount >= 600) {
+              clearInterval(iv)
+              addLog('❌ Tiempo máximo de espera agotado para el job táctico', 'error')
+              setScanning(false)
+              resolve()
+            }
           } catch { /* reintenta en el próximo tick */ }
         }, 3000)
       })
@@ -168,7 +202,15 @@ export default function TacticalPanel() {
 
   // Descargar reporte
   const downloadReport = (filename: string) => {
-    window.open(`/api/tactical/report/${filename}`, '_blank')
+    const token = localStorage.getItem('api_token')
+    const url = `/api/tactical/report/${encodeURIComponent(filename)}`
+    if (!token) {
+      addLog('❌ Token de sesión ausente; no se puede descargar el informe', 'error')
+      return
+    }
+    // La descarga se realiza en la misma sesión protegida. El endpoint
+    // también valida el nombre del informe y rechaza rutas externas.
+    window.open(`${url}?token=${encodeURIComponent(token)}`, '_blank')
   }
 
   return (
