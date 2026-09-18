@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { LanguageProvider } from './i18n/LanguageContext'
 import AppShell from './components/AppShell'
 
@@ -94,6 +94,8 @@ function Shell() {
         <Route path="/operations" element={<OperationsPanel />} />
         <Route path="/android" element={<AndroidFieldPanel />} />
         <Route path="/tactical" element={<TacticalPanel />} />
+        {/* Alias usado por instalaciones antiguas y accesos directos móviles. */}
+        <Route path="/tactic" element={<Navigate to="/tactical" replace />} />
         <Route path="/topology" element={<TopologyPanel />} />
         <Route path="/iot" element={<IoTCameras />} />
         <Route path="/alerts" element={<AlertsPanel />} />

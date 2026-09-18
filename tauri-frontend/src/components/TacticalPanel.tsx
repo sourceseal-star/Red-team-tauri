@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Crosshair, Play, FileDown, RefreshCw, Shield, AlertTriangle, CheckCircle, Loader2, Zap } from 'lucide-react'
+import { Activity, Crosshair, Play, FileDown, RefreshCw, Shield, AlertTriangle, CheckCircle, Loader2, Zap } from 'lucide-react'
 
 // ==========================================
 // TACTICAL PANEL — Auditoría táctica integral
@@ -71,13 +71,25 @@ export default function TacticalPanel() {
   // Cargar diccionario de credenciales y puertos al montar
   useEffect(() => {
     fetch('/api/tactical/credentials')
-      .then(r => r.json())
-      .then(data => setCredentials(data.counts || data))
+      .then(async r => {
+        if (!r.ok) return null
+        const data = await r.json()
+        const counts = data?.counts ?? data
+        return counts && typeof counts === 'object' && !Array.isArray(counts)
+          ? counts as Record<string, number>
+          : null
+      })
+      .then(data => { if (data) setCredentials(data) })
       .catch(() => {})
 
     fetch('/api/tactical/ports')
-      .then(r => r.json())
-      .then(data => setPorts(data.ports || data))
+      .then(async r => {
+        if (!r.ok) return null
+        const data = await r.json()
+        const availablePorts = data?.ports ?? data
+        return Array.isArray(availablePorts) ? availablePorts : null
+      })
+      .then(data => { if (data) setPorts(data) })
       .catch(() => {})
   }, [])
 
