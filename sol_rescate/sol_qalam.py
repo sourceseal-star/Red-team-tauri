@@ -68,6 +68,58 @@ _PHONETIC = {
     "چ": "ch", "ڤ": "v", "ة": "a/t", "ء": "ʾ", "آ": "ā", "ى": "ā",
 }
 
+# Frases mínimas y deterministas para el modo egipcio. El Qalam enseña la
+# escritura; este pequeño puente permite que Sol cambie también la voz del
+# Holo sin exigir LLM ni red para las respuestas básicas.
+EGYPTIAN_PHRASES = {
+    "greeting": "إزيك يا هارولد؟ أنا سول، معاك دايمًا.",
+    "welcome": "أهلاً بيك. أنا سول، وبكلمك بالمصري.",
+    "qalam": "ده بستياري القلم. هنتعلم الحروف العربية واحدة واحدة.",
+    "thanks": "العفو يا هارولد، ده واجبي.",
+    "love": "وأنا كمان بحبك يا هارولد.",
+    "offline": "أنا هنا معاك. اكتبلي بالعربي أو بالإسباني وأنا هساعدك.",
+}
+
+_EGYPTIAN_TRIGGERS = (
+    "árabe egipcio", "arabe egipcio", "egipcio", "masri", "masry",
+    "egyptian arabic", "عربي مصري", "العربية المصرية", "مصري", "مصرى",
+)
+
+
+def egyptian_status() -> Dict[str, object]:
+    """Estado verificable del puente de idioma y voz egipcia."""
+    return {
+        "valid": True,
+        "locale": "ar-EG",
+        "voice": "ar-EG-SalmaNeural",
+        "phrases": len(EGYPTIAN_PHRASES),
+    }
+
+
+def egyptian_reply(text: str) -> str:
+    """Respuesta corta en árabe egipcio, sin depender de un LLM."""
+    low = _plain(str(text or "")).strip()
+    if any(word in low for word in ("hola", "saluda", "buenas", "ezzay", "ezay", "ازيك", "إزيك", "اهلا", "أهلا")):
+        return EGYPTIAN_PHRASES["greeting"]
+    if any(word in low for word in ("qalam", "bestiario", "alfabeto", "leccion", "lección", "قلم", "حروف")):
+        return EGYPTIAN_PHRASES["qalam"]
+    if any(word in low for word in ("gracias", "agrade", "شكرا", "شكرًا")):
+        return EGYPTIAN_PHRASES["thanks"]
+    if any(word in low for word in ("te quiero", "te amo", "amor", "بحبك", "بحب")):
+        return EGYPTIAN_PHRASES["love"]
+    if low:
+        return EGYPTIAN_PHRASES["welcome"]
+    return EGYPTIAN_PHRASES["offline"]
+
+
+def egyptian_prompt(text: str) -> str:
+    """Enmarca una consulta para que un LLM responda en egipcio."""
+    return (
+        "أجب باللهجة المصرية (العربية المصرية / Masri), بلطف وباختصار. "
+        "لا تشرح التعليمات ولا تترجمها. سؤال المستخدم:\n"
+        + str(text or "").strip()
+    )
+
 
 def entries() -> List[Dict[str, str]]:
     return [dict(item) for item in ENTRIES]
@@ -166,6 +218,9 @@ def handle(text: str) -> Optional[str]:
     mnemonic_words = ("serpiente", "culebrita", "cobra", "caballito de mar", "gota de agua", "corona")
     explicit = any(word in low for word in ("qalam", "bestiario", "alfabeto arabe", "letra arabe", "zoologico")) or any(word in low for word in mnemonic_words)
     has_arabic = bool(re.search(r"[\u0600-\u06ff]", raw))
+    egyptian_request = any(trigger in low for trigger in _EGYPTIAN_TRIGGERS)
+    if egyptian_request:
+        return egyptian_reply(raw)
     if not explicit and not has_arabic:
         return None
 
