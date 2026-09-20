@@ -201,16 +201,28 @@ export default function TacticalPanel() {
   }
 
   // Descargar reporte
-  const downloadReport = (filename: string) => {
-    const token = localStorage.getItem('api_token')
+  const downloadReport = async (filename: string) => {
     const url = `/api/tactical/report/${encodeURIComponent(filename)}`
-    if (!token) {
-      addLog('❌ Token de sesión ausente; no se puede descargar el informe', 'error')
-      return
+    try {
+      // La descarga usa headers, no query params: el backend solo acepta
+      // tokens por query en streams y así nunca se filtra la sesión en URLs.
+      const response = await fetch(url, { headers: authHeaders() })
+      if (!response.ok) {
+        addLog(`❌ No se pudo descargar el informe: ${await responseError(response)}`, 'error')
+        return
+      }
+      const blob = await response.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(objectUrl)
+    } catch (error) {
+      addLog(`❌ Error descargando el informe: ${error}`, 'error')
     }
-    // La descarga se realiza en la misma sesión protegida. El endpoint
-    // también valida el nombre del informe y rechaza rutas externas.
-    window.open(`${url}?token=${encodeURIComponent(token)}`, '_blank')
   }
 
   return (

@@ -8813,6 +8813,13 @@ async def tactical_default_ports():
 # ═════════════════════════════════════════════════════════════════════════════
 # Este catch-all debe registrarse después de TODAS las rutas API. Si se registra
 # antes, FastAPI captura las rutas declaradas más abajo y devuelve un 404 JSON.
+# Compatibilidad con accesos móviles antiguos: algunos bundles publicados
+# conocen /tactical pero no el alias SPA /tactic. El redirect ocurre antes de
+# entregar el index y funciona incluso si el navegador conserva ese bundle.
+@app.get("/tactic", include_in_schema=False)
+async def tactical_legacy_redirect():
+    return Response(status_code=307, headers={"Location": "/tactical"})
+
 if DIST.exists() and DIST.is_dir():
     assets_dir = DIST / "assets"
     if assets_dir.exists():
