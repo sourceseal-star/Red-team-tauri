@@ -1,5 +1,5 @@
 {
- "saved_at": "2026-09-10T07:36:22.650680",
+ "saved_at": "2026-09-19T18:56:18.766091",
  "subnet": "192.168.1.0/24",
  "results": [
   {
@@ -48,7 +48,37 @@
    "risk_reasons": []
   },
   {
-   "ip": "192.168.1.5",
+   "ip": "192.168.1.4",
+   "mac": null,
+   "vendor": null,
+   "ports": [],
+   "type": "unknown",
+   "status": "up",
+   "risk": "low",
+   "risk_reasons": []
+  },
+  {
+   "ip": "192.168.1.6",
+   "mac": null,
+   "vendor": null,
+   "ports": [],
+   "type": "unknown",
+   "status": "up",
+   "risk": "low",
+   "risk_reasons": []
+  },
+  {
+   "ip": "192.168.1.7",
+   "mac": null,
+   "vendor": null,
+   "ports": [],
+   "type": "unknown",
+   "status": "up",
+   "risk": "low",
+   "risk_reasons": []
+  },
+  {
+   "ip": "192.168.1.8",
    "mac": null,
    "vendor": null,
    "ports": [],
