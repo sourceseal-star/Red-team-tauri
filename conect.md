@@ -207,7 +207,73 @@ El panel debe:
 
 ---
 
-## 7. Checklist antes de considerar una conexión lista
+## 7. Arranque Termux: `omni.sh`
+
+`omni.sh` es el orquestador del teléfono/Termux. No es el mismo proceso que
+`replit_start.sh`.
+
+### Separación de responsabilidades
+
+| Entorno | Entrada principal | Función |
+|---|---|---|
+| Replit | `bash replit_start.sh` | Dashboard unificado, build y servicios del workflow |
+| Termux | `bash omni.sh start` | Dashboard, Sol, Commander, GHOST, Nexus, C2 y watchdog |
+
+En Termux, `omni.sh` usa el dashboard en `:8001`, Commander integrado en ese
+dashboard, GHOST en `:8002`, Nexus en `:8004` y, cuando corresponde, Sol en su
+stack propio. El modo `SOL_CORE_ONLY=1` permite arrancar solo el núcleo de Sol
+y dejar fuera los servicios pesados.
+
+### Comandos seguros y propósito
+
+```bash
+bash omni.sh status
+bash omni.sh sync
+bash omni.sh restart
+bash omni.sh logs dash
+bash omni.sh logs all
+bash omni.sh verify
+```
+
+- `status`: inspecciona servicios y puertos; no debería cambiar tráfico.
+- `sync`: protege y verifica `.env`, actualiza repositorios y reconstruye el
+  frontend.
+- `restart`: detiene y vuelve a arrancar servicios; puede liberar los puertos
+  `8001`, `8002`, `8004`, `8005` y `8006`.
+- `logs`: permite revisar el dashboard y los servicios sin lanzar una auditoría.
+- `verify`: comprueba integridad de credenciales.
+- `stop`: detiene el stack completo.
+
+### Regla para actualizar Auditoría Táctica
+
+`omni.sh start` y `omni.sh restart` pueden hacer pull del repositorio, pero para
+garantizar que el bundle nuevo llegue al teléfono debe ejecutarse después de que
+el commit esté publicado:
+
+```bash
+cd ~/Red-team-tauri
+bash omni.sh sync
+bash omni.sh restart
+```
+
+No se debe ejecutar `git reset --hard`, borrar `.env` ni copiar API keys desde
+el dashboard. `omni.sh` carga `.env` sin hacer `source`, comprueba su hash y
+dispone de recuperación si el archivo cambia durante la sincronización.
+
+### Estado actual de la corrección móvil
+
+La corrección de `/tactic` está en el commit local `e9df2e0`. El push a GitHub
+fue rechazado porque el workspace no tiene una sesión CLI autenticada. Hasta
+que ese commit llegue a `origin/main`, `omni.sh sync` seguirá trayendo el bundle
+anterior, que no contiene el alias `/tactic`.
+
+No se debe solucionar pegando un token en el chat. Hay que reautenticar GitHub
+mediante el mecanismo seguro de la integración y después ejecutar el `sync`
+anterior.
+
+---
+
+## 8. Checklist antes de considerar una conexión lista
 
 - [ ] El nombre del Secret coincide exactamente con la tabla.
 - [ ] La clave no aparece en código, Git, frontend ni logs.
@@ -224,7 +290,7 @@ El panel debe:
 
 ---
 
-## 8. Prioridad recomendada
+## 9. Prioridad recomendada
 
 1. Mantener Chaos apagado.
 2. Corregir el nombre `SHODAN_API_KEY`.
