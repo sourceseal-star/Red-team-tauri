@@ -62,7 +62,7 @@ export default function TacticalPanel() {
   const [result, setResult] = useState<ScanSummary | null>(null)
   const [progress, setProgress] = useState<JobProgress | null>(null)
   const [logs, setLogs] = useState<LogEntry[]>([])
-  const [credentials, setCredentials] = useState<Record<string, number> | null>(null)
+  const [credentials, setCredentials] = useState<Record<string, { count: number; sample: string }> | null>(null)
   const [ports, setPorts] = useState<Array<{ port: number; service: string; vendor: string }> | null>(null)
   const logRef = useRef<HTMLDivElement>(null)
 
@@ -89,7 +89,7 @@ export default function TacticalPanel() {
         const data = await r.json()
         const counts = data?.counts ?? data
         return counts && typeof counts === 'object' && !Array.isArray(counts)
-          ? counts as Record<string, number>
+          ? counts as Record<string, { count: number; sample: string }>
           : null
       })
       .then(data => { if (data) setCredentials(data) })
@@ -264,9 +264,9 @@ export default function TacticalPanel() {
 
         {/* Quick stats bar */}
         <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-800">
-          {credentials && Object.entries(credentials).map(([vendor, count]) => (
+          {credentials && Object.entries(credentials).map(([vendor, info]) => (
             <span key={vendor} className="px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs text-slate-400">
-              {vendor}: <span className="text-orange-400 font-mono">{count}</span> creds
+              {vendor}: <span className="text-orange-400 font-mono">{info.count}</span> creds
             </span>
           ))}
           {ports && ports.map(p => (
