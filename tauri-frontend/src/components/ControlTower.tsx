@@ -10,6 +10,7 @@ export default function ControlTower() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<any>(null);
 
   const authH = useCallback((): Record<string, string> => {
     const k = localStorage.getItem('api_token');
@@ -45,6 +46,17 @@ export default function ControlTower() {
     const interval = setInterval(loadAll, 5000);
     return () => clearInterval(interval);
   }, [loadAll]);
+
+  // ── Readiness matrix (endpoint /api/readiness — fuente de verdad) ──
+  useEffect(() => {
+    const pull = () => fetch('/api/readiness', { headers: authH() })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setReadiness(d); })
+      .catch(() => {});
+    pull();
+    const iv = setInterval(pull, 15000);
+    return () => clearInterval(iv);
+  }, [authH]);
 
   const svcAction = async (action: string, name?: string) => {
     try {
@@ -221,6 +233,44 @@ export default function ControlTower() {
             <div className="flex justify-between"><span className="text-slate-500">Dist Built</span><span className={health?.dist_built ? 'text-green-400' : 'text-red-400'}>{health?.dist_built ? 'Sí' : 'No'}</span></div>
           </div>
         </div>
+      </div>
+
+      {/* ── Readiness matrix: qué funciona HOY en este dispositivo ── */}
+      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-bold text-white flex items-center gap-2">
+            <Zap size={12} className="text-yellow-400" /> Matriz de Readiness
+          </h4>
+          {readiness && (
+            <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+              readiness.fails === 0
+                ? 'text-green-400 border-green-900 bg-green-900/20'
+                : 'text-red-400 border-red-900 bg-red-900/20'}`}>
+              {readiness.ready} {readiness.fails > 0 ? `· ${readiness.fails} fallos` : '· OK'}
+            </span>
+          )}
+        </div>
+        {!readiness ? (
+          <p className="text-xs text-slate-600">Verificando módulos en vivo...</p>
+        ) : (
+          <div className="space-y-1">
+            {(readiness.checks || []).map((c: any) => (
+              <div key={c.name} className="flex items-start gap-2 bg-slate-950/40 rounded-lg px-3 py-1.5 border border-slate-800">
+                <span className={`text-[10px] mt-0.5 font-mono ${
+                  c.status === 'ok' ? 'text-green-400' : c.status === 'warn' ? 'text-amber-400' : 'text-red-400'}`}>
+                  {c.status === 'ok' ? '✓' : c.status === 'warn' ? '⚠' : '✗'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[11px] font-medium text-slate-200">{c.name}</span>
+                  </div>
+                  <p className="text-[9px] text-slate-500 truncate">{c.detail}</p>
+                  {c.fix && <p className="text-[9px] text-slate-600">→ fix: {c.fix}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Gateway mesh (optional, at bottom) */}

@@ -8854,6 +8854,214 @@ else:
                             "dist_built": False, "hint": f"cd tauri-frontend && npm run build (esperado: {DIST})"})
 
 
+
+# ═══════════════════════════════════════════════════════════════════
+# === MÓDULO TORRE — /api/readiness: matriz de verificación real ===
+#
+# Fuente de verdad de la Control Tower: qué funciona HOY en ESTE
+# dispositivo, verificado en vivo. Cada check es defensivo (try/except):
+# un check jamás tira el endpoint ni el servidor.
+#
+# Consumo: GET /api/readiness (mismo token Bearer que el resto de la API)
+# Script companion: torre_diagnostico.sh (funciona también offline).
+# ═══════════════════════════════════════════════════════════════════
+
+import shutil as _shutil
+import re as _re_readiness
+
+
+def _rd_check(name, status, detail, fix=None):
+    c = {"name": name, "status": status, "detail": detail}
+    if fix:
+        c["fix"] = fix
+    return c
+
+
+def _rd_tool(binname):
+    """True si el binario existe en PATH."""
+    return bool(_shutil.which(binname))
+
+
+@app.get("/api/readiness")
+async def torre_readiness():
+    """Matriz de readiness del War Room — 10 verificaciones en vivo."""
+    checks = []
+
+    # 1 — Servidor: si está respondiendo esto, funciona.
+    checks.append(_rd_check("servidor", "ok",
+                            "backend respondiendo en este momento"))
+
+    # 2 — Frontend dist completo (guardia de la regla #41: el index.html
+    #     nunca debe referenciar bundles que no estén en assets/).
+    try:
+        _idx = DIST / "index.html"
+        if not _idx.exists():
+            checks.append(_rd_check(
+                "frontend_dist", "fail",
+                f"index.html no existe en {DIST}",
+                "git pull y reconstruir (regla #41: git add -f tauri-frontend/dist)"))
+        else:
+            _html = _idx.read_text(encoding="utf-8", errors="ignore")
+            _refs = sorted(set(_re_readiness.findall(
+                r'/assets/([A-Za-z0-9_.-]+\.(?:js|css))', _html)))
+            _faltan = [r for r in _refs
+                       if not (DIST / "assets" / r).exists()]
+            if _faltan:
+                checks.append(_rd_check(
+                    "frontend_dist", "fail",
+                    f"index.html referencia {len(_refs)} assets y faltan "
+                    f"{len(_faltan)}: {', '.join(_faltan[:4])}",
+                    "git pull del commit que sube el dist completo"))
+            else:
+                checks.append(_rd_check(
+                    "frontend_dist", "ok",
+                    f"index.html + {len(_refs)} assets consistentes"))
+    except Exception as _e:
+        checks.append(_rd_check("frontend_dist", "warn",
+                                f"no se pudo verificar: {_e}"))
+
+    # 3 — Auditoría táctica (scan real + prueba de credenciales + informe).
+    if _TACTICAL_OK:
+        try:
+            checks.append(_rd_check(
+                "auditoria_tactica", "ok",
+                f"módulo cargado: {len(_TACTICAL_CREDS)} vendors de creds, "
+                f"{len(_TACTICAL_PORTS)} puertos por defecto"))
+        except Exception:
+            checks.append(_rd_check("auditoria_tactica", "ok",
+                                    "módulo cargado"))
+    else:
+        checks.append(_rd_check(
+            "auditoria_tactica", "fail",
+            "tactical_executor no importó (ver el log de arranque)",
+            "revisar el WARN de import en el arranque del dashboard"))
+
+    # 4 — LEVIATHAN (scanners/exploiters/orquestador multi-subred).
+    if _LEVIATHAN_OK:
+        checks.append(_rd_check(
+            "leviathan", "ok",
+            "routers montados: /api/leviathan/* + /api/v1/* + orquestador "
+            "asíncrono (/api/leviathan/command)"))
+    else:
+        checks.append(_rd_check(
+            "leviathan", "fail",
+            "leviathan_core no importó",
+            "revisar el log de arranque del dashboard"))
+
+    # 5 — COM-LINK: matriz honesta por presencia de herramientas.
+    #     (ready == requisitos locales presentes; NO garantiza entrega).
+    try:
+        _canales = []
+        _canales.append(("sms", _rd_tool("termux-sms-send"),
+                         "Termux:API + permisos + SIM"))
+        _canales.append(("telegram", bool(_TELEGRAM_CONFIG.get("token")),
+                         "token del bot configurado (canal remoto)"))
+        _canales.append(("voip_sip", _rd_tool("linphonec"),
+                         "linphonec + credenciales SIP"))
+        _canales.append(("mesh_wifi", _rd_tool("ip"),
+                         "IP local presente; falta confirmar peer"))
+        _canales.append(("mesh_bluetooth", _rd_tool("rfcomm"),
+                         "rfcomm + hcitool + peer compatible"))
+        _canales.append(("radio_ax25", False,
+                         "NO implementado (por diseño, falla explícita)"))
+        _canales.append(("satelite", False,
+                         "NO implementado (por diseño, falla explícita)"))
+        _listos = [n for n, ok, _rq in _canales if ok]
+        checks.append(_rd_check(
+            "comlink", "ok" if _listos else "warn",
+            f"{len(_listos)}/7 canales con requisitos locales: "
+            f"{', '.join(_listos) if _listos else 'ninguno'}",
+            "bash commander/comlink/comlink.sh status-json para el detalle"))
+    except Exception as _e:
+        checks.append(_rd_check("comlink", "warn",
+                                f"no se pudo verificar: {_e}"))
+
+    # 6 — Notificación Telegram (del informe táctico sellado).
+    if _TELEGRAM_CONFIG.get("token") and _TELEGRAM_CONFIG.get("chat_id"):
+        checks.append(_rd_check("telegram_notify", "ok",
+                                "token y chat_id configurados"))
+    else:
+        checks.append(_rd_check(
+            "telegram_notify", "warn",
+            "sin TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID: los scaneos tácticos "
+            "no notifican por Telegram",
+            "exportar TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en omni.sh"))
+
+    # 7 — Binarios de red reales que usan los scaneos.
+    try:
+        _bins = {b: _rd_tool(b) for b in ("nmap", "ip", "ping")}
+        _ok_bins = [b for b, ok in _bins.items() if ok]
+        _no_bins = [b for b, ok in _bins.items() if not ok]
+        if _no_bins:
+            checks.append(_rd_check(
+                "binarios_red", "warn",
+                f"presentes: {', '.join(_ok_bins) or 'ninguno'}; "
+                f"FALTAN: {', '.join(_no_bins)}",
+                f"pkg install {' '.join(_no_bins)}"))
+        else:
+            checks.append(_rd_check("binarios_red", "ok",
+                                   "nmap, ip y ping presentes"))
+    except Exception as _e:
+        checks.append(_rd_check("binarios_red", "warn",
+                                f"no se pudo verificar: {_e}"))
+
+    # 8 — Termux:API (periféricos: SMS, vibración, cámara, WiFi).
+    if _rd_tool("termux-api"):
+        checks.append(_rd_check("termux_api", "ok",
+                                "termux-api presente (periféricos accesibles)"))
+    else:
+        checks.append(_rd_check("termux_api", "warn",
+                                "termux-api no está en PATH",
+                                "pkg install termux-api (y la app Termux:API "
+                                "de F-Droid/Play con permisos concedidos)"))
+
+    # 9 — Directorio de reportes sellados escribible.
+    try:
+        if not REPORTS.exists():
+            checks.append(_rd_check("reportes", "fail",
+                                   f"no existe: {REPORTS}",
+                                   "mkdir -p reports"))
+        elif os.access(REPORTS, os.W_OK):
+            _files = len(list(REPORTS.glob("*.html")))
+            checks.append(_rd_check("reportes", "ok",
+                                    f"{REPORTS} escribible "
+                                    f"({_files} informes)"))
+        else:
+            checks.append(_rd_check("reportes", "fail",
+                                    f"{REPORTS} sin permiso de escritura"))
+    except Exception as _e:
+        checks.append(_rd_check("reportes", "warn",
+                                f"no se pudo verificar: {_e}"))
+
+    # 10 — SOAR y gestión de procesos reales (rutas registradas).
+    try:
+        _paths = {getattr(r, "path", "") for r in app.routes}
+        _soar = any(p.startswith("/api/v2/soar") for p in _paths)
+        _procs = any(p.startswith("/api/processes") for p in _paths)
+        if _soar and _procs:
+            checks.append(_rd_check("soar_procesos", "ok",
+                                    "playbooks SOAR + manager de procesos "
+                                    "registrados"))
+        else:
+            checks.append(_rd_check(
+                "soar_procesos", "warn",
+                f"SOAR={'sí' if _soar else 'no'} procesos={'sí' if _procs else 'no'}"))
+    except Exception as _e:
+        checks.append(_rd_check("soar_procesos", "warn",
+                                f"no se pudo verificar: {_e}"))
+
+    _ok = sum(1 for c in checks if c["status"] == "ok")
+    _fail = sum(1 for c in checks if c["status"] == "fail")
+    return {
+        "ok": _fail == 0,
+        "ready": f"{_ok}/{len(checks)}",
+        "fails": _fail,
+        "warns": sum(1 for c in checks if c["status"] == "warn"),
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "checks": checks,
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     import socket as _socket
