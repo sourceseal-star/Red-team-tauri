@@ -246,18 +246,26 @@ async def android_wifi():
 
 
 def _open_osmand(uri: str) -> dict:
-    package = _package_installed(["net.osmand", "net.osmand.plus"])
-    if not package:
-        return {"opened": False, "error": "OsmAnd no está instalado", "hint": "Instala OsmAnd desde F-Droid o Play Store"}
+    # FIX 2026-09-21: la detección por 'pm'/'cmd' requiere acceso de sistema
+    # que Termux SIN root no tiene -> _package_installed() da False Negativo
+    # aunque la app SI este instalada (reportado por Harold: "tengo las apps
+    # instaladas, hago click y no pasa nada"). Ya NO bloqueamos la apertura
+    # por esto: si no se detecta, se usa el package mas comun como default y
+    # se intenta abrir igual. Solo termux-open-url (via Termux:API) puede
+    # lanzar intents SIN root -- 'am' casi nunca esta disponible sin el.
+    package = _package_installed(["net.osmand", "net.osmand.plus"]) or "net.osmand.plus"
+    detected = _package_installed(["net.osmand", "net.osmand.plus"]) is not None
     if not _available("am"):
         if _available("termux-open-url"):
             try:
                 result = subprocess.run(["termux-open-url", uri], capture_output=True, text=True, timeout=10, check=False)
                 if result.returncode == 0:
-                    return {"opened": True, "method": "termux-open-url", "uri": uri}
+                    return {"opened": True, "method": "termux-open-url", "uri": uri, "package_detected": detected}
             except Exception:
                 pass
-        return {"opened": False, "error": "Ni 'am' ni 'termux-open-url' disponibles"}
+        return {"opened": False,
+                "error": "Ni 'am' ni 'termux-open-url' disponibles (instala Termux:API)",
+                "package_detected": detected}
 
     # Intentar osmand:// deep link primero (más directo para OsmAnd)
     # Construir URI osmand:// si tenemos lat/lon del geo: URI
@@ -338,11 +346,23 @@ async def open_osmand(body: dict = Body(...)):
 
 
 def _open_netguard() -> dict:
-    package = _package_installed(["eu.faircode.netguard", "eu.faircode.netguard.debug"])
-    if not package:
-        return {"opened": False, "error": "NetGuard no está instalado", "hint": "Instala NetGuard desde F-Droid o Play Store"}
+    # FIX 2026-09-21: mismo problema que OsmAnd -- _package_installed()
+    # necesita 'pm'/'cmd' (root) para confirmar instalación; sin ellos da
+    # falso negativo aunque la app SI este instalada. Ya no bloqueamos el
+    # intento por esto, usamos el package conocido como default.
+    package = _package_installed(["eu.faircode.netguard", "eu.faircode.netguard.debug"]) \
+        or "eu.faircode.netguard"
     if not _available("am"):
-        return {"opened": False, "error": "Comando 'am' no disponible (¿estás en Termux?)", "package": package}
+        # NetGuard no publica un esquema de URI propio (a diferencia de OsmAnd
+        # con geo:/osmand://), así que sin 'am' (requiere Termux con acceso de
+        # sistema/root) no hay forma de auto-abrirlo. Es una limitación real
+        # de Android/Termux, no un bug -- pero el mensaje debe ser honesto:
+        # NO decir "no está instalado" cuando no se pudo verificar eso.
+        return {"opened": False,
+                "error": "No se puede abrir automáticamente sin 'am' (requiere Termux con acceso de sistema/root)",
+                "hint": "Abre NetGuard manualmente: mantén pulsado el botón Home o cambia de app "
+                        "desde el selector de apps recientes.",
+                "package": package, "manual": True}
 
     # Método 1: am start directo con activity conocida
     # Método 2: am start con MAIN/LAUNCHER

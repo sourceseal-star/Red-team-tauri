@@ -9050,6 +9050,39 @@ async def torre_readiness():
         checks.append(_rd_check("soar_procesos", "warn",
                                 f"no se pudo verificar: {_e}"))
 
+    # 11 — GeoIntel: alcance real a las APIs externas (ipwho.is + abuse.ch).
+    #      Si esto falla, /api/geo y /api/intel devuelven datos parciales o
+    #      con error, sin que se note la causa desde el frontend.
+    try:
+        import urllib.request as _urlreq
+        def _rd_reach(url):
+            try:
+                _urlreq.urlopen(_urlreq.Request(
+                    url, headers={"User-Agent": "SourceSeal-Readiness/1.0"}), timeout=4)
+                return True
+            except Exception:
+                return False
+        _geo_ok = await asyncio.to_thread(_rd_reach, "https://ipwho.is/8.8.8.8")
+        _bl_ok = await asyncio.to_thread(
+            _rd_reach, "https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.txt")
+        if _geo_ok and _bl_ok:
+            checks.append(_rd_check("geo_intel_red", "ok",
+                                    "ipwho.is y abuse.ch alcanzables: geo + intel completos"))
+        elif _geo_ok:
+            checks.append(_rd_check(
+                "geo_intel_red", "warn",
+                "ipwho.is OK pero abuse.ch no responde: intel dará "
+                "'score PARCIAL: blocklist no disponible'",
+                "revisar conexión a feodotracker.abuse.ch desde este dispositivo"))
+        else:
+            checks.append(_rd_check(
+                "geo_intel_red", "fail",
+                "ipwho.is no responde: /api/geo e /api/intel devolverán error",
+                "revisar conexión a internet / DNS desde este dispositivo"))
+    except Exception as _e:
+        checks.append(_rd_check("geo_intel_red", "warn",
+                                f"no se pudo verificar: {_e}"))
+
     _ok = sum(1 for c in checks if c["status"] == "ok")
     _fail = sum(1 for c in checks if c["status"] == "fail")
     return {

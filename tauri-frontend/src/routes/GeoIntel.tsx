@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../lib/api'
+import { api, getApiKey } from '../lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -77,7 +77,13 @@ export default function GeoIntel() {
   const [history, setHistory] = useState<Array<{ip:string; score:number; country:string; isp:string; label:string}>>([])
 
   // API Key compartida para escaneos de red
-  const [netApiKey, setNetApiKey] = useState('')
+  // FIX 2026-09-21: antes había que pegar el REDTEAM_API_KEY a mano en
+  // este campo aunque ya estuvieras logueado con el mismo token -- por eso
+  // los escaneos de cámaras/radio 'no funcionaban' (bloqueados en
+  // 'Introduce el REDTEAM_API_KEY antes de escanear' sin que fuera obvio
+  // por qué). Se precarga con el token ya guardado (mismo que usa el resto
+  // del dashboard), y el usuario puede sobreescribirlo si quiere otro.
+  const [netApiKey, setNetApiKey] = useState(() => getApiKey() || '')
 
   // Cámaras
   const [camTarget, setCamTarget] = useState('')

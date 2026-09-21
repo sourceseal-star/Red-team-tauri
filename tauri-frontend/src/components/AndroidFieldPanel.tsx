@@ -189,8 +189,8 @@ export default function AndroidFieldPanel() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           ['Termux:API', termuxReady ? 'Disponible' : 'No detectado', termuxReady ? 'text-green-400' : 'text-amber-400'],
-          ['OsmAnd', status?.osmand_package ? 'Instalado' : 'No detectado', status?.osmand_package ? 'text-green-400' : 'text-slate-500'],
-          ['NetGuard', status?.netguard_package ? 'Instalado' : 'No detectado', status?.netguard_package ? 'text-green-400' : 'text-slate-500'],
+          ['OsmAnd', status?.osmand_package ? 'Instalado' : 'Sin confirmar', status?.osmand_package ? 'text-green-400' : 'text-slate-500'],
+          ['NetGuard', status?.netguard_package ? 'Instalado' : 'Sin confirmar', status?.netguard_package ? 'text-green-400' : 'text-slate-500'],
           ['Corset', status?.scope?.configured ? 'Configurado' : 'Manual', status?.scope?.configured ? 'text-green-400' : 'text-amber-400'],
           ['Modo', 'Bajo demanda', 'text-cyan-400'],
         ].map(([name, value, color]) => (
@@ -242,7 +242,7 @@ export default function AndroidFieldPanel() {
         <Card>
           <h3 className="text-sm font-bold text-slate-300 mb-3 flex items-center gap-2"><Shield size={15} /> NetGuard</h3>
           <p className="text-xs text-slate-500 mb-3">Se detecta la instalación y se puede abrir. El cambio de reglas continúa bajo control directo de NetGuard.</p>
-          <Button onClick={openNetguard} disabled={!status?.netguard_package} tone="indigo"><ExternalLink size={13} /> Abrir NetGuard</Button>
+          <Button onClick={openNetguard} tone="indigo"><ExternalLink size={13} /> Abrir NetGuard</Button>
         </Card>
 
         <Card>
