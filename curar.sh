@@ -4,7 +4,7 @@
 #  Creado 2026-09-06 para Harold: "siempre falla y no sé por qué"
 #
 #  Este script NO asume nada. Lo cura TODO por sí solo:
-#    1. Sincroniza ambos repos a fuerza (borra corrupción local)
+#    1. Sincroniza ambos repos solo por fast-forward (nunca borra trabajo local)
 #    2. Protege tus .env (llaves) antes de tocar nada
 #    3. Mata procesos viejos que se quedan zombis
 #    4. Arranca todo (omni.sh o fallback directo)
@@ -73,41 +73,32 @@ for d in "$RT_DIR" "$SOL_DIR"; do
   if [ ! -d "$d/.git" ]; then bad "repo $name no existe" "clona: git clone https://github.com/sourceseal-star/$name.git $d"; continue; fi
   cd "$d" || { bad "no pude entrar a $name" "permisos de $d"; continue; }
 
-  # FIX 2026-09-06: ANTES este paso hacía "git reset --hard origin/main"
-  # a ciegas. Si Harold editaba un archivo (p.ej. sol_holo.html) y NO lo
-  # había subido todavía, ese reset lo BORRABA para siempre — justo el
-  # miedo de "que no se destruya todo de nuevo". Ahora: si hay cambios
-  # sin commitear, se guardan en un commit local y se intentan subir a
-  # GitHub PRIMERO. Si el push funciona, el reset de abajo no pierde
-  # nada (origin ya es igual a lo local). Si el push falla (sin
-  # internet, conflicto...), se CANCELA el reset de este repo — mejor
-  # quedarse en versión vieja un momento que borrar una edición que no
-  # existe en ningún otro lado.
+  # CURA SEGURA 2026-09-22: ningún push automático. Si existe trabajo
+  # local, se guarda en un commit de respaldo y el repo NO se mueve. La
+  # publicación posterior pasa por SOL GATE con revisión humana.
   LOCAL_SAFE=1
   if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-    echo "   📝 tienes cambios locales sin subir en $name — los protejo primero"
+    echo "   📝 tienes cambios locales en $name — creando respaldo local"
     git add -A
     if git -c user.email="sol@sourceseal.co" -c user.name="Sol (auto-backup)" \
-           commit -m "auto-backup curar.sh: cambios locales $(date '+%Y-%m-%d %H:%M')" >/dev/null 2>"$CURA_TMP/curar_commit_err.txt"; then
-      if git push origin "$BRANCH" >/dev/null 2>"$CURA_TMP/curar_push_err.txt"; then
-        echo "   ☁️  subidos a GitHub — a salvo, no se pierden"
-      else
-        LOCAL_SAFE=0
-        echo "   ⚠️  no pude subirlos (sin internet o el remoto avanzó) — CANCELO el reset de $name para no borrar tu edición"
-        echo "      └─ $(tail -1 "$CURA_TMP/curar_push_err.txt")"
-        echo "      Tu cambio queda a salvo en un commit local. Corre 'bash curar.sh' otra vez cuando tengas internet."
-      fi
+           commit -m "auto-backup curar.sh: cambios locales $(date '+%Y-%m-%d %H:%M')" \
+           >/dev/null 2>"$CURA_TMP/curar_commit_err.txt"; then
+      echo "   💾 commit local creado; NO se publica sin revisión de SOL GATE"
     else
-      echo "   (nada nuevo que commitear — solo basura ignorada)"
+      echo "   ⚠️  no pude crear el commit de respaldo: $(tail -1 "$CURA_TMP/curar_commit_err.txt")"
     fi
+    LOCAL_SAFE=0
   fi
 
   if git fetch origin "$BRANCH" 2>"$CURA_TMP/curar_git_err.txt"; then
     if [ $LOCAL_SAFE -eq 1 ]; then
-      git reset --hard "origin/$BRANCH" >/dev/null 2>&1
-      ok "$name → $(git log --oneline -1 | head -c 45)"
+      if git merge --ff-only "origin/$BRANCH" >/dev/null 2>"$CURA_TMP/curar_merge_err.txt"; then
+        ok "$name → $(git log --oneline -1 | head -c 45)"
+      else
+        bad "$name no admite fast-forward" "historial preservado; revisa: git log --oneline --graph --all -10"
+      fi
     else
-      ok "$name → me quedé en TU versión local (con la edición protegida, sin subir aún)"
+      ok "$name → conservé TU versión local; actualización remota pendiente de revisión"
     fi
     [ "$name" = "sol" ] && SOL_OK=1
   else
@@ -205,6 +196,7 @@ fi
 echo "── [3/5] Matando procesos viejos ──"
 pkill -f dashboard_server.py 2>/dev/null && echo "   🧟 dashboard viejo eliminado" || echo "   (no había dashboard corriendo)"
 pkill -f sol_api.py         2>/dev/null && echo "   🧟 sol_api viejo eliminado"   || echo "   (no había sol_api corriendo)"
+pkill -f "uvicorn sol_portero:app" 2>/dev/null && echo "   🧟 SOL GATE viejo eliminado" || echo "   (no había SOL GATE corriendo)"
 sleep 2
 
 # ── 4. Arrancar todo ──
@@ -219,11 +211,12 @@ fi
 
 # Esperar a que ambos puertos despierten (máx 75s)
 echo "   ⏳ esperando a que despierten (máx 75s)…"
-DASH_OK=0; SOL_OK=0
+DASH_OK=0; SOL_OK=0; GATE_OK=0
 for i in $(seq 1 75); do
   curl -s -m 2 -o /dev/null http://127.0.0.1:8001/ && DASH_OK=1
   curl -s -m 2 -o /dev/null http://127.0.0.1:8006/api/sol/status && SOL_OK=1
-  [ $DASH_OK -eq 1 ] && [ $SOL_OK -eq 1 ] && break
+  curl -s -m 2 -o /dev/null http://127.0.0.1:8012/sol/contexto && GATE_OK=1
+  [ $DASH_OK -eq 1 ] && [ $SOL_OK -eq 1 ] && [ $GATE_OK -eq 1 ] && break
   sleep 1
 done
 
@@ -235,6 +228,7 @@ echo "━━━ LA WAR ROOM ━━━"
 curl -s -m 5 http://127.0.0.1:8001/ | grep -q "assets/" && ok "War Room cargada" || bad "War Room no sirve HTML" "dist roto — copia esto para Seal"
 BUNDLE=$(curl -s -m 5 http://127.0.0.1:8001/ | grep -o 'assets/index-[^"]*\.js' | head -1 | cut -d/ -f2)
 [ -n "$BUNDLE" ] && curl -s -m 5 -o /dev/null "http://127.0.0.1:8001/assets/$BUNDLE" && ok "Bundle del frontend sirve" || bad "Bundle no sirve" "dist incompleto"
+[ $GATE_OK -eq 1 ] && ok "SOL GATE :8012 vivo (GHOST conserva :8002)" || bad "SOL GATE :8012 NO responde" "bash omni.sh logs gate"
 
 echo ""
 echo "━━━ SOL — SU CUERPO ━━━"

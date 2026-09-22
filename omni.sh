@@ -21,6 +21,7 @@
 #  SERVICIOS QUE LEVANTA `start`:
 #    :8001  Dashboard FastAPI + Commander integrado
 #    :8002  GHOST PHANTOM Master + Node worker
+#    :8012  SOL GATE (portero local de acciones sensibles)
 #    :8004  Nexus Omni-Sentient
 #    :8005  C2 UNIFIED PRO (si existe)
 #    ☀️    Sol Autónoma (daemon que vigila y habla proactivamente)
@@ -77,6 +78,10 @@ ENV_FILE="$ROOT/.env"
 # ☀️ Sol vive en SU PROPIO repo (sourceseal-star/sol) — NO en Red-team-tauri.
 # omni.sh la levanta desde ahí: cerebro, daemon, Telegram y herramientas.
 SOL_REPO="$HOME/sol"
+# SOL GATE no usa :8002: ese puerto ya pertenece a GHOST PHANTOM.
+SOL_GATE_PORT="${SOL_GATE_PORT:-8012}"
+SOL_PORTERO_URL="${SOL_PORTERO_URL:-http://127.0.0.1:${SOL_GATE_PORT}}"
+export SOL_PORTERO_URL
 # MODO NÚCLEO — decisión de Harold (2026-09-04): "priorizar la funcionalidad
 # del núcleo de Sol sobre el dashboard de la War Room hasta completar
 # estabilidad total". Sospecha real: el teléfono corre ~10 procesos Python
@@ -117,13 +122,13 @@ ensure_sol_repo() {
   if [ -d "$SOL_REPO/.git" ]; then
     if [ -f "$SOL_REPO/.env" ]; then
       local SOL_ENV_HASH_BEFORE="$(sha256sum "$SOL_REPO/.env" 2>/dev/null | cut -d' ' -f1)"
-      (cd "$SOL_REPO" && git stash --quiet 2>/dev/null; git pull --ff-only origin main >> "$LOG_DIR/sol_sync.log" 2>&1 || { git fetch origin >> "$LOG_DIR/sol_sync.log" 2>&1; git reset --hard origin/main >> "$LOG_DIR/sol_sync.log" 2>&1; }) || warn "git pull de ~/sol falló (continuando)"
+      (cd "$SOL_REPO" && git pull --ff-only origin main >> "$LOG_DIR/sol_sync.log" 2>&1) || warn "git pull --ff-only de ~/sol falló; preservo la copia local"
       local SOL_ENV_HASH_AFTER="$(sha256sum "$SOL_REPO/.env" 2>/dev/null | cut -d' ' -f1)"
       if [ "$SOL_ENV_HASH_AFTER" != "$SOL_ENV_HASH_BEFORE" ]; then
         warn "¡~/sol/.env cambió tras el pull!"
       fi
     else
-      (cd "$SOL_REPO" && git stash --quiet 2>/dev/null; git pull --ff-only origin main >> "$LOG_DIR/sol_sync.log" 2>&1 || { git fetch origin >> "$LOG_DIR/sol_sync.log" 2>&1; git reset --hard origin/main >> "$LOG_DIR/sol_sync.log" 2>&1; }) || warn "git pull de ~/sol falló (continuando)"
+      (cd "$SOL_REPO" && git pull --ff-only origin main >> "$LOG_DIR/sol_sync.log" 2>&1) || warn "git pull --ff-only de ~/sol falló; preservo la copia local"
     fi
     return 0
   fi
@@ -406,8 +411,8 @@ help() {
 
 COMANDOS:
   start          Levanta TODO (antes sincroniza los 3 repos con GitHub):
-                 Dashboard + GHOST + Nexus + C2 + Telegram + Watchdog +
-                 Seal IA + Sol (daemon, cerebro, cuerpo, relé)
+                 Dashboard + GHOST + Nexus + C2 + SOL GATE + Telegram +
+                 Watchdog + Seal IA + Sol (daemon, cerebro, cuerpo, relé)
   stop           Detiene TODO limpio (incluida Sol y su cuerpo)
   restart        Stop + Start (con auto-sync de los 3 repos)
   recover        🚑 RESCATE TOTAL: 3 repos a origin/main (duro, stash
@@ -552,6 +557,46 @@ kill_by_pidfile_or_port() {
   fi
 }
 
+start_sol_gate() {
+  if curl -s -m 2 "$SOL_PORTERO_URL/sol/contexto" >/dev/null 2>&1; then
+    ok "SOL GATE :$SOL_GATE_PORT ya activo"
+    return 0
+  fi
+  if [ ! -f "$SOL_REPO/sol_portero.py" ]; then
+    fail "SOL GATE no disponible: falta ~/sol/sol_portero.py"
+    return 1
+  fi
+  if ! python3 -c "import fastapi, uvicorn" >/dev/null 2>&1; then
+    info "Instalando dependencias mínimas de SOL GATE..."
+    python3 -m pip install fastapi uvicorn >> "$LOG_DIR/sol_gate.log" 2>&1 || {
+      fail "No se pudieron instalar fastapi/uvicorn para SOL GATE"
+      return 1
+    }
+  fi
+  info "SOL GATE :$SOL_GATE_PORT — arrancando portero local..."
+  cd "$SOL_REPO"
+  SOL_DIR="$SOL_REPO" REDTEAM_DIR="$ROOT" \
+    COMMANDER_DIR="${COMMANDER_DIR:-$HOME/commander}" \
+    SOL_PORTERO_URL="$SOL_PORTERO_URL" PYTHONUNBUFFERED=1 \
+    nohup python3 -m uvicorn sol_portero:app --host 127.0.0.1 --port "$SOL_GATE_PORT" \
+    >> "$LOG_DIR/sol_gate.log" 2>&1 &
+  local gate_pid=$!
+  echo "$gate_pid" > "$SOL_DIR/sol_gate.pid"
+  for _ in $(seq 1 20); do
+    curl -s -m 2 "$SOL_PORTERO_URL/sol/contexto" >/dev/null 2>&1 && break
+    kill -0 "$gate_pid" 2>/dev/null || break
+    sleep 1
+  done
+  cd "$ROOT"
+  if curl -s -m 3 "$SOL_PORTERO_URL/sol/contexto" >/dev/null 2>&1; then
+    ok "SOL GATE :$SOL_GATE_PORT listo (PID $gate_pid)"
+    return 0
+  fi
+  fail "SOL GATE :$SOL_GATE_PORT no respondió — ver $LOG_DIR/sol_gate.log"
+  tail -8 "$LOG_DIR/sol_gate.log" 2>/dev/null | sed 's/^/    /'
+  return 1
+}
+
 start() {
   # ── AUTO-SYNC v1 (2026-09-04): GitHub es la ÚNICA fuente de verdad ──
   # omni.sh vive DENTRO del repo Red-team-tauri. Antes solo sincronizaba
@@ -663,6 +708,7 @@ start() {
   free_port 8004 2>/dev/null || true
   free_port 8005 2>/dev/null || true
   free_port 8006 2>/dev/null || true
+  free_port "$SOL_GATE_PORT" 2>/dev/null || true
 
   # ── Limpiar procesos previos ──
   pkill -f "$ROOT/redteam/scripts/dashboard_server.py" 2>/dev/null || true
@@ -675,6 +721,7 @@ start() {
   pkill -f "$ROOT/nexus_omni_v9.py" 2>/dev/null || true
   pkill -f "$ROOT/c2_unified_pro.py" 2>/dev/null || true
   pkill -f "$ROOT/sol_telegram_bridge.py" 2>/dev/null || true
+  pkill -f "uvicorn sol_portero:app" 2>/dev/null || true
   sleep 1
 
   echo ""
@@ -791,7 +838,11 @@ start() {
 
     fi
 
-# ── 5. Telegram (Sol) — SOLO UNO puede hacer polling del mismo token a la vez ──
+# ── 5. SOL GATE (:8012 por defecto) — antes que daemon/Telegram ──
+  # Las acciones sensibles fallan cerrado si el portero no está vivo.
+  start_sol_gate || warn "Sol seguirá viva, pero push/SMS/Docker/shell/scan externo quedarán bloqueados"
+
+  # ── 6. Telegram (Sol) — SOLO UNO puede hacer polling del mismo token a la vez ──
   #    Telegram API rechaza (409 Conflict) una segunda conexión getUpdates simultánea.
   #    Preferimos la Miniapp (botones, recordatorios, voz, avatar); el Puente legacy
   #    queda como fallback automático si python-telegram-bot no está disponible.
@@ -1002,6 +1053,7 @@ stop() {
   pkill -f "sol_daemon.py" 2>/dev/null && ok "Sol autónoma detenida" || true
   rm -f "$SOL_DIR/sol.pid" 2>/dev/null || true
   kill_by_pidfile_or_port "Sol API (8006)" "$SOL_DIR/sol_api.pid" "sol_api.py"                   8006
+  kill_by_pidfile_or_port "SOL GATE"       "$SOL_DIR/sol_gate.pid" "uvicorn sol_portero:app"       "$SOL_GATE_PORT"
   pkill -f "sol_relay.py" 2>/dev/null && ok "Relé Termux detenido" || true
   pkill -f "sol_body.sh" 2>/dev/null && ok "Sol cuerpo detenido" || true
   pkill -f "sol_watchdog.sh" 2>/dev/null && ok "Sol watchdog detenido" || true
@@ -1051,6 +1103,13 @@ status_short() {
     ok "Commander         🟢 INTEGRADO"
   else
     warn "Commander         🟡 NO RESPONDE"
+  fi
+
+  # SOL GATE :8012 (local, nunca expuesto a la red)
+  if curl -s -m 3 "$SOL_PORTERO_URL/sol/contexto" >/dev/null 2>&1; then
+    ok "SOL GATE :$SOL_GATE_PORT  🟢 ACTIVO"
+  else
+    fail "SOL GATE :$SOL_GATE_PORT  🔴 CAÍDO (acciones sensibles bloqueadas)"
   fi
 
   # GHOST :8002
@@ -1556,6 +1615,7 @@ logs() {
     c2)              tail -50 "$LOG_DIR/c2.log" 2>/dev/null || echo "Sin logs de C2" ;;
     nexus)           tail -50 "$LOG_DIR/nexus.log" 2>/dev/null || echo "Sin logs de Nexus" ;;
     seal)            tail -50 "$LOG_DIR/seal.log" 2>/dev/null || echo "Sin logs de Seal" ;;
+    gate|portero)    tail -50 "$LOG_DIR/sol_gate.log" 2>/dev/null || echo "Sin logs de SOL GATE" ;;
     watchdog)        tail -50 "$LOG_DIR/watchdog.log" 2>/dev/null || echo "Sin logs de Watchdog" ;;
     all|*)           echo -e "${BOLD}=== Dashboard ===${N}"; tail -20 "$LOG_DIR/dash.log" 2>/dev/null
                      echo -e "\n${BOLD}=== GHOST ===${N}"; tail -20 "$LOG_DIR/ghost.log" 2>/dev/null
@@ -1659,6 +1719,12 @@ watchdog() {
         fi
       fi
     fi
+    # SOL GATE: si cae, se levanta antes de permitir acciones sensibles.
+    if ! curl -s -m 3 "$SOL_PORTERO_URL/sol/contexto" >/dev/null 2>&1; then
+      log "⚠️ SOL GATE caído → reiniciando en :$SOL_GATE_PORT"
+      start_sol_gate || true
+    fi
+
     # Telegram — reiniciar SOLO si NINGUNO de los dos (puente/miniapp) está corriendo
     if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
       if ! pgrep -f "sol_telegram_bridge" >/dev/null && ! pgrep -f "sol_telegram_bot.py" >/dev/null; then
