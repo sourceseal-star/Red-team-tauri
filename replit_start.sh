@@ -51,10 +51,14 @@ if [ ! -d "node_modules" ] || [ ! -d "node_modules/vis-network" ]; then
   npm install --prefer-offline --no-audit --no-fund 2>&1 | tail -5 || true
 fi
 echo "[start] Build frontend..."
-npm run build 2>&1 || {
-  echo "[start] ! Build frontend fallo, pero continuando con dist/ existente..."
-  echo "[start]   Si dist/ no existe, el backend no tendra frontend que servir."
-}
+if ! npm run build 2>&1; then
+  echo "[start] X Build frontend fallo; no se arrancara un dist potencialmente roto."
+  exit 1
+fi
+if ! python3 "$ROOT/redteam/scripts/validate_frontend_dist.py"; then
+  echo "[start] X Validacion del dist fallo; no se arrancara el dashboard."
+  exit 1
+fi
 
 # -- 4. Levantar backend unificado --
 echo "[start] Iniciando backend unificado en :$PORT..."

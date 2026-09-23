@@ -617,6 +617,15 @@ start_sol_gate() {
   return 1
 }
 
+verify_frontend_dist() {
+  local validator="$ROOT/redteam/scripts/validate_frontend_dist.py"
+  if [ ! -f "$validator" ]; then
+    fail "Falta el validador del frontend: $validator"
+    return 1
+  fi
+  python3 "$validator"
+}
+
 # Un portero protegido puede devolver 401/403/503 en /sol/contexto sin estar
 # caído. /health es la señal preferida; los códigos de contexto protegidos
 # son una compatibilidad deliberada con sol_portero.py antiguo.
@@ -657,6 +666,10 @@ start() {
   banner
   load_env
   load_sol_env   # ☀️ FIX 2026-09-04: cargar llaves de ~/sol ANTES de todo.
+  if ! verify_frontend_dist; then
+    fail "Frontend dist incompleto; se cancela el arranque para evitar pantalla blanca"
+    return 1
+  fi
   # ANTES este load vivía en la sección 9 (línea ~859), DESPUÉS de que la
   # sección 5 (Telegram, línea ~725) y la 8 (daemon, ~810) ya habían pasado.
   # Sin TELEGRAM_BOT_TOKEN en el entorno, la sección 5 se saltaba en silencio

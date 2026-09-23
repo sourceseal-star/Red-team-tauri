@@ -70,6 +70,11 @@ source_seal_audit_report.json
 tauri-frontend/dist/
 tauri-frontend/node_modules/
 tauri-frontend/src-tauri/target/
+# The production SPA bundle is a release artifact consumed by Termux.
+# Keep the complete dist in Git so republish cannot leave an older/partial
+# bundle that hides the War Room and Tactical Audit.
+!tauri-frontend/dist/
+!tauri-frontend/dist/**
 
 # 2026-09-05: sol.html se sincroniza en caliente desde ~/sol (sol_sync.sh,
 # dashboard_server.py) — dejar de rastrearlo en git evita que cada sync
