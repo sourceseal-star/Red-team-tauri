@@ -425,6 +425,7 @@ COMANDOS:
   sync-deps      Solo instalar/actualizar dependencias Python + Node
   sync-frontend  Solo rebuild del frontend (npm run build)
   logs [serv]    Ver logs: dash | ghost | tg | nexus | seal | all
+  supergate [sub] Consultar SOL SUPERGATE; subcomandos: status | sweep | action
   snapshot       Crea snapshot cifrado del .env
   verify         Verifica que las credenciales críticas existan
   help           Esta ayuda
@@ -562,8 +563,14 @@ start_sol_gate() {
     ok "SOL GATE :$SOL_GATE_PORT ya activo"
     return 0
   fi
-  if [ ! -f "$SOL_REPO/sol_portero.py" ]; then
-    fail "SOL GATE no disponible: falta ~/sol/sol_portero.py"
+  local gate_module="sol_portero"
+  if [ -f "$SOL_REPO/sol_portero.py" ]; then
+    gate_module="sol_portero"
+  elif [ -f "$SOL_REPO/sol_supergate.py" ]; then
+    gate_module="sol_supergate"
+    warn "SOL GATE principal no existe; usando fallback aditivo sol_supergate.py"
+  else
+    fail "SOL GATE no disponible: faltan ~/sol/sol_portero.py y ~/sol/sol_supergate.py"
     return 1
   fi
   if ! python3 -c "import fastapi, uvicorn" >/dev/null 2>&1; then
@@ -573,12 +580,14 @@ start_sol_gate() {
       return 1
     }
   fi
-  info "SOL GATE :$SOL_GATE_PORT — arrancando portero local..."
+  info "SOL GATE :$SOL_GATE_PORT — arrancando $gate_module..."
   cd "$SOL_REPO"
   SOL_DIR="$SOL_REPO" REDTEAM_DIR="$ROOT" \
     COMMANDER_DIR="${COMMANDER_DIR:-$HOME/commander}" \
-    SOL_PORTERO_URL="$SOL_PORTERO_URL" PYTHONUNBUFFERED=1 \
-    nohup python3 -m uvicorn sol_portero:app --host 127.0.0.1 --port "$SOL_GATE_PORT" \
+    SOL_PORTERO_URL="$SOL_PORTERO_URL" SOL_GATE_PORT="$SOL_GATE_PORT" \
+    SOL_SUPERGATE_CONFIG="${SOL_SUPERGATE_CONFIG:-$ROOT/redteam/data/sol_supergate.json}" \
+    PYTHONUNBUFFERED=1 \
+    nohup python3 -m uvicorn "$gate_module:app" --host 127.0.0.1 --port "$SOL_GATE_PORT" \
     >> "$LOG_DIR/sol_gate.log" 2>&1 &
   local gate_pid=$!
   echo "$gate_pid" > "$SOL_DIR/sol_gate.pid"
@@ -1272,6 +1281,86 @@ status_short() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+#  SOL SUPERGATE — operaciones explícitas, locales y de solo lectura
+#  No reinicia servicios, no publica cambios y nunca imprime la clave.
+# ═══════════════════════════════════════════════════════════════════════
+supergate_status() {
+  local health_code context_code
+  health_code="$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$SOL_PORTERO_URL/health" 2>/dev/null || echo 000)"
+  context_code="$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$SOL_PORTERO_URL/sol/contexto" 2>/dev/null || echo 000)"
+  if [ "$health_code" = "200" ] || [ "$context_code" = "200" ] || \
+     [ "$context_code" = "401" ] || [ "$context_code" = "403" ]; then
+    ok "SOL SUPERGATE accesible en $SOL_PORTERO_URL (health=$health_code contexto=$context_code)"
+    return 0
+  fi
+  fail "SOL SUPERGATE no responde en $SOL_PORTERO_URL" "health=$health_code contexto=$context_code"
+  return 1
+}
+
+supergate_sweep() {
+  if [ -z "${SOL_API_KEY:-}" ] && [ -z "${SOL_KEY:-}" ]; then
+    fail "Barrido bloqueado: falta SOL_API_KEY/SOL_KEY en el entorno"
+    return 1
+  fi
+  info "Barrido non-root solicitado; no modifica dispositivos ni configuración"
+  curl -sS -m 30 -X POST "$SOL_PORTERO_URL/api/network/sweep-real" \
+    -H "X-Sol-Key: ${SOL_API_KEY:-$SOL_KEY}" \
+    -H "Content-Type: application/json" || {
+      echo ""
+      fail "El barrido no respondió" "revisa: bash omni.sh logs gate"
+      return 1
+    }
+  echo ""
+}
+
+supergate_action() {
+  local action="${1:-}" target="${2:-}"
+  case "$action" in
+    ping)     [ -n "$target" ] || target="127.0.0.1" ;;
+    netstat|ip_neigh) ;;
+    *)
+      fail "Acción no permitida: ${action:-vacía}" "usa ping, netstat o ip_neigh"
+      return 1
+      ;;
+  esac
+  if [ -z "${SOL_API_KEY:-}" ] && [ -z "${SOL_KEY:-}" ]; then
+    fail "Acción bloqueada: falta SOL_API_KEY/SOL_KEY en el entorno"
+    return 1
+  fi
+  local body
+  body="$(ACTION="$action" TARGET="$target" python3 - <<'PY'
+import json
+import os
+payload = {"action": os.environ["ACTION"]}
+if os.environ.get("TARGET"):
+    payload["target"] = os.environ["TARGET"]
+print(json.dumps(payload, ensure_ascii=False))
+PY
+)"
+  curl -sS -m 12 -X POST "$SOL_PORTERO_URL/api/action/execute" \
+    -H "X-Sol-Key: ${SOL_API_KEY:-$SOL_KEY}" \
+    -H "Content-Type: application/json" \
+    --data "$body" || {
+      echo ""
+      fail "La acción no respondió" "revisa: bash omni.sh logs gate"
+      return 1
+    }
+  echo ""
+}
+
+supergate() {
+  case "${1:-status}" in
+    status) supergate_status ;;
+    sweep) supergate_sweep ;;
+    action) shift; supergate_action "${1:-}" "${2:-}" ;;
+    help|--help|-h)
+      echo "Uso: bash omni.sh supergate {status|sweep|action ping [host]|action netstat|action ip_neigh}"
+      ;;
+    *) fail "Subcomando SUPERGATE desconocido: $1"; return 1 ;;
+  esac
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 #  SYNC — git pull + deps + build (SIN tocar .env)
 #  REGLA DE ORO: .env es intocable. Triple protección.
 # ═══════════════════════════════════════════════════════════════════════
@@ -1870,6 +1959,7 @@ case "${1:-help}" in
   sync-deps)      sync_deps ;;
   sync-frontend)  sync_frontend ;;
   logs)           logs "${2:-all}" ;;
+  supergate)      supergate "${2:-status}" "${3:-}" "${4:-}" ;;
 
 snapshot)       snapshot ;;
   verify)         verify ;;

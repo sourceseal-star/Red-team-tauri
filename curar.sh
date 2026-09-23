@@ -130,6 +130,12 @@ for d in "$RT_DIR" "$SOL_DIR"; do
         for f in "$RES"/*.py "$RES"/*.sh "$RES"/*.md "$RES"/VERSION.txt; do
             [ -f "$f" ] || continue
             b=$(basename "$f")
+            # SUPERGATE es un complemento opcional: si el operador ya tiene
+            # una copia local, no la sobrescribimos durante la cura.
+            if [ "$b" = "sol_supergate.py" ] && [ -f "$SOL_DIR/$b" ]; then
+              echo "     ↪ se conserva ~/sol/$b existente"
+              continue
+            fi
             [ -f "$SOL_DIR/$b" ] && cp "$SOL_DIR/$b" "$SOL_DIR/.rescate_pre/$b" 2>/dev/null
             cp "$f" "$SOL_DIR/$b"
           done
@@ -160,6 +166,17 @@ if [ -f "$RT_DIR/sol_sprites_sync.sh" ]; then
   bash "$RT_DIR/sol_sprites_sync.sh"
 else
   echo "   (sol_sprites_sync.sh no está — salto la fusión de sprites)"
+fi
+
+# ── 2⅔. Validación aditiva de SOL SUPERGATE ──
+# No arranca, reemplaza ni reinicia nada. Solo confirma que el fallback
+# seguro puede copiarse/ejecutarse si el portero principal no está.
+echo "── [2⅔/5] Validando fallback SOL SUPERGATE ──"
+SUPERGATE_SRC="$RT_DIR/sol_rescate/sol_supergate.py"
+if [ -f "$SUPERGATE_SRC" ] && python3 -m py_compile "$SUPERGATE_SRC" >/dev/null 2>&1; then
+  ok "Fallback sol_supergate.py presente y compila (no reemplaza sol_portero.py)"
+else
+  bad "Fallback SOL SUPERGATE no disponible" "revisa $SUPERGATE_SRC"
 fi
 
 # ── 2¾. Verificación determinista del Bestiario del Qalam ──
