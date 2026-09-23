@@ -37,6 +37,25 @@ En el stack completo de Termux, el SuperGate escucha en `127.0.0.1:8012`.
 El dashboard principal continúa en `:8001`; no se debe lanzar el fallback
 manualmente en `:8001` mientras el stack completo esté activo.
 
+### Límite operativo en Replit
+
+`replit_start.sh` levanta el dashboard y el frontend, pero no inicia el
+SuperGate en `:8012`. Es intencional: Replit no tiene el hardware Android,
+Netlink ni Termux:API del teléfono. En Replit, la pestaña **SOL SUPERGATE**
+del War Room solo permite revisar y editar la configuración no secreta y
+mostrar el resultado de la sonda; que el portero local no esté accesible allí
+es el comportamiento esperado.
+
+La activación real se hace en Termux con:
+
+```bash
+cd ~/Red-team-tauri
+bash omni.sh start
+bash omni.sh supergate status
+```
+
+No expongas `:8012` a Internet ni añadas ese puerto al workflow de Replit.
+
 ## 2. Credenciales y límites de seguridad
 
 Configura la clave en `~/sol/.env` o en el entorno del proceso:
