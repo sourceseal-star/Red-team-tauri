@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse
 
 
 app = FastAPI(title="Sol SuperGate", version="3.0.0")
@@ -239,13 +240,160 @@ async def execute_action(
     return {"executed": code == 0, "action": action, "stdout": stdout, "stderr": stderr}
 
 
-@app.get("/")
-async def root() -> dict[str, Any]:
-    return {
-        "service": "sol_supergate",
-        "engine": "sol_supergate_nonroot",
-        "hint": "Usa /health o autentica las rutas /sol/contexto y /api/*.",
+@app.get("/", response_class=HTMLResponse)
+async def root() -> str:
+    """Small local dashboard for the standalone Termux fallback.
+
+    The key is entered by the operator and kept only in browser memory. It is
+    never embedded in this page, a URL, local storage, or a default constant.
+    """
+    return """<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+  <title>Sol SuperGate</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      background: #0b0f19;
+      color: #e2e8f0;
     }
+    body { margin: 0; padding: 24px; background: #0b0f19; }
+    main { max-width: 760px; margin: 0 auto; }
+    .card {
+      background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+      padding: 18px; margin: 0 0 16px;
+    }
+    h1 { font-size: 1.35rem; margin: 0 0 18px; }
+    h2 { font-size: 1rem; margin-top: 0; }
+    label { display: block; margin: 10px 0 6px; color: #94a3b8; }
+    input {
+      box-sizing: border-box; width: 100%; padding: 10px; border-radius: 6px;
+      border: 1px solid #475569; background: #0f172a; color: #f8fafc;
+    }
+    button {
+      background: #2563eb; color: #fff; border: 0; border-radius: 6px;
+      padding: 10px 14px; cursor: pointer; margin: 10px 8px 0 0;
+    }
+    button:hover { background: #1d4ed8; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    .muted { color: #94a3b8; }
+    .ok { color: #4ade80; }
+    .error { color: #f87171; }
+    pre {
+      white-space: pre-wrap; overflow-wrap: anywhere; min-height: 70px;
+      background: #0f172a; border-radius: 6px; padding: 12px; color: #38bdf8;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>🛡️ SOL SUPERGATE — C2 TÁCTICO</h1>
+    <section class="card">
+      <h2>Estado del portero y red</h2>
+      <p id="status" class="muted">Comprobando servicio…</p>
+      <label for="key">Clave X-Sol-Key</label>
+      <input id="key" type="password" autocomplete="off"
+             placeholder="Escribe la clave configurada en el entorno">
+      <button id="connect" type="button">Conectar</button>
+      <button id="sweep" type="button" disabled>Ejecutar barrido real</button>
+    </section>
+    <section class="card">
+      <h2>Consola de resultados</h2>
+      <pre id="log">Sin acciones ejecutadas.</pre>
+    </section>
+  </main>
+  <script>
+    const keyInput = document.getElementById("key");
+    const statusNode = document.getElementById("status");
+    const logNode = document.getElementById("log");
+    const connectButton = document.getElementById("connect");
+    const sweepButton = document.getElementById("sweep");
+    let sessionKey = "";
+
+    function headers() {
+      return { "X-Sol-Key": sessionKey, "Content-Type": "application/json" };
+    }
+
+    function showError(message) {
+      statusNode.textContent = message;
+      statusNode.className = "error";
+    }
+
+    async function readResponse(response) {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || "La solicitud fue rechazada.");
+      }
+      return payload;
+    }
+
+    async function checkHealth() {
+      try {
+        const response = await fetch("/health");
+        const payload = await readResponse(response);
+        statusNode.textContent = payload.available
+          ? "Servicio disponible; falta autenticar el contexto."
+          : "Servicio no disponible.";
+      } catch (error) {
+        showError("No se pudo consultar la salud del SuperGate.");
+      }
+    }
+
+    async function connect() {
+      const candidate = keyInput.value.trim();
+      if (!candidate) {
+        showError("Escribe la clave del portero.");
+        sweepButton.disabled = true;
+        return;
+      }
+      try {
+        const response = await fetch("/sol/contexto", {
+          headers: { "X-Sol-Key": candidate }
+        });
+        const payload = await readResponse(response);
+        sessionKey = candidate;
+        sweepButton.disabled = false;
+        statusNode.textContent = "Conectado · " + payload.engine;
+        statusNode.className = "ok";
+        logNode.textContent = JSON.stringify(payload, null, 2);
+      } catch (error) {
+        sessionKey = "";
+        sweepButton.disabled = true;
+        showError(error.message);
+      }
+    }
+
+    async function executeSweep() {
+      if (!sessionKey) {
+        showError("Conecta primero el portero.");
+        return;
+      }
+      logNode.textContent = "Iniciando barrido táctico…";
+      try {
+        const response = await fetch("/api/network/sweep-real", {
+          method: "POST", headers: headers()
+        });
+        const payload = await readResponse(response);
+        logNode.textContent = JSON.stringify(payload, null, 2);
+      } catch (error) {
+        logNode.textContent = "Error en ejecución: " + error.message;
+      }
+    }
+
+    connectButton.addEventListener("click", connect);
+    sweepButton.addEventListener("click", executeSweep);
+    keyInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") connect();
+    });
+    checkHealth();
+  </script>
+</body>
+</html>"""
 
 
 if __name__ == "__main__":

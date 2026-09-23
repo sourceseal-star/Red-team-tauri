@@ -29,6 +29,11 @@ class SuperGateSecurityTests(unittest.TestCase):
         self.env.stop()
 
     def test_health_is_public_but_context_requires_the_key(self) -> None:
+        dashboard = self.client.get("/")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn("Ejecutar barrido real", dashboard.text)
+        self.assertNotIn("default-secure-sentinel-key", dashboard.text)
+
         self.assertEqual(self.client.get("/health").status_code, 200)
         self.assertEqual(self.client.get("/sol/contexto").status_code, 403)
         self.assertEqual(
