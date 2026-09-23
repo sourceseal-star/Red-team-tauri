@@ -559,16 +559,27 @@ kill_by_pidfile_or_port() {
 }
 
 start_sol_gate() {
-  if curl -s -m 2 "$SOL_PORTERO_URL/sol/contexto" >/dev/null 2>&1; then
+  # /sol/contexto está protegido y puede responder 401/403 aun cuando el
+  # proceso está sano. La salud del servicio se determina primero con
+  # /health y, como compatibilidad con porteros antiguos, con el código de
+  # /sol/contexto; nunca se necesita enviar la clave para arrancar.
+  if sol_gate_is_alive; then
     ok "SOL GATE :$SOL_GATE_PORT ya activo"
     return 0
   fi
   local gate_module="sol_portero"
+  local gate_dir="$SOL_REPO"
   if [ -f "$SOL_REPO/sol_portero.py" ]; then
     gate_module="sol_portero"
   elif [ -f "$SOL_REPO/sol_supergate.py" ]; then
     gate_module="sol_supergate"
     warn "SOL GATE principal no existe; usando fallback aditivo sol_supergate.py"
+  elif [ -f "$ROOT/sol_rescate/sol_supergate.py" ]; then
+    # Permite arrancar desde Red-team-tauri sin copiar ni sobrescribir una
+    # instalación local de ~/sol. curar.sh puede provisionarlo después.
+    gate_module="sol_supergate"
+    gate_dir="$ROOT/sol_rescate"
+    warn "SOL GATE principal no existe; usando fallback local de rescate"
   else
     fail "SOL GATE no disponible: faltan ~/sol/sol_portero.py y ~/sol/sol_supergate.py"
     return 1
@@ -581,7 +592,7 @@ start_sol_gate() {
     }
   fi
   info "SOL GATE :$SOL_GATE_PORT — arrancando $gate_module..."
-  cd "$SOL_REPO"
+  cd "$gate_dir"
   SOL_DIR="$SOL_REPO" REDTEAM_DIR="$ROOT" \
     COMMANDER_DIR="${COMMANDER_DIR:-$HOME/commander}" \
     SOL_PORTERO_URL="$SOL_PORTERO_URL" SOL_GATE_PORT="$SOL_GATE_PORT" \
@@ -592,18 +603,36 @@ start_sol_gate() {
   local gate_pid=$!
   echo "$gate_pid" > "$SOL_DIR/sol_gate.pid"
   for _ in $(seq 1 20); do
-    curl -s -m 2 "$SOL_PORTERO_URL/sol/contexto" >/dev/null 2>&1 && break
+    sol_gate_is_alive && break
     kill -0 "$gate_pid" 2>/dev/null || break
     sleep 1
   done
   cd "$ROOT"
-  if curl -s -m 3 "$SOL_PORTERO_URL/sol/contexto" >/dev/null 2>&1; then
+  if sol_gate_is_alive; then
     ok "SOL GATE :$SOL_GATE_PORT listo (PID $gate_pid)"
     return 0
   fi
   fail "SOL GATE :$SOL_GATE_PORT no respondió — ver $LOG_DIR/sol_gate.log"
   tail -8 "$LOG_DIR/sol_gate.log" 2>/dev/null | sed 's/^/    /'
   return 1
+}
+
+# Un portero protegido puede devolver 401/403/503 en /sol/contexto sin estar
+# caído. /health es la señal preferida; los códigos de contexto protegidos
+# son una compatibilidad deliberada con sol_portero.py antiguo.
+sol_gate_is_alive() {
+  local health_code context_code
+  health_code="$(curl -s -m 2 -o /dev/null -w '%{http_code}' \
+    "$SOL_PORTERO_URL/health" 2>/dev/null || echo 000)"
+  case "$health_code" in
+    200) return 0 ;;
+  esac
+  context_code="$(curl -s -m 2 -o /dev/null -w '%{http_code}' \
+    "$SOL_PORTERO_URL/sol/contexto" 2>/dev/null || echo 000)"
+  case "$context_code" in
+    200|401|403|503) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 start() {
@@ -730,7 +759,7 @@ start() {
   pkill -f "$ROOT/nexus_omni_v9.py" 2>/dev/null || true
   pkill -f "$ROOT/c2_unified_pro.py" 2>/dev/null || true
   pkill -f "$ROOT/sol_telegram_bridge.py" 2>/dev/null || true
-  pkill -f "uvicorn sol_portero:app" 2>/dev/null || true
+  pkill -f "uvicorn sol_(portero|supergate):app" 2>/dev/null || true
   sleep 1
 
   echo ""
@@ -1062,7 +1091,7 @@ stop() {
   pkill -f "sol_daemon.py" 2>/dev/null && ok "Sol autónoma detenida" || true
   rm -f "$SOL_DIR/sol.pid" 2>/dev/null || true
   kill_by_pidfile_or_port "Sol API (8006)" "$SOL_DIR/sol_api.pid" "sol_api.py"                   8006
-  kill_by_pidfile_or_port "SOL GATE"       "$SOL_DIR/sol_gate.pid" "uvicorn sol_portero:app"       "$SOL_GATE_PORT"
+  kill_by_pidfile_or_port "SOL GATE"       "$SOL_DIR/sol_gate.pid" "uvicorn sol_(portero|supergate):app" "$SOL_GATE_PORT"
   pkill -f "sol_relay.py" 2>/dev/null && ok "Relé Termux detenido" || true
   pkill -f "sol_body.sh" 2>/dev/null && ok "Sol cuerpo detenido" || true
   pkill -f "sol_watchdog.sh" 2>/dev/null && ok "Sol watchdog detenido" || true
@@ -1115,7 +1144,7 @@ status_short() {
   fi
 
   # SOL GATE :8012 (local, nunca expuesto a la red)
-  if curl -s -m 3 "$SOL_PORTERO_URL/sol/contexto" >/dev/null 2>&1; then
+  if sol_gate_is_alive; then
     ok "SOL GATE :$SOL_GATE_PORT  🟢 ACTIVO"
   else
     fail "SOL GATE :$SOL_GATE_PORT  🔴 CAÍDO (acciones sensibles bloqueadas)"
@@ -1809,7 +1838,7 @@ watchdog() {
       fi
     fi
     # SOL GATE: si cae, se levanta antes de permitir acciones sensibles.
-    if ! curl -s -m 3 "$SOL_PORTERO_URL/sol/contexto" >/dev/null 2>&1; then
+    if ! sol_gate_is_alive; then
       log "⚠️ SOL GATE caído → reiniciando en :$SOL_GATE_PORT"
       start_sol_gate || true
     fi

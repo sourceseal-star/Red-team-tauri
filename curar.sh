@@ -174,7 +174,23 @@ fi
 echo "── [2⅔/5] Validando fallback SOL SUPERGATE ──"
 SUPERGATE_SRC="$RT_DIR/sol_rescate/sol_supergate.py"
 if [ -f "$SUPERGATE_SRC" ] && python3 -m py_compile "$SUPERGATE_SRC" >/dev/null 2>&1; then
-  ok "Fallback sol_supergate.py presente y compila (no reemplaza sol_portero.py)"
+  # El fallback es aditivo: solo se instala si ~/sol no tiene portero
+  # principal ni una copia local. Una copia local nunca se sobrescribe.
+  SUPERGATE_DST="$SOL_DIR/sol_supergate.py"
+  if [ -f "$SOL_DIR/sol_portero.py" ]; then
+    ok "Fallback sol_supergate.py validado (sol_portero.py principal se conserva)"
+  elif [ -e "$SUPERGATE_DST" ]; then
+    if python3 -m py_compile "$SUPERGATE_DST" >/dev/null 2>&1; then
+      ok "Fallback local sol_supergate.py presente y preservado (no se sobrescribe)"
+    else
+      bad "Fallback local sol_supergate.py no compila" "se conserva sin sobrescribir: $SUPERGATE_DST"
+    fi
+  elif [ -d "$SOL_DIR" ] && cp "$SUPERGATE_SRC" "$SUPERGATE_DST"; then
+    chmod 600 "$SUPERGATE_DST" 2>/dev/null || true
+    ok "Fallback sol_supergate.py instalado en ~/sol (sin reemplazar sol_portero.py)"
+  else
+    bad "Fallback SOL SUPERGATE no se pudo instalar" "revisa permisos de $SOL_DIR"
+  fi
 else
   bad "Fallback SOL SUPERGATE no disponible" "revisa $SUPERGATE_SRC"
 fi
@@ -213,7 +229,7 @@ fi
 echo "── [3/5] Matando procesos viejos ──"
 pkill -f dashboard_server.py 2>/dev/null && echo "   🧟 dashboard viejo eliminado" || echo "   (no había dashboard corriendo)"
 pkill -f sol_api.py         2>/dev/null && echo "   🧟 sol_api viejo eliminado"   || echo "   (no había sol_api corriendo)"
-pkill -f "uvicorn sol_portero:app" 2>/dev/null && echo "   🧟 SOL GATE viejo eliminado" || echo "   (no había SOL GATE corriendo)"
+pkill -f "uvicorn sol_(portero|supergate):app" 2>/dev/null && echo "   🧟 SOL GATE viejo eliminado" || echo "   (no había SOL GATE corriendo)"
 sleep 2
 
 # ── 4. Arrancar todo ──
