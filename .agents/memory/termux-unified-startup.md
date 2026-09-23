@@ -23,3 +23,18 @@ internos de submódulos, lo que dejaba estados `M` y bloqueaba la actualización
 **How to apply:** Para actualizar usa `bash setup.sh`; para ejecutar sin tocar Git
 usa `COMMANDER_DIR="$HOME/commander" bash iniciar_unificado.sh`. Verifica los
 endpoints en `127.0.0.1:8001` y `127.0.0.1:8002`.
+
+**Nota de compatibilidad:** Antes de probar una capacidad nueva desde Termux,
+verifica que la copia local contiene su rama del dispatcher (por ejemplo,
+`grep -n 'supergate)' omni.sh`). Una copia vieja puede caer en la rama de
+comando desconocido y producir errores engañosos de `set -u`, aunque el
+dashboard y el backend estén funcionando.
+
+**Why:** Una copia antigua de `omni.sh` no reconoció `supergate` y terminó
+evaluando una variable `$RT` que no estaba definida; el síntoma parecía un
+fallo del SuperGate, pero era una desalineación del launcher.
+
+**How to apply:** Si el repositorio está limpio, sincroniza con
+`git pull --ff-only origin main`, valida `bash -n omni.sh` y confirma la rama
+del dispatcher antes de arrancar servicios. No uses `reset --hard` para resolver
+este tipo de desalineación.

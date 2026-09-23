@@ -1059,6 +1059,7 @@ start() {
   echo -e "${G}╚═══════════════════════════════════════════════════════╝${N}"
   echo ""
   start_sol_stack
+  start_evolve_daemon
     status_short
   echo ""
   log "⚡ Sistema arrancado completamente — entorno: $ENV_TYPE"
@@ -1976,6 +1977,20 @@ recover() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
+#  EVOLVE DAEMON — auto-actualización y mantenimiento
+# ═══════════════════════════════════════════════════════════════════════
+start_evolve_daemon() {
+  if [ -f "$ROOT/sol_evolve.sh" ]; then
+    if ! pgrep -f "sol_evolve.sh daemon" >/dev/null 2>&1; then
+      (nohup bash "$ROOT/sol_evolve.sh" daemon >> "$HOME/.sol/evolve.log" 2>&1 &)
+      echo -e "${G}☀️  Evolve daemon activo — el sistema se mantiene solo${N}"
+    else
+      echo -e "${C}☀️  Evolve daemon ya corriendo${N}"
+    fi
+  fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════
 #  DISPATCH
 # ═══════════════════════════════════════════════════════════════════════
 case "${1:-help}" in
@@ -1989,23 +2004,9 @@ case "${1:-help}" in
   sync-frontend)  sync_frontend ;;
   logs)           logs "${2:-all}" ;;
   supergate)      supergate "${2:-status}" "${3:-}" "${4:-}" ;;
-
-snapshot)       snapshot ;;
+  snapshot)       snapshot ;;
   verify)         verify ;;
   watchdog)       watchdog ;;
   help|--help|-h) help ;;
-  *)              echo "Comando desconocido: $1"; 
-# ════════════════════════════════════════════════════════════════════
-# EVOLVE DAEMON — auto-actualización y mantenimiento
-# ════════════════════════════════════════════════════════════════════
-if [ -f "$RT/sol_evolve.sh" ]; then
-  if ! pgrep -f "sol_evolve.sh daemon" >/dev/null 2>&1; then
-    (nohup bash "$RT/sol_evolve.sh" daemon >> "$HOME/.sol/evolve.log" 2>&1 &)
-    echo -e "${G}☀️  Evolve daemon activo — el sistema se mantiene solo${N}"
-  else
-    echo -e "${C}☀️  Evolve daemon ya corriendo${N}"
-  fi
-fi
-
-echo ""; help; exit 1 ;;
+  *)              echo "Comando desconocido: $1"; echo ""; help; exit 1 ;;
 esac
