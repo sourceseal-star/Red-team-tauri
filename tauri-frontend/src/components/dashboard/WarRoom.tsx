@@ -39,6 +39,7 @@ export default function WarRoom() {
   // ---- Cámaras ----
   const [cameras, setCameras] = useState<CameraItem[]>([]);
   const [camLoading, setCamLoading] = useState(false);
+  const [cameraScope, setCameraScope] = useState('');
   const [motionStatus, setMotionStatus] = useState<Record<string, string>>({});
   const [motionLoading, setMotionLoading] = useState<Record<string, boolean>>({});
 
@@ -132,7 +133,12 @@ export default function WarRoom() {
     setCamLoading(true);
     pushLog('⏳ Escaneando cámaras...');
     try {
-      const res = await fetch('/api/scan/cameras', { method: 'POST' });
+      const requestedSubnets = cameraScope.split(/[\s,;]+/).map(value => value.trim()).filter(Boolean);
+      const res = await fetch('/api/scan/cameras', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestedSubnets.length ? { subnets: requestedSubnets } : {}),
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const cams = (data.results || []).map((c: any) => ({
@@ -142,7 +148,7 @@ export default function WarRoom() {
         rtsp: c.rtsp,
       }));
       setCameras(cams);
-      pushLog(`✔ Cámaras: ${cams.length} detectadas`);
+      pushLog(`✔ Cámaras: ${cams.length} detectadas${data.subnets?.length ? ` en ${data.subnets.join(', ')}` : ''}`);
     } catch (e: any) {
       pushLog(`✘ Cámaras: ${e.message}`);
     } finally { setCamLoading(false); }
@@ -375,13 +381,23 @@ export default function WarRoom() {
               <Camera size={14} /> CÁMARAS
               {camLoading && <span className="text-[9px] text-gray-500 animate-pulse">escaneando...</span>}
             </span>
-            <button
-              onClick={scanCameras}
-              disabled={camLoading}
-              className="px-2 py-1 text-[10px] border border-amber-500/30 text-amber-300 rounded hover:bg-amber-500/10 disabled:opacity-50 transition"
-            >
-              ↻ Escanear
-            </button>
+            <div className="flex items-center gap-1">
+              <input
+                value={cameraScope}
+                onChange={event => setCameraScope(event.target.value)}
+                disabled={camLoading}
+                placeholder="CIDR(s), opcional"
+                aria-label="CIDR(s) autorizados para cámaras"
+                className="w-36 px-1.5 py-1 text-[9px] bg-black/30 border border-[var(--ss-border)] rounded text-gray-300 placeholder:text-gray-600 disabled:opacity-50"
+              />
+              <button
+                onClick={scanCameras}
+                disabled={camLoading}
+                className="px-2 py-1 text-[10px] border border-amber-500/30 text-amber-300 rounded hover:bg-amber-500/10 disabled:opacity-50 transition"
+              >
+                ↻ Escanear
+              </button>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2 grid grid-cols-2 gap-2 min-h-0">
             {cameras.map((cam) => (

@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import hashlib as _hashlib
 import hmac as _hmac
+import itertools
 import json
 import os
 import re
@@ -2588,39 +2589,96 @@ async def discover_wifi():
     return {"networks": [], "method": "none", "count": 0, "errors": errors}
 
 def _bounded_lan_subnet(value: str) -> str:
-    """Only a real, private IPv4 LAN range of at most 256 addresses."""
+    """Normalize one explicit RFC1918 network without imposing /24."""
     try:
         network = ipaddress.ip_network(value, strict=False)
         rfc1918 = tuple(ipaddress.ip_network(cidr) for cidr in
                         ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
-        if (network.version != 4 or network.num_addresses > 256
-                or not any(network.subnet_of(allowed) for allowed in rfc1918)):
-            raise ValueError("se requiere una LAN RFC1918 de hasta /24")
+        if network.version != 4 or not any(network.subnet_of(allowed) for allowed in rfc1918):
+            raise ValueError("se requiere una LAN IPv4 RFC1918")
         return str(network)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Subred inválida: {exc}") from exc
 
 
-@app.post("/api/scan/topology")
-async def scan_topology(subnet: str = ""):
-    # Subnet como parametro query, o de Settings, o auto-detectada
-    if not subnet:
-        ops_subnet = _load_ops().get("scan_subnet", "")
-        if ops_subnet and "/" in ops_subnet:
-            subnet = ops_subnet
-        else:
-            subnet = await asyncio.to_thread(subnet_from_iface)
+def _scan_value_tokens(*values) -> list[str]:
+    """Accept query/body strings or lists while preserving explicit order."""
+    tokens = []
+    for value in values:
+        if isinstance(value, str):
+            tokens.extend(part for part in re.split(r"[\s,;]+", value) if part)
+        elif isinstance(value, (list, tuple, set)):
+            for item in value:
+                if isinstance(item, str):
+                    tokens.extend(part for part in re.split(r"[\s,;]+", item) if part)
+    return tokens
+
+
+def _parse_scan_networks(*values) -> list[ipaddress.IPv4Network]:
+    """Validate local scope and apply a configurable resource ceiling.
+
+    Large authorized networks are processed in bounded batches by the callers.
+    The ceiling prevents a malformed request from scheduling an impractical
+    scan while remaining substantially wider than the previous /24 rule.
+    """
+    tokens = _scan_value_tokens(*values)
+    if not tokens:
+        return []
+    max_hosts = max(256, int(os.environ.get("SOURCESEAL_SCAN_MAX_HOSTS", "65536")))
+    networks = []
+    seen = set()
+    for token in tokens:
+        try:
+            normalized = _bounded_lan_subnet(token)
+        except HTTPException:
+            raise
+        network = ipaddress.ip_network(normalized)
+        if network.num_addresses > max_hosts:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Subred {network} supera el límite operativo de {max_hosts} "
+                    "hosts; ajusta SOURCESEAL_SCAN_MAX_HOSTS si el operador lo autoriza"
+                ),
+            )
+        if normalized not in seen:
+            seen.add(normalized)
+            networks.append(network)
+    return networks
+
+
+def _is_rfc1918_ip(value: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(value)
+        return ip.version == 4 and any(
+            ip in ipaddress.ip_network(cidr)
+            for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+        )
+    except ValueError:
+        return False
+
+
+async def _scan_topology_single(subnet: str):
     # Nunca lanzar nmap ni el fallback TCP sobre un rango público, loopback o
-    # una red enorme: protege RAM/batería y conserva el alcance local explícito.
+    # una red fuera del scope explícito: protege RAM/batería y conserva el
+    # alcance local explícito.
     subnet = _bounded_lan_subnet(subnet)
     # nmap con timeout adaptativo: mas hosts = mas timeout
     import ipaddress as _ipa
     try:
-        net_size = len(list(_ipa.ip_network(subnet, strict=False).hosts()))
+        network = _ipa.ip_network(subnet, strict=False)
+        net_size = network.num_addresses
         nmap_timeout = min(300, max(90, net_size // 5))
     except Exception:
+        network = None
         nmap_timeout = 90
-    ok, out = await _nmap_or_empty(["nmap", "-sn", "-T4", "-n", "--max-retries", "1", subnet], timeout=nmap_timeout)
+    if network is not None and network.num_addresses <= 256:
+        ok, out = await _nmap_or_empty(
+            ["nmap", "-sn", "-T4", "-n", "--max-retries", "1", subnet],
+            timeout=nmap_timeout,
+        )
+    else:
+        ok, out = False, "rango grande: descubrimiento TCP por lotes"
     hosts, current = [], None
     nmap_note = None
     if not ok:
@@ -2685,6 +2743,46 @@ async def scan_topology(subnet: str = ""):
             "method": "tcp-connect" if used_tcp_fallback else "nmap",
             "nmap_note": nmap_note if used_tcp_fallback else None}
 
+
+@app.post("/api/scan/topology")
+async def scan_topology(subnet: str = "", subnets: str = Query("")):
+    requested = _parse_scan_networks(subnets, subnet)
+    if not requested:
+        ops_subnet = _load_ops().get("scan_subnet", "")
+        requested = _parse_scan_networks(ops_subnet) if ops_subnet else []
+    if not requested:
+        requested = _parse_scan_networks(await asyncio.to_thread(subnet_from_iface))
+
+    reports = []
+    for network in requested:
+        reports.append(await _scan_topology_single(str(network)))
+
+    results = [host for report in reports for host in report.get("results", [])]
+    subnets_out = [report["subnet"] for report in reports]
+    combined = dict(reports[0])
+    combined.update({
+        "results": results,
+        "hosts_up": len(results),
+        "subnet": ",".join(subnets_out),
+        "subnets": subnets_out,
+        "method": "multi-" + "+".join(report.get("method", "unknown") for report in reports),
+        "nmap_note": "; ".join(
+            report["nmap_note"] for report in reports if report.get("nmap_note")
+        ) or None,
+    })
+    try:
+        with open(TOPOLOGY_CACHE, "w", encoding="utf-8") as cache_file:
+            json.dump(
+                {"saved_at": datetime.now().isoformat(), **combined},
+                cache_file,
+                ensure_ascii=False,
+                indent=1,
+            )
+    except Exception as exc:
+        print(f"[TOPO-CACHE] no se pudo guardar el escaneo agregado: {exc}")
+    return combined
+
+
 @app.get("/api/scan/topology/last")
 async def scan_topology_last():
     """Último escaneo de topología guardado en disco (2026-09-08).
@@ -2696,13 +2794,157 @@ async def scan_topology_last():
         return {"results": [], "saved_at": None, "subnet": None}
 
 # ── Cámaras ──────────────────────────────────────────────────────────────────
-CAM_PORTS = [554, 80, 443, 8000, 8080, 37777, 8554]
+# Probe set amplio, pero cada conexión se limita con un semaphore. El orden
+# prioriza RTSP/ONVIF y los puertos web más habituales.
+CAM_PORTS = [
+    554, 8554, 80, 443, 8000, 8001, 8080, 8081, 8443, 8899,
+    9000, 9090, 1935, 34567, 35000, 37777, 50000, 5540, 8008, 8090,
+]
+CAMERA_HOST_BATCH = max(8, int(os.environ.get("SOURCESEAL_CAMERA_HOST_BATCH", "48")))
+CAMERA_CONNECTIONS = max(8, int(os.environ.get("SOURCESEAL_CAMERA_CONNECTIONS", "48")))
+TOPOLOGY_HOST_BATCH = max(8, int(os.environ.get("SOURCESEAL_TOPOLOGY_HOST_BATCH", "64")))
+
+
+async def _camera_probe(ip: str, port: int, timeout: float) -> dict | None:
+    """Open one camera candidate and collect protocol evidence asynchronously."""
+    reader = writer = None
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(ip, port), timeout=timeout
+        )
+        if port in (554, 5540, 8554):
+            payload = (
+                f"OPTIONS rtsp://{ip}:{port}/ RTSP/1.0\r\n"
+                "CSeq: 1\r\nUser-Agent: SourceSeal-CameraProbe/1.0\r\n\r\n"
+            ).encode()
+        elif port in (80, 443, 8000, 8001, 8080, 8081, 8090, 8443):
+            onvif_body = (
+                "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\">"
+                "<s:Body><tds:GetDeviceInformation "
+                "xmlns:tds=\"http://www.onvif.org/ver10/device/wsdl\"/>"
+                "</s:Body></s:Envelope>"
+            )
+            payload = (
+                "POST /onvif/device_service HTTP/1.1\r\n"
+                f"Host: {ip}\r\nContent-Type: application/soap+xml; charset=utf-8\r\n"
+                "User-Agent: SourceSeal-CameraProbe/1.0\r\nConnection: close\r\n"
+                f"Content-Length: {len(onvif_body.encode())}\r\n\r\n"
+                f"{onvif_body}"
+            ).encode()
+        else:
+            payload = b"\r\n"
+        writer.write(payload)
+        await writer.drain()
+        data = await asyncio.wait_for(reader.read(1024), timeout=timeout)
+        banner = data.decode(errors="ignore")[:512]
+        lowered = banner.lower()
+        rtsp_evidence = bool(
+            re.search(r"rtsp/\d(?:\.\d)?", lowered)
+            or ("cseq" in lowered and port in (554, 5540, 8554))
+        )
+        camera_markers = (
+            "hikvision", "dahua", "axis", "uniview", "onvif", "isapi",
+            "ip camera", "network camera", "webcam", "dvr", "nvr",
+        )
+        onvif_evidence = any(
+            marker in lowered for marker in ("onvif", "soap", "deviceinformation")
+        )
+        vendor_evidence = any(marker in lowered for marker in camera_markers)
+        protocol = (
+            "rtsp" if rtsp_evidence
+            else ("onvif" if onvif_evidence else ("http" if banner else "tcp"))
+        )
+        return {
+            "port": port,
+            "banner": banner,
+            "open": True,
+            "evidence": rtsp_evidence or onvif_evidence or vendor_evidence,
+            "rtsp_evidence": rtsp_evidence,
+            "onvif_evidence": onvif_evidence,
+            "vendor_evidence": vendor_evidence,
+            "protocol": protocol,
+        }
+    except (asyncio.TimeoutError, ConnectionError, OSError):
+        return None
+    finally:
+        if writer is not None:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+
+async def _camera_probe_host(ip: str, timeout: float, semaphore: asyncio.Semaphore) -> dict | None:
+    async def probe(port: int):
+        async with semaphore:
+            return await _camera_probe(ip, port, timeout)
+
+    probes = await asyncio.gather(*(probe(port) for port in CAM_PORTS))
+    responses = [item for item in probes if item]
+    evidence = [item for item in responses if item["evidence"]]
+    if not evidence:
+        return None
+    banners = [item["banner"] for item in evidence if item["banner"]]
+    combined = " ".join(banners).lower()
+    vendor = next(
+        (
+            name
+            for name in ("hikvision", "dahua", "axis", "uniview", "onvif")
+            if name in combined
+        ),
+        None,
+    )
+    model_match = re.search(
+        r"\b(?:DS-|IPC-|AXIS\s+|DCS-)[A-Z0-9._-]+",
+        " ".join(banners),
+        re.I,
+    )
+    return {
+        "ip": ip,
+        "ports": {item["port"]: item["banner"] for item in responses},
+        "rtsp": next(
+            (item["banner"] for item in evidence if item["rtsp_evidence"]),
+            None,
+        ),
+        "vendor": vendor,
+        "model": model_match.group(0) if model_match else None,
+        "evidence": sorted({item["protocol"] for item in evidence}),
+        "confidence": (
+            "confirmed"
+            if any(item["rtsp_evidence"] for item in evidence)
+            else "probable"
+        ),
+        "type": "camera",
+        "first_seen": datetime.now().isoformat(),
+    }
+
+
+async def _scan_camera_network(network: ipaddress.IPv4Network, timeout: float) -> list[dict]:
+    semaphore = asyncio.Semaphore(CAMERA_CONNECTIONS)
+    cameras = []
+    hosts = iter(network.hosts())
+    while True:
+        batch = list(itertools.islice(hosts, CAMERA_HOST_BATCH))
+        if not batch:
+            break
+        results = await asyncio.gather(*(
+            _camera_probe_host(str(ip), timeout, semaphore) for ip in batch
+        ))
+        cameras.extend(item for item in results if item)
+    return cameras
 
 @app.post("/api/network/cameras")
 @app.get("/api/network/cameras")
 @app.post("/api/scan/cameras")
 @app.get("/api/scan/cameras")
-async def scan_cameras(target: str = Query(None), timeout: float = Query(2.0)):
+async def scan_cameras(
+    target: str = Query(None),
+    timeout: float = Query(2.0),
+    subnet: str = Query(""),
+    subnets: str = Query(""),
+    payload: Optional[dict] = Body(default=None),
+):
     """
     FIX 2026-09-08 (RAÍZ REAL — 404 en /geo al escanear cámaras):
     GeoIntel.tsx pide GET con ?target=IP&timeout=N (getWithKey hace fetch
@@ -2720,47 +2962,45 @@ async def scan_cameras(target: str = Query(None), timeout: float = Query(2.0)):
     # El timeout de query nunca puede crecer sin límite en el Moto.
     if not 0.2 <= timeout <= 3.0:
         raise HTTPException(status_code=400, detail="timeout de cámara debe estar entre 0.2 y 3 segundos")
+    body = payload if isinstance(payload, dict) else {}
+    target = target or body.get("target")
     if target:
-        ip = target.strip()
+        ip = str(target).strip()
         try:
             ipaddress.ip_address(ip)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="target debe ser una IP") from exc
-        tasks = [tcp_check(ip, p, timeout=timeout) for p in CAM_PORTS]
-        banners = await asyncio.gather(*tasks)
-        ports_map = {p: b for p, b in zip(CAM_PORTS, banners) if b is not None}
-        cams = []
-        if ports_map:
-            cams.append({"ip": ip, "rtsp": ports_map.get(554), "ports": ports_map,
-                         "type": "camera", "first_seen": datetime.now().isoformat()})
+        if not _is_rfc1918_ip(ip):
+            raise HTTPException(
+                status_code=403,
+                detail="target fuera del alcance LAN RFC1918 autorizado",
+            )
+        camera = await _camera_probe_host(
+            ip, timeout, asyncio.Semaphore(CAMERA_CONNECTIONS)
+        )
+        cams = [camera] if camera else []
         elapsed = round(time.monotonic() - t0, 2)
         return {"target": ip, "results": cams, "count": len(cams),
                 "hosts_with_services": len(cams), "cameras_found": len(cams),
-                "elapsed_seconds": elapsed}
+                "elapsed_seconds": elapsed, "subnets": []}
 
-    subnet = _bounded_lan_subnet(await asyncio.to_thread(subnet_from_iface))
-    # El camino sin target escanea SOLO la LAN local y limita las conexiones
-    # simultáneas. No se infiere que un puerto abierto sea cámara sin evidencia.
-    network = ipaddress.ip_network(subnet)
-    camera_ips = [str(ip) for ip in network.hosts()]
-    sem = asyncio.Semaphore(24)
-    async def check_rtsp(ip):
-        async with sem:
-            return await tcp_check(ip, 554, timeout=1.0)
-    rtsp_banners = await asyncio.gather(*(check_rtsp(ip) for ip in camera_ips))
+    requested = body.get("subnets") or body.get("subnet") or subnets or subnet
+    networks = _parse_scan_networks(requested)
+    if not networks:
+        networks = _parse_scan_networks(
+            await asyncio.to_thread(subnet_from_iface)
+        )
     cams = []
-    extra_ports = [p for p in CAM_PORTS if p != 554]
-    for ip, banner in zip(camera_ips, rtsp_banners):
-        if banner is None: continue
-        extra_tasks = [tcp_check(ip, p, timeout=0.8) for p in extra_ports]
-        extra_results = await asyncio.gather(*extra_tasks)
-        ports_map = {p: b for p, b in zip(extra_ports, extra_results)}
-        cams.append({"ip": ip, "rtsp": banner, "ports": ports_map,
-                     "type": "camera", "first_seen": datetime.now().isoformat()})
-    await broadcast({"type": "progress", "payload": f"Cámaras encontradas: {len(cams)}"})
+    for network in networks:
+        cams.extend(await _scan_camera_network(network, timeout))
+        await broadcast({
+            "type": "progress",
+            "payload": f"Cámaras: {len(cams)} encontradas tras {network}",
+        })
     elapsed = round(time.monotonic() - t0, 2)
     return {"results": cams, "count": len(cams), "hosts_with_services": len(cams),
-            "cameras_found": len(cams), "elapsed_seconds": elapsed}
+            "cameras_found": len(cams), "elapsed_seconds": elapsed,
+            "subnets": [str(network) for network in networks]}
 
 # ── Routers ──────────────────────────────────────────────────────────────────
 ROUTER_PORTS = [80, 443, 22, 23, 8080, 8443, 1900]
@@ -4635,7 +4875,12 @@ async def _get_topology_data():
                     current["vendor"] = " ".join(parts[3:]).strip("()")
 
     if hosts:
-        fp_results = await asyncio.gather(*[_fingerprint_host(h["ip"]) for h in hosts])
+        fp_results = []
+        for offset in range(0, len(hosts), TOPOLOGY_HOST_BATCH):
+            fp_results.extend(await asyncio.gather(*(
+                _fingerprint_host(h["ip"])
+                for h in hosts[offset:offset + TOPOLOGY_HOST_BATCH]
+            )))
         for h, fp in zip(hosts, fp_results):
             h["type"] = fp["type"]
             h["ports"] = fp["ports"]
