@@ -1,6 +1,6 @@
 ---
-name: Frontend dependency cache
-description: Entorno donde el caché de node_modules puede existir aunque falten paquetes declarados por el frontend
+name: Frontend dist and tactical audit
+description: Protección del bundle publicado y de la Auditoría táctica crítica
 ---
 
 El arranque del frontend debe validar al menos las dependencias críticas además de comprobar si existe `node_modules`; un caché parcialmente instalado puede hacer que el build falle aunque el `package.json` y el lockfile sean correctos.
@@ -20,3 +20,19 @@ existían; un build limpio volvió a alinear el índice y los chunks.
 **How to apply:** Antes de una verificación visual, comprueba que cada
 referencia `/assets/*` de `dist/index.html` exista en `dist/assets/`; después
 reinicia el workflow una sola vez para cargar el build completo.
+
+La Auditoría táctica (`redteam/modules/tactical_executor.py` y sus rutas del
+dashboard) es un módulo crítico. Un republish no puede sustituir el `dist` de
+la era actual por un bundle viejo, incompleto o mezclado: aunque el backend
+siga presente, la Auditoría puede desaparecer de la interfaz o quedar
+desconectada.
+
+**Why:** Un republish anterior dañó la War Room al cambiar el bundle
+compilado; el código fuente y el ejecutor táctico seguían intactos, pero la
+interfaz publicada ya no representaba el sistema real.
+
+**How to apply:** Tratar `tauri-frontend/dist` como artefacto protegido de la
+misma entrega que el código frontend. Tras cada cambio o republish, verificar
+la integridad de todos los assets y ejecutar la matriz `/api/readiness`,
+confirmando `frontend_dist=ok` y `auditoria_tactica=ok` antes de considerar
+válido el resultado.
