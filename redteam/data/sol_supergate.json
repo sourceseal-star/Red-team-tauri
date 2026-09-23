@@ -1,0 +1,6 @@
+{
+  "name": "sol_supergate",
+  "mode": "protected",
+  "port": 8012,
+  "notes": "Configuración local editable desde la War Room o Termux."
+}

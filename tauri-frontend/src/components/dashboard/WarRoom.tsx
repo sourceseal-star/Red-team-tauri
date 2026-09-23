@@ -7,6 +7,7 @@ import TrafficMonitor from '../TrafficMonitor';
 import OSINTPanel from '../OSINTPanel';
 import WiFiPanel from '../WiFiPanel';
 import BlackMirrorPanel from '../BlackMirrorPanel';
+import SolSupergatePanel from './SolSupergatePanel';
 
 const TopologyMap = lazy(() => import('./TopologyMap'));
 
@@ -24,7 +25,7 @@ interface CameraItem {
   rtsp?: boolean;
 }
 
-type BottomView = 'comms' | 'intel' | 'recon' | 'mirror';
+type BottomView = 'comms' | 'intel' | 'recon' | 'mirror' | 'supergate';
 
 export default function WarRoom() {
   // ---- Topología ----
@@ -459,6 +460,13 @@ export default function WarRoom() {
           >
             🌑 Black Mirror
           </button>
+          <button
+            onClick={() => setBottomView('supergate')}
+            className={`px-3 py-1 text-[10px] border rounded-t font-mono transition
+              ${bottomView === 'supergate' ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'border-[var(--ss-border)] text-gray-400 hover:text-amber-300'}`}
+          >
+            ☀ SOL SUPERGATE
+          </button>
         </div>
 
         {bottomView === 'comms' ? (
@@ -546,6 +554,10 @@ export default function WarRoom() {
         ) : bottomView === 'mirror' ? (
           <div className="min-h-[224px] lg:h-56 grid grid-cols-1 gap-3">
             <BlackMirrorPanel />
+          </div>
+        ) : bottomView === 'supergate' ? (
+          <div className="min-h-[430px] bg-[var(--ss-bg-2)] border border-[var(--ss-border)] rounded-lg overflow-hidden">
+            <SolSupergatePanel />
           </div>
         ) : null}
       </div>

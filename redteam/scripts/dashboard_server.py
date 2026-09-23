@@ -111,6 +111,17 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 # restaura los hosts (IP/MAC/puertos) al reabrir, aunque el backend se
 # haya reiniciado. Puro caché de lectura; el archivo nunca bloquea nada.
 TOPOLOGY_CACHE = DATA_DIR / "topology_last.json"
+# SOL SUPERGATE es una configuración local, deliberadamente separada del
+# código ejecutable de Sol. La War Room puede editarla y detectar cambios
+# hechos desde Termux (por ejemplo, con nano) sin tocar sol_portero.py ni
+# reiniciar servicios automáticamente.
+SOL_SUPERGATE_FILE = DATA_DIR / "sol_supergate.json"
+SOL_SUPERGATE_DEFAULT = {
+    "name": "sol_supergate",
+    "mode": "protected",
+    "port": 8012,
+    "notes": "Configuración local editable desde la War Room o Termux.",
+}
 
 def _load_json(path: Path, default):
     if path.exists():
@@ -133,6 +144,8 @@ def _init_data():
     if not SETTINGS_FILE.exists():
         _save_json(SETTINGS_FILE, {"api_url": "", "interval": 15,
             "scan_on_startup": False, "notify_slack": False, "slack_webhook": ""})
+    if not SOL_SUPERGATE_FILE.exists():
+        _save_json(SOL_SUPERGATE_FILE, SOL_SUPERGATE_DEFAULT)
 
 _init_data()
 
@@ -1465,7 +1478,7 @@ except Exception as e:
     print(f"[SOL] No cargado: {e}", flush=True)
 
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
-                   allow_methods=["GET", "POST", "DELETE", "PATCH", "OPTIONS"], 
+                   allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
                    allow_headers=["X-API-Key", "Content-Type", "Authorization"],
                    expose_headers=["*"])
 
@@ -8510,6 +8523,111 @@ if _SOL_LIVE.exists():
     print(f"[SOL] /sol-live.html servido desde {_SOL_LIVE} (no-cache)", flush=True)
 
 print("[SOL] /sol.html y /sol sirven el HTML standalone accesible desde backend/static/", flush=True)
+
+# ── SOL SUPERGATE — configuración local sincronizable con Termux ──────────────
+def _sol_supergate_read() -> tuple[dict, str, int]:
+    """Lee la configuración y devuelve (config, hash, mtime_ns).
+
+    El hash/mtime se usa como versión optimista: si nano modificó el archivo
+    mientras el usuario tenía el editor abierto en la War Room, el PUT no
+    pisa esos cambios externos.
+    """
+    if not SOL_SUPERGATE_FILE.exists():
+        _save_json(SOL_SUPERGATE_FILE, SOL_SUPERGATE_DEFAULT)
+    try:
+        raw = SOL_SUPERGATE_FILE.read_bytes()
+        parsed = json.loads(raw.decode("utf-8"))
+        if not isinstance(parsed, dict):
+            raise ValueError("la raíz debe ser un objeto JSON")
+        stat = SOL_SUPERGATE_FILE.stat()
+        return parsed, _hashlib.sha256(raw).hexdigest(), stat.st_mtime_ns
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"sol_supergate.json no es un JSON válido: {exc}",
+        )
+
+
+async def _sol_supergate_probe(config: dict) -> dict:
+    """Comprueba el portero sin devolver su contenido ni cambiar su proceso."""
+    port = config.get("port", 8012)
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        port = 8012
+    base_url = str(
+        os.environ.get("SOL_PORTERO_URL", f"http://127.0.0.1:{port}")
+    ).rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=0.8) as client:
+            response = await client.get(f"{base_url}/sol/contexto")
+        return {
+            "available": True,
+            "status_code": response.status_code,
+            "url": base_url,
+        }
+    except Exception as exc:
+        return {
+            "available": False,
+            "status_code": None,
+            "url": base_url,
+            "error": type(exc).__name__,
+        }
+
+
+async def _sol_supergate_status() -> dict:
+    config, version, mtime_ns = _sol_supergate_read()
+    return {
+        "config": config,
+        "version": version,
+        "mtime_ns": mtime_ns,
+        "modified_at": datetime.fromtimestamp(
+            mtime_ns / 1_000_000_000
+        ).isoformat(timespec="seconds"),
+        "file": str(SOL_SUPERGATE_FILE.relative_to(PROJECT_ROOT)),
+        "probe": await _sol_supergate_probe(config),
+    }
+
+
+@app.get("/api/ops/sol-supergate")
+async def get_sol_supergate():
+    """Estado/configuración del archivo local editable por War Room y nano."""
+    return await _sol_supergate_status()
+
+
+@app.put("/api/ops/sol-supergate")
+async def update_sol_supergate(payload: dict = Body(...)):
+    """Guarda una configuración JSON sin tocar el código ni reiniciar Sol."""
+    config = payload.get("config") if isinstance(payload, dict) else None
+    expected_version = payload.get("expected_version") if isinstance(payload, dict) else None
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=422, detail="config debe ser un objeto JSON")
+    encoded = json.dumps(config, ensure_ascii=False, indent=2) + "\n"
+    if len(encoded.encode("utf-8")) > 64 * 1024:
+        raise HTTPException(status_code=413, detail="configuración demasiado grande")
+
+    _, current_version, _ = _sol_supergate_read()
+    if expected_version and expected_version != current_version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "El archivo cambió desde la última sincronización.",
+                "current_version": current_version,
+            },
+        )
+
+    temp_file = SOL_SUPERGATE_FILE.with_suffix(".json.tmp")
+    try:
+        temp_file.write_text(encoded, encoding="utf-8")
+        os.replace(temp_file, SOL_SUPERGATE_FILE)
+    except OSError as exc:
+        try:
+            temp_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar: {exc}")
+    return await _sol_supergate_status()
+
 
 # ── SOL API PROXY — endpoints que sol_router NO cubre → sol_api.py :8006 ──────
 # sol_router (montado arriba, in-process) atiende el núcleo: think, memory,
