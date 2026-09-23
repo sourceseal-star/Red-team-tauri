@@ -200,6 +200,7 @@ async def android_status():
     }
 
 
+@router.get("/gps")
 @router.get("/location")
 async def android_location():
     errors = []
@@ -243,6 +244,18 @@ async def android_wifi():
         },
         "source": "termux-api+ip",
     }
+
+
+@router.get("/wifi-scan")
+async def android_wifi_scan():
+    """Escaneo cercano puntual: nunca se simulan redes ausentes."""
+    ok, data = await asyncio.to_thread(_run_json, "termux-wifi-scaninfo", [], 20)
+    if not ok or not isinstance(data, list):
+        return JSONResponse({"available": False, "networks": [],
+                             "error": str(data) if not ok else "Respuesta Wi-Fi inválida"},
+                            status_code=503)
+    return {"available": True, "networks": data, "count": len(data),
+            "source": "termux-api"}
 
 
 def _open_osmand(uri: str) -> dict:

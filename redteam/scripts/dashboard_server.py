@@ -2587,6 +2587,20 @@ async def discover_wifi():
         pass
     return {"networks": [], "method": "none", "count": 0, "errors": errors}
 
+def _bounded_lan_subnet(value: str) -> str:
+    """Only a real, private IPv4 LAN range of at most 256 addresses."""
+    try:
+        network = ipaddress.ip_network(value, strict=False)
+        rfc1918 = tuple(ipaddress.ip_network(cidr) for cidr in
+                        ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+        if (network.version != 4 or network.num_addresses > 256
+                or not any(network.subnet_of(allowed) for allowed in rfc1918)):
+            raise ValueError("se requiere una LAN RFC1918 de hasta /24")
+        return str(network)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Subred inválida: {exc}") from exc
+
+
 @app.post("/api/scan/topology")
 async def scan_topology(subnet: str = ""):
     # Subnet como parametro query, o de Settings, o auto-detectada
@@ -2596,6 +2610,9 @@ async def scan_topology(subnet: str = ""):
             subnet = ops_subnet
         else:
             subnet = await asyncio.to_thread(subnet_from_iface)
+    # Nunca lanzar nmap ni el fallback TCP sobre un rango público, loopback o
+    # una red enorme: protege RAM/batería y conserva el alcance local explícito.
+    subnet = _bounded_lan_subnet(subnet)
     # nmap con timeout adaptativo: mas hosts = mas timeout
     import ipaddress as _ipa
     try:
@@ -2699,8 +2716,16 @@ async def scan_cameras(target: str = Query(None), timeout: float = Query(2.0)):
     lo muestra en la tarjeta 'Tiempo escaneo' y antes quedaba vacío.
     """
     t0 = time.monotonic()
+    # Las búsquedas por IP de GeoIntel conservan su contrato GET/POST.
+    # El timeout de query nunca puede crecer sin límite en el Moto.
+    if not 0.2 <= timeout <= 3.0:
+        raise HTTPException(status_code=400, detail="timeout de cámara debe estar entre 0.2 y 3 segundos")
     if target:
         ip = target.strip()
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="target debe ser una IP") from exc
         tasks = [tcp_check(ip, p, timeout=timeout) for p in CAM_PORTS]
         banners = await asyncio.gather(*tasks)
         ports_map = {p: b for p, b in zip(CAM_PORTS, banners) if b is not None}
@@ -2713,15 +2738,20 @@ async def scan_cameras(target: str = Query(None), timeout: float = Query(2.0)):
                 "hosts_with_services": len(cams), "cameras_found": len(cams),
                 "elapsed_seconds": elapsed}
 
-    subnet = await asyncio.to_thread(subnet_from_iface)
-    base = subnet.rsplit(".", 1)[0] + "."
-    rtsp_tasks = [tcp_check(f"{base}{i}", 554, timeout=1.0) for i in range(1, 255)]
-    rtsp_banners = await asyncio.gather(*rtsp_tasks)
+    subnet = _bounded_lan_subnet(await asyncio.to_thread(subnet_from_iface))
+    # El camino sin target escanea SOLO la LAN local y limita las conexiones
+    # simultáneas. No se infiere que un puerto abierto sea cámara sin evidencia.
+    network = ipaddress.ip_network(subnet)
+    camera_ips = [str(ip) for ip in network.hosts()]
+    sem = asyncio.Semaphore(24)
+    async def check_rtsp(ip):
+        async with sem:
+            return await tcp_check(ip, 554, timeout=1.0)
+    rtsp_banners = await asyncio.gather(*(check_rtsp(ip) for ip in camera_ips))
     cams = []
     extra_ports = [p for p in CAM_PORTS if p != 554]
-    for i, banner in enumerate(rtsp_banners, start=1):
+    for ip, banner in zip(camera_ips, rtsp_banners):
         if banner is None: continue
-        ip = f"{base}{i}"
         extra_tasks = [tcp_check(ip, p, timeout=0.8) for p in extra_ports]
         extra_results = await asyncio.gather(*extra_tasks)
         ports_map = {p: b for p, b in zip(extra_ports, extra_results)}
