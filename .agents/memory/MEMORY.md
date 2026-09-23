@@ -5,3 +5,4 @@
 - [COM-LINK status semantics](comlink-status.md) — `available` indica que el núcleo funciona; `channels_ready` indica si existe un canal físico utilizable
 - [Nexus Omni access](nexus-omni-access.md) — en Replit, Nexus :8004 debe consumirse mediante el proxy del dashboard :8001
 - [Collaborative project rules](collaborative-project-rules.md) — respetar la historia multiagente, la Regla #1 destructiva y el Libro de Vida de la Regla #56
+- [Pydantic runtime compatibility](pydantic-runtime-validation.md) — Pydantic 2 exige `skip_on_failure` al conservar validadores raíz compatibles con Pydantic 1
