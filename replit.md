@@ -59,6 +59,10 @@ Para la guía detallada de autenticación SSH, sincronización segura de ambos
 repositorios y recuperación de errores de `cryptography`, consulta
 [`TERMUX_SYNC.md`](TERMUX_SYNC.md).
 
+Para operar o modificar el fallback local SOL SuperGate —incluyendo precedencia
+con `sol_portero.py`, credenciales, `curar.sh`, pruebas y actualización segura—
+consulta [`docs/SOL_SUPERGATE_OPERATIONS.md`](docs/SOL_SUPERGATE_OPERATIONS.md).
+
 Para actualizar desde Termux mediante un único bootstrap editable con `nano`,
 usa `bash setup.sh` desde el repositorio. `bash setup.sh --start` actualiza,
 compila y arranca después; por defecto solo prepara el código y deja la
