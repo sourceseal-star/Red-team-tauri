@@ -16,6 +16,7 @@ Safety decisions:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import ipaddress
 import json
@@ -25,17 +26,123 @@ import shutil
 import socket
 import struct
 import subprocess
+import threading
+from contextlib import suppress
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field, StrictInt, StrictStr, root_validator, validator
 
 
 app = FastAPI(title="Sol SuperGate", version="3.0.0")
 HOST = os.environ.get("SOL_SUPERGATE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SOL_GATE_PORT", os.environ.get("SOL_SUPERGATE_PORT", "8012")))
 _HOSTNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,252}$")
+_HOUR_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+
+# Runtime tools are intentionally separate from the legacy, fixed action
+# allowlist below. A protected manifest can only launch these executable names;
+# shell strings require an explicit full mode in the manifest.
+ALLOWED = {
+    "python3",
+    "termux-tts-speak",
+    "termux-notification",
+    "termux-torch",
+    "nmap",
+    "rclone",
+    "ss",
+    "git",
+    "ping",
+    "ip",
+    "netstat",
+}
+
+
+class _StrictModel(BaseModel):
+    class Config:
+        extra = "forbid"
+        validate_assignment = True
+
+
+class ToolDef(_StrictModel):
+    name: StrictStr = Field(min_length=1, max_length=80)
+    argv: Optional[List[StrictStr]] = None
+    cmd: Optional[StrictStr] = Field(default=None, max_length=4096)
+    policy: Literal["auto", "manual"] = "auto"
+    timeout: StrictInt = Field(default=60, ge=1, le=86_400)
+
+    @root_validator(skip_on_failure=True)
+    def exactly_one_command(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        argv = values.get("argv")
+        cmd = values.get("cmd")
+        if bool(argv) == bool(cmd):
+            raise ValueError("cada herramienta debe definir exactamente un argv o un cmd")
+        if argv is not None and not argv[0].strip():
+            raise ValueError("argv debe comenzar con un ejecutable")
+        return values
+
+
+class RitualDef(_StrictModel):
+    nombre: StrictStr = Field(min_length=1, max_length=80)
+    hora: StrictStr
+    tool: StrictStr = Field(min_length=1, max_length=80)
+    args: Dict[str, Any] = Field(default_factory=dict)
+
+    @validator("hora")
+    def valid_hour(cls, value: str) -> str:
+        if not _HOUR_RE.fullmatch(value):
+            raise ValueError("hora debe usar el formato HH:MM")
+        return value
+
+
+class ManifestModel(_StrictModel):
+    name: StrictStr = Field(min_length=1, max_length=120)
+    mode: Literal["protected", "full"] = "protected"
+    port: StrictInt = Field(default=8012, ge=1, le=65_535)
+    notes: Optional[StrictStr] = Field(default=None, max_length=4_000)
+    tools: List[ToolDef] = Field(default_factory=list)
+    rituales: List[RitualDef] = Field(default_factory=list)
+
+    @root_validator(skip_on_failure=True)
+    def ritual_tools_must_exist(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        tool_defs = values.get("tools", [])
+        ritual_defs = values.get("rituales", [])
+        tool_names = [tool.name for tool in tool_defs]
+        ritual_names = [ritual.nombre for ritual in ritual_defs]
+        if len(tool_names) != len(set(tool_names)):
+            raise ValueError("no se permiten nombres de herramienta duplicados")
+        if len(ritual_names) != len(set(ritual_names)):
+            raise ValueError("no se permiten nombres de ritual duplicados")
+        tools = set(tool_names)
+        missing = sorted({ritual.tool for ritual in ritual_defs} - tools)
+        if missing:
+            raise ValueError(f"rituales apuntan a herramientas inexistentes: {', '.join(missing)}")
+        return values
+
+
+class RuntimeExecuteRequest(_StrictModel):
+    tool: StrictStr = Field(min_length=1, max_length=80)
+    args: Dict[str, Any] = Field(default_factory=dict)
+
+
+RUNTIME: Dict[str, Any] = {
+    "hash": None,
+    "mode": "protected",
+    "tools": {},
+    "rituales": [],
+    "manifest_error": None,
+    "last_loaded_at": None,
+    "last_block_hash": "0" * 64,
+    "audit_error": None,
+}
+_RUNTIME_LOCK = threading.RLock()
+_AUDIT_LOCK = threading.Lock()
+_MANIFEST_TASK: Optional[asyncio.Task] = None
+_RITUAL_TASK: Optional[asyncio.Task] = None
+_RITUAL_LAST_RUN: Dict[str, str] = {}
 
 
 def _secret() -> str:
@@ -50,6 +157,9 @@ def _config_path() -> Path:
     redteam_dir = os.environ.get("REDTEAM_DIR", "").strip()
     if redteam_dir:
         return Path(redteam_dir) / "data" / "sol_supergate.json"
+    project_manifest = Path(__file__).resolve().parents[1] / "redteam" / "data" / "sol_supergate.json"
+    if project_manifest.exists():
+        return project_manifest
     return Path.cwd() / "data" / "sol_supergate.json"
 
 
@@ -60,6 +170,291 @@ def _config() -> dict[str, Any]:
         return data if isinstance(data, dict) else {}
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return {}
+
+
+def _model_dump(model: BaseModel) -> dict[str, Any]:
+    """Support the Pydantic 1.x and 2.x APIs used by Termux/Replit."""
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
+
+
+def _audit_log_path() -> Path:
+    explicit = os.environ.get("SOL_SUPERGATE_AUDIT_LOG", "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
+    return _config_path().with_name("audit_chain.jsonl")
+
+
+def _restore_chain_head() -> None:
+    """Resume only after verifying every persisted block in the chain."""
+    path = _audit_log_path()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return
+    except (OSError, UnicodeDecodeError) as exc:
+        message = f"No se pudo leer la cadena de auditoría {path}: {exc}"
+        with _RUNTIME_LOCK:
+            RUNTIME["audit_error"] = message
+        raise RuntimeError(message) from exc
+    previous = "0" * 64
+    try:
+        for line_number, line in enumerate(lines, start=1):
+            payload = json.loads(line)
+            if not isinstance(payload, dict):
+                raise ValueError("el bloque no es un objeto JSON")
+            candidate = payload.get("block_hash", "")
+            if not isinstance(candidate, str) or not re.fullmatch(r"[0-9a-f]{64}", candidate):
+                raise ValueError("block_hash inválido")
+            if payload.get("prev_hash") != previous:
+                raise ValueError("prev_hash no coincide con la cabeza anterior")
+            unsigned = dict(payload)
+            del unsigned["block_hash"]
+            block_string = json.dumps(
+                unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            )
+            if hashlib.sha256(block_string.encode("utf-8")).hexdigest() != candidate:
+                raise ValueError("el contenido no coincide con block_hash")
+            previous = candidate
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        message = f"Cadena de auditoría corrupta en {path}, línea {line_number}: {exc}"
+        with _RUNTIME_LOCK:
+            RUNTIME["audit_error"] = message
+        raise RuntimeError(message) from exc
+    with _RUNTIME_LOCK:
+        RUNTIME["last_block_hash"] = previous
+        RUNTIME["audit_error"] = None
+
+
+def _redact_audit_value(value: Any) -> Any:
+    """Avoid persisting credentials when a tool receives them as arguments."""
+    sensitive = ("key", "token", "password", "passwd", "secret", "credential")
+    if isinstance(value, dict):
+        return {
+            key: ("[REDACTED]" if any(part in key.lower() for part in sensitive)
+                  else _redact_audit_value(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_audit_value(item) for item in value]
+    return value
+
+
+def seal_event(tool: str, args: dict[str, Any], ok: bool, output_snippet: str) -> str:
+    """Append one tamper-evident audit block and return its short identifier."""
+    with _AUDIT_LOCK:
+        with _RUNTIME_LOCK:
+            if RUNTIME["audit_error"]:
+                raise RuntimeError(RUNTIME["audit_error"])
+            previous = RUNTIME["last_block_hash"]
+        payload = {
+            "prev_hash": previous,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "tool": tool,
+            "args": _redact_audit_value(args),
+            "ok": bool(ok),
+            "output": (output_snippet or "")[-2_000:],
+        }
+        block_string = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        block_hash = hashlib.sha256(block_string.encode("utf-8")).hexdigest()
+        payload["block_hash"] = block_hash
+        path = _audit_log_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as audit_file:
+                audit_file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                audit_file.flush()
+                os.fsync(audit_file.fileno())
+        except OSError:
+            # A failed audit must never claim success or mutate the chain head.
+            raise
+        with _RUNTIME_LOCK:
+            RUNTIME["last_block_hash"] = block_hash
+        return block_hash[:16]
+
+
+def _runtime_snapshot() -> dict[str, Any]:
+    with _RUNTIME_LOCK:
+        return {
+            "hash": RUNTIME["hash"],
+            "mode": RUNTIME["mode"],
+            "tools": dict(RUNTIME["tools"]),
+            "rituales": list(RUNTIME["rituales"]),
+            "manifest_error": RUNTIME["manifest_error"],
+            "last_loaded_at": RUNTIME["last_loaded_at"],
+            "last_block_hash": RUNTIME["last_block_hash"],
+            "audit_error": RUNTIME["audit_error"],
+        }
+
+
+def load_manifest() -> dict[str, Any]:
+    """Validate first, then atomically replace the live runtime on change."""
+    path = _config_path()
+    try:
+        raw_data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw_data, dict):
+            raise ValueError("la raíz del manifiesto debe ser un objeto JSON")
+        if hasattr(ManifestModel, "model_validate"):
+            validated = ManifestModel.model_validate(raw_data)
+        else:
+            validated = ManifestModel.parse_obj(raw_data)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        with _RUNTIME_LOCK:
+            RUNTIME["manifest_error"] = f"Error de sintaxis o esquema: {exc}"
+        return {"cambio": False, "error": RUNTIME["manifest_error"]}
+
+    data_dict = _model_dump(validated)
+    canonical = json.dumps(data_dict, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    manifest_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    with _RUNTIME_LOCK:
+        if manifest_hash == RUNTIME["hash"]:
+            RUNTIME["manifest_error"] = None
+            return {"cambio": False, "hash": manifest_hash}
+        next_runtime = {
+            "hash": manifest_hash,
+            "mode": validated.mode,
+            "tools": {tool.name: _model_dump(tool) for tool in validated.tools},
+            "rituales": [_model_dump(ritual) for ritual in validated.rituales],
+            "manifest_error": None,
+            "last_loaded_at": datetime.now(timezone.utc).isoformat(),
+        }
+        RUNTIME.update(next_runtime)
+    seal_event(
+        "manifest_load",
+        {"tools": list(next_runtime["tools"]), "mode": next_runtime["mode"]},
+        True,
+        f"hash={manifest_hash[:12]}",
+    )
+    return {"cambio": True, "hash": manifest_hash, "tools": list(next_runtime["tools"])}
+
+
+def _runtime_policy_error(tool: dict[str, Any], mode: str) -> Optional[str]:
+    argv = tool.get("argv")
+    if argv:
+        executable = Path(str(argv[0])).name
+        if mode == "protected" and executable not in ALLOWED:
+            return f"ejecutable bloqueado por política protected: {executable}"
+        return None
+    if tool.get("cmd") and mode != "full":
+        return "la ejecución por shell exige mode=full en el manifiesto"
+    return None
+
+
+async def run_runtime_tool(tool: dict[str, Any], args: dict[str, Any], *, ritual: bool = False) -> tuple[bool, str, str, str]:
+    """Run a manifest tool without blocking FastAPI's event loop."""
+    snapshot = _runtime_snapshot()
+    policy_error = _runtime_policy_error(tool, snapshot["mode"])
+    if ritual and tool.get("policy") != "auto":
+        policy_error = "el ritual solo puede ejecutar herramientas con policy=auto"
+    if policy_error:
+        seal = seal_event(tool.get("name", "unknown"), args, False, policy_error)
+        return False, "", policy_error, seal
+
+    timeout = int(tool.get("timeout", 60))
+    stdout_text = ""
+    stderr_text = ""
+    ok = False
+    process: asyncio.subprocess.Process | None = None
+    try:
+        if tool.get("argv"):
+            argv = [str(part).format(**args) for part in tool["argv"]]
+            process = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                close_fds=True,
+            )
+        else:
+            command = str(tool["cmd"]).format(**args)
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        stdout_text = stdout.decode(errors="replace")
+        stderr_text = stderr.decode(errors="replace")
+        ok = process.returncode == 0
+    except asyncio.TimeoutError:
+        if process is not None:
+            process.kill()
+            with suppress(ProcessLookupError):
+                await process.wait()
+        stderr_text = f"Timeout excedido ({timeout}s)"
+    except (OSError, ValueError, KeyError) as exc:
+        stderr_text = str(exc)
+    seal = seal_event(
+        tool.get("name", "unknown"),
+        args,
+        ok,
+        stdout_text or stderr_text,
+    )
+    return ok, stdout_text[-16_384:], stderr_text[-4_096:], seal
+
+
+async def manifest_watch(interval: float = 4.0) -> None:
+    while True:
+        load_manifest()
+        await asyncio.sleep(interval)
+
+
+async def ritual_engine() -> None:
+    """Run each matching ritual once per local minute, even after polling."""
+    while True:
+        now = datetime.now().astimezone()
+        minute_key = now.strftime("%Y-%m-%d %H:%M")
+        with _RUNTIME_LOCK:
+            rituals = list(RUNTIME["rituales"])
+            tools = dict(RUNTIME["tools"])
+        jobs = []
+        for ritual in rituals:
+            if ritual["hora"] != now.strftime("%H:%M"):
+                continue
+            run_key = f"{ritual['nombre']}:{minute_key}"
+            if _RITUAL_LAST_RUN.get(run_key):
+                continue
+            _RITUAL_LAST_RUN[run_key] = minute_key
+            tool = tools.get(ritual["tool"])
+            if not tool:
+                seal_event(ritual["nombre"], ritual.get("args", {}), False, "herramienta inexistente")
+                continue
+            jobs.append(run_runtime_tool(tool, ritual.get("args", {}), ritual=True))
+        if len(_RITUAL_LAST_RUN) > 2_048:
+            cutoff = (now.timestamp() - 86_400)
+            for key in list(_RITUAL_LAST_RUN):
+                try:
+                    stamp = datetime.strptime(key.rsplit(":", 1)[-1], "%Y-%m-%d %H:%M").replace(
+                        tzinfo=now.tzinfo
+                    ).timestamp()
+                except ValueError:
+                    continue
+                if stamp < cutoff:
+                    _RITUAL_LAST_RUN.pop(key, None)
+        if jobs:
+            await asyncio.gather(*jobs, return_exceptions=True)
+        await asyncio.sleep(5)
+
+
+@app.on_event("startup")
+async def supergate_startup() -> None:
+    global _MANIFEST_TASK, _RITUAL_TASK
+    _restore_chain_head()
+    load_manifest()
+    _MANIFEST_TASK = asyncio.create_task(manifest_watch(), name="sol-supergate-manifest-watch")
+    _RITUAL_TASK = asyncio.create_task(ritual_engine(), name="sol-supergate-ritual-engine")
+
+
+@app.on_event("shutdown")
+async def supergate_shutdown() -> None:
+    global _MANIFEST_TASK, _RITUAL_TASK
+    for task in (_MANIFEST_TASK, _RITUAL_TASK):
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+    _MANIFEST_TASK = None
+    _RITUAL_TASK = None
 
 
 def verify_sol_gate(x_sol_key: str | None = Header(default=None)) -> bool:
@@ -165,12 +560,24 @@ def escaneo_mdns_activo() -> list[dict[str, Any]]:
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
+    runtime = _runtime_snapshot()
     return {
         "available": True,
         "engine": "sol_supergate_nonroot",
         "auth_required": True,
         "port": PORT,
         "config_loaded": bool(_config()),
+        "manifest": {
+            "loaded": runtime["hash"] is not None,
+            "hash": runtime["hash"],
+            "tools": list(runtime["tools"]),
+            "rituales": len(runtime["rituales"]),
+            "error": runtime["manifest_error"],
+        },
+        "audit": {
+            "last_block_hash": runtime["last_block_hash"],
+            "error": runtime["audit_error"],
+        },
     }
 
 
@@ -178,12 +585,65 @@ async def health() -> dict[str, Any]:
 async def contexto(x_sol_key: str | None = Header(default=None)) -> dict[str, Any]:
     verify_sol_gate(x_sol_key)
     config = _config()
+    runtime = _runtime_snapshot()
     return {
         "aprobaciones_pendientes": 0,
         "repos": {"Red-team-tauri": "activo", "sol_supergate": "operativo"},
         "pendientes": {},
         "engine": "sol_supergate_nonroot",
-        "mode": config.get("mode", "protected"),
+        "mode": runtime["mode"] if runtime["hash"] else config.get("mode", "protected"),
+        "manifest": {
+            "hash": runtime["hash"],
+            "tools": list(runtime["tools"]),
+            "rituales": len(runtime["rituales"]),
+            "error": runtime["manifest_error"],
+        },
+        "audit": {
+            "last_block_hash": runtime["last_block_hash"],
+            "error": runtime["audit_error"],
+        },
+    }
+
+
+@app.get("/api/runtime/status")
+async def runtime_status(_: bool = Depends(verify_sol_gate)) -> dict[str, Any]:
+    """Return the validated live manifest without exposing command contents."""
+    runtime = _runtime_snapshot()
+    return {
+        "loaded": runtime["hash"] is not None,
+        "hash": runtime["hash"],
+        "mode": runtime["mode"],
+        "tools": [
+            {"name": name, "policy": tool.get("policy"), "timeout": tool.get("timeout")}
+            for name, tool in runtime["tools"].items()
+        ],
+        "rituales": runtime["rituales"],
+        "manifest_error": runtime["manifest_error"],
+        "last_loaded_at": runtime["last_loaded_at"],
+        "last_block_hash": runtime["last_block_hash"],
+        "audit_error": runtime["audit_error"],
+    }
+
+
+@app.post("/api/runtime/execute")
+async def runtime_execute(
+    payload: RuntimeExecuteRequest = Body(...),
+    _: bool = Depends(verify_sol_gate),
+) -> dict[str, Any]:
+    """Execute one validated manifest tool using an async subprocess."""
+    runtime = _runtime_snapshot()
+    tool = runtime["tools"].get(payload.tool)
+    if tool is None:
+        raise HTTPException(status_code=404, detail=f"Herramienta no encontrada: {payload.tool}")
+    ok, stdout, stderr, seal = await run_runtime_tool(tool, payload.args)
+    if stderr.startswith("ejecutable bloqueado") or stderr.startswith("la ejecución por shell"):
+        raise HTTPException(status_code=403, detail=stderr)
+    return {
+        "executed": ok,
+        "tool": payload.tool,
+        "stdout": stdout,
+        "stderr": stderr,
+        "seal": seal,
     }
 
 
@@ -237,7 +697,14 @@ async def execute_action(
             raise HTTPException(status_code=503, detail="No hay netstat ni ss disponible.")
 
     stdout, stderr, code = await asyncio.to_thread(run_safe_command, commands[action])
-    return {"executed": code == 0, "action": action, "stdout": stdout, "stderr": stderr}
+    seal = seal_event(action, {"command": commands[action]}, code == 0, stdout or stderr)
+    return {
+        "executed": code == 0,
+        "action": action,
+        "stdout": stdout,
+        "stderr": stderr,
+        "seal": seal,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
