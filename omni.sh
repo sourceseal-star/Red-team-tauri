@@ -94,6 +94,14 @@ export SOL_PORTERO_URL
 SOL_CORE_ONLY="${SOL_CORE_ONLY:-0}"
 [ -f "$HOME/.sol/core_only" ] && SOL_CORE_ONLY=1
 mkdir -p "$SOL_DIR" "$LOG_DIR"
+# Termux puede exponer /tmp como una ruta no escribible para este proceso.
+# Usar un directorio privado de Sol como respaldo garantiza que sync pueda
+# restaurar .env incluso cuando /tmp esté restringido.
+OMNI_TMP_DIR="$SOL_DIR/tmp"
+if [ -n "${TMPDIR:-}" ] && mkdir -p "$TMPDIR" 2>/dev/null && [ -w "$TMPDIR" ]; then
+  OMNI_TMP_DIR="$TMPDIR"
+fi
+mkdir -p "$OMNI_TMP_DIR" 2>/dev/null || true
 
 # ── Colores ──
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'
@@ -1448,45 +1456,90 @@ sync() {
     ok "Respaldo plano creado"
   fi
 
-  # 0c. Copia a tmp para restauración emergencia
-  ENV_RESTORE="/tmp/omni-env-restore-$$"
-  cp "$ENV_FILE" "$ENV_RESTORE"
-  ok "Copia de emergencia en /tmp/"
+  # 0c. Copia temporal para restauración de emergencia.
+  # No asumir que /tmp es escribible en Termux.
+  ENV_RESTORE="$OMNI_TMP_DIR/omni-env-restore-$$"
+  if ! cp "$ENV_FILE" "$ENV_RESTORE"; then
+    fail "No se pudo crear la copia de emergencia de .env en $OMNI_TMP_DIR"
+    exit 1
+  fi
+  chmod 600 "$ENV_RESTORE" 2>/dev/null || true
+  ok "Copia de emergencia en $OMNI_TMP_DIR"
 
   echo ""
 
   # ── 1. GIT PULL ──
-  echo -e "${BOLD} Paso 1: git pull${N}"
+  echo -e "${BOLD} Paso 1: sincronizar Git${N}"
   cd "$ROOT"
 
-  # Si hay cambios locales sin commitear, stash (NUNCA stashear .env — está en .gitignore)
-  LOCAL_CHANGES="$(git status --porcelain 2>/dev/null | grep -v '^\?\?' | head -5)"
+  # Si hay cambios locales, stash completo (incluidos archivos nuevos).
+  # .env sigue fuera porque está en .gitignore y nunca se fuerza con -a.
+  OMNI_STASH_REF=""
+  LOCAL_CHANGES="$(git status --porcelain 2>/dev/null | head -20)"
   if [ -n "$LOCAL_CHANGES" ]; then
     info "Cambios locales detectados — guardando en stash..."
-    git stash push -m "omni-sync-$(date +%s)" 2>/dev/null && ok "Stash creado" || warn "No se pudo stash"
+    OMNI_STASH_LABEL="omni-sync-$(date +%s)-$$"
+    if git stash push -u -m "$OMNI_STASH_LABEL" 2>/dev/null; then
+      OMNI_STASH_REF="$(git stash list --format='%gd' -1 2>/dev/null || true)"
+      ok "Stash completo creado${OMNI_STASH_REF:+ ($OMNI_STASH_REF)}"
+    else
+      fail "No se pudo guardar el estado local; sync cancelado para no perder cambios"
+      rm -f "$ENV_RESTORE"
+      exit 1
+    fi
   fi
 
-  info "git pull origin main..."
-  if git pull origin main 2>&1 | tee -a "$LOG_DIR/sync.log"; then
-    ok "git pull completado"
+  # Con una rama local como termux-snapshot, origin/main puede haber
+  # divergido. Rebase conserva los commits del teléfono y aplica encima lo
+  # publicado, sin reset --hard ni pérdida silenciosa de trabajo.
+  OMNI_BACKUP_BRANCH="omni-pre-sync-$(date +%Y%m%d-%H%M%S)-$$"
+  if git branch "$OMNI_BACKUP_BRANCH" HEAD >/dev/null 2>&1; then
+    info "Respaldo de rama creado: $OMNI_BACKUP_BRANCH"
   else
-    fail "git pull falló"
-    warn "Restaurando stash si existe..."
-    git stash pop 2>/dev/null || true
+    warn "No se pudo crear respaldo de rama; el stash sigue protegido"
+  fi
+
+  info "git pull --rebase origin main..."
+  if git pull --rebase origin main 2>&1 | tee -a "$LOG_DIR/sync.log"; then
+    ok "Git sincronizado con origin/main"
+  else
+    fail "La sincronización Git falló; no se borró ningún cambio local"
+    git rebase --abort 2>/dev/null || true
+    if [ -n "$OMNI_STASH_REF" ]; then
+      warn "Restaurando cambios locales desde $OMNI_STASH_REF..."
+      git stash apply "$OMNI_STASH_REF" 2>/dev/null \
+        && git stash drop "$OMNI_STASH_REF" >/dev/null 2>&1 \
+        && ok "Cambios locales restaurados" \
+        || warn "El stash quedó guardado; consulta: git stash list"
+    fi
     # Restaurar .env por si acaso
     if [ ! -f "$ENV_FILE" ] || [ "$(sha256sum "$ENV_FILE" | cut -d' ' -f1)" != "$ENV_HASH_BEFORE" ]; then
       warn "Restaurando .env desde respaldo..."
-      cp "$ENV_RESTORE" "$ENV_FILE"
-      ok ".env restaurado"
+      if [ -f "$ENV_RESTORE" ] && cp "$ENV_RESTORE" "$ENV_FILE"; then
+        ok ".env restaurado"
+      else
+        fail "No se pudo restaurar .env desde $ENV_RESTORE"
+      fi
     fi
     rm -f "$ENV_RESTORE"
     exit 1
   fi
 
   # Restaurar stash si existe
-  if git stash list 2>/dev/null | head -1 | grep -q "omni-sync"; then
-    info "Restaurando cambios locales..."
-    git stash pop 2>/dev/null && ok "Cambios locales restaurados" || warn "Conflicto en stash pop — resuelve manualmente"
+  if [ -n "$OMNI_STASH_REF" ]; then
+    info "Restaurando cambios locales desde $OMNI_STASH_REF..."
+    if git stash apply "$OMNI_STASH_REF" 2>/dev/null; then
+      git stash drop "$OMNI_STASH_REF" >/dev/null 2>&1 || true
+      ok "Cambios locales restaurados"
+    else
+      fail "Conflicto al restaurar cambios locales"
+      warn "El stash original se conserva en: git stash list"
+      if [ -f "$ENV_RESTORE" ]; then
+        cp "$ENV_RESTORE" "$ENV_FILE" 2>/dev/null || true
+      fi
+      rm -f "$ENV_RESTORE"
+      exit 1
+    fi
   fi
 
   # ── Paso 1b: repo de Sol (~/sol) — clona si falta, actualiza si existe ──
@@ -1534,8 +1587,6 @@ sync() {
       fi
     fi
   fi
-  rm -f "$ENV_RESTORE"
-
   echo ""
 
   # ── 3. DEPENDENCIAS PYTHON ──
@@ -1573,6 +1624,8 @@ sync() {
   else
     ok "Credenciales críticas verificadas: NEXUS_PASS, ADMIN_PASSWORD, REDTEAM_API_KEY"
   fi
+
+  rm -f "$ENV_RESTORE"
 
   # Limpiar respaldos viejos (>7 días)
   find "$ROOT" -name ".env.omni-backup-*" -mtime +7 -delete 2>/dev/null || true
