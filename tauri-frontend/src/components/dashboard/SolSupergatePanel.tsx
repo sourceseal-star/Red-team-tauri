@@ -65,6 +65,7 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([]);
+  const [interfacesLoading, setInterfacesLoading] = useState(false);
   const [selectedInterface, setSelectedInterface] = useState('');
   const [scope, setScope] = useState('');
   const [operationLoading, setOperationLoading] = useState('');
@@ -110,6 +111,7 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
   }, [syncNow]);
 
   const loadInterfaces = useCallback(async () => {
+    setInterfacesLoading(true);
     try {
       const response = await fetch('/api/network/interfaces', { cache: 'no-store', headers: authHeaders() });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -125,6 +127,8 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
       }
     } catch (error) {
       setOperationMessage(`No se pudieron cargar las interfaces: ${error instanceof Error ? error.message : 'error desconocido'}`);
+    } finally {
+      setInterfacesLoading(false);
     }
   }, []);
 
@@ -304,7 +308,8 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
                     }}
                     className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 outline-none focus:border-amber-500/60"
                   >
-                    {interfaces.length === 0 && <option value="">Detectando interfaces…</option>}
+                    {interfacesLoading && <option value="">Detectando interfaces…</option>}
+                    {!interfacesLoading && interfaces.length === 0 && <option value="">No se detectaron interfaces</option>}
                     {interfaces.length > 0 && <option value="__all__">Todas las interfaces activas</option>}
                     {interfaces.map(item => (
                       <option key={`${item.name}-${item.ip_address}`} value={item.name}>
@@ -312,6 +317,15 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
                       </option>
                     ))}
                   </select>
+                  {!interfacesLoading && interfaces.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => void loadInterfaces()}
+                      className="text-[10px] text-cyan-300 hover:text-cyan-200"
+                    >
+                      Reintentar detección
+                    </button>
+                  )}
                 </label>
                 <label className="space-y-1.5">
                   <span className="text-[10px] uppercase tracking-widest text-slate-500">IPs / subredes objetivo</span>
