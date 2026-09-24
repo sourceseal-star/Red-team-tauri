@@ -91,7 +91,11 @@ ensure_sol_repo() {
 sync_commander_repo() { return 0; }
 
 verify_qalam() {
-  local root="${1:-$SOL_REPO}" py="$root/sol_qalam.py" md="$root/bestiario-qalam.v1.md"
+  # Con set -u, las expansiones de una misma declaración local ocurren antes
+  # de asignar root. Separar las declaraciones evita "root: unbound variable".
+  local root="${1:-$SOL_REPO}"
+  local py="$root/sol_qalam.py"
+  local md="$root/bestiario-qalam.v1.md"
   [ -f "$py" ] && [ -f "$md" ] || { warn "Bestiario Qalam incompleto en $root"; return 1; }
   python3 -m py_compile "$py" >/dev/null 2>&1 || { warn "Qalam no compila: $py"; return 1; }
   local result egyptian entries
