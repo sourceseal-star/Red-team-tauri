@@ -1,4 +1,228 @@
- ANTES de arrancar nada.
+#!/data/data/com.termux/files/usr/bin/bash
+# ═══════════════════════════════════════════════════════════════════════
+#  OMNI.SH — SourceSeal Unified Command
+#  Launcher local para Dashboard, SOL GATE y Sol.
+#  .env solo se lee; nunca se regenera ni se publica desde este script.
+# ═══════════════════════════════════════════════════════════════════════
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOL_DIR="$HOME/.sol"
+LOG_DIR="$SOL_DIR/logs"
+ENV_FILE="$ROOT/.env"
+SOL_REPO="${SOL_REPO:-$HOME/sol}"
+SOL_GATE_PORT="${SOL_GATE_PORT:-8012}"
+SOL_PORTERO_URL="${SOL_PORTERO_URL:-http://127.0.0.1:${SOL_GATE_PORT}}"
+SOL_CORE_ONLY="${SOL_CORE_ONLY:-0}"
+[ -f "$HOME/.sol/core_only" ] && SOL_CORE_ONLY=1
+mkdir -p "$SOL_DIR" "$LOG_DIR" "$SOL_DIR/tmp" 2>/dev/null || true
+OMNI_TMP_DIR="$SOL_DIR/tmp"
+
+R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'
+W='\033[1;37m'; D='\033[0;90m'; N='\033[0m'; BOLD='\033[1m'
+
+OMNI_LOCK="${TMPDIR:-$OMNI_TMP_DIR}/omni-singleton.lock"
+CLEAN_LOCK() { rm -rf "$OMNI_LOCK" 2>/dev/null || true; }
+acquire_lock() {
+  if mkdir "$OMNI_LOCK" 2>/dev/null; then
+    echo "$$" > "$OMNI_LOCK/pid"
+    trap CLEAN_LOCK EXIT INT TERM
+    return 0
+  fi
+  local old_pid
+  old_pid="$(cat "$OMNI_LOCK/pid" 2>/dev/null || true)"
+  if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+    echo "Otro omni.sh sigue corriendo (PID $old_pid)" >&2
+    return 1
+  fi
+  rm -rf "$OMNI_LOCK" 2>/dev/null || true
+  mkdir "$OMNI_LOCK" 2>/dev/null || return 1
+  echo "$$" > "$OMNI_LOCK/pid"
+  trap CLEAN_LOCK EXIT INT TERM
+}
+
+banner() {
+  echo -e "${C}╔═══════════════════════════════════════════════════════╗${N}"
+  echo -e "${C}║  ${W}OMNI.SH${C} — SourceSeal Unified Command              ║${N}"
+  echo -e "${C}╚═══════════════════════════════════════════════════════╝${N}"
+}
+log()  { echo -e "${D}[$(date '+%H:%M:%S')]${N} $*" | tee -a "$LOG_DIR/omni.log"; }
+ok()   { echo -e "${G}  ✓${N} $*"; log "  ✓ $*"; }
+fail() { echo -e "${R}  ✗${N} $*"; log "  ✗ $*"; }
+warn() { echo -e "${Y}  ⚠${N} $*"; log "  ⚠ $*"; }
+info() { echo -e "${C}  →${N} $*"; log "  → $*"; }
+
+detect_env() {
+  if [ -n "${TERMUX_VERSION:-}" ] || [ -d "/data/data/com.termux" ]; then
+    echo termux
+  elif [ -n "${REPL_ID:-}" ] || [ -n "${REPL_SLUG:-}" ]; then
+    echo replit
+  else
+    echo linux
+  fi
+}
+ENV_TYPE="$(detect_env)"
+
+load_env() {
+  [ -f "$ENV_FILE" ] || { fail ".env no existe en $ENV_FILE"; return 1; }
+  while IFS='=' read -r k v; do
+    case "$k" in ''|\#*|[[:space:]]*) continue;; esac
+    k="${k%%[[:space:]]*}"
+    v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"; v="${v%%[[:space:]]*}"
+    [ -n "$k" ] && export "$k=$v" 2>/dev/null || true
+  done < "$ENV_FILE"
+  return 0
+}
+load_sol_env() {
+  local sol_env="$SOL_REPO/.env"
+  [ -f "$sol_env" ] || return 0
+  while IFS='=' read -r k v; do
+    case "$k" in ''|\#*|[[:space:]]*) continue;; esac
+    k="${k%%[[:space:]]*}"
+    v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"; v="${v%%[[:space:]]*}"
+    [ -n "$k" ] && export "$k=$v" 2>/dev/null || true
+  done < "$sol_env"
+}
+ensure_sol_repo() {
+  [ -d "$SOL_REPO/.git" ] && return 0
+  warn "No existe el repositorio de Sol en $SOL_REPO"
+  return 1
+}
+sync_commander_repo() { return 0; }
+
+verify_qalam() {
+  local root="${1:-$SOL_REPO}" py="$root/sol_qalam.py" md="$root/bestiario-qalam.v1.md"
+  [ -f "$py" ] && [ -f "$md" ] || { warn "Bestiario Qalam incompleto en $root"; return 1; }
+  python3 -m py_compile "$py" >/dev/null 2>&1 || { warn "Qalam no compila: $py"; return 1; }
+  local result egyptian entries
+  result="$(cd "$root" && python3 -c 'import sol_qalam; r=sol_qalam.verify(); print(str(r["valid"])+":"+str(r["count"])+":"+sol_qalam.stamp("خخخ")["code"]+":"+sol_qalam.stamp("بسم")["code"])' 2>/dev/null)"
+  egyptian="$(cd "$root" && python3 -c 'import sol_qalam; r=sol_qalam.egyptian_status(); print(str(r["valid"])+":"+str(r["locale"])+":"+str(r["phrases"]))' 2>/dev/null)"
+  entries="$(grep -cE '^[[:space:]]*[0-9]{2}[[:space:]]' "$md" 2>/dev/null || echo 0)"
+  if [ "$result" = "True:38:404 FAIL ✗✗:200 OK ✓" ] && [ "$entries" = 38 ] && echo "$egyptian" | grep -q '^True:ar-EG:'; then
+    ok "Bestiario Qalam v1 verificado"
+    return 0
+  fi
+  warn "Qalam pendiente: $result; idioma: $egyptian; entradas: $entries"
+  return 1
+}
+wait_sol_api() {
+  local tries="${1:-15}" i=1
+  while [ "$i" -le "$tries" ]; do
+    curl -s -m 2 http://127.0.0.1:8006/api/sol/status >/dev/null 2>&1 && return 0
+    sleep 1; i=$((i + 1))
+  done
+  warn "Sol API :8006 no respondió en ${tries}s"
+  return 1
+}
+verify_sol_vars() {
+  local sol_env="$SOL_REPO/.env"
+  [ -f "$sol_env" ] || { warn "$sol_env no existe"; return 0; }
+  grep -q '^SOL_PUBLIC_URL=https' "$sol_env" 2>/dev/null || warn "Falta SOL_PUBLIC_URL en ~/sol/.env"
+  grep -q '^SOL_API_KEY=' "$sol_env" 2>/dev/null || warn "Falta SOL_API_KEY en ~/sol/.env"
+  grep -q '^LLM_API_KEY=' "$sol_env" 2>/dev/null || warn "Falta LLM_API_KEY en ~/sol/.env"
+  return 0
+}
+verify_credentials() {
+  [ -f "$ENV_FILE" ] || { fail ".env no existe en $ENV_FILE"; return 1; }
+  local missing="" key value
+  for key in NEXUS_PASS ADMIN_PASSWORD REDTEAM_API_KEY; do
+    value="$(grep "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | head -1 | tr -d "'\"" || true)"
+    [ -n "$value" ] || missing="$missing $key"
+  done
+  if [ -n "$missing" ]; then
+    fail "Credenciales críticas faltantes:$missing"
+    return 1
+  fi
+  ok "Credenciales críticas presentes (valores ocultos)"
+  return 0
+}
+help() {
+  cat <<'HELP'
+OMNI.SH — comandos:
+  start | stop | restart | status | sync | sync-deps | sync-frontend
+  logs [dashboard|gate|all] | supergate [status|sweep|action]
+  snapshot | verify | watchdog | recover
+HELP
+}
+termux_guard() {
+  if [ -n "${TERMUX_VERSION:-}" ] && command -v termux-battery-status >/dev/null 2>&1; then
+    timeout 4 termux-battery-status >/dev/null 2>&1 || warn "Termux:API no responde"
+  fi
+  return 0
+}
+_pids_on_port() {
+  python3 - "$1" <<'PY' 2>/dev/null | sort -u
+import glob, os, re, sys
+port = format(int(sys.argv[1]), "04X")
+inodes = set()
+for name in ("/proc/net/tcp", "/proc/net/tcp6"):
+    try:
+        lines = open(name).read().splitlines()[1:]
+    except OSError:
+        continue
+    for line in lines:
+        p = line.split()
+        if len(p) >= 10 and p[1].split(":")[-1].upper() == port and p[3] == "0A":
+            inodes.add(p[9])
+for fd in glob.glob("/proc/[0-9]*/fd/*"):
+    try: target = os.readlink(fd)
+    except OSError: continue
+    m = re.match(r"socket:\[(\d+)\]", target)
+    if m and m.group(1) in inodes: print(fd.split("/")[2])
+PY
+}
+kill_by_pidfile_or_port() {
+  local label="$1" pidfile="$2" pattern="$3" port="$4" pid
+  if [ -f "$pidfile" ]; then
+    pid="$(cat "$pidfile" 2>/dev/null || true)"
+    [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null || true
+    rm -f "$pidfile"
+  fi
+  [ -n "$pattern" ] && pkill -f "$pattern" 2>/dev/null || true
+  [ -n "$port" ] && { for pid in $(_pids_on_port "$port"); do kill -9 "$pid" 2>/dev/null || true; done; }
+  ok "$label detenido o ya estaba detenido"
+}
+sol_gate_is_alive() {
+  local code
+  code="$(curl -s -m 2 -o /dev/null -w '%{http_code}' "$SOL_PORTERO_URL/health" 2>/dev/null || echo 000)"
+  case "$code" in 200) return 0;; esac
+  code="$(curl -s -m 2 -o /dev/null -w '%{http_code}' "$SOL_PORTERO_URL/sol/contexto" 2>/dev/null || echo 000)"
+  case "$code" in 200|401|403|503) return 0;; *) return 1;; esac
+}
+start_sol_gate() {
+  sol_gate_is_alive && { ok "SOL GATE :$SOL_GATE_PORT ya activo"; return 0; }
+  local module=sol_portero dir="$SOL_REPO"
+  if [ ! -f "$dir/sol_portero.py" ]; then
+    [ -f "$dir/sol_supergate.py" ] || { fail "No existe sol_portero.py ni sol_supergate.py en $dir"; return 1; }
+    module=sol_supergate
+  fi
+  cd "$dir" || return 1
+  SOL_DIR="$SOL_REPO" REDTEAM_DIR="$ROOT" SOL_GATE_PORT="$SOL_GATE_PORT" \
+    SOL_PORTERO_URL="$SOL_PORTERO_URL" PYTHONUNBUFFERED=1 \
+    nohup python3 -m uvicorn "$module:app" --host 127.0.0.1 --port "$SOL_GATE_PORT" \
+    >> "$LOG_DIR/sol_gate.log" 2>&1 &
+  echo "$!" > "$SOL_DIR/sol_gate.pid"
+  cd "$ROOT" || true
+  local i
+  for i in $(seq 1 20); do sol_gate_is_alive && { ok "SOL GATE :$SOL_GATE_PORT listo"; return 0; }; sleep 1; done
+  fail "SOL GATE :$SOL_GATE_PORT no respondió"
+  return 1
+}
+verify_frontend_dist() {
+  local validator="$ROOT/redteam/scripts/validate_frontend_dist.py"
+  [ -f "$validator" ] || { fail "Falta el validador del frontend"; return 1; }
+  python3 "$validator"
+}
+
+start() {
+  banner
+  load_env || return 1
+  load_sol_env
+  verify_frontend_dist || { fail "Frontend dist incompleto"; return 1; }
+  echo ""
+  log "OMNI START — entorno: $ENV_TYPE"
+  echo ""
+  # Preflight: credenciales
   # Si el backend arranca sin estas vars, nexus_credentials.py las REGENERARÁ.
   if ! verify_credentials; then
     echo ""
