@@ -8,3 +8,7 @@ The local Git credential helper can remain invalid even when the Replit-managed 
 **Why:** A local `git push` failed with an authentication error while the managed connection could be reauthorized and publish the same repository safely.
 
 **How to apply:** If GitHub returns a 401 through the connector, inspect the reauthorization context and offer one OAuth reauthorization. After it succeeds, retry the failed connector operation once; do not loop.
+
+**How to apply:** For large shell or frontend files, verify the remote blob's byte
+count and first line after publishing; a successful-looking generated commit can
+still contain a truncated file.
