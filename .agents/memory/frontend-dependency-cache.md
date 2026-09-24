@@ -58,3 +58,13 @@ válido.
 
 **How to apply:** Permitir una resolución acotada del `dist` generado y abortar
 con restauración completa ante cualquier ruta fuera de ese directorio.
+
+**Nota de Bash:** Con `set -u`, no combines una variable local recién
+declarada con otra expansión que dependa de ella en la misma sentencia.
+
+**Why:** Termux terminó la rebase correctamente, pero el paso posterior de
+validación se detuvo porque Bash expandió una ruta antes de asignar su variable
+base.
+
+**How to apply:** Declara primero la variable base y después las rutas
+derivadas; prueba los comandos de mantenimiento bajo `bash -u`.
