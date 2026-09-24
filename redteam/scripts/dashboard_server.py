@@ -230,6 +230,18 @@ if _ENHANCED_RECON_OK:
 # ── Include SOL Universe Core router ────────────────────────────────────────
 if _UNIVERSE_OK:
     app.include_router(universe_router)
+    # FIX 2026-09-24: include_router NO propaga los event handlers del
+    # sub-router, así que el loop de fondo del universe v4 nunca arrancaba.
+    # Se arranca explícitamente (con guard para no duplicar la tarea).
+    @app.on_event("startup")
+    async def _universe_background_start():
+        try:
+            from redteam.modules import universe as _universe_mod
+            if _universe_mod._bg_task is None:
+                await _universe_mod.on_startup()
+                print("[UNIVERSE] ✅ Loop de fondo v4 iniciado (health-check cada 300s)")
+        except Exception as _universe_start_err:
+            print(f"[UNIVERSE] ⚠ startup falló: {_universe_start_err}", flush=True)
     print("[UNIVERSE] Router montado en /api/universe/*")
 
 # ── Include OSINT Advanced v4.0 router ─────────────────────────────────────
