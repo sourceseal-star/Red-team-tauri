@@ -173,7 +173,8 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
           body: JSON.stringify({ subnets: effectiveScope }),
         });
       } else if (id === 'routers') {
-        response = await fetch('/api/scan/routers', { method: 'POST', headers: authHeaders() });
+        const query = effectiveScope ? `?subnets=${encodeURIComponent(effectiveScope)}` : '';
+        response = await fetch(`/api/scan/routers${query}`, { method: 'POST', headers: authHeaders() });
       } else {
         response = await fetch('/api/wifi/scan', { cache: 'no-store', headers: authHeaders() });
       }
