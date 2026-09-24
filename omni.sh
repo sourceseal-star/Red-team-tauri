@@ -1172,36 +1172,45 @@ status_short() {
     fail "SOL GATE :$SOL_GATE_PORT  🔴 CAÍDO (acciones sensibles bloqueadas)"
   fi
 
-  # GHOST :8002
-  if curl -s -m 3 http://127.0.0.1:8002/api/status >/dev/null 2>&1; then
-    ok "GHOST :8002        🟢 ACTIVO"
+  # GHOST + Nexus + C2: en modo núcleo se omiten deliberadamente para
+  # reservar memoria para Sol. No deben aparecer como "caídos".
+  if [ "$SOL_CORE_ONLY" = "1" ]; then
+    info "GHOST :8002        ⚪ OMITIDO (modo núcleo)"
+    info "GHOST Node         ⚪ OMITIDO (modo núcleo)"
+    info "Nexus :8004        ⚪ OMITIDO (modo núcleo)"
+    info "C2 :8005           ⚪ OMITIDO (modo núcleo)"
   else
-    fail "GHOST :8002        🔴 CAÍDO"
-  fi
-
-  # GHOST Node
-  if pgrep -f "ghost_hunter_phantom/node" >/dev/null 2>&1; then
-    ok "GHOST Node         🟢 ACTIVO"
-  else
-    warn "GHOST Node         🟡 INACTIVO"
-  fi
-
-  # Nexus :8004
-  if [ -f "$ROOT/nexus_omni_v9.py" ]; then
-    if curl -s -m 2 http://127.0.0.1:8004/ >/dev/null 2>&1; then
-      ok "Nexus :8004        🟢 ACTIVO"
+    # GHOST :8002
+    if curl -s -m 3 http://127.0.0.1:8002/api/status >/dev/null 2>&1; then
+      ok "GHOST :8002        🟢 ACTIVO"
     else
-      fail "Nexus :8004        🔴 CAÍDO"
+      fail "GHOST :8002        🔴 CAÍDO"
     fi
 
-  # C2 :8005
-  if [ -f "$ROOT/c2_unified_pro.py" ]; then
-    if curl -s -m 2 http://127.0.0.1:8005/api/health >/dev/null 2>&1; then
-      ok "C2 :8005           🟢 ACTIVO"
+    # GHOST Node
+    if pgrep -f "ghost_hunter_phantom/node" >/dev/null 2>&1; then
+      ok "GHOST Node         🟢 ACTIVO"
     else
-      fail "C2 :8005           🔴 CAÍDO"
+      warn "GHOST Node         🟡 INACTIVO"
     fi
-  fi
+
+    # Nexus :8004
+    if [ -f "$ROOT/nexus_omni_v9.py" ]; then
+      if curl -s -m 2 http://127.0.0.1:8004/ >/dev/null 2>&1; then
+        ok "Nexus :8004        🟢 ACTIVO"
+      else
+        fail "Nexus :8004        🔴 CAÍDO"
+      fi
+    fi
+
+    # C2 :8005
+    if [ -f "$ROOT/c2_unified_pro.py" ]; then
+      if curl -s -m 2 http://127.0.0.1:8005/api/health >/dev/null 2>&1; then
+        ok "C2 :8005           🟢 ACTIVO"
+      else
+        fail "C2 :8005           🔴 CAÍDO"
+      fi
+    fi
   fi
 
   # Telegram (puente legacy)
