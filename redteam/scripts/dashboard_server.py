@@ -184,6 +184,14 @@ for _bp in [BASE.parent / "backend", BASE / "backend", SCRIPT_DIR.parent.parent 
 if not _ENHANCED_RECON_OK:
     print("[WARN] enhanced_recon no encontrado — /api/enhanced/* no disponible", flush=True)
 
+# ── SOL Universe Core (estado y sincronización declarativa, sin escaneo) ─────
+_UNIVERSE_OK = False
+try:
+    from redteam.modules.universe import router as universe_router
+    _UNIVERSE_OK = True
+except Exception as _universe_err:
+    print(f"[WARN] universe import falló: {_universe_err}", flush=True)
+
 # ── OSINT Advanced v4.0 (Google, Shodan, VirusTotal, Censys, Social) ─────────
 try:
     from modules.osint_advanced import osint_router
@@ -218,6 +226,11 @@ app = FastAPI(
 if _ENHANCED_RECON_OK:
     app.include_router(enhanced_recon_router)
     print("[ENHANCED-RECON] Router montado en /api/enhanced/*")
+
+# ── Include SOL Universe Core router ────────────────────────────────────────
+if _UNIVERSE_OK:
+    app.include_router(universe_router)
+    print("[UNIVERSE] Router montado en /api/universe/*")
 
 # ── Include OSINT Advanced v4.0 router ─────────────────────────────────────
 if _OSINT_ADVANCED_OK:
