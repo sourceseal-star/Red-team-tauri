@@ -39,6 +39,7 @@ const MODULES = [
   { id: 'osint', label: 'KRAKEN', icon: Bug, color: 'text-red-400', badge: 'v4.0' },
   { id: 'wifi', label: 'WiFi', icon: Wifi, color: 'text-green-400', badge: null },
   { id: 'supergate', label: 'SOL SUPERGATE', icon: ShieldCheck, color: 'text-amber-300', badge: 'LIVE' },
+  { id: 'universe', label: 'UNIVERSE · universe.py', icon: Globe, color: 'text-fuchsia-300', badge: 'SAFE' },
   { id: 'ultra', label: 'Ultrasonidos', icon: Radio, color: 'text-pink-400', badge: null },
   { id: 'blackmirror', label: 'Black Mirror', icon: Eye, color: 'text-rose-400', badge: null },
   { id: 'services', label: 'Servicios', icon: Activity, color: 'text-blue-400', badge: null },
@@ -79,7 +80,7 @@ const MODULES = [
 // Secciones agrupadas para sidebar colapsable
 const SIDEBAR_SECTIONS = [
   { id: 'mando', title: '🏠 Mando', moduleIds: ['warroom', 'tower', 'operations', 'services', 'terminal'] },
-  { id: 'red', title: '🗺️ Red', moduleIds: ['supergate', 'netmap', 'topology', 'wifi', 'iot'] },
+  { id: 'red', title: '🗺️ Red', moduleIds: ['supergate', 'universe', 'netmap', 'topology', 'wifi', 'iot'] },
   { id: 'inteligencia', title: '🧠 Inteligencia', moduleIds: ['nexus', 'osint_adv', 'threat', 'arto', 'blackmirror'] },
   { id: 'laboratorio', title: '⚔️ Laboratorio', moduleIds: ['osint', 'leviathan', 'interceptor', 'tactical'] },
   { id: 'campo', title: '📡 Campo', moduleIds: ['comlink', 'emergency', 'commander', 'android'] },
@@ -94,6 +95,7 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
   osint: 'Motor de explotación con scripts NSE de nmap',
   wifi: 'Descubrimiento de redes Wi‑Fi cercanas',
   supergate: 'Centro multi-red para IP, routers, cámaras y Wi‑Fi',
+  universe: 'Estado protegido y sincronizaciones allowlisted de universe.py',
   ultra: 'Comunicaciones ultrasónicas bajo demanda',
   blackmirror: 'Análisis visual y espejo de tráfico',
   services: 'Estado y control de servicios locales',

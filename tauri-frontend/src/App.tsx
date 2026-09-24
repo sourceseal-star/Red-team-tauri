@@ -31,6 +31,7 @@ import ExportPanel from './components/ExportPanel'
 import CameraCommandCenter from './components/CameraCommandCenter'
 import dashboardUltrasonicPanel from './components/dashboard/UltrasonicPanel'
 import SolSupergatePanel from './components/dashboard/SolSupergatePanel'
+import UniversePanel from './components/dashboard/UniversePanel'
 
 // ── Rutas que YA existían y funcionaban — se conservan tal cual, ──
 // ── ahora dentro del mismo War Room en vez de un sidebar aparte.  ──
@@ -52,7 +53,7 @@ import SalesCommandCenter from './routes/SalesCommandCenter'
 // solo se les asignó una página real detrás.
 const ID_TO_PATH: Record<string, string> = {
   warroom: '/', cameras: '/cameras', threat: '/tip', osint: '/kraken',
-  wifi: '/wifi', supergate: '/supergate', ultra: '/ultra', blackmirror: '/blackmirror',
+  wifi: '/wifi', supergate: '/supergate', universe: '/universe', ultra: '/ultra', blackmirror: '/blackmirror',
   services: '/services', terminal: '/terminal', tower: '/tower',
   commander: '/commander', comlink: '/comlink', emergency: '/emergency',
   netmap: '/netmap', nexus: '/nexus', integrated: '/integrated',
@@ -82,6 +83,7 @@ function Shell() {
         <Route path="/kraken" element={<KrakenPanel />} />
         <Route path="/wifi" element={<WiFiPanel />} />
         <Route path="/supergate" element={<SolSupergatePanel full />} />
+        <Route path="/universe" element={<UniversePanel />} />
         <Route path="/ultra" element={<dashboardUltrasonicPanel />} />
         <Route path="/blackmirror" element={<BlackMirrorPanel />} />
         <Route path="/services" element={<ServiceControlPanel />} />

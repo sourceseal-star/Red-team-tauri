@@ -253,6 +253,13 @@ try:
 except Exception as e:
     print(f"[sealctl] WARNING: No se pudo cargar interceptor_router: {e}")
 
+try:
+    from redteam.modules.universe import router as universe_router
+    app.include_router(universe_router, dependencies=[Depends(require_auth)])
+    print("[sealctl] Universe router cargado en /api/universe/* (auth protegido)")
+except Exception as e:
+    print(f"[sealctl] WARNING: Universe router no disponible: {e}")
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ARTO + SEAL SUPER PACK
 # ═══════════════════════════════════════════════════════════════════════════════
