@@ -13,6 +13,8 @@
  *    - null -> no hay conexion con :8001 (backend caido)
  * 2) El 403 del backend ya no dispara reload-loop: muestra su mensaje
  *    propio (pegar claves no sirve, hay que reiniciar el backend).
+ * 3) Un 401 tampoco recarga a ciegas: elimina el token vencido y deja el
+ *    panel visible con el aviso para que el operador pueda corregirlo.
  */
 export function installAuthFetchInterceptor() {
   const originalFetch = window.fetch.bind(window)
@@ -48,7 +50,7 @@ export function installAuthFetchInterceptor() {
     const msg = document.createElement('span')
     msg.id = 'auth-loop-msg'
     msg.style.flex = '1 1 260px'
-    msg.textContent = '⚠️ Token de sesión inválido — el backend rechaza las llamadas /api/*. Pega el token nuevo (REDTEAM_API_KEY del .env en Termux):'
+    msg.textContent = '⚠️ Sesión no autenticada — las llamadas protegidas requieren REDTEAM_API_KEY. Pega el token actual del backend Termux:'
 
     const btnToken = document.createElement('button')
     btnToken.textContent = 'Ingresar token'
@@ -125,18 +127,21 @@ export function installAuthFetchInterceptor() {
         return response
       }
 
-      // 401: token vencido/no coincide — recargar UNA vez cada 15 s.
-      if (now - lastReload > 15000) {
-        sessionStorage.setItem('auth_reload_ts', String(now))
-        console.warn('[auth] Token invalido/vencido — recargando una sola vez')
-        window.location.reload()
-        return response
-      }
-
-      // Segundo 401 en <15s: banner con validacion real del token.
       ensureBanner()
+      if (hadToken && now - lastReload > 15000) {
+        sessionStorage.setItem('auth_reload_ts', String(now))
+        setBannerMsg('⚠️ Token de sesión inválido o vencido. El token se limpió; ingresa la clave actual para continuar.')
+      } else {
+        setBannerMsg('⚠️ El backend requiere REDTEAM_API_KEY para las rutas protegidas. Ingresa la clave actual para continuar.')
+      }
     }
 
     return response
   }) as typeof window.fetch
+
+  // El preview y una pestaña nueva pueden no tener sesión todavía. Mostrar
+  // una indicación inmediata evita que una secuencia de 401 parezca una
+  // pantalla negra y permite que el operador resuelva la autenticación sin
+  // recargar ni exponer ninguna ruta protegida.
+  if (!localStorage.getItem('api_token')) ensureBanner()
 }
