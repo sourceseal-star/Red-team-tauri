@@ -47,3 +47,14 @@ se detuvo antes de abrir el puerto aunque `npm run build` hubiera terminado bien
 **How to apply:** Después de un build limpio, alinea el índice de Git con el
 `dist` completo, vuelve a ejecutar `validate_frontend_dist.py` y solo entonces
 reinicia el workflow.
+
+**Nota de sincronización:** Si una rebase del teléfono choca únicamente con
+bundles bajo `tauri-frontend/dist/`, la versión publicada de `origin/main` es
+la canónica; los conflictos de código nunca deben resolverse automáticamente.
+
+**Why:** Los respaldos locales de `curar.sh` pueden incluir hashes de Vite que
+ya fueron reemplazados en GitHub, aunque el código de la aplicación siga siendo
+válido.
+
+**How to apply:** Permitir una resolución acotada del `dist` generado y abortar
+con restauración completa ante cualquier ruta fuera de ese directorio.
