@@ -7,6 +7,11 @@
 # set -e  # removido: no matar todo si algo falla
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 PORT=8001
+# Replit comparte memoria con el workflow. El Dashboard y sus APIs quedan
+# disponibles por defecto; los procesos pesados se activan explícitamente
+# cuando el entorno tenga memoria suficiente.
+START_HEAVY_SERVICES="${START_HEAVY_SERVICES:-0}"
+GHOST_PID=""
 
 echo ""
 echo "======================================================"
@@ -105,6 +110,7 @@ if [ "$READY" != "1" ]; then
 fi
 
 # -- 6. NEXUS OMNI (interno en :8004, visible a través del proxy del dashboard) --
+if [ "$START_HEAVY_SERVICES" = "1" ]; then
 echo "[start] Iniciando NEXUS OMNI en :8004..."
 # The dashboard now protects service control with REDTEAM_API_KEY. Read it
 # locally for this internal call without ever printing it.
@@ -124,6 +130,9 @@ if [ "$NEXUS_START_CODE" = "200" ]; then
 else
   echo "[start] ! NEXUS no pudo iniciarse automáticamente (HTTP $NEXUS_START_CODE); puede iniciarse desde Control Tower."
 fi
+else
+  echo "[start] NEXUS omitido: START_HEAVY_SERVICES=0 (Dashboard estable)"
+fi
 
 echo ""
 echo "[start] Sistema unificado corriendo:"
@@ -135,17 +144,25 @@ echo "        -> ARTO Status: http://localhost:$PORT/api/arto/status"
 echo ""
 
 # -- 7. GHOST HUNTER PHANTOM (Master + Nodo en :8002) --
-echo "[start] Iniciando GHOST HUNTER PHANTOM..."
-cd "$ROOT/ghost_hunter_phantom"
-BACKEND_API="http://localhost:$PORT" MASTER_PORT=8002 NUM_NODES=1 bash start.sh all &
-GHOST_PID=$!
-echo "[start] GHOST PHANTOM PID: $GHOST_PID"
-cd "$ROOT"
+if [ "$START_HEAVY_SERVICES" = "1" ]; then
+  echo "[start] Iniciando GHOST HUNTER PHANTOM..."
+  cd "$ROOT/ghost_hunter_phantom"
+  BACKEND_API="http://localhost:$PORT" MASTER_PORT=8002 NUM_NODES=1 bash start.sh all &
+  GHOST_PID=$!
+  echo "[start] GHOST PHANTOM PID: $GHOST_PID"
+  cd "$ROOT"
+else
+  echo "[start] GHOST omitido: START_HEAVY_SERVICES=0 (Dashboard estable)"
+fi
 
 echo ""
 echo "[start] Sistema unificado corriendo:"
 echo "        -> Backend + Frontend: http://0.0.0.0:$PORT"
-echo "        -> GHOST PHANTOM Master: http://0.0.0.0:8002/api/status"
+if [ "$START_HEAVY_SERVICES" = "1" ]; then
+  echo "        -> GHOST PHANTOM Master: http://0.0.0.0:8002/api/status"
+else
+  echo "        -> Servicios pesados: bajo demanda (START_HEAVY_SERVICES=1)"
+fi
 echo "        -> Scanner: REAL (cero mocks)"
 echo "        -> ARTO AI: AUTO-START (motor autonomo de operaciones)"
 echo "        -> Health: http://localhost:$PORT/api/health"
