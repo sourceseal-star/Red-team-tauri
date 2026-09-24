@@ -958,6 +958,48 @@ supergate() {
 #  SYNC — git pull + deps + build (SIN tocar .env)
 #  REGLA DE ORO: .env es intocable. Triple protección.
 # ═══════════════════════════════════════════════════════════════════════
+resolve_generated_dist_rebase() {
+  # Vite renombra los bundles en cada build. curar.sh puede guardar esos
+  # artefactos en un commit local de respaldo y origin/main puede contener
+  # otra generación del mismo dist. Solo aquí, y únicamente si TODOS los
+  # conflictos son artefactos generados, se conserva la versión publicada
+  # (ours durante una rebase) y se continúa preservando cualquier código del
+  # commit local. Un conflicto fuera de dist sigue siendo un aborto seguro.
+  local conflicts path
+  conflicts="$(git diff --name-only --diff-filter=U 2>/dev/null)"
+  [ -n "$conflicts" ] || return 1
+
+  while [ -n "$conflicts" ]; do
+    if printf '%s\n' "$conflicts" | grep -qv '^tauri-frontend/dist/'; then
+      return 1
+    fi
+
+    while IFS= read -r path; do
+      [ -n "$path" ] || continue
+      # Durante rebase, stage 2 (ours) es la base remota ya aplicada.
+      # En modify/delete no existe stage 2: git rm conserva la eliminación
+      # remota en vez de reintroducir un hash local obsoleto.
+      if git rev-parse --verify ":2:$path" >/dev/null 2>&1; then
+        git checkout --ours -- "$path" || return 1
+        git add -- "$path" || return 1
+      else
+        git rm -- "$path" || return 1
+      fi
+    done <<< "$conflicts"
+
+    if GIT_EDITOR=true git -c core.editor=true rebase --continue; then
+      return 0
+    fi
+
+    # Puede haber otro commit local con dist en conflicto. Solo se intenta
+    # seguir si Git dejó nuevos unmerged paths; cualquier otro error aborta.
+    conflicts="$(git diff --name-only --diff-filter=U 2>/dev/null)"
+    [ -n "$conflicts" ] || return 1
+  done
+
+  return 0
+}
+
 sync() {
   banner
   echo ""
@@ -1046,26 +1088,30 @@ sync() {
   if git pull --rebase origin main 2>&1 | tee -a "$LOG_DIR/sync.log"; then
     ok "Git sincronizado con origin/main"
   else
-    fail "La sincronización Git falló; no se borró ningún cambio local"
-    git rebase --abort 2>/dev/null || true
-    if [ -n "$OMNI_STASH_REF" ]; then
-      warn "Restaurando cambios locales desde $OMNI_STASH_REF..."
-      git stash apply "$OMNI_STASH_REF" 2>/dev/null \
-        && git stash drop "$OMNI_STASH_REF" >/dev/null 2>&1 \
-        && ok "Cambios locales restaurados" \
-        || warn "El stash quedó guardado; consulta: git stash list"
-    fi
-    # Restaurar .env por si acaso
-    if [ ! -f "$ENV_FILE" ] || [ "$(sha256sum "$ENV_FILE" | cut -d' ' -f1)" != "$ENV_HASH_BEFORE" ]; then
-      warn "Restaurando .env desde respaldo..."
-      if [ -f "$ENV_RESTORE" ] && cp "$ENV_RESTORE" "$ENV_FILE"; then
-        ok ".env restaurado"
-      else
-        fail "No se pudo restaurar .env desde $ENV_RESTORE"
+    if resolve_generated_dist_rebase; then
+      ok "Conflicto limitado al dist generado; se conservó origin/main"
+    else
+      fail "La sincronización Git falló; no se borró ningún cambio local"
+      git rebase --abort 2>/dev/null || true
+      if [ -n "$OMNI_STASH_REF" ]; then
+        warn "Restaurando cambios locales desde $OMNI_STASH_REF..."
+        git stash apply "$OMNI_STASH_REF" 2>/dev/null \
+          && git stash drop "$OMNI_STASH_REF" >/dev/null 2>&1 \
+          && ok "Cambios locales restaurados" \
+          || warn "El stash quedó guardado; consulta: git stash list"
       fi
+      # Restaurar .env por si acaso
+      if [ ! -f "$ENV_FILE" ] || [ "$(sha256sum "$ENV_FILE" | cut -d' ' -f1)" != "$ENV_HASH_BEFORE" ]; then
+        warn "Restaurando .env desde respaldo..."
+        if [ -f "$ENV_RESTORE" ] && cp "$ENV_RESTORE" "$ENV_FILE"; then
+          ok ".env restaurado"
+        else
+          fail "No se pudo restaurar .env desde $ENV_RESTORE"
+        fi
+      fi
+      rm -f "$ENV_RESTORE"
+      exit 1
     fi
-    rm -f "$ENV_RESTORE"
-    exit 1
   fi
 
   # Restaurar stash si existe
