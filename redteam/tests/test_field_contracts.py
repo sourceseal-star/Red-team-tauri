@@ -58,6 +58,77 @@ class ScopeTests(TestCase):
 
 
 class FieldTests(IsolatedAsyncioTestCase):
+    async def test_automatic_discovery_keeps_all_private_interfaces(self):
+        interfaces = [
+            {'name': 'wlan0', 'network_cidr': '10.20.0.0/24', 'is_up': True, 'type_hint': 'wifi'},
+            {'name': 'eth0', 'network_cidr': '172.22.5.0/24', 'is_up': True, 'type_hint': 'ethernet'},
+            {'name': 'wan0', 'network_cidr': '8.8.8.0/24', 'is_up': True, 'type_hint': 'unknown'},
+            {'name': 'lo', 'network_cidr': '127.0.0.0/8', 'is_up': True, 'type_hint': 'loopback'},
+        ]
+
+        async def list_interfaces():
+            return interfaces
+
+        ns = {
+            'asyncio': asyncio,
+            'ipaddress': ipaddress,
+            'os': os,
+            're': re,
+            'HTTPException': HTTPException,
+            'list_network_interfaces': list_interfaces,
+            'subnet_from_iface': lambda: '10.20.0.0/24',
+        }
+        isolated_function('_bounded_lan_subnet', ns)
+        isolated_function('_scan_value_tokens', ns)
+        isolated_function('_parse_scan_networks', ns)
+        auto = isolated_function('_auto_scan_networks', ns)
+        result = await auto()
+        self.assertEqual([str(network) for network in result], [
+            '10.20.0.0/24',
+            '172.22.5.0/24',
+        ])
+
+    async def test_network_discovery_merges_reports_without_duplicate_hosts(self):
+        ns = {
+            'ipaddress': ipaddress,
+            'HTTPException': HTTPException,
+            'Query': lambda default: default,
+            'datetime': __import__('datetime').datetime,
+            're': re,
+            'os': os,
+        }
+        isolated_function('_bounded_lan_subnet', ns)
+        isolated_function('_scan_value_tokens', ns)
+        isolated_function('_parse_scan_networks', ns)
+
+        async def discover_single(subnet):
+            return {
+                'results': [
+                    {'ip': '10.20.0.9'},
+                    {'ip': '172.22.5.12'} if subnet.endswith('5.0/24') else {'ip': '10.20.0.9'},
+                ],
+                'subnet': subnet,
+                'gateway': subnet.split('/')[0],
+                'local_ip': subnet.split('/')[0],
+                'method': 'mocked',
+            }
+
+        ns['_auto_scan_networks'] = lambda: asyncio.sleep(
+            0,
+            result=[
+                ipaddress.ip_network('10.20.0.0/24'),
+                ipaddress.ip_network('172.22.5.0/24'),
+            ],
+        )
+        ns['_discover_network_single'] = discover_single
+        discover = isolated_function('discover_network', ns)
+        result = await discover()
+        self.assertEqual(result['subnets'], ['10.20.0.0/24', '172.22.5.0/24'])
+        self.assertEqual(
+            [host['ip'] for host in result['results']],
+            ['10.20.0.9', '172.22.5.12'],
+        )
+
     async def test_gps_alias_preserves_real_location_contract(self):
         paths = {r.path for r in android_field.router.routes}
         self.assertTrue({'/api/android/gps', '/api/android/location'} <= paths)

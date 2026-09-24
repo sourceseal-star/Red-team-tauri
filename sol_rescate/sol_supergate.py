@@ -523,6 +523,57 @@ def obtener_vecinos_netlink() -> list[dict[str, str]]:
     return devices
 
 
+def obtener_interfaces_activas() -> list[dict[str, Any]]:
+    """Enumerate every active private IPv4 interface available to Termux."""
+    stdout, _, code = run_safe_command(["ip", "-o", "-4", "addr", "show"])
+    if code != 0:
+        return []
+    interfaces: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for line in stdout.splitlines():
+        parts = line.split()
+        try:
+            name = parts[1]
+            address_index = parts.index("inet") + 1
+            address_cidr = parts[address_index]
+            ip, prefix = address_cidr.split("/", 1)
+            parsed_ip = ipaddress.ip_address(ip)
+            network = ipaddress.ip_network(address_cidr, strict=False)
+        except (ValueError, IndexError):
+            continue
+        rfc1918 = (
+            ipaddress.ip_network("10.0.0.0/8"),
+            ipaddress.ip_network("172.16.0.0/12"),
+            ipaddress.ip_network("192.168.0.0/16"),
+        )
+        if (
+            parsed_ip.is_loopback
+            or parsed_ip.is_link_local
+            or not any(parsed_ip in allowed for allowed in rfc1918)
+        ):
+            continue
+        key = (name, str(network))
+        if key in seen:
+            continue
+        seen.add(key)
+        type_hint = (
+            "wifi" if name.startswith(("wlan", "wifi"))
+            else "mobile" if name.startswith(("rmnet", "ccmni"))
+            else "ethernet" if name.startswith(("eth", "en"))
+            else "hotspot" if name.startswith(("ap", "swlan"))
+            else "unknown"
+        )
+        interfaces.append({
+            "name": name,
+            "ip_address": ip,
+            "prefix": int(prefix),
+            "network_cidr": str(network),
+            "type_hint": type_hint,
+            "is_up": True,
+        })
+    return interfaces
+
+
 def escaneo_mdns_activo() -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     multicast_ip = "224.0.0.251"
@@ -531,30 +582,41 @@ def escaneo_mdns_activo() -> list[dict[str, Any]]:
         b"\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00"
         b"\x08_services\x07_dns-sd\x04_udp\x05local\x00\x00\x0c\x00\x01"
     )
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    interfaces = obtener_interfaces_activas()
+    for interface in interfaces or [{"name": "default", "ip_address": ""}]:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        except (AttributeError, OSError):
-            pass
-        sock.bind(("", port))
-        membership = struct.pack("4sl", socket.inet_aton(multicast_ip), socket.INADDR_ANY)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
-        sock.settimeout(1.5)
-        sock.sendto(query, (multicast_ip, port))
-        while True:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
-                data, address = sock.recvfrom(1024)
-                results.append({"ip": address[0], "bytes": len(data)})
-            except socket.timeout:
-                break
-            except OSError:
-                break
-    except OSError:
-        return []
-    finally:
-        sock.close()
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except (AttributeError, OSError):
+                pass
+            sock.bind(("", port))
+            local_ip = interface.get("ip_address", "")
+            membership = struct.pack(
+                "=4s4s", socket.inet_aton(multicast_ip),
+                socket.inet_aton(local_ip or "0.0.0.0"),
+            )
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
+            if local_ip:
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(local_ip))
+            sock.settimeout(1.5)
+            sock.sendto(query, (multicast_ip, port))
+            while True:
+                try:
+                    data, address = sock.recvfrom(1024)
+                    results.append({
+                        "ip": address[0], "bytes": len(data),
+                        "interface": interface.get("name"),
+                    })
+                except socket.timeout:
+                    break
+                except OSError:
+                    break
+        except OSError:
+            pass
+        finally:
+            sock.close()
     return results
 
 
@@ -650,13 +712,18 @@ async def runtime_execute(
 @app.post("/api/network/sweep-real")
 async def sweep_real(x_sol_key: str | None = Header(default=None)) -> dict[str, Any]:
     verify_sol_gate(x_sol_key)
-    neighbors, mdns = await asyncio.gather(
+    neighbors, mdns, interfaces = await asyncio.gather(
         asyncio.to_thread(obtener_vecinos_netlink),
         asyncio.to_thread(escaneo_mdns_activo),
+        asyncio.to_thread(obtener_interfaces_activas),
     )
     return {
         "status": "success",
         "engine": "sol_supergate_nonroot",
+        "interfaces": interfaces,
+        "network_cidrs": list(dict.fromkeys(
+            item["network_cidr"] for item in interfaces if item.get("network_cidr")
+        )),
         "arp_table": neighbors,
         "mdns_responses": mdns,
         "total_activos": len(neighbors),

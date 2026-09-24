@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from sol_rescate import sol_supergate
 from sol_rescate.sol_supergate import app
 
 
@@ -97,6 +98,27 @@ class SuperGateSecurityTests(unittest.TestCase):
         run_command.assert_called_once_with(
             ["ping", "-c", "3", "-W", "2", "127.0.0.1"]
         )
+
+    def test_active_interfaces_expose_all_private_ipv4_networks(self) -> None:
+        ip_output = "\n".join(
+            [
+                "2: eth0    inet 172.22.5.8/24 brd 172.22.5.255 scope global eth0",
+                "3: wlan0   inet 10.20.0.4/24 brd 10.20.0.255 scope global wlan0",
+                "4: wan0    inet 8.8.8.8/24 brd 8.8.8.255 scope global wan0",
+                "1: lo      inet 127.0.0.1/8 scope host lo",
+            ]
+        )
+        with patch(
+            "sol_rescate.sol_supergate.run_safe_command",
+            return_value=(ip_output, "", 0),
+        ):
+            interfaces = sol_supergate.obtener_interfaces_activas()
+
+        self.assertEqual(
+            [item["network_cidr"] for item in interfaces],
+            ["172.22.5.0/24", "10.20.0.0/24"],
+        )
+        self.assertEqual([item["type_hint"] for item in interfaces], ["ethernet", "wifi"])
 
 
 if __name__ == "__main__":

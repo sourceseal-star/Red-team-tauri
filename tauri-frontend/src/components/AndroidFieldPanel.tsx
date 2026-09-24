@@ -73,10 +73,8 @@ export default function AndroidFieldPanel() {
       )
       setInterfaces(usable)
       if (!selectedSubnet) {
-        const preferred = usable.find((iface: any) =>
-          ['wifi', 'hotspot', 'mobile', 'ethernet', 'auto-detected'].includes(iface.type_hint)
-        )
-        if (preferred) setSelectedSubnet(preferred.network_cidr)
+        const allNetworks = Array.from(new Set(usable.map((iface: any) => iface.network_cidr))).join(', ')
+        if (allNetworks) setSelectedSubnet(allNetworks)
       }
     } catch (e: any) {
       setMessage({ type: 'error', text: `Interfaces: ${e.message}` })
@@ -251,7 +249,12 @@ export default function AndroidFieldPanel() {
           <div className="flex gap-2 mb-3 flex-wrap">
             <select value={selectedSubnet} onChange={e => setSelectedSubnet(e.target.value)}
               className={`${inputClass} flex-1 min-w-[12rem]`}>
-              <option value="">Seleccionar interfaz...</option>
+              <option value="">Seleccionar interfaces...</option>
+              {Array.from(new Set(interfaces.map(iface => iface.network_cidr))).length > 1 && (
+                <option value={Array.from(new Set(interfaces.map(iface => iface.network_cidr))).join(', ')}>
+                  Todas las interfaces activas
+                </option>
+              )}
               {interfaces.map((iface, i) => (
                 <option key={`${iface.name}-${i}`} value={iface.network_cidr}>
                   {iface.name} ({iface.type_hint}) — {iface.network_cidr}

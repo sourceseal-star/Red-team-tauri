@@ -2408,6 +2408,13 @@ async def list_network_interfaces():
                 elif iface_name.startswith("ap"): type_hint = "hotspot"
                 try:
                     net = _ipa.ip_network(ip_cidr, strict=False)
+                    rfc1918 = (
+                        _ipa.ip_network("10.0.0.0/8"),
+                        _ipa.ip_network("172.16.0.0/12"),
+                        _ipa.ip_network("192.168.0.0/16"),
+                    )
+                    if not any(net.subnet_of(allowed) for allowed in rfc1918):
+                        continue
                     interfaces.append({"name": iface_name, "ip_address": ip_cidr.split("/")[0],
                         "network_cidr": str(net), "prefix": net.prefixlen, "is_up": True, "type_hint": type_hint})
                 except ValueError: continue
@@ -2426,14 +2433,23 @@ async def list_network_interfaces():
 
 @app.get("/api/network/info")
 async def network_info():
-    """Info de red REAL instantanea (sin escaneo). Usada por el frontend para
-    auto-poblar el campo de subred en vez de depender de un '192.168.1'
-    hardcodeado que casi nunca coincide con la red real del dispositivo
-    (hotspots Android suelen usar 192.168.43.x, 192.168.49.x, etc.)."""
-    subnet = await asyncio.to_thread(subnet_from_iface)
-    net = _detect_local_network()
-    return {"subnet": subnet, "local_ip": net.get("ip", ""),
-            "local_hostname": socket.gethostname() if hasattr(socket, "gethostname") else ""}
+    """Info real e instantánea de todas las LAN activas, sin escanear."""
+    interfaces = await list_network_interfaces()
+    usable = [
+        item for item in interfaces
+        if item.get("is_up") is not False
+        and item.get("network_cidr")
+        and item.get("type_hint") not in ("loopback", "error")
+    ]
+    subnets = list(dict.fromkeys(str(item["network_cidr"]) for item in usable))
+    local_ip = usable[0].get("ip_address", "") if usable else ""
+    return {
+        "subnet": subnets[0] if subnets else "",
+        "subnets": subnets,
+        "interfaces": usable,
+        "local_ip": local_ip,
+        "local_hostname": socket.gethostname() if hasattr(socket, "gethostname") else "",
+    }
 
 def _detect_gateway(subnet: str = "") -> str:
     """Detecta el gateway real via `ip route show default`. Si falla (comun
@@ -2456,8 +2472,7 @@ def _detect_gateway(subnet: str = "") -> str:
     except Exception:
         return ""
 
-@app.get("/api/discover/network")
-async def discover_network(subnet: str = ""):
+async def _discover_network_single(subnet: str):
     """Descubrimiento de red SIN root — TCP connect() en toda la subred
     (metodo primario, probado) + ARP como enriquecimiento opcional de MAC.
 
@@ -2558,6 +2573,79 @@ async def discover_network(subnet: str = ""):
     await broadcast({"type": "progress", "payload": f"Descubrimiento: {len(hosts)} dispositivos (TCP full-scan + ARP)"})
     return {"results": hosts, "hosts_up": len(hosts), "subnet": subnet, "local_ip": local_ip,
             "gateway": gateway, "method": "tcp+arp", "timestamp": datetime.now().isoformat()}
+
+
+async def _auto_scan_networks() -> list[ipaddress.IPv4Network]:
+    """Return every active private LAN, not only the default-route interface."""
+    interfaces = await list_network_interfaces()
+    values = [
+        item.get("network_cidr", "")
+        for item in interfaces
+        if item.get("is_up") is not False
+        and item.get("network_cidr")
+        and item.get("type_hint") not in ("loopback", "error")
+    ]
+    networks = []
+    for value in values:
+        try:
+            networks.extend(_parse_scan_networks(value))
+        except HTTPException:
+            # Automatic discovery must ignore public or oversized interfaces
+            # instead of preventing valid private LANs from being scanned.
+            continue
+    networks = list(dict.fromkeys(networks))
+    if networks:
+        return networks
+    # Keep the old real-interface fallback, but never turn loopback into a scan.
+    fallback = await asyncio.to_thread(subnet_from_iface)
+    if fallback and not str(fallback).startswith("127."):
+        try:
+            return _parse_scan_networks(fallback)
+        except HTTPException:
+            pass
+    return []
+
+
+@app.get("/api/discover/network")
+async def discover_network(subnet: str = "", subnets: str = Query("")):
+    """Discover hosts across one or all active private LANs.
+
+    An explicit subnet/subnets value remains authoritative. When omitted, the
+    endpoint enumerates every active LAN interface and scans each bounded CIDR.
+    """
+    requested = _parse_scan_networks(subnets, subnet)
+    if not requested:
+        requested = await _auto_scan_networks()
+    if not requested:
+        raise HTTPException(
+            status_code=503,
+            detail="No se detectaron interfaces LAN privadas activas.",
+        )
+
+    reports = []
+    for network in requested:
+        reports.append(await _discover_network_single(str(network)))
+
+    merged = []
+    seen_ips = set()
+    for report in reports:
+        for host in report.get("results", []):
+            if host.get("ip") not in seen_ips:
+                seen_ips.add(host.get("ip"))
+                merged.append(host)
+    subnets_out = [report["subnet"] for report in reports]
+    return {
+        "results": merged,
+        "hosts_up": len(merged),
+        "subnet": ",".join(subnets_out),
+        "subnets": subnets_out,
+        "gateways": list(dict.fromkeys(
+            report["gateway"] for report in reports if report.get("gateway")
+        )),
+        "local_ip": reports[0].get("local_ip", ""),
+        "method": "multi-" + "+".join(report.get("method", "unknown") for report in reports),
+        "timestamp": datetime.now().isoformat(),
+    }
 
 @app.get("/api/discover/wifi")
 async def discover_wifi():
@@ -3007,22 +3095,44 @@ ROUTER_PORTS = [80, 443, 22, 23, 8080, 8443, 1900]
 
 @app.post("/api/scan/routers")
 @app.get("/api/network/routers")
-async def scan_routers():
-    subnet = await asyncio.to_thread(subnet_from_iface)
-    base = subnet.rsplit(".", 1)[0] + "."
-    candidates = [f"{base}{i}" for i in (1, 2, 3, 4, 254)]
+async def scan_routers(subnet: str = "", subnets: str = ""):
+    networks = _parse_scan_networks(subnets, subnet)
+    if not networks:
+        networks = await _auto_scan_networks()
+    if not networks:
+        raise HTTPException(status_code=503, detail="No se detectaron interfaces LAN privadas activas.")
+
     results = []
-    for ip in candidates:
-        port_tasks = [tcp_check(ip, p, timeout=0.8) for p in ROUTER_PORTS]
-        banners = await asyncio.gather(*port_tasks)
-        ports_map = {p: b for p, b in zip(ROUTER_PORTS, banners)}
-        if any(banners):
-            # Detectar marca via HTTP banner
-            http_banner = await _http_banner(ip, 80, timeout=2.0)
-            vendor = _detect_router_brand(http_banner.get("server", "") + " " + http_banner.get("body_preview", ""))
-            results.append({"ip": ip, "ports": ports_map, "type": "router",
-                           "vendor": vendor, "first_seen": datetime.now().isoformat()})
-    return {"results": results, "count": len(results)}
+    seen = set()
+    for network in networks:
+        gateway = await asyncio.to_thread(_detect_gateway, str(network))
+        candidates = []
+        if gateway:
+            candidates.append(gateway)
+        host_iter = network.hosts()
+        for _ in range(4):
+            try:
+                candidates.append(str(next(host_iter)))
+            except StopIteration:
+                break
+        candidates.append(str(network.broadcast_address - 1))
+        for ip in dict.fromkeys(candidates):
+            if ip in seen:
+                continue
+            seen.add(ip)
+            port_tasks = [tcp_check(ip, p, timeout=0.8) for p in ROUTER_PORTS]
+            banners = await asyncio.gather(*port_tasks)
+            ports_map = {p: b for p, b in zip(ROUTER_PORTS, banners)}
+            if any(banners):
+                http_banner = await _http_banner(ip, 80, timeout=2.0)
+                vendor = _detect_router_brand(
+                    http_banner.get("server", "") + " " + http_banner.get("body_preview", "")
+                )
+                results.append({"ip": ip, "ports": ports_map, "type": "router",
+                                "vendor": vendor, "subnets": [str(network)],
+                                "first_seen": datetime.now().isoformat()})
+    return {"results": results, "count": len(results),
+            "subnets": [str(network) for network in networks]}
 
 # ── IoT ──────────────────────────────────────────────────────────────────────
 @app.post("/api/scan/iot")

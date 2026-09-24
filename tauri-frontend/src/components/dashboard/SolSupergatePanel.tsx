@@ -114,11 +114,14 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
       const response = await fetch('/api/network/interfaces', { cache: 'no-store', headers: authHeaders() });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const next = await response.json() as NetworkInterface[];
-      const usable = Array.isArray(next) ? next.filter(item => item.is_up !== false) : [];
+      const usable = Array.isArray(next)
+        ? next.filter(item => item.is_up !== false && item.network_cidr && item.type_hint !== 'loopback')
+        : [];
       setInterfaces(usable);
-      if (usable[0]?.name) {
-        setSelectedInterface(current => current || usable[0].name);
-        setScope(current => current || usable[0].network_cidr || '');
+      const allScopes = Array.from(new Set(usable.map(item => item.network_cidr))).join(', ');
+      if (allScopes) {
+        setSelectedInterface(current => current || '__all__');
+        setScope(current => current || allScopes);
       }
     } catch (error) {
       setOperationMessage(`No se pudieron cargar las interfaces: ${error instanceof Error ? error.message : 'error desconocido'}`);
@@ -130,7 +133,10 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
   }, [full, loadInterfaces]);
 
   const selectedNetwork = interfaces.find(item => item.name === selectedInterface);
-  const effectiveScope = scope.trim() || selectedNetwork?.network_cidr || '';
+  const allScopes = Array.from(new Set(interfaces.map(item => item.network_cidr))).join(', ');
+  const effectiveScope = scope.trim()
+    || (selectedInterface === '__all__' ? allScopes : selectedNetwork?.network_cidr)
+    || '';
 
   const responsePayload = async (response: Response) => {
     const payload: unknown = await response.json().catch(() => ({}));
@@ -293,11 +299,12 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
                       const name = event.target.value;
                       setSelectedInterface(name);
                       const next = interfaces.find(item => item.name === name);
-                      if (next?.network_cidr) setScope(next.network_cidr);
+                       setScope(name === '__all__' ? allScopes : next?.network_cidr || '');
                     }}
                     className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 outline-none focus:border-amber-500/60"
                   >
                     {interfaces.length === 0 && <option value="">Detectando interfaces…</option>}
+                    {interfaces.length > 0 && <option value="__all__">Todas las interfaces activas</option>}
                     {interfaces.map(item => (
                       <option key={`${item.name}-${item.ip_address}`} value={item.name}>
                         {item.name} · {item.type_hint || 'red'}
@@ -317,8 +324,8 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
                 </label>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-slate-500">
-                <span>IP local: <b className="font-mono text-slate-300">{selectedNetwork?.ip_address || '—'}</b></span>
-                <span>Red detectada: <b className="font-mono text-slate-300">{selectedNetwork?.network_cidr || 'automática'}</b></span>
+                <span>IP local: <b className="font-mono text-slate-300">{selectedNetwork?.ip_address || (selectedInterface === '__all__' ? 'múltiples' : '—')}</b></span>
+                <span>Redes detectadas: <b className="font-mono text-slate-300">{allScopes || 'automática'}</b></span>
                 <span className="inline-flex items-center gap-1 text-emerald-300"><Activity size={11} /> Consultas manuales</span>
               </div>
             </div>

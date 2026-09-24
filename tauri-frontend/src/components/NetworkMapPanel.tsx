@@ -38,12 +38,9 @@ export default function NetworkMapPanel() {
       if (ni?.ok) setNetInfo(await ni.json())
       if (ifaces?.ok) {
         const data = await ifaces.json()
-        setInterfaces(data)
-        const wifi = data.find((i: any) => i.type_hint === 'wifi' || i.type_hint === 'auto-detected')
-        if (wifi) {
-          setSelectedIface(wifi.network_cidr)
-          setNetInfo((prev: any) => ({ ...prev, subnet: wifi.network_cidr, local_ip: wifi.ip_address }))
-        }
+        setInterfaces((Array.isArray(data) ? data : []).filter((i: any) =>
+          i.is_up !== false && i.network_cidr && i.type_hint !== 'loopback' && i.type_hint !== 'error'
+        ))
       }
     } catch {}
   }, [])
@@ -114,13 +111,14 @@ export default function NetworkMapPanel() {
           <div className="flex gap-2 flex-wrap sm:flex-nowrap min-w-0">
             <select value={selectedIface} onChange={(e) => setSelectedIface(e.target.value)}
               className="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs text-white">
+              <option value="">Todas las interfaces activas</option>
               {interfaces.map((iface, i) => (
                 <option key={i} value={iface.network_cidr}>
                   {iface.name} ({iface.type_hint}) — {iface.ip_address} [{iface.network_cidr}]
                 </option>
               ))}
             </select>
-            <button onClick={() => { if (selectedIface) { discoverWithSubnet(selectedIface) } }}
+            <button onClick={() => { if (selectedIface) { discoverWithSubnet(selectedIface) } else { discover() } }}
               className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded text-xs font-bold text-white whitespace-nowrap">
               Escanear
             </button>
@@ -128,7 +126,7 @@ export default function NetworkMapPanel() {
           {netInfo && (
             <div className="mt-2 flex items-center gap-4 text-xs">
               <span className="text-slate-500">IP: </span><span className="text-green-400 font-mono">{netInfo.local_ip || '---'}</span>
-              <span className="text-slate-500">Subred: </span><span className="text-cyan-400 font-mono">{selectedIface || netInfo.subnet || '---'}</span>
+              <span className="text-slate-500">Subredes: </span><span className="text-cyan-400 font-mono">{selectedIface || (netInfo?.subnets || []).join(', ') || netInfo.subnet || '---'}</span>
             </div>
           )}
         </div>
