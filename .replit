@@ -10,36 +10,8 @@ deploymentTarget = "autoscale"
 run = ["bash", "replit_start.sh"]
 
 [[ports]]
-localPort = 5000
-externalPort = 3000
-
-[[ports]]
-localPort = 5001
-externalPort = 3001
-
-[[ports]]
-localPort = 8000
-externalPort = 8080
-
-[[ports]]
 localPort = 8001
 externalPort = 80
-
-[[ports]]
-localPort = 8002
-externalPort = 3002
-
-[[ports]]
-localPort = 8004
-externalPort = 3003
-
-[[ports]]
-localPort = 8005
-externalPort = 4200
-
-[[ports]]
-localPort = 8006
-externalPort = 5000
 
 [workflows]
 runButton = "Project"
