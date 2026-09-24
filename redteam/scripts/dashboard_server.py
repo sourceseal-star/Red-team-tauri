@@ -2433,13 +2433,24 @@ async def list_network_interfaces():
                 except ValueError: continue
     except Exception as e:
         interfaces.append({"name": "error", "ip_address": "", "network_cidr": "", "is_up": False, "type_hint": "error", "error": str(e)})
-    # Fallback absoluto: usar subnet_from_iface
+    # Fallback absoluto: usar subnet_from_iface.
+    # FIX 2026-09-24: esto corría SIN try/except — si subnet_from_iface()
+    # lanzaba (p. ej. sin `ip`, `ifconfig` ni psutil en Termux), el endpoint
+    # entero devolvía 500 y el selector de SOL SUPERGATE se quedaba en
+    # "No se detectaron interfaces" sin explicación. Ahora el endpoint
+    # SIEMPRE responde y la causa queda en el log del servidor.
     if not any(i.get("type_hint") not in ("loopback", "error") for i in interfaces):
-        subnet = await asyncio.to_thread(subnet_from_iface)
-        local_info = _detect_local_network()
-        if subnet:
-            interfaces.insert(0, {"name": "auto", "ip_address": local_info.get("ip",""), "network_cidr": subnet,
-                "prefix": 24, "is_up": True, "type_hint": "auto-detected"})
+        try:
+            subnet = await asyncio.to_thread(subnet_from_iface)
+            local_info = _detect_local_network()
+            if subnet:
+                interfaces.insert(0, {"name": "auto", "ip_address": local_info.get("ip",""), "network_cidr": subnet,
+                    "prefix": 24, "is_up": True, "type_hint": "auto-detected"})
+        except Exception as exc:
+            print(f"[interfaces] fallback subnet_from_iface falló: {exc!r}", flush=True)
+            interfaces.insert(0, {"name": "auto", "ip_address": "", "network_cidr": "",
+                "prefix": None, "is_up": False, "type_hint": "error",
+                "error": f"detección de interfaces no disponible: {exc}"})
     priority = {"wifi": 0, "hotspot": 1, "mobile": 2, "ethernet": 3, "auto-detected": 4, "loopback": 5, "unknown": 6}
     interfaces.sort(key=lambda x: priority.get(x.get("type_hint",""), 7))
     return interfaces
@@ -9318,10 +9329,29 @@ async def tactical_credential_dict():
         for vendor, creds in _TACTICAL_CREDS.items()
     } if _TACTICAL_OK else {"error": "no disponible"}
 
+# FIX 2026-09-24: TacticalPanel.tsx renderiza cada puerto como
+# ":{p.port} {p.service}" — antes llegaba una lista plana de enteros
+# ([21, 22, ...]) y las filas se pintaban como puros ":" vacíos.
+_TACTICAL_SERVICE_NAMES = {
+    21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns", 80: "http",
+    110: "pop3", 135: "msrpc", 139: "netbios-ssn", 143: "imap", 443: "https",
+    445: "smb", 554: "rtsp", 993: "imaps", 995: "pop3s", 1723: "pptp",
+    3306: "mysql", 3389: "rdp", 5432: "postgresql", 5900: "vnc", 6379: "redis",
+    8080: "http-alt", 8443: "https-alt", 8899: "dahua-http", 9000: "http-alt",
+    1900: "upnp-ssdp", 8000: "hikvision-http", 8888: "http-alt",
+    27017: "mongodb", 37777: "dvr-rtsp", 34567: "hikvision", 6789: "dvr",
+}
+
 @app.get("/api/tactical/ports")
 async def tactical_default_ports():
-    """Devuelve los puertos que escanea el tactical executor por defecto."""
-    return {"ports": _TACTICAL_PORTS} if _TACTICAL_OK else {"error": "no disponible"}
+    """Devuelve los puertos que escanea el tactical executor por defecto,
+    con el nombre de servicio que espera el frontend ({port, service})."""
+    if not _TACTICAL_OK:
+        return {"error": "no disponible"}
+    return {"ports": [
+        {"port": p, "service": _TACTICAL_SERVICE_NAMES.get(p, "desconocido")}
+        for p in _TACTICAL_PORTS
+    ]}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
