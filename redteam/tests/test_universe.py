@@ -6,11 +6,12 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from fastapi import FastAPI
-from redteam.modules.universe import router
+from redteam.modules.universe import router, universe_state
 
 
 class UniverseTests(unittest.TestCase):
     def setUp(self) -> None:
+        universe_state["last_synchronization"] = None
         self.app = FastAPI()
         self.app.include_router(router)
         self.client = TestClient(self.app)
@@ -33,6 +34,8 @@ class UniverseTests(unittest.TestCase):
         self.assertEqual(body["module"], "universe.py")
         self.assertEqual(body["network_context"]["local_ip"], "10.20.0.4")
         self.assertEqual(body["network_context"]["privilege"], "userland (no-root)")
+        self.assertIsNone(body["state"]["last_synchronization"])
+        self.assertIn("observed_at", body)
 
     def test_sync_accepts_only_declared_actions(self) -> None:
         response = self.client.post(

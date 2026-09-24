@@ -36,3 +36,14 @@ misma entrega que el código frontend. Tras cada cambio o republish, verificar
 la integridad de todos los assets y ejecutar la matriz `/api/readiness`,
 confirmando `frontend_dist=ok` y `auditoria_tactica=ok` antes de considerar
 válido el resultado.
+
+**Nota de rastreo:** El validador también exige que los nuevos nombres hash de
+Vite estén registrados en el índice de Git; un build correcto puede impedir el
+arranque si esos artefactos todavía aparecen como no rastreados.
+
+**Why:** El cambio de la pantalla Universe produjo hashes nuevos y el workflow
+se detuvo antes de abrir el puerto aunque `npm run build` hubiera terminado bien.
+
+**How to apply:** Después de un build limpio, alinea el índice de Git con el
+`dist` completo, vuelve a ejecutar `validate_frontend_dist.py` y solo entonces
+reinicia el workflow.

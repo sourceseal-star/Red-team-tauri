@@ -22,9 +22,9 @@ router = APIRouter(prefix="/api/universe", tags=["Universe Core"])
 universe_state: dict[str, Any] = {
     "status": "operational",
     "mode": "protected",
-    "interface_active": "lo / wlan0",
+    "interface_active": None,
     "last_synchronization": None,
-    "nodes_tracked": 4,
+    "nodes_tracked": None,
 }
 
 
@@ -45,6 +45,7 @@ def _inspect_userland_net() -> dict[str, Any]:
             "local_ip": local_ip,
             "stack": "IPv4 / UDP-TCP",
             "privilege": "userland (no-root)",
+            "source": "hostname resolution (no interface scan)",
         }
     except Exception as exc:
         return {
@@ -52,6 +53,7 @@ def _inspect_userland_net() -> dict[str, Any]:
             "local_ip": "127.0.0.1",
             "stack": "IPv4 / UDP-TCP",
             "privilege": "userland (no-root)",
+            "source": "fallback",
             "error": str(exc),
         }
 
@@ -60,12 +62,12 @@ def _inspect_userland_net() -> dict[str, Any]:
 async def get_universe_status() -> dict[str, Any]:
     """Retorna el estado consolidado del ecosistema SOL SuperGate."""
     net_info = _inspect_userland_net()
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    universe_state["last_synchronization"] = now
+    observed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     return {
         "module": "universe.py",
         "state": dict(universe_state),
         "network_context": net_info,
+        "observed_at": observed_at,
     }
 
 

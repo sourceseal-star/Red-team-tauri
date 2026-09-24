@@ -796,6 +796,7 @@
     <button onclick="openRoom('tutor')" data-room="tutor">🎓 Tutor</button>
     <button onclick="openRoom('tools')" data-room="tools">⚡ Tools</button>
     <button onclick="openRoom('repos')" data-room="repos">📦 Repos</button>
+    <button onclick="openLocalGate('universe')" data-room="gate">🌌 Universe.py</button>
     <button onclick="openRoom('sec')" data-room="sec">🔒 Seguridad</button>
   </nav>
 
@@ -3273,6 +3274,19 @@ function openRoom(room) {
   document.getElementById('universe').classList.add('room-open');
   if (room === 'sil' || room === 'siladv') setExpr('study');
   else if (room === 'tutor') setExpr('thinking');
+}
+
+// ═══ ACCESO LOCAL PROTEGIDO — SOL SUPERGATE + UNIVERSE ═══
+// Universe vive en el dashboard unificado. El enlace es loopback deliberado:
+// nunca se construye con un dominio público ni se envía una clave desde Sol.
+const LOCAL_GATE_URLS = {
+  universe: 'http://127.0.0.1:8001/api/universe/status',
+};
+function openLocalGate(kind) {
+  const url = LOCAL_GATE_URLS[kind];
+  if (!url) return;
+  const win = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!win) window.location.href = url;
 }
 function switchTab(tab, el) {
   currentTab = tab;
