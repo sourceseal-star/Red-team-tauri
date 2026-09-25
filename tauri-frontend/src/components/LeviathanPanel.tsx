@@ -30,8 +30,8 @@ export default function LeviathanPanel() {
   const [scanModules, setScanModules] = useState('all');
   const [exploitTarget, setExploitTarget] = useState('');
   const [exploitModule, setExploitModule] = useState('hikvision_rce');
-  const [scanResult, setScanResult] = useState<string | null>(null);
-  const [exploitResult, setExploitResult] = useState<string | null>(null);
+  const [scanResult, setScanResult] = useState<any | null>(null);
+  const [exploitResult, setExploitResult] = useState<any | null>(null);
   const [expanded, setExpanded] = useState<string | null>('status');
   const [error, setError] = useState<string | null>(null);
 
@@ -61,16 +61,21 @@ export default function LeviathanPanel() {
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   const runScan = async () => {
-    if (!scanTarget.trim()) return;
+    const targets = scanTarget.split(/[,\s]+/).map((t: string) => t.trim()).filter(Boolean);
+    if (targets.length === 0) return;
     setLoadingKey('scan', true); setScanResult(null);
     try {
-      const res = await fetch(`${API_BASE}${LEV}/scan`, {
-        method: 'POST', headers: levHeaders(),
-        body: JSON.stringify({ target: scanTarget, modules: scanModules === 'all' ? null : scanModules.split(',') }),
-      });
-      setScanResult(JSON.stringify(await res.json(), null, 2));
+      const responses = await Promise.all(targets.map(async (target: string) => {
+        const res = await fetch(`${API_BASE}${LEV}/scan`, {
+          method: 'POST', headers: levHeaders(),
+          body: JSON.stringify({ target, modules: scanModules === 'all' ? null : scanModules.split(',') }),
+        });
+        const data = await res.json().catch(() => ({}));
+        return res.ok ? data : { target, error: `HTTP ${res.status}`, detail: data };
+      }));
+      setScanResult({ multi: true, targets, responses });
       fetchStatus();
-    } catch (e: any) { setScanResult(`Error: ${e.message}`); }
+    } catch (e: any) { setScanResult({ error: e.message }); }
     setLoadingKey('scan', false);
   };
 
@@ -82,8 +87,9 @@ export default function LeviathanPanel() {
         method: 'POST', headers: levHeaders(),
         body: JSON.stringify({ target: exploitTarget, module: exploitModule }),
       });
-      setExploitResult(JSON.stringify(await res.json(), null, 2));
-    } catch (e: any) { setExploitResult(`Error: ${e.message}`); }
+      const data = await res.json().catch(() => ({}));
+      setExploitResult(res.ok ? data : { error: `HTTP ${res.status}`, detail: data });
+    } catch (e: any) { setExploitResult({ error: e.message }); }
     setLoadingKey('exploit', false);
   };
 
@@ -185,7 +191,7 @@ export default function LeviathanPanel() {
             {loading.scan ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Escanear
           </button>
         </div>
-        {scanResult && <pre className="mt-3 bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-slate-300 overflow-auto max-h-64">{scanResult}</pre>}
+        {scanResult && <ScanSummary result={scanResult} />}
       </Section>
 
       {/* Explotación */}
@@ -207,7 +213,7 @@ export default function LeviathanPanel() {
             {loading.exploit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />} Ejecutar
           </button>
         </div>
-        {exploitResult && <pre className="mt-3 bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-slate-300 overflow-auto max-h-64">{exploitResult}</pre>}
+        {exploitResult && <ExploitSummary result={exploitResult} />}
       </Section>
 
       {/* Cámaras */}
@@ -296,6 +302,84 @@ function StatCard({ label, value, icon }: { label: string; value: number; icon: 
     <div className="p-3 rounded-lg border border-slate-800 bg-slate-900/30">
       <div className="flex items-center gap-2 mb-1">{icon}<span className="text-xs text-slate-400">{label}</span></div>
       <span className="text-2xl font-bold text-slate-100">{value}</span>
+    </div>
+  );
+}
+
+// ── Resúmenes legibles de ejecución REAL (fix 2026-09-25) ─────────────────────
+function ScanSummary({ result }: { result: any }) {
+  if (typeof result === 'string')
+    return <pre className="mt-3 bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-red-300 overflow-auto max-h-64">{result}</pre>;
+  if (result?.error)
+    return <div className="mt-3 rounded-lg border border-red-800 bg-red-950/40 p-3 text-xs text-red-300">No se pudo ejecutar: {result.error}{result.detail ? ` — ${JSON.stringify(result.detail)}` : ' — revisa el token de acceso (F4)'}</div>;
+  if (result?.multi) {
+    return (
+      <div className="mt-3 space-y-3">
+        <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/30 p-3 text-xs text-emerald-200">
+          ✓ Ejecutado de verdad · {result.targets.length} red(es)/objetivo(s): <span className="font-mono">{result.targets.join(', ')}</span>
+        </div>
+        {result.responses.map((r: any, i: number) => (
+          <div key={i} className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+            <div className="text-[11px] mb-2">
+              <span className="text-slate-500">Red/objetivo</span> <span className="font-mono text-slate-200">{r?.target || result.targets[i]}</span>
+              {r?.error
+                ? <span className="text-red-400 ml-2">· {r.error}</span>
+                : <span className="text-emerald-400/80 ml-2">· {r?.statistics?.modules_run ?? '?'} módulos · {r?.statistics?.cameras_found ?? 0} cámaras</span>}
+            </div>
+            {!r?.error && <ScanModulesGrid results={r?.results || {}} />}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  const stats = result.statistics || {};
+  const results = result.results || {};
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="rounded-lg border border-emerald-800/60 bg-emerald-950/30 p-3 text-xs text-emerald-200">
+        ✓ Ejecutado de verdad · {stats.modules_run ?? Object.keys(results).length} módulos corridos · {stats.modules_success ?? '—'} exitosos · <span className="font-mono">{result.scan_id}</span>
+      </div>
+      <ScanModulesGrid results={results} />
+      <details className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+        <summary className="text-[11px] text-slate-500 cursor-pointer">Respuesta completa (JSON)</summary>
+        <pre className="mt-2 text-[10px] text-slate-400 overflow-auto max-h-56">{JSON.stringify(result, null, 2)}</pre>
+      </details>
+    </div>
+  );
+}
+
+function ExploitSummary({ result }: { result: any }) {
+  if (typeof result === 'string')
+    return <pre className="mt-3 bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-red-300 overflow-auto max-h-64">{result}</pre>;
+  if (result?.error)
+    return <div className="mt-3 rounded-lg border border-red-800 bg-red-950/40 p-3 text-xs text-red-300">No se pudo ejecutar: {result.error}{result.detail ? ` — ${JSON.stringify(result.detail)}` : ''}</div>;
+  const ok = result?.success !== false && !result?.error;
+  return (
+    <div className="mt-3 space-y-2">
+      <div className={`rounded-lg border p-3 text-xs ${ok ? 'border-emerald-800/60 bg-emerald-950/30 text-emerald-200' : 'border-amber-800/60 bg-amber-950/30 text-amber-200'}`}>
+        {ok ? '✓ Exploit ejecutado contra el objetivo' : 'Ejecutado con resultado negativo (objetivo no vulnerable)'}{result?.vulnerable !== undefined ? ` · vulnerable: ${result.vulnerable}` : ''}
+      </div>
+      <details className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+        <summary className="text-[11px] text-slate-500 cursor-pointer">Respuesta completa (JSON)</summary>
+        <pre className="mt-2 text-[10px] text-slate-400 overflow-auto max-h-56">{JSON.stringify(result, null, 2)}</pre>
+      </details>
+    </div>
+  );
+}
+
+function ScanModulesGrid({ results }: { results: Record<string, any> }) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+      {Object.entries(results).map(([name, r]: [string, any]) => {
+        const failed = r && (r.error || r.success === false);
+        const detail = r?.cameras?.length ? `${r.cameras.length} cámaras` : r?.devices?.length ? `${r.devices.length} dispositivos` : r?.services?.length ? `${r.services.length} servicios` : r?.fingerprints?.length ? `${r.fingerprints.length} huellas HTTP` : r?.streams?.length ? `${r.streams.length} streams RTSP` : r?.skipped ? 'no aplicable al objetivo' : 'sin hallazgos (ejecutado)';
+        return (
+          <div key={name} className={`rounded-lg border p-2 text-[11px] ${failed ? 'border-red-900/50 bg-red-950/20' : 'border-slate-700 bg-slate-900'}`}>
+            <div className="font-mono text-slate-300">{name}</div>
+            <div className={failed ? 'text-red-400' : 'text-slate-400'}>{failed ? `error: ${r?.error || 'falló'}` : detail}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
