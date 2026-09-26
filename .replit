@@ -13,6 +13,10 @@ run = ["bash", "replit_start.sh"]
 localPort = 8001
 externalPort = 80
 
+[[ports]]
+localPort = 8004
+externalPort = 3000
+
 [workflows]
 runButton = "Project"
 
