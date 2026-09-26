@@ -8392,6 +8392,7 @@ KRAKEN_NSE_SCRIPTS = [
 KRAKEN_PORTS = "21,22,23,25,80,110,139,143,443,445,554,993,995,1723,3306,3389,5432,5900,6379,8080,8443,27017"
 
 _kraken_running = False
+_kraken_daemon_targets: list[str] = []
 
 def _kraken_init_db():
     KRAKEN_DB.parent.mkdir(parents=True, exist_ok=True)
@@ -8464,6 +8465,37 @@ def _kraken_save(target, hosts_data):
     conn.close()
     return total
 
+def _kraken_normalize_targets(target: str = "", targets: str = "") -> list[str]:
+    """Normaliza una lista explícita de IPs/CIDRs sin inventar una red local."""
+    raw = targets or target
+    values = [item.strip() for item in re.split(r"[\s,;]+", raw or "") if item.strip()]
+    normalized: list[str] = []
+    invalid: list[str] = []
+    for value in values:
+        try:
+            if "/" in value:
+                parsed = ipaddress.ip_network(value, strict=False)
+                canonical = str(parsed)
+            else:
+                canonical = str(ipaddress.ip_address(value))
+        except ValueError:
+            invalid.append(value)
+            continue
+        if canonical not in normalized:
+            normalized.append(canonical)
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Objetivos inválidos: {', '.join(invalid[:8])}. Usa IPs o CIDRs separados por coma, espacio o salto de línea.",
+        )
+    if not normalized:
+        raise HTTPException(
+            status_code=400,
+            detail="Indica al menos una IP o subred autorizada; KRAKEN no inventa una red por defecto.",
+        )
+    return normalized
+
+
 def _kraken_scan_sync(target: str):
     scripts_str = ','.join(KRAKEN_NSE_SCRIPTS)
     cmd = ['nmap', '-sV', '--script', scripts_str, '-p', KRAKEN_PORTS, '-oX', '-', target]  # -O quitado: requiere root, abortaba el scan completo en Termux sin privilegios
@@ -8482,17 +8514,46 @@ def _kraken_scan_sync(target: str):
         return None, str(e)
 
 @app.get("/api/kraken/scan")
-async def kraken_scan(target: str = "192.168.1.0/24"):
-    """Ejecuta escaneo NSE contra un target."""
+async def kraken_scan(
+    target: str = Query(""),
+    targets: str = Query(""),
+):
+    """Ejecuta NSE contra una o varias IPs/CIDRs indicadas por el operador."""
+    selected_targets = _kraken_normalize_targets(target, targets)
     _kraken_init_db()
     loop = asyncio.get_event_loop()
-    xml_data, error = await loop.run_in_executor(None, _kraken_scan_sync, target)
-    if error:
-        return JSONResponse({"status": "error", "error": error}, status_code=503)
-    hosts = _kraken_parse_xml(xml_data)
-    total = _kraken_save(target, hosts)
-    return {"status": "ok", "target": target, "hosts_found": len(hosts),
-            "exploits_found": total, "hosts": hosts}
+    results: list[dict[str, Any]] = []
+    all_hosts: list[dict[str, Any]] = []
+    total_exploits = 0
+    for selected_target in selected_targets:
+        xml_data, error = await loop.run_in_executor(None, _kraken_scan_sync, selected_target)
+        if error:
+            results.append({"target": selected_target, "status": "error", "error": error})
+            continue
+        hosts = _kraken_parse_xml(xml_data)
+        exploits = _kraken_save(selected_target, hosts)
+        total_exploits += exploits
+        all_hosts.extend(hosts)
+        results.append({
+            "target": selected_target,
+            "status": "ok",
+            "hosts_found": len(hosts),
+            "exploits_found": exploits,
+        })
+    failed = [item for item in results if item["status"] == "error"]
+    if failed and not all_hosts:
+        return JSONResponse(
+            {"status": "error", "targets": selected_targets, "results": results},
+            status_code=503,
+        )
+    return {
+        "status": "partial" if failed else "ok",
+        "targets": selected_targets,
+        "results": results,
+        "hosts_found": len(all_hosts),
+        "exploits_found": total_exploits,
+        "hosts": all_hosts,
+    }
 
 @app.get("/api/kraken/results")
 async def kraken_results(limit: int = 50):
@@ -8526,20 +8587,29 @@ async def kraken_scripts():
     return {"scripts": KRAKEN_NSE_SCRIPTS, "ports": KRAKEN_PORTS}
 
 @app.post("/api/kraken/daemon/start")
-async def kraken_daemon_start(target: str = "192.168.1.0/24", interval: int = 3600):
-    """Inicia el daemon de escaneo periodico."""
-    global _kraken_running
+async def kraken_daemon_start(
+    target: str = Query(""),
+    targets: str = Query(""),
+    interval: int = Query(3600, ge=60, le=86400),
+):
+    """Inicia el daemon sobre la lista explícita de objetivos."""
+    global _kraken_running, _kraken_daemon_targets
+    selected_targets = _kraken_normalize_targets(target, targets)
     if _kraken_running:
-        return JSONResponse({"status": "already_running", "target": target}, status_code=409)
+        return JSONResponse({"status": "already_running", "targets": _kraken_daemon_targets}, status_code=409)
     _kraken_running = True
+    _kraken_daemon_targets = selected_targets
     def _daemon_loop():
-        global _kraken_running
+        global _kraken_running, _kraken_daemon_targets
         _kraken_init_db()
         while _kraken_running:
-            xml, err = _kraken_scan_sync(target)
-            if xml:
-                hosts = _kraken_parse_xml(xml)
-                _kraken_save(target, hosts)
+            for selected_target in list(_kraken_daemon_targets):
+                if not _kraken_running:
+                    break
+                xml, err = _kraken_scan_sync(selected_target)
+                if xml:
+                    hosts = _kraken_parse_xml(xml)
+                    _kraken_save(selected_target, hosts)
             import time as _t
             for _ in range(interval // 10):
                 if not _kraken_running:
@@ -8548,19 +8618,21 @@ async def kraken_daemon_start(target: str = "192.168.1.0/24", interval: int = 36
     import threading
     t = threading.Thread(target=_daemon_loop, daemon=True)
     t.start()
-    return {"status": "started", "target": target, "interval": interval}
+    return {"status": "started", "targets": selected_targets, "interval": interval}
 
 @app.post("/api/kraken/daemon/stop")
 async def kraken_daemon_stop():
     """Detiene el daemon."""
-    global _kraken_running
+    global _kraken_running, _kraken_daemon_targets
     _kraken_running = False
-    return {"status": "stopped"}
+    stopped_targets = _kraken_daemon_targets
+    _kraken_daemon_targets = []
+    return {"status": "stopped", "targets": stopped_targets}
 
 @app.get("/api/kraken/daemon/status")
 async def kraken_daemon_status():
     """Estado del daemon."""
-    return {"running": _kraken_running}
+    return {"running": _kraken_running, "targets": _kraken_daemon_targets}
 
 
 # ═════════════════════════════════════════════════════════════════════════════

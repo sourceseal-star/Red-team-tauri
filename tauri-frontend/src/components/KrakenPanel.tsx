@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Bug, Server, AlertTriangle, CheckCircle2, XCircle,
   Loader2, RefreshCw, Play, Square, Activity, Zap, Search,
@@ -41,7 +41,7 @@ const TABS: { id: TabId; label: string; icon: typeof Bug }[] = [
 ];
 
 export default function KrakenPanel() {
-  const [target, setTarget] = useState('192.168.1.0/24');
+  const [target, setTarget] = useState('');
   const [scanning, setScanning] = useState(false);
   const [daemonRunning, setDaemonRunning] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('exploits');
@@ -55,6 +55,10 @@ export default function KrakenPanel() {
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<{ hosts_found: number; exploits_found: number } | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const targetList = useMemo(
+    () => Array.from(new Set(target.split(/[\s,;]+/).map(item => item.trim()).filter(Boolean))),
+    [target],
+  );
 
   const toggleRow = (idx: number) => {
     setExpandedRows(prev => {
@@ -114,22 +118,37 @@ export default function KrakenPanel() {
   }, [daemonRunning, loadResults]);
 
   const handleScan = async () => {
+    if (!targetList.length) {
+      setError('Indica al menos una IP o subred autorizada. Puedes separar varias con coma, espacio o salto de línea.');
+      return;
+    }
     setScanning(true);
     setError(null);
     setStatusMsg(null);
     setScanResult(null);
     try {
-      const res = await fetch(`/api/kraken/scan?target=${encodeURIComponent(target.trim())}`, {
-        headers: krakenHeaders(),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || `HTTP ${res.status}`);
-      } else {
-        setScanResult({ hosts_found: data.hosts_found || 0, exploits_found: data.exploits_found || 0 });
-        setStatusMsg(`Escaneo completado: ${data.hosts_found} hosts, ${data.exploits_found} exploits`);
-        loadResults();
+      let hostsFound = 0;
+      let exploitsFound = 0;
+      const failures: string[] = [];
+      for (const [index, selectedTarget] of targetList.entries()) {
+        setStatusMsg(`Escaneando ${index + 1}/${targetList.length}: ${selectedTarget}`);
+        const res = await fetch(`/api/kraken/scan?target=${encodeURIComponent(selectedTarget)}`, {
+          headers: krakenHeaders(),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.status === 'error') {
+          failures.push(`${selectedTarget}: ${data.error || data.detail || `HTTP ${res.status}`}`);
+          continue;
+        }
+        hostsFound += Number(data.hosts_found || 0);
+        exploitsFound += Number(data.exploits_found || 0);
       }
+      setScanResult({ hosts_found: hostsFound, exploits_found: exploitsFound });
+      setStatusMsg(
+        `Escaneo completado en ${targetList.length} objetivo(s): ${hostsFound} hosts, ${exploitsFound} exploits`,
+      );
+      if (failures.length) setError(`Fallos parciales: ${failures.join(' · ')}`);
+      await loadResults();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -149,13 +168,21 @@ export default function KrakenPanel() {
           setStatusMsg('Daemon detenido');
         }
       } else {
+        if (!targetList.length) {
+          setError('Indica al menos una IP o subred antes de iniciar el daemon.');
+          return;
+        }
+        const params = new URLSearchParams({
+          targets: targetList.join(','),
+          interval: '3600',
+        });
         const res = await fetch(`/api/kraken/daemon/start?target=${encodeURIComponent(target.trim())}&interval=3600`, {
           method: 'POST', headers: krakenHeaders(),
         });
         const data = await res.json();
         if (res.ok) {
           setDaemonRunning(true);
-          setStatusMsg(`Daemon iniciado — target: ${target}, intervalo: 60 min`);
+          setStatusMsg(`Daemon iniciado — ${targetList.length} objetivo(s), intervalo: 60 min`);
         } else {
           setError(data.error || `HTTP ${res.status}`);
         }
@@ -183,12 +210,13 @@ export default function KrakenPanel() {
         <div className="flex gap-2">
           <div className="flex-1 relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input
+            <textarea
               value={target}
               onChange={e => setTarget(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !scanning && handleScan()}
-              placeholder="192.168.1.0/24 o IP"
-              className="w-full bg-[var(--ss-bg-3)] border border-[var(--ss-border)] rounded-md pl-8 pr-3 py-2 text-xs text-slate-200 font-mono outline-none focus:border-red-500/50 placeholder:text-slate-600"
+              onKeyDown={e => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !scanning && handleScan()}
+              placeholder="IPs/CIDRs autorizados; separa varias con coma, espacio o salto de línea"
+              rows={2}
+              className="w-full resize-y bg-[var(--ss-bg-3)] border border-[var(--ss-border)] rounded-md pl-8 pr-3 py-2 text-xs text-slate-200 font-mono outline-none focus:border-red-500/50 placeholder:text-slate-600"
             />
           </div>
           <button
@@ -210,6 +238,16 @@ export default function KrakenPanel() {
             {daemonRunning ? <Square size={14} /> : <Play size={14} />}
             {daemonRunning ? 'Stop' : 'Daemon'}
           </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-500">
+          <span>{targetList.length} objetivo(s) cargado(s)</span>
+          {targetList.slice(0, 8).map(item => (
+            <span key={item} className="rounded border border-slate-700 bg-[var(--ss-bg-3)] px-1.5 py-0.5 text-slate-300">
+              {item}
+            </span>
+          ))}
+          {targetList.length > 8 && <span>+{targetList.length - 8} más</span>}
+          <span className="text-slate-600">Ctrl/⌘+Enter para escanear</span>
         </div>
 
         {error && (
