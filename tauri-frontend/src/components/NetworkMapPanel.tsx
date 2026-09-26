@@ -78,7 +78,10 @@ export default function NetworkMapPanel() {
     finally { setWifiLoading(false) }
   }, [])
 
-  useEffect(() => { loadNetInfo(); discover() }, [loadNetInfo, discover])
+  // La detección de red es una operación explícita del operador. Al montar
+  // el panel solo se lee el contexto local; el escaneo empieza desde
+  // «Re-escanear» o «Escanear» después de elegir una subred.
+  useEffect(() => { loadNetInfo() }, [loadNetInfo])
 
   const cameras = hosts.filter(h => h.type === 'camera')
   const routers = hosts.filter(h => h.type === 'router')

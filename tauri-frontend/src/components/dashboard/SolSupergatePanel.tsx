@@ -25,6 +25,15 @@ type NetworkInterface = {
   network_cidr: string;
   is_up: boolean;
   type_hint: string;
+  is_physical?: boolean;
+  source?: string;
+};
+
+type InterfaceDiagnostics = {
+  physical_count?: number;
+  returned_count?: number;
+  fallback_used?: boolean;
+  message?: string;
 };
 
 type OperationActivity = {
@@ -106,6 +115,7 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
   const [message, setMessage] = useState('');
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([]);
   const [interfacesLoading, setInterfacesLoading] = useState(false);
+  const [interfaceDiagnostics, setInterfaceDiagnostics] = useState<InterfaceDiagnostics | null>(null);
   const [selectedInterface, setSelectedInterface] = useState('');
   const [scope, setScope] = useState('');
   const [operationLoading, setOperationLoading] = useState('');
@@ -153,17 +163,25 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
   const loadInterfaces = useCallback(async () => {
     setInterfacesLoading(true);
     try {
-      const response = await fetch('/api/network/interfaces', { cache: 'no-store', headers: authHeaders() });
+      const response = await fetch('/api/network/interfaces?details=true', { cache: 'no-store', headers: authHeaders() });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const next = await response.json() as NetworkInterface[];
-      const usable = Array.isArray(next)
-        ? next.filter(item => item.is_up !== false && item.network_cidr && item.type_hint !== 'loopback')
-        : [];
+      const body = await response.json() as NetworkInterface[] | {
+        interfaces?: NetworkInterface[];
+        diagnostics?: InterfaceDiagnostics;
+      };
+      const next = Array.isArray(body) ? body : body.interfaces || [];
+      setInterfaceDiagnostics(Array.isArray(body) ? null : body.diagnostics || null);
+      const usable = next.filter(item =>
+        item.is_up !== false && item.network_cidr && item.type_hint !== 'loopback'
+      );
       setInterfaces(usable);
-      const allScopes = Array.from(new Set(usable.map(item => item.network_cidr))).join(', ');
+      const physical = usable.filter(item => item.is_physical !== false && item.type_hint !== 'environment');
+      const allScopes = Array.from(new Set(physical.map(item => item.network_cidr))).join(', ');
       if (allScopes) {
         setSelectedInterface(current => current || '__all__');
         setScope(current => current || allScopes);
+      } else {
+        setSelectedInterface('');
       }
     } catch (error) {
       setOperationMessage(`No se pudieron cargar las interfaces: ${error instanceof Error ? error.message : 'error desconocido'}`);
@@ -177,7 +195,10 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
   }, [full, loadInterfaces]);
 
   const selectedNetwork = interfaces.find(item => item.name === selectedInterface);
-  const allScopes = Array.from(new Set(interfaces.map(item => item.network_cidr))).join(', ');
+  const physicalInterfaces = interfaces.filter(item =>
+    item.is_physical !== false && item.type_hint !== 'environment'
+  );
+  const allScopes = Array.from(new Set(physicalInterfaces.map(item => item.network_cidr))).join(', ');
   const effectiveScope = scope.trim()
     || (selectedInterface === '__all__' ? allScopes : selectedNetwork?.network_cidr)
     || '';
@@ -249,6 +270,8 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
   const gatePort = String(snapshot?.config?.port || 8012);
   const scopeLabel = effectiveScope || 'detección automática';
   const quickScanActive = operationLoading === 'topology';
+  const canRunOperation = (id: typeof operationDefinitions[number]['id']) =>
+    id === 'cached' || id === 'wifi' || Boolean(effectiveScope);
 
   const editDraft = (value: string) => {
     dirtyRef.current = true;
@@ -335,7 +358,7 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
               <button
                 type="button"
                 onClick={() => void runOperation('topology')}
-                disabled={!!operationLoading}
+                disabled={!!operationLoading || !effectiveScope}
                 className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-400 px-3 py-2 text-[10px] font-bold text-slate-950 shadow-[0_0_18px_rgba(251,191,36,0.15)] transition hover:bg-amber-300 disabled:cursor-wait disabled:opacity-50"
               >
                 {quickScanActive ? <RefreshCw size={12} className="animate-spin" /> : <Zap size={12} />}
@@ -369,7 +392,7 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
               <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-cyan-300/80">
                 <Network size={11} /> Interfaces
               </div>
-              <div className="mt-1 font-mono text-sm text-cyan-200">{interfacesLoading ? '…' : interfaces.length}</div>
+              <div className="mt-1 font-mono text-sm text-cyan-200">{interfacesLoading ? '…' : physicalInterfaces.length}</div>
             </div>
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3">
               <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-amber-300/80">
@@ -414,15 +437,21 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
                     className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 outline-none focus:border-amber-500/60"
                   >
                     {interfacesLoading && <option value="">Detectando interfaces…</option>}
-                    {!interfacesLoading && interfaces.length === 0 && <option value="">No se detectaron interfaces</option>}
-                    {interfaces.length > 0 && <option value="__all__">Todas las interfaces activas</option>}
+                    {!interfacesLoading && physicalInterfaces.length === 0 && <option value="">No se detectaron interfaces LAN confirmadas</option>}
+                    {physicalInterfaces.length > 0 && <option value="__all__">Todas las interfaces LAN confirmadas</option>}
                     {interfaces.map(item => (
-                      <option key={`${item.name}-${item.ip_address}`} value={item.name}>
-                        {item.name} · {item.type_hint || 'red'}
+                      <option
+                        key={`${item.name}-${item.ip_address}`}
+                        value={item.name}
+                        disabled={item.is_physical === false || item.type_hint === 'environment'}
+                      >
+                        {item.is_physical === false || item.type_hint === 'environment'
+                          ? `${item.name} · entorno del dashboard (no LAN confirmada)`
+                          : `${item.name} · ${item.type_hint || 'red'}`}
                       </option>
                     ))}
                   </select>
-                  {!interfacesLoading && interfaces.length === 0 && (
+                  {!interfacesLoading && physicalInterfaces.length === 0 && (
                     <button
                       type="button"
                       onClick={() => void loadInterfaces()}
@@ -448,9 +477,12 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
                 <span>Redes detectadas: <b className="font-mono text-slate-300">{allScopes || 'automática'}</b></span>
                 <span className="inline-flex items-center gap-1 text-emerald-300"><Activity size={11} /> Consultas manuales</span>
               </div>
-              {!interfacesLoading && interfaces.length === 0 && (
+              {!interfacesLoading && physicalInterfaces.length === 0 && (
                 <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-[10px] leading-4 text-amber-200">
-                  No hay una interfaz LAN confirmada todavía. Puedes introducir una subred manualmente; el backend no ejecutará nada automáticamente.
+                  <p>{interfaceDiagnostics?.message || 'No hay una interfaz LAN confirmada todavía.'}</p>
+                  <p className="mt-1 text-amber-300/70">
+                    Introduce una IP o subred autorizada para habilitar las operaciones. El backend no ejecutará nada automáticamente.
+                  </p>
                 </div>
               )}
             </div>
@@ -503,13 +535,13 @@ export default function SolSupergatePanel({ full = false }: SolSupergatePanelPro
                     ? 'Sin generar tráfico nuevo'
                     : operation.id === 'discovery'
                       ? 'TCP + ARP · LAN local'
-                      : effectiveScope || 'Red detectada automáticamente';
+                      : effectiveScope || 'Introduce una subred; no se usa detección automática';
                 return (
                   <button
                     key={operation.id}
                     type="button"
                     onClick={() => void runOperation(operation.id)}
-                    disabled={!!operationLoading}
+                    disabled={!!operationLoading || !canRunOperation(operation.id)}
                     className={`flex min-h-20 items-center gap-3 rounded-xl border bg-slate-950/60 px-4 py-3 text-left transition disabled:cursor-wait disabled:opacity-50 ${tone}`}
                   >
                     {active ? <RefreshCw size={18} className="shrink-0 animate-spin" /> : <Icon size={18} className="shrink-0" />}

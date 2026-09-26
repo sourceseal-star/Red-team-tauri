@@ -33,6 +33,7 @@ export default function UniversePanel() {
   const [media, setMedia] = useState<MediaItem[]>([])
   const [previews, setPreviews] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
+  const [mediaLoading, setMediaLoading] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -67,6 +68,7 @@ export default function UniversePanel() {
   }, [])
 
   const loadMedia = useCallback(async () => {
+    setMediaLoading(true)
     try {
       const response = await fetch('/api/universe/media/list', { cache: 'no-store', headers: authHeaders() })
       const body = await response.json().catch(() => ({}))
@@ -74,6 +76,7 @@ export default function UniversePanel() {
       setMedia(Array.isArray(body.media) ? body.media : [])
       body.media?.forEach?.((item: MediaItem) => { void loadPreview(item.filename) })
     } catch (err) { setError(err instanceof Error ? err.message : 'No se pudo listar medios') }
+    finally { setMediaLoading(false) }
   }, [loadPreview])
 
   useEffect(() => {
@@ -103,6 +106,8 @@ export default function UniversePanel() {
   const uploadFiles = async (files: FileList | null) => {
     if (!files?.length) return
     setUploading(true); setMessage(''); setError('')
+    let uploaded = 0
+    let failed = ''
     for (const file of Array.from(files)) {
       try {
         const form = new FormData()
@@ -110,15 +115,20 @@ export default function UniversePanel() {
         const response = await fetch('/api/universe/media/upload', { method: 'POST', headers: authHeaders(), body: form })
         const body = await response.json().catch(() => ({}))
         if (!response.ok) throw new Error(body.detail || `HTTP ${response.status} (${file.name})`)
+        uploaded += 1
       } catch (err) {
-        setError(err instanceof Error ? err.message : `No se pudo subir ${file.name}`)
+        failed = err instanceof Error ? err.message : `No se pudo subir ${file.name}`
         break
       }
     }
     setUploading(false)
     if (fileInput.current) fileInput.current.value = ''
     await loadMedia(); await loadStatus()
-    if (!error) setMessage('✓ Medios subidos y guardados en ~/warroom/media')
+    if (failed) {
+      setError(`${failed}${uploaded ? ` · ${uploaded} archivo(s) sí se guardaron` : ''}`)
+    } else {
+      setMessage(`✓ ${uploaded} medio(s) subido(s) y guardado(s) en ~/warroom/media`)
+    }
   }
 
   const net = status?.net || null
@@ -182,7 +192,7 @@ export default function UniversePanel() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-medium flex items-center gap-2"><ImageIcon className="w-4 h-4" /> Galería de medios</h2>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">{media.length} archivo(s) en ~/warroom/media</span>
+            <span className="text-xs text-slate-500">{mediaLoading ? 'Actualizando…' : `${media.length} archivo(s) en ~/warroom/media`}</span>
             <input ref={fileInput} type="file" accept="image/*,video/*" multiple hidden
               onChange={e => void uploadFiles(e.target.files)} />
             <button type="button" onClick={() => fileInput.current?.click()} disabled={uploading}
@@ -205,11 +215,13 @@ export default function UniversePanel() {
                   {previews[item.filename] && item.type === 'video' && (
                     <video src={previews[item.filename]} controls className="w-full h-full object-contain" />
                   )}
-                  {!previews[item.filename] && <Video className="w-8 h-8 text-slate-600" />}
+                  {!previews[item.filename] && (item.type === 'video'
+                    ? <Video className="w-8 h-8 text-slate-600" />
+                    : <ImageIcon className="w-8 h-8 text-slate-600" />)}
                 </div>
                 <div className="p-2">
                   <p className="text-xs truncate text-slate-300" title={item.filename}>{item.filename}</p>
-                  <p className="text-[10px] text-slate-500">{fmtBytes(item.size_bytes)} · {item.type === 'video' ? <Video className="inline w-3 h-3" /> : <ImageIcon className="inline w-3 h-3" />} {item.type}</p>
+                  <p className="text-[10px] text-slate-500">{fmtBytes(item.size_bytes)} · {item.type === 'video' ? <Video className="inline w-3 h-3" /> : <ImageIcon className="inline w-3 h-3" />} {item.type} · {fmtDate(item.modified)}</p>
                 </div>
               </div>
             ))}

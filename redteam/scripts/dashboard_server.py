@@ -2389,7 +2389,7 @@ async def scan_network_stream(subnet: str = ""):
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @app.get("/api/network/interfaces")
-async def list_network_interfaces():
+async def list_network_interfaces(details: bool = Query(False)):
     """Enumera TODAS las interfaces de red activas (WiFi, datos, ethernet, loopback).
     Sin filtros. El operador decide cual escanear."""
     import ipaddress as _ipa
@@ -2441,7 +2441,8 @@ async def list_network_interfaces():
                     if not any(net.subnet_of(allowed) for allowed in rfc1918):
                         continue
                     interfaces.append({"name": iface_name, "ip_address": ip_cidr.split("/")[0],
-                        "network_cidr": str(net), "prefix": net.prefixlen, "is_up": True, "type_hint": type_hint})
+                        "network_cidr": str(net), "prefix": net.prefixlen, "is_up": True,
+                        "type_hint": type_hint, "is_physical": True, "source": "ip"})
                 except ValueError: continue
     except Exception as e:
         interfaces.append({"name": "error", "ip_address": "", "network_cidr": "", "is_up": False, "type_hint": "error", "error": str(e)})
@@ -2457,7 +2458,8 @@ async def list_network_interfaces():
             local_info = _detect_local_network()
             if subnet:
                 interfaces.insert(0, {"name": "auto", "ip_address": local_info.get("ip",""), "network_cidr": subnet,
-                    "prefix": 24, "is_up": True, "type_hint": "auto-detected"})
+                    "prefix": 24, "is_up": True, "type_hint": "environment",
+                    "is_physical": False, "source": "fallback-local-address"})
         except Exception as exc:
             print(f"[interfaces] fallback subnet_from_iface falló: {exc!r}", flush=True)
             interfaces.insert(0, {"name": "auto", "ip_address": "", "network_cidr": "",
@@ -2465,7 +2467,30 @@ async def list_network_interfaces():
                 "error": f"detección de interfaces no disponible: {exc}"})
     priority = {"wifi": 0, "hotspot": 1, "mobile": 2, "ethernet": 3, "auto-detected": 4, "loopback": 5, "unknown": 6}
     interfaces.sort(key=lambda x: priority.get(x.get("type_hint",""), 7))
-    return interfaces
+    if not details:
+        return interfaces
+    physical = [
+        item for item in interfaces
+        if item.get("is_physical") is not False
+        and item.get("is_up") is not False
+        and item.get("type_hint") not in ("loopback", "error")
+        and item.get("network_cidr")
+    ]
+    return {
+        "interfaces": interfaces,
+        "diagnostics": {
+            "physical_count": len(physical),
+            "returned_count": len(interfaces),
+            "fallback_used": any(item.get("source") == "fallback-local-address" for item in interfaces),
+            "message": (
+                "No se confirmó una interfaz LAN física; la dirección mostrada pertenece al entorno del dashboard."
+                if not physical and interfaces else
+                "No se detectaron interfaces LAN privadas en este entorno."
+                if not physical else
+                "Interfaces LAN privadas confirmadas."
+            ),
+        },
+    }
 
 @app.get("/api/network/info")
 async def network_info():

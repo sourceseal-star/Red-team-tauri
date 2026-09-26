@@ -67,10 +67,23 @@ export default function ComlinkPanel() {
   const [newDeviceIp, setNewDeviceIp] = useState('')
   const [newDeviceName, setNewDeviceName] = useState('')
 
-  const channels: Channel[] = Array.isArray(status?.channels) ? status.channels : []
+  // comlink_real.py devuelve channels como mapa {id: estado}; algunas
+  // implementaciones antiguas devolvían un arreglo. Normalizar aquí evita
+  // ocultar el estado real del núcleo cuando no hay hardware físico listo.
+  const channels: Channel[] = useMemo(() => {
+    if (Array.isArray(status?.channels)) return status.channels
+    if (status?.channels && typeof status.channels === 'object') {
+      return Object.entries(status.channels).map(([id, value]) => ({
+        id,
+        ...(value && typeof value === 'object' ? value : {}),
+      })) as Channel[]
+    }
+    return []
+  }, [status?.channels])
   const readyChannels = useMemo(() => channels.filter(item => item.ready), [channels])
   const selected = channels.find(item => item.id === channel)
-  const canSend = Boolean(status?.available && selected?.ready)
+  const coreReady = Boolean(status?.core_ready ?? status?.available)
+  const canSend = Boolean(coreReady && selected?.ready)
 
   const loadStatus = useCallback(async () => {
     setLoading(true)
@@ -474,8 +487,8 @@ export default function ComlinkPanel() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          ['Núcleo', status?.core_ready ? 'Listo' : 'No disponible', status?.core_ready ? 'text-green-400' : 'text-red-400'],
-          ['Canales', `${readyChannels.length}/${channels.length || 7}`, readyChannels.length ? 'text-cyan-300' : 'text-amber-400'],
+           ['Núcleo', coreReady ? 'Listo' : 'No disponible', coreReady ? 'text-green-400' : 'text-red-400'],
+           ['Canales', `${readyChannels.length}/${channels.length || 7}`, readyChannels.length ? 'text-cyan-300' : 'text-amber-400'],
           ['Versión', status?.version || '—', 'text-slate-300'],
           ['Dispositivo', status?.device?.name || '—', 'text-slate-300'],
         ].map(([label, value, color]) => (
@@ -485,6 +498,18 @@ export default function ComlinkPanel() {
           </div>
         ))}
       </div>
+
+      {coreReady && readyChannels.length === 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+          <div>
+            <p className="font-semibold">Núcleo COM-LINK listo; no hay canales físicos preparados.</p>
+            <p className="mt-0.5 text-[11px] text-amber-300/70">
+              Puedes consultar y administrar la cola desde aquí. SMS, mesh, radio y satélite solo aparecen como listos cuando sus adaptadores, permisos o hardware están presentes.
+            </p>
+          </div>
+        </div>
+      )}
 
       <Card>
         <div className="flex items-start justify-between gap-3 mb-3">
