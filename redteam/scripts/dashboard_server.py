@@ -1740,9 +1740,12 @@ def _detect_local_network() -> dict:
                             continue
                         try:
                             if ipaddress.ip_address(ip).is_private:
-                                parts = ip.split(".")
-                                return {"ip": ip, "mask": addr.netmask or "255.255.255.0",
-                                        "cidr": f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"}
+                                mask = addr.netmask or "255.255.255.0"
+                                try:
+                                    cidr = str(ipaddress.ip_network(f"{ip}/{mask}", strict=False))
+                                except ValueError:
+                                    cidr = str(ipaddress.ip_network(f"{ip}/24", strict=False))
+                                return {"ip": ip, "mask": mask, "cidr": cidr}
                         except ValueError:
                             continue
         except Exception:
@@ -1756,8 +1759,8 @@ def _detect_local_network() -> dict:
         local_ip = s.getsockname()[0]
         s.close()
         if not local_ip.startswith("127."):
-            parts = local_ip.split(".")
-            return {"ip": local_ip, "mask": "255.255.255.0", "cidr": f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"}
+            cidr = str(ipaddress.ip_network(f"{local_ip}/24", strict=False))
+            return {"ip": local_ip, "mask": "255.255.255.0", "cidr": cidr}
     except Exception:
         pass
     # 3) Ultimo recurso real -- si esto se ve en la UI, revisar permisos de
@@ -8393,6 +8396,10 @@ KRAKEN_PORTS = "21,22,23,25,80,110,139,143,443,445,554,993,995,1723,3306,3389,54
 
 _kraken_running = False
 _kraken_daemon_targets: list[str] = []
+_KRAKEN_AUTHORIZED_NETWORKS = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+)
 
 def _kraken_init_db():
     KRAKEN_DB.parent.mkdir(parents=True, exist_ok=True)
@@ -8477,7 +8484,13 @@ def _kraken_normalize_targets(target: str = "", targets: str = "") -> list[str]:
                 parsed = ipaddress.ip_network(value, strict=False)
                 canonical = str(parsed)
             else:
-                canonical = str(ipaddress.ip_address(value))
+                parsed = ipaddress.ip_network(f"{value}/32", strict=False)
+                canonical = str(parsed.network_address)
+            if parsed.version != 4 or not any(
+                parsed.subnet_of(allowed) for allowed in _KRAKEN_AUTHORIZED_NETWORKS
+            ):
+                invalid.append(value)
+                continue
         except ValueError:
             invalid.append(value)
             continue
@@ -8492,6 +8505,11 @@ def _kraken_normalize_targets(target: str = "", targets: str = "") -> list[str]:
         raise HTTPException(
             status_code=400,
             detail="Indica al menos una IP o subred autorizada; KRAKEN no inventa una red por defecto.",
+        )
+    if len(normalized) > 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Máximo 8 IPs/subredes por operación para mantener el escaneo controlable.",
         )
     return normalized
 

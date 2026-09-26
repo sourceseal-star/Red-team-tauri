@@ -4,7 +4,7 @@ import {
   Loader2, RefreshCw, Play, AlertTriangle, CheckCircle2,
   XCircle, ChevronDown, ChevronUp, Crosshair, Eye, Zap
 } from 'lucide-react';
-import { getApiKey, authUrl } from '../lib/api';
+import { getApiKey } from '../lib/api';
 
 const API_BASE = (import.meta as any).env?.VITE_API_BASE || '';
 const LEV = '/api/leviathan';
@@ -27,7 +27,8 @@ export default function LeviathanPanel() {
   const [scans, setScans] = useState<LevScan[]>([]);
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [scanTarget, setScanTarget] = useState('');
-  const [scanModules, setScanModules] = useState('all');
+  const [scanChunkSize, setScanChunkSize] = useState('10');
+  const [loadingNetworks, setLoadingNetworks] = useState(false);
   const [exploitTarget, setExploitTarget] = useState('');
   const [exploitModule, setExploitModule] = useState('hikvision_rce');
   const [scanResult, setScanResult] = useState<any | null>(null);
@@ -42,10 +43,10 @@ export default function LeviathanPanel() {
     setLoadingKey('status', true);
     try {
       const [s, m, c, sc] = await Promise.all([
-        fetch(authUrl(`${API_BASE}${LEV}/status`), { headers: levHeaders() }).then(r => r.json()).catch(() => null),
-        fetch(authUrl(`${API_BASE}${LEV}/modules`), { headers: levHeaders() }).then(r => r.json()).catch(() => null),
-        fetch(authUrl(`${API_BASE}${LEV}/cameras`), { headers: levHeaders() }).then(r => r.json()).catch(() => null),
-        fetch(authUrl(`${API_BASE}${LEV}/scans`), { headers: levHeaders() }).then(r => r.json()).catch(() => null),
+        fetch(`${API_BASE}${LEV}/status`, { headers: levHeaders() }).then(r => r.json()).catch(() => null),
+        fetch(`${API_BASE}${LEV}/modules`, { headers: levHeaders() }).then(r => r.json()).catch(() => null),
+        fetch(`${API_BASE}${LEV}/cameras`, { headers: levHeaders() }).then(r => r.json()).catch(() => null),
+        fetch(`${API_BASE}${LEV}/scans`, { headers: levHeaders() }).then(r => r.json()).catch(() => null),
       ]);
       setStatus(s);
       setModules(Array.isArray(m) ? m : (m?.modules || []));
@@ -60,23 +61,77 @@ export default function LeviathanPanel() {
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
+  const getLocalTargets = async (): Promise<string[]> => {
+    const res = await fetch(`${API_BASE}/api/network/info`, { headers: levHeaders() });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+    const subnets = Array.isArray(data.subnets)
+      ? data.subnets.filter((item: unknown): item is string => typeof item === 'string' && Boolean(item.trim()))
+      : [];
+    if (!subnets.length) throw new Error('No se detectaron redes privadas LAN en este entorno.');
+    return Array.from(new Set(subnets));
+  };
+
+  const detectNetworks = async () => {
+    setLoadingNetworks(true);
+    setError(null);
+    try {
+      const subnets = await getLocalTargets();
+      setScanTarget(subnets.join('\n'));
+    } catch (e: any) {
+      setError(e.message || 'No se pudieron detectar las redes');
+    } finally {
+      setLoadingNetworks(false);
+    }
+  };
+
   const runScan = async () => {
-    const targets = scanTarget.split(/[,\s]+/).map((t: string) => t.trim()).filter(Boolean);
-    if (targets.length === 0) return;
+    let targets = scanTarget.split(/[\s,;]+/).map((t: string) => t.trim()).filter(Boolean);
     setLoadingKey('scan', true); setScanResult(null);
     try {
-      const responses = await Promise.all(targets.map(async (target: string) => {
-        const res = await fetch(`${API_BASE}${LEV}/scan`, {
-          method: 'POST', headers: levHeaders(),
-          body: JSON.stringify({ target, modules: scanModules === 'all' ? null : scanModules.split(',') }),
+      if (targets.length === 0) {
+        targets = await getLocalTargets();
+        setScanTarget(targets.join('\n'));
+      }
+      const chunkSize = Math.min(50, Math.max(1, Number.parseInt(scanChunkSize, 10) || 10));
+      const res = await fetch(`${API_BASE}${LEV}/command`, {
+        method: 'POST',
+        headers: levHeaders(),
+        body: JSON.stringify({
+          targets,
+          chunk_size: chunkSize,
+          sleep_between: 0.5,
+          origin: 'war-room',
+        }),
+      });
+      const accepted = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setScanResult({ error: `HTTP ${res.status}`, detail: accepted });
+        return;
+      }
+      const jobId = accepted.job_id;
+      if (!jobId) {
+        setScanResult({ error: 'LEVIATHAN no devolvió un job_id', detail: accepted });
+        return;
+      }
+      setScanResult({ async: true, ...accepted, targets });
+
+      for (let attempt = 0; attempt < 600; attempt += 1) {
+        await new Promise(resolve => window.setTimeout(resolve, 3000));
+        const poll = await fetch(`${API_BASE}${LEV}/status/${encodeURIComponent(jobId)}`, {
+          headers: levHeaders(),
         });
-        const data = await res.json().catch(() => ({}));
-        return res.ok ? data : { target, error: `HTTP ${res.status}`, detail: data };
-      }));
-      setScanResult({ multi: true, targets, responses });
+        const job = await poll.json().catch(() => ({}));
+        if (!poll.ok) {
+          setScanResult({ async: true, targets, job_id: jobId, error: `HTTP ${poll.status}`, detail: job });
+          return;
+        }
+        setScanResult({ async: true, targets, ...job });
+        if (job.status === 'completed' || job.status === 'error') break;
+      }
       fetchStatus();
     } catch (e: any) { setScanResult({ error: e.message }); }
-    setLoadingKey('scan', false);
+    finally { setLoadingKey('scan', false); }
   };
 
   const runExploit = async () => {
@@ -181,14 +236,21 @@ export default function LeviathanPanel() {
       <Section title="Escaneo de Red" icon={<Scan className="w-4 h-4 text-cyan-400" />} expanded={expanded === 'scan'} onClick={() => toggle('scan')}>
         <div className="flex flex-col md:flex-row gap-2">
           <input type="text" value={scanTarget} onChange={e => setScanTarget(e.target.value)}
-            placeholder="192.168.1.0/24 (soporta /22, /20, /16)"
+            placeholder="Vacío = escanear toda la red local; o escribe CIDRs privados"
             className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-500 outline-none" />
-          <input type="text" value={scanModules} onChange={e => setScanModules(e.target.value)}
-            placeholder="all o rtsp_scanner,http_fingerprint"
+          <input type="number" min="1" max="50" value={scanChunkSize} onChange={e => setScanChunkSize(e.target.value)}
+            title="IPs por bloque; ayuda a no saturar Android/Termux"
+            placeholder="IPs/bloque"
             className="w-full md:w-48 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-500 outline-none" />
+          <button onClick={detectNetworks} disabled={loading.scan || loadingNetworks}
+            title="Detecta redes privadas disponibles; no inicia un escaneo"
+            className="px-3 py-2 rounded-lg border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10 text-sm flex items-center gap-2 disabled:opacity-50">
+            <RefreshCw className={`w-4 h-4 ${loadingNetworks ? 'animate-spin' : ''}`} /> Redes
+          </button>
           <button onClick={runScan} disabled={loading.scan}
             className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-medium flex items-center gap-2 disabled:opacity-50">
-            {loading.scan ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Escanear
+            {loading.scan ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+            {scanTarget.trim() ? 'Escanear objetivos' : 'Escanear red local'}
           </button>
         </div>
         {scanResult && <ScanSummary result={scanResult} />}
@@ -312,6 +374,53 @@ function ScanSummary({ result }: { result: any }) {
     return <pre className="mt-3 bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-red-300 overflow-auto max-h-64">{result}</pre>;
   if (result?.error)
     return <div className="mt-3 rounded-lg border border-red-800 bg-red-950/40 p-3 text-xs text-red-300">No se pudo ejecutar: {result.error}{result.detail ? ` — ${JSON.stringify(result.detail)}` : ' — revisa el token de acceso (F4)'}</div>;
+  if (result?.async) {
+    const progress = result.progress || {};
+    const devices = Array.isArray(result.results) ? result.results : [];
+    const stats = result.statistics || {};
+    const completed = result.status === 'completed';
+    return (
+      <div className="mt-3 space-y-2">
+        <div className={`rounded-lg border p-3 text-xs ${completed ? 'border-emerald-800/60 bg-emerald-950/30 text-emerald-200' : 'border-cyan-800/60 bg-cyan-950/20 text-cyan-200'}`}>
+          {completed ? '✓ Escaneo multi-red completado' : `⏳ Escaneo multi-red ${result.status || 'en cola'}`}
+          <span className="ml-2 font-mono">{result.job_id}</span>
+        </div>
+        {progress.total !== undefined && (
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-xs">
+            <div className="flex justify-between text-slate-400">
+              <span>{progress.target || 'Preparando redes'}</span>
+              <span>{progress.current || 0}/{progress.total || 0} IPs · {progress.percent || 0}%</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded bg-slate-800">
+              <div className="h-full bg-cyan-500 transition-all" style={{ width: `${Math.min(100, Math.max(0, progress.percent || 0))}%` }} />
+            </div>
+          </div>
+        )}
+        {completed && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center text-xs">
+            <StatCard label="Redes" value={stats.networks_scanned ?? result.targets?.length ?? 0} icon={<Scan className="w-4 h-4 text-cyan-400" />} />
+            <StatCard label="Dispositivos" value={stats.total_devices ?? devices.length} icon={<Activity className="w-4 h-4 text-green-400" />} />
+            <StatCard label="Cámaras" value={stats.cameras_found ?? 0} icon={<Eye className="w-4 h-4 text-amber-400" />} />
+            <StatCard label="Duración (s)" value={Number(stats.duration_s ?? 0)} icon={<Activity className="w-4 h-4 text-purple-400" />} />
+          </div>
+        )}
+        {devices.length > 0 && (
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2">
+            <div className="mb-1 text-[11px] text-slate-500">Dispositivos con puertos observados</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+              {devices.slice(0, 40).map((device: any) => (
+                <div key={`${device.ip}-${device.scanned_at || ''}`} className="flex items-center justify-between rounded border border-slate-800 px-2 py-1 text-[11px]">
+                  <span className="font-mono text-cyan-300">{device.ip}</span>
+                  <span className="text-slate-400">{(device.open_ports || []).join(', ') || 'sin puertos'}</span>
+                </div>
+              ))}
+            </div>
+            {devices.length > 40 && <div className="mt-1 text-[10px] text-slate-600">Mostrando 40 de {devices.length}</div>}
+          </div>
+        )}
+      </div>
+    );
+  }
   if (result?.multi) {
     return (
       <div className="mt-3 space-y-3">

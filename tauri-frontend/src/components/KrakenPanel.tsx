@@ -51,6 +51,7 @@ export default function KrakenPanel() {
   const [priorities, setPriorities] = useState<Priority[]>([]);
   const [scripts, setScripts] = useState<string[]>([]);
   const [ports, setPorts] = useState('');
+  const [loadingNetworks, setLoadingNetworks] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<{ hosts_found: number; exploits_found: number } | null>(null);
@@ -102,6 +103,31 @@ export default function KrakenPanel() {
 
   useEffect(() => { loadResults(); }, [loadResults]);
 
+  const getLocalTargets = async (): Promise<string[]> => {
+    const res = await fetch('/api/network/info', { headers: krakenHeaders() });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.detail || `HTTP ${res.status}`);
+    const subnets = Array.isArray(data.subnets)
+      ? data.subnets.filter((item: unknown): item is string => typeof item === 'string' && Boolean(item.trim()))
+      : [];
+    if (!subnets.length) throw new Error('No se detectaron redes privadas LAN en este entorno.');
+    return Array.from(new Set(subnets));
+  };
+
+  const handleDetectNetworks = async () => {
+    setLoadingNetworks(true);
+    setError(null);
+    try {
+      const subnets = await getLocalTargets();
+      setTarget(subnets.join('\n'));
+      setStatusMsg(`Redes locales detectadas: ${subnets.join(', ')}`);
+    } catch (e: any) {
+      setError(e.message || 'No se pudieron detectar las redes');
+    } finally {
+      setLoadingNetworks(false);
+    }
+  };
+
   useEffect(() => {
     if (!daemonRunning) return;
     const i = setInterval(async () => {
@@ -118,20 +144,18 @@ export default function KrakenPanel() {
   }, [daemonRunning, loadResults]);
 
   const handleScan = async () => {
-    if (!targetList.length) {
-      setError('Indica al menos una IP o subred autorizada. Puedes separar varias con coma, espacio o salto de línea.');
-      return;
-    }
     setScanning(true);
     setError(null);
     setStatusMsg(null);
     setScanResult(null);
     try {
+      const selectedTargets = targetList.length ? targetList : await getLocalTargets();
+      if (!targetList.length) setTarget(selectedTargets.join('\n'));
       let hostsFound = 0;
       let exploitsFound = 0;
       const failures: string[] = [];
-      for (const [index, selectedTarget] of targetList.entries()) {
-        setStatusMsg(`Escaneando ${index + 1}/${targetList.length}: ${selectedTarget}`);
+      for (const [index, selectedTarget] of selectedTargets.entries()) {
+        setStatusMsg(`Escaneando ${index + 1}/${selectedTargets.length}: ${selectedTarget}`);
         const res = await fetch(`/api/kraken/scan?target=${encodeURIComponent(selectedTarget)}`, {
           headers: krakenHeaders(),
         });
@@ -145,7 +169,7 @@ export default function KrakenPanel() {
       }
       setScanResult({ hosts_found: hostsFound, exploits_found: exploitsFound });
       setStatusMsg(
-        `Escaneo completado en ${targetList.length} objetivo(s): ${hostsFound} hosts, ${exploitsFound} exploits`,
+        `Escaneo completado en ${selectedTargets.length} red(es): ${hostsFound} hosts, ${exploitsFound} exploits`,
       );
       if (failures.length) setError(`Fallos parciales: ${failures.join(' · ')}`);
       await loadResults();
@@ -168,21 +192,15 @@ export default function KrakenPanel() {
           setStatusMsg('Daemon detenido');
         }
       } else {
-        if (!targetList.length) {
-          setError('Indica al menos una IP o subred antes de iniciar el daemon.');
-          return;
-        }
-        const params = new URLSearchParams({
-          targets: targetList.join(','),
-          interval: '3600',
-        });
-        const res = await fetch(`/api/kraken/daemon/start?target=${encodeURIComponent(target.trim())}&interval=3600`, {
+        const selectedTargets = targetList.length ? targetList : await getLocalTargets();
+        if (!targetList.length) setTarget(selectedTargets.join('\n'));
+        const res = await fetch(`/api/kraken/daemon/start?targets=${encodeURIComponent(selectedTargets.join(','))}&interval=3600`, {
           method: 'POST', headers: krakenHeaders(),
         });
         const data = await res.json();
         if (res.ok) {
           setDaemonRunning(true);
-          setStatusMsg(`Daemon iniciado — ${targetList.length} objetivo(s), intervalo: 60 min`);
+          setStatusMsg(`Daemon iniciado — ${selectedTargets.length} red(es), intervalo: 60 min`);
         } else {
           setError(data.error || `HTTP ${res.status}`);
         }
@@ -214,18 +232,27 @@ export default function KrakenPanel() {
               value={target}
               onChange={e => setTarget(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !scanning && handleScan()}
-              placeholder="IPs/CIDRs autorizados; separa varias con coma, espacio o salto de línea"
+             placeholder="Vacío = escanear toda la red local; o escribe IPs/CIDRs privados"
               rows={2}
               className="w-full resize-y bg-[var(--ss-bg-3)] border border-[var(--ss-border)] rounded-md pl-8 pr-3 py-2 text-xs text-slate-200 font-mono outline-none focus:border-red-500/50 placeholder:text-slate-600"
             />
           </div>
           <button
             onClick={handleScan}
-            disabled={scanning || !target.trim()}
+            disabled={scanning || loadingNetworks}
             className="px-3 py-2 text-xs font-mono border border-red-500/40 text-red-300 rounded-md hover:bg-red-500/10 disabled:opacity-40 transition flex items-center gap-1.5 shrink-0"
           >
             {scanning ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />}
-            {scanning ? 'Scanning...' : 'Escanear'}
+            {scanning ? 'Scanning...' : targetList.length ? 'Escanear objetivos' : 'Escanear red local'}
+          </button>
+          <button
+            onClick={handleDetectNetworks}
+            disabled={scanning || loadingNetworks}
+            title="Detecta redes privadas disponibles; no inicia un escaneo"
+            className="px-3 py-2 text-xs font-mono border border-cyan-500/40 text-cyan-300 rounded-md hover:bg-cyan-500/10 disabled:opacity-40 transition flex items-center gap-1.5 shrink-0"
+          >
+            <RefreshCw size={14} className={loadingNetworks ? 'animate-spin' : ''} />
+            Redes
           </button>
           <button
             onClick={handleDaemonToggle}

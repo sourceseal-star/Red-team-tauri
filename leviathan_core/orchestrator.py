@@ -33,6 +33,7 @@ TCP connect + banner grabbing que ya estaba probada).
 import asyncio
 import ipaddress
 import json
+import shutil
 import sqlite3
 import time
 import uuid
@@ -73,6 +74,33 @@ class CommandRequest(BaseModel):
     chunk_size: int = Field(default=10, ge=1, le=50)
     sleep_between: float = Field(default=0.5, ge=0.0, le=10.0)
     origin: str = Field(default="local", description="Quién ordenó: replit/local/etc")
+
+
+AUTHORIZED_NETWORKS = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+)
+
+
+def _normalize_authorized_targets(targets: List[str]) -> List[str]:
+    """Normalize explicit private networks without inventing a default target."""
+    normalized: List[str] = []
+    for raw_target in targets:
+        try:
+            network = ipaddress.ip_network(str(raw_target).strip(), strict=False)
+        except ValueError as exc:
+            raise HTTPException(400, f"CIDR inválido: {raw_target}") from exc
+        if network.version != 4 or not any(
+            network.subnet_of(allowed) for allowed in AUTHORIZED_NETWORKS
+        ):
+            raise HTTPException(
+                400,
+                f"Red no autorizada: {raw_target}. Usa una subred privada RFC1918.",
+            )
+        value = str(network)
+        if value not in normalized:
+            normalized.append(value)
+    return normalized
 
 
 # ── 2. GESTOR DE TRABAJOS ────────────────────────────────────
@@ -136,9 +164,22 @@ async def _scan_chunk(ips: List[str], ports: List[int]) -> List[Dict]:
     lee la respuesta, clasifica por banner).
     """
     results: List[Dict] = []
-    context = {"ports": ports, "port_timeout": 0.4, "port_concurrency": 15}
+    context = {
+        "ports": ports,
+        "port_timeout": 0.4,
+        "port_concurrency": 15,
+        "max_concurrency": 15,
+        "timeout": 1,
+    }
+    # Ping primero permite registrar equipos que no exponen ningún puerto.
+    # Si el runtime no trae ping (común en algunos contenedores), se conserva
+    # el fallback TCP y solo se reportan equipos con puertos observables.
+    ping_available = shutil.which("ping") is not None
+    candidates = ips
+    if ping_available:
+        candidates = await _scanner._scan_active_ips(ips, context)
 
-    for ip in ips:
+    for ip in candidates:
         open_ports: List[int] = []
         services: List[Dict] = []
         try:
@@ -151,7 +192,7 @@ async def _scan_chunk(ips: List[str], ports: List[int]) -> List[Dict]:
         except Exception:
             continue  # host muerto a mitad de bloque — no aborta el job
 
-        if not open_ports:
+        if not open_ports and not ping_available:
             continue
 
         banners = {s.get("port"): s.get("banner", "") for s in services}
@@ -244,12 +285,11 @@ async def leviathan_command(req: CommandRequest, background_tasks: BackgroundTas
     if len(req.targets) > 8:
         raise HTTPException(400, "Máximo 8 subredes por job")
 
-    # Validar todos los CIDR ANTES de aceptar (falla rápido, sin job zombi)
-    for t in req.targets:
-        try:
-            ipaddress.ip_network(t, strict=False)
-        except ValueError:
-            raise HTTPException(400, f"CIDR inválido: {t}")
+    # Validar y normalizar todos los CIDR ANTES de aceptar (falla rápido,
+    # sin job zombi y sin permitir objetivos públicos por accidente).
+    req.targets = _normalize_authorized_targets(req.targets)
+    if not req.targets:
+        raise HTTPException(400, "Se requiere al menos un target CIDR privado")
 
     job_id = f"orch_{uuid.uuid4().hex[:8]}"
     JOBS[job_id] = {
