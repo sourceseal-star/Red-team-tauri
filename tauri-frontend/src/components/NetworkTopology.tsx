@@ -77,6 +77,8 @@ export default function NetworkTopology() {
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
   const [subnet, setSubnet] = useState('')
+  const [interfaces, setInterfaces] = useState<any[]>([])
+  const [selectedIface, setSelectedIface] = useState('')
   const [localIp, setLocalIp] = useState('')
   const [localHostname, setLocalHostname] = useState('')
   const [selectedHost, setSelectedHost] = useState<Host | null>(null)
@@ -103,7 +105,15 @@ export default function NetworkTopology() {
     return () => clearInterval(interval)
   }, [scanning])
 
-  useEffect(() => { loadCameras() }, [])
+  useEffect(() => {
+    loadCameras()
+    fetch('/api/network/interfaces', { headers: authHeadersGet() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setInterfaces((Array.isArray(data) ? data : []).filter((i: any) =>
+        i.is_up !== false && i.network_cidr && i.type_hint !== 'loopback' && i.type_hint !== 'error'
+      )))
+      .catch(() => {})
+  }, [])
 
   const loadCameras = async () => {
     try {
@@ -117,7 +127,8 @@ export default function NetworkTopology() {
     setScanning(true); setSelectedHost(null); setScanError(null)
     addLog('Iniciando escaneo de topologia...')
     try {
-      const r = await fetch('/api/scan/topology', { method: 'POST', headers: authHeaders() })
+      const query = selectedIface ? `?subnet=${encodeURIComponent(selectedIface)}` : ''
+      const r = await fetch(`/api/scan/topology${query}`, { method: 'POST', headers: authHeaders() })
       if (!r.ok) {
         const errData = await r.json().catch(() => ({}))
         const msg = errData.error || `HTTP ${r.status}: ${r.statusText}`
@@ -129,7 +140,8 @@ export default function NetworkTopology() {
       setLocalIp(data.local_ip || ''); setLocalHostname(data.local_hostname || '')
       addLog(`Topologia: ${data.hosts_up} hosts en ${data.subnet}`)
       addLog('Buscando camaras ONVIF/RTSP...')
-      const camRes = await fetch('/api/scan/cameras', { method: 'POST', headers: authHeaders() })
+      const camQuery = selectedIface ? `?subnet=${encodeURIComponent(selectedIface)}` : ''
+      const camRes = await fetch(`/api/scan/cameras${camQuery}`, { method: 'POST', headers: authHeaders() })
       const camData = await camRes.json()
       setCameras(camData.cameras || camData.results || [])
       addLog(`Camaras encontradas: ${camData.cameras?.length || camData.results?.length || 0}`)
@@ -140,19 +152,20 @@ export default function NetworkTopology() {
   const discoverAll = async () => {
     setScanning(true); addLog('Descubrimiento completo (ONVIF + SSDP + SNMP)...')
     try {
-      let net = subnet.split('.').slice(0, 3).join('.')
+      let net = subnet
       if (!net) {
         try {
           const infoRes = await fetch('/api/network/info', { headers: authHeadersGet() })
           const info = await infoRes.json()
-          net = (info.subnet || '').split('/')[0].split('.').slice(0, 3).join('.') || '192.168.1'
+          net = info.subnet || ''
           setSubnet(info.subnet || '')
-        } catch { net = '192.168.1' }
+        } catch { net = '' }
       }
-      const r = await fetch('/api/enhanced/discover/all', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ network: net }) })
+      const query = net ? `?subnet=${encodeURIComponent(net)}` : ''
+      const r = await fetch(`/api/scan/cameras${query}`, { method: 'POST', headers: authHeaders() })
       const data = await r.json()
-      setCameras(data.cameras || [])
-      addLog(`ONVIF: ${data.onvif_found || 0} | SSDP: ${data.ssdp_found || 0} | Camaras: ${data.cameras?.length || 0}`)
+      setCameras(data.cameras || data.results || [])
+      addLog(`Camaras: ${data.cameras_found || data.count || data.results?.length || 0}`)
     } catch (e: any) { addLog(`Error: ${e.message}`) }
     finally { setScanning(false) }
   }
@@ -206,6 +219,19 @@ export default function NetworkTopology() {
             <button onClick={discoverAll} disabled={scanning} className="px-3 py-1.5 bg-red-600/80 hover:bg-red-500 text-white text-xs rounded-lg flex items-center gap-1.5 disabled:opacity-50 transition-colors">
               <Camera size={12} /> Descubrir Camaras
             </button>
+          </div>
+          <div className="flex flex-wrap gap-2 items-center mt-3">
+            <span className="text-[10px] text-slate-500 uppercase">Red objetivo</span>
+            <select value={selectedIface} onChange={e => setSelectedIface(e.target.value)}
+              className="flex-1 min-w-[220px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300">
+              <option value="">Todas las LAN activas (auto)</option>
+              {interfaces.map((iface, i) => <option key={i} value={iface.network_cidr}>
+                {iface.name} — {iface.ip_address} [{iface.network_cidr}]
+              </option>)}
+            </select>
+            <input value={selectedIface} onChange={e => setSelectedIface(e.target.value)}
+              placeholder="CIDR autorizado"
+              className="w-44 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 font-mono" />
           </div>
         </div>
 
@@ -389,7 +415,7 @@ export default function NetworkTopology() {
                   {localHostname ? localHostname.toUpperCase() : 'ESTE DISPOSITIVO'}
                 </text>
                 <text x={MAP_W / 2} y={MAP_H / 2 + 50} textAnchor="middle" fill="#64748b" fontSize="9" fontFamily="monospace">
-                  {localIp || `${subnet || '192.168.1'}.x`}
+                  {localIp || subnet || 'LAN autodetectada'}
                 </text>
 
                 {/* Connection lines to center */}

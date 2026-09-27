@@ -1393,9 +1393,14 @@ async def integrated_health():
     }
 
 @app.get("/api/integrated/scan")
-async def integrated_scan(network: str = "192.168.1.0/24"):
+async def integrated_scan(network: str = ""):
     """Escaneo integrado: SEAL detecta dispositivos, ARTO analiza amenazas"""
     try:
+        network = network.strip() or subnet_from_iface()
+        parsed_network = ipaddress.ip_network(network, strict=False)
+        if not parsed_network.is_private or parsed_network.is_loopback:
+            return {"success": False, "error": "La red debe ser una LAN privada RFC1918"}
+        network = str(parsed_network)
         from seal.scanners.network_sweep_ultimate import discover_active_ips, scan_target
         active_ips = await discover_active_ips(network)
         results = []
@@ -2440,10 +2445,10 @@ async def list_network_interfaces(details: bool = Query(False)):
                 if not ip_cidr: continue
                 type_hint = "unknown"
                 if iface_name == "lo": type_hint = "loopback"
-                elif iface_name.startswith("wlan"): type_hint = "wifi"
-                elif iface_name.startswith("rmnet") or iface_name.startswith("ccmni"): type_hint = "mobile"
-                elif iface_name.startswith("eth"): type_hint = "ethernet"
-                elif iface_name.startswith("ap"): type_hint = "hotspot"
+                elif iface_name.startswith(("wlan", "wl")): type_hint = "wifi"
+                elif iface_name.startswith(("rmnet", "ccmni", "wwan")): type_hint = "mobile"
+                elif iface_name.startswith(("eth", "en")): type_hint = "ethernet"
+                elif iface_name.startswith(("ap", "wlan_ap")): type_hint = "hotspot"
                 try:
                     net = _ipa.ip_network(ip_cidr, strict=False)
                     rfc1918 = (
@@ -2459,6 +2464,43 @@ async def list_network_interfaces(details: bool = Query(False)):
                 except ValueError: continue
     except Exception as e:
         interfaces.append({"name": "error", "ip_address": "", "network_cidr": "", "is_up": False, "type_hint": "error", "error": str(e)})
+    # Fallback absoluto: usar psutil si `ip`/`ifconfig` no están disponibles.
+    # Esto evita que el selector desaparezca en instalaciones mínimas.
+    if not any(i.get("network_cidr") and i.get("type_hint") not in ("loopback", "error")
+               for i in interfaces) and HAS_PSUTIL:
+        try:
+            for iface_name, addrs in psutil.net_if_addrs().items():
+                for addr in addrs:
+                    if addr.family != socket.AF_INET or not addr.address or addr.address.startswith("127."):
+                        continue
+                    try:
+                        network = ipaddress.ip_network(
+                            f"{addr.address}/{addr.netmask or '255.255.255.0'}",
+                            strict=False,
+                        )
+                    except ValueError:
+                        continue
+                    if not network.is_private:
+                        continue
+                    hint = (
+                        "wifi" if iface_name.startswith(("wlan", "wl")) else
+                        "mobile" if iface_name.startswith(("rmnet", "ccmni", "wwan")) else
+                        "ethernet" if iface_name.startswith(("eth", "en")) else
+                        "unknown"
+                    )
+                    interfaces.append({
+                        "name": iface_name,
+                        "ip_address": addr.address,
+                        "network_cidr": str(network),
+                        "prefix": network.prefixlen,
+                        "is_up": True,
+                        "type_hint": hint,
+                        "is_physical": True,
+                        "source": "psutil",
+                    })
+        except Exception as exc:
+            print(f"[interfaces] fallback psutil falló: {exc!r}", flush=True)
+
     # Fallback absoluto: usar subnet_from_iface.
     # FIX 2026-09-24: esto corría SIN try/except — si subnet_from_iface()
     # lanzaba (p. ej. sin `ip`, `ifconfig` ni psutil en Termux), el endpoint
@@ -3286,7 +3328,7 @@ async def iot_scan_network(body: dict = Body(...)):
     import ipaddress as _ipa
     cidr = str(body.get("cidr", "")).strip()
     if not cidr:
-        return JSONResponse({"error": "cidr requerido (ej: 192.168.1.0/24)"}, status_code=400)
+        return JSONResponse({"error": "cidr privado requerido (ej: 10.0.0.0/24)"}, status_code=400)
     try:
         net = _ipa.ip_network(cidr, strict=False)
     except Exception:
@@ -3704,7 +3746,7 @@ async def iot_auto_access_batch(body: dict = Body(...)):
     import ipaddress as _ipa
     import httpx
 
-    cidr = str(body.get("cidr", "192.168.1.0/24")).strip()
+    cidr = str(body.get("cidr", "")).strip() or subnet_from_iface()
     try:
         net = _ipa.ip_network(cidr, strict=False)
     except Exception:

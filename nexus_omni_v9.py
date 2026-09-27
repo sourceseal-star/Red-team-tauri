@@ -700,11 +700,12 @@ class AdaptiveScanner:
         return "Unknown"
 
     async def run_discovery(self, network_cidr: str):
+        network_cidr = resolve_scan_network(network_cidr)
         self.scanning = True
         self.last_activity = time.time()
         print(f"🧠 NEXUS OMNI iniciado en {network_cidr} (Modo: {self.mode.upper()})")
 
-        my_ip = "192.168.1.50"
+        my_ip = ""
         try:
             res = subprocess.run(["ip", "route"], capture_output=True, text=True, timeout=1)
             for line in res.stdout.split('\n'):
@@ -715,7 +716,7 @@ class AdaptiveScanner:
         arp_table = _get_arp_table(force=True)
 
         net = ipaddress.ip_network(network_cidr, strict=False)
-        targets = [str(ip) for ip in net.hosts() if str(ip) != my_ip]
+        targets = [str(ip) for ip in net.hosts() if not my_ip or str(ip) != my_ip]
         if self.mode == "passive": targets = targets[:10]
 
         tasks = [self.scan_host(ip, arp_table) for ip in targets]
@@ -731,13 +732,69 @@ class AdaptiveScanner:
 
 scanner = AdaptiveScanner()
 
+def _local_private_networks() -> list[str]:
+    """Return private IPv4 LANs visible from this process."""
+    networks = []
+    try:
+        result = subprocess.run(
+            ["ip", "-o", "-4", "addr", "show"],
+            capture_output=True, text=True, timeout=3,
+        )
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            cidr = next((part for part in parts if "/" in part and "." in part), "")
+            if not cidr:
+                continue
+            try:
+                network = ipaddress.ip_network(cidr, strict=False)
+                if network.is_private and not network.is_loopback:
+                    value = str(network)
+                    if value not in networks:
+                        networks.append(value)
+            except ValueError:
+                continue
+    except Exception:
+        pass
+    if networks:
+        return networks
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(("8.8.8.8", 80))
+        local_ip = probe.getsockname()[0]
+        probe.close()
+        network = ipaddress.ip_network(f"{local_ip}/24", strict=False)
+        if network.is_private and not network.is_loopback:
+            return [str(network)]
+    except Exception:
+        pass
+    return []
+
+
+def resolve_scan_network(value: str = "") -> str:
+    """Resolve an explicit CIDR or the current private LAN."""
+    candidate = str(value or "").strip()
+    if candidate:
+        try:
+            network = ipaddress.ip_network(candidate, strict=False)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"Red inválida: {exc}") from exc
+        if not network.is_private or network.is_loopback:
+            raise HTTPException(status_code=400, detail="La red debe ser una LAN privada RFC1918")
+        return str(network)
+    detected = _local_private_networks()
+    if detected:
+        return detected[0]
+    raise HTTPException(status_code=503, detail="No se detectó una LAN privada activa")
+
 @app.on_event("startup")
 async def start_scanner_watchdog():
     scanner.start_watchdog()
     # Arrancar loop de autoscan si nexus_autoscan está disponible
-    if nas is not None:
+    if nas is not None and NEXUS_SCAN_TARGET:
         threading.Thread(target=nas.autoscan_loop, args=(NEXUS_SCAN_TARGET, 600), daemon=True).start()
         print(f"[NEXUS] Autoscan loop iniciado — target={NEXUS_SCAN_TARGET}, interval=600s", flush=True)
+    elif nas is not None:
+        print("[NEXUS] Autoscan en espera: se resolverá la LAN al solicitar un escaneo", flush=True)
 
 @app.on_event("shutdown")
 async def stop_scanner_watchdog():
@@ -758,7 +815,8 @@ async def root(credentials: HTTPBasicCredentials = Depends(verify_auth)):
     return FileResponse("nexus_ui.html")
 
 @app.post("/api/scan")
-async def trigger_scan(credentials: HTTPBasicCredentials = Depends(verify_auth), network: str = "192.168.1.0/24"):
+async def trigger_scan(credentials: HTTPBasicCredentials = Depends(verify_auth), network: Optional[str] = None):
+    network = resolve_scan_network(network or "")
     if scanner.scanning: return {"status": "running"}
     asyncio.create_task(scanner.run_discovery(network))
     return {"status": "started", "mode": scanner.mode}
@@ -806,7 +864,7 @@ async def get_state(credentials: HTTPBasicCredentials = Depends(verify_auth)):
 # ============================================================
 # 3b. NEXUS AUTOSCAN — escaneo automático + mapeo + lista detallada
 # ============================================================
-NEXUS_SCAN_TARGET = os.environ.get("NEXUS_SCAN_TARGET", "192.168.1.0/24")
+NEXUS_SCAN_TARGET = os.environ.get("NEXUS_SCAN_TARGET", "").strip()
 
 @app.get("/api/nexus/hosts")
 async def nexus_hosts(credentials: HTTPBasicCredentials = Depends(verify_auth)):
@@ -820,10 +878,11 @@ async def nexus_scan_now(credentials: HTTPBasicCredentials = Depends(verify_auth
     """Lanza un escaneo inmediato del target configurado."""
     if nas is None:
         raise HTTPException(status_code=503, detail="nexus_autoscan no disponible")
+    target = resolve_scan_network(NEXUS_SCAN_TARGET)
     if nas.STATE.get("running"):
-        return {"status": "already_running", "target": NEXUS_SCAN_TARGET}
-    threading.Thread(target=nas.scan, args=(NEXUS_SCAN_TARGET,), daemon=True).start()
-    return {"status": "scan_started", "target": NEXUS_SCAN_TARGET}
+        return {"status": "already_running", "target": target}
+    threading.Thread(target=nas.scan, args=(target,), daemon=True).start()
+    return {"status": "scan_started", "target": target}
 
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):

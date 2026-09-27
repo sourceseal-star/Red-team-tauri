@@ -103,13 +103,12 @@ export default function NetworkMapPanel() {
           <h2 className="text-lg font-bold text-white flex items-center gap-2"><MapPin size={18} className="text-cyan-400 shrink-0" /> <span className="truncate">Mapa de Red</span></h2>
           <p className="text-xs text-slate-500">Descubrimiento ARP + TCP scan (sin root)</p>
         </div>
-        <button onClick={() => { discover(); scanWifi() }} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs font-bold text-white flex items-center gap-1 whitespace-nowrap">
+        <button onClick={() => { selectedIface ? discoverWithSubnet(selectedIface) : discover(); scanWifi() }} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs font-bold text-white flex items-center gap-1 whitespace-nowrap">
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Re-escanear
         </button>
       </div>
 
-      {interfaces.length > 0 && (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
           <h3 className="text-sm font-bold text-cyan-400 mb-2 flex items-center gap-2"><Radar size={14} /> Selector de Red</h3>
           <div className="flex gap-2 flex-wrap sm:flex-nowrap min-w-0">
             <select value={selectedIface} onChange={(e) => setSelectedIface(e.target.value)}
@@ -126,6 +125,11 @@ export default function NetworkMapPanel() {
               Escanear
             </button>
           </div>
+          <div className="flex gap-2 mt-2">
+            <input value={selectedIface} onChange={e => setSelectedIface(e.target.value)}
+              placeholder="o escribe una LAN autorizada, ej. 10.0.0.0/24"
+              className="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs text-white font-mono" />
+          </div>
           {netInfo && (
             <div className="mt-2 flex items-center gap-4 text-xs">
               <span className="text-slate-500">IP: </span><span className="text-green-400 font-mono">{netInfo.local_ip || '---'}</span>
@@ -133,7 +137,6 @@ export default function NetworkMapPanel() {
             </div>
           )}
         </div>
-      )}
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-2 text-center"><p className="text-lg font-bold text-white">{hosts.length}</p><p className="text-[9px] text-slate-500 uppercase">Dispositivos</p></div>
