@@ -1,6 +1,6 @@
 {
   "name": "Dahua Camera Hunt",
-  "description": "Detectar y explotar cámaras Dahua — credenciales débiles + RTSP",
+  "description": "Auditar cámaras Dahua — exposición de servicios y RTSP",
   "target_type": "camera",
   "vendor": "Dahua",
   "steps": [

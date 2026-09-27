@@ -23,6 +23,10 @@ import httpx
 # ─── Config ──────────────────────────────────────────────
 BACKEND_API = os.environ.get("BACKEND_API", "http://localhost:8001")
 MASTER_PORT = int(os.environ.get("MASTER_PORT", "8002"))
+PHANTOM_QUEUE_DB = os.environ.get(
+    "PHANTOM_QUEUE_DB",
+    str(Path(__file__).parent / "phantom_queue.db"),
+)
 API_KEY = os.environ.get("REDTEAM_API_KEY", "")
 HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
 
@@ -33,7 +37,7 @@ logger = logging.getLogger("phantom.master")
 sys.path.insert(0, str(Path(__file__).parent))
 from phantom_queue import PhantomQueue
 
-queue = PhantomQueue(db_path=str(Path(__file__).parent / "phantom_queue.db"))
+queue = PhantomQueue(db_path=PHANTOM_QUEUE_DB)
 
 # ─── App ─────────────────────────────────────────────────
 app = FastAPI(title="GHOST HUNTER v3.0 PHANTOM — Master", version="3.0")
@@ -56,6 +60,12 @@ class ConnectionManager:
         self.connections: Dict[str, WebSocket] = {}
 
     async def connect(self, ws: WebSocket, node_id: str):
+        previous = self.connections.get(node_id)
+        if previous and previous is not ws:
+            try:
+                await previous.close(code=4001, reason="Replaced by a newer connection")
+            except Exception:
+                pass
         self.connections[node_id] = ws
         active_nodes[node_id] = {
             "status": "idle",
@@ -65,18 +75,23 @@ class ConnectionManager:
         }
         logger.info(f"Nodo {node_id} conectado ({len(active_nodes)} activos)")
 
-    def disconnect(self, node_id: str):
+    def disconnect(self, node_id: str, ws: WebSocket | None = None) -> bool:
+        if ws is not None and self.connections.get(node_id) is not ws:
+            return False
         self.connections.pop(node_id, None)
         active_nodes.pop(node_id, None)
         logger.info(f"Nodo {node_id} desconectado")
+        return True
 
-    async def send_to_node(self, node_id: str, message: dict):
+    async def send_to_node(self, node_id: str, message: dict) -> bool:
         ws = self.connections.get(node_id)
         if ws:
             try:
                 await ws.send_json(message)
+                return True
             except Exception:
                 self.disconnect(node_id)
+        return False
 
     async def broadcast(self, message: dict, exclude: str = None):
         for nid in list(self.connections.keys()):
@@ -86,6 +101,7 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+assignment_lock = asyncio.Lock()
 
 
 # ─── Models ──────────────────────────────────────────────
@@ -121,10 +137,7 @@ async def node_ws(websocket: WebSocket):
         await manager.connect(websocket, node_id)
         active_nodes[node_id]["capabilities"] = data.get("capabilities", [])
 
-        # Enviar tareas pendientes
-        for tid, task in pending_tasks.items():
-            if task.get("assigned_to") is None:
-                await manager.send_to_node(node_id, {"type": "task", "task": task})
+        await assign_pending_tasks()
 
         while True:
             data = await websocket.receive_json()
@@ -138,25 +151,38 @@ async def node_ws(websocket: WebSocket):
                 tid = data.get("task_id")
                 if tid in pending_tasks:
                     updates = data.get("updates", {})
+                    if not isinstance(updates, dict):
+                        continue
                     pending_tasks[tid].update(updates)
                     queue.update(tid, updates)
-                    if updates.get("status") == "completed":
+                    if updates.get("status") in {"completed", "failed"}:
                         completed_tasks[tid] = pending_tasks.pop(tid)
-                        active_nodes[node_id]["tasks_completed"] += 1
-                        active_nodes[node_id]["status"] = "idle"
-                        logger.info(f"Tarea {tid} completada por {node_id}")
+                        if node_id in active_nodes:
+                            if updates.get("status") == "completed":
+                                active_nodes[node_id]["tasks_completed"] += 1
+                            active_nodes[node_id]["status"] = "idle"
+                        logger.info(f"Tarea {tid} {updates.get('status')} por {node_id}")
+                        await assign_pending_tasks()
 
             elif data.get("type") == "result":
                 tid = data.get("task_id")
                 result = data.get("result", {})
+                if not tid or not isinstance(result, dict):
+                    continue
                 queue.store_result(tid, result)
                 # Reportar al backend si es crítico
                 if result.get("severity") in ("critical", "high"):
                     await _report_to_backend(result)
 
     except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.exception("Error en la sesión WebSocket del nodo %s", node_id or "?")
+    finally:
         if node_id:
-            manager.disconnect(node_id)
+            if manager.disconnect(node_id, websocket):
+                _requeue_node_tasks(node_id)
+                await assign_pending_tasks()
 
 
 async def _report_to_backend(result: dict):
@@ -189,9 +215,53 @@ def _queue_for_retry(result: dict):
     retry_file = Path(__file__).parent / "phantom_retry.json"
     retries = []
     if retry_file.exists():
-        retries = json.loads(retry_file.read_text())
+        try:
+            loaded = json.loads(retry_file.read_text(encoding="utf-8"))
+            retries = loaded if isinstance(loaded, list) else []
+        except (OSError, json.JSONDecodeError):
+            logger.warning("phantom_retry.json inválido; se inicia una cola nueva")
     retries.append(result)
-    retry_file.write_text(json.dumps(retries, indent=2))
+    temp_file = retry_file.with_suffix(".json.tmp")
+    temp_file.write_text(json.dumps(retries, indent=2, ensure_ascii=False), encoding="utf-8")
+    temp_file.replace(retry_file)
+
+
+def _restore_pending_tasks() -> None:
+    """Recupera tareas no terminales de la cola persistente tras un reinicio."""
+    recoverable = {"queued", "assigned", "running", "processing"}
+    for stored in queue.get_all_tasks():
+        task_id = stored.get("id")
+        if not task_id or stored.get("status") not in recoverable:
+            continue
+        task = dict(stored)
+        task.update({"status": "queued", "assigned_to": None})
+        pending_tasks[task_id] = task
+        queue.update(task_id, {"status": "queued", "assigned_to": None})
+
+
+def _requeue_node_tasks(node_id: str) -> None:
+    """Devuelve a cola las tareas que perdió un nodo desconectado."""
+    for task in pending_tasks.values():
+        if task.get("assigned_to") == node_id:
+            task.update({"status": "queued", "assigned_to": None})
+            queue.update(task["id"], {"status": "queued", "assigned_to": None})
+
+
+async def assign_pending_tasks() -> None:
+    """Asigna tareas pendientes sin duplicarlas durante reconexiones."""
+    async with assignment_lock:
+        for task_id in list(pending_tasks):
+            task = pending_tasks.get(task_id)
+            if task and task.get("assigned_to") is None:
+                await _assign_task(task_id)
+
+
+@app.on_event("startup")
+async def startup():
+    _restore_pending_tasks()
+    await assign_pending_tasks()
+    if pending_tasks:
+        logger.info("Tareas recuperadas de la cola: %s", len(pending_tasks))
 
 
 @app.post("/api/nodes/register")
@@ -204,6 +274,7 @@ async def register_node_http(node: NodeRegister):
             "tasks_completed": 0,
         }
         logger.info(f"Nodo {node.node_id} registrado (HTTP)")
+    await assign_pending_tasks()
     return {"status": "registered", "node_id": node.node_id}
 
 
@@ -223,7 +294,7 @@ async def start_hunt(req: HuntRequest, bg: BackgroundTasks):
     }
     queue.enqueue(task)
     pending_tasks[task_id] = task
-    bg.add_task(_assign_task, task_id)
+    bg.add_task(assign_pending_tasks)
     return {"status": "queued", "task_id": task_id, "message": f"Caza {task_id} encolada"}
 
 
@@ -239,12 +310,17 @@ async def _assign_task(task_id: str):
             task["assigned_at"] = datetime.utcnow().isoformat()
             pending_tasks[task_id] = task
             queue.update(task_id, task)
-            await manager.send_to_node(node_id, {"type": "task", "task": task})
+            sent = await manager.send_to_node(node_id, {"type": "task", "task": task})
+            if not sent or node_id not in active_nodes:
+                task.update({"status": "queued", "assigned_to": None})
+                queue.update(task_id, {"status": "queued", "assigned_to": None})
+                return False
             active_nodes[node_id]["status"] = "busy"
             logger.info(f"Tarea {task_id} → nodo {node_id}")
-            return
+            return True
 
     logger.info(f"Tarea {task_id} en cola — sin nodos disponibles")
+    return False
 
 
 @app.get("/api/tasks/{task_id}")
@@ -264,6 +340,19 @@ async def status():
         "completed_tasks": len(completed_tasks),
         "queue_size": len(queue.get_all_tasks()),
         "backend_api": BACKEND_API,
+        "ready": True,
+        "queue_backend": "redis" if queue.use_redis else "sqlite" if queue.use_sqlite else "json",
+    }
+
+
+@app.get("/api/health")
+async def health():
+    return {
+        "status": "ok",
+        "service": "ghost_hunter_phantom",
+        "ready": True,
+        "active_nodes": len(active_nodes),
+        "pending_tasks": len(pending_tasks),
     }
 
 
@@ -285,4 +374,9 @@ async def shutdown():
 if __name__ == "__main__":
     logger.info(f"GHOST HUNTER v3.0 PHANTOM — Master en :{MASTER_PORT}")
     logger.info(f"Backend API: {BACKEND_API}")
-    uvicorn.run(app, host="0.0.0.0", port=MASTER_PORT, log_level="info")
+    uvicorn.run(
+        app,
+        host=os.environ.get("PHANTOM_HOST", "127.0.0.1"),
+        port=MASTER_PORT,
+        log_level="info",
+    )

@@ -227,7 +227,7 @@ def _guess_vendor(r: dict) -> str:
 
 
 # ─── Task Executor ───────────────────────────────────────
-async def execute_task(task: Dict, master_ws=None) -> Dict:
+async def _execute_task(task: Dict, master_ws=None) -> Dict:
     """Ejecuta una tarea completa siguiendo el playbook"""
     task_id = task["id"]
     playbook = playbooks.get(task.get("playbook", "generic"))
@@ -275,7 +275,11 @@ async def execute_task(task: Dict, master_ws=None) -> Dict:
                 "timestamp": datetime.utcnow().isoformat(),
             }
             if master_ws:
-                await master_ws.send_json({"type": "result", "task_id": task_id, "result": report})
+                await _send_ws_json(master_ws, {
+                    "type": "result",
+                    "task_id": task_id,
+                    "result": report,
+                })
 
     # Notificar finalización
     if master_ws:
@@ -289,11 +293,40 @@ async def execute_task(task: Dict, master_ws=None) -> Dict:
     return {"task_id": task_id, "results": results}
 
 
+async def execute_task(task: Dict, master_ws=None) -> Dict:
+    """Ejecuta una tarea y nunca deja al Master sin estado terminal."""
+    try:
+        return await _execute_task(task, master_ws)
+    except Exception as exc:
+        task_id = task.get("id", "?")
+        logger.exception("Tarea %s falló", task_id)
+        if master_ws:
+            await _send_update(master_ws, task_id, {
+                "status": "failed",
+                "error": str(exc)[:500],
+                "completed_at": datetime.utcnow().isoformat(),
+            })
+        return {"task_id": task_id, "status": "failed", "error": str(exc)[:500]}
+
+
 async def _send_update(ws, task_id: str, updates: Dict):
     try:
-        await ws.send_json({"type": "task_update", "task_id": task_id, "updates": updates})
+        await _send_ws_json(ws, {
+            "type": "task_update",
+            "task_id": task_id,
+            "updates": updates,
+        })
     except Exception as e:
         logger.error(f"Error enviando update: {e}")
+
+
+async def _send_ws_json(ws, payload: Dict):
+    """Envía JSON tanto con Starlette WebSocket como con websockets.client."""
+    send_json = getattr(ws, "send_json", None)
+    if callable(send_json):
+        await send_json(payload)
+    else:
+        await ws.send(json.dumps(payload))
 
 
 # ─── HTTP fallback ────────────────────────────────────────

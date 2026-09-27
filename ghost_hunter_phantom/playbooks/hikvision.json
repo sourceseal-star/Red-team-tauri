@@ -1,6 +1,6 @@
 {
   "name": "Hikvision Camera Hunt",
-  "description": "Detectar y explotar cámaras Hikvision — credenciales débiles + RTSP",
+  "description": "Auditar cámaras Hikvision — exposición de servicios y RTSP",
   "target_type": "camera",
   "vendor": "Hikvision",
   "steps": [

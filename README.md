@@ -99,7 +99,9 @@ Todos requieren `X-Api-Key` con el valor de `REDTEAM_API_KEY`.
 
 ## GHOST HUNTER PHANTOM
 
-Sistema distribuido de caza de dispositivos IoT y cámaras.
+Sistema distribuido de reconocimiento autorizado de dispositivos IoT y cámaras.
+PHANTOM realiza consultas OSINT, probes de servicios y geolocalización; no hace
+fuerza bruta ni intenta autenticarse contra los objetivos.
 
 ```bash
 # Lanzar caza
@@ -109,6 +111,13 @@ curl -X POST http://localhost:8002/api/hunt/start \
 ```
 
 Ver hallazgos: `GET /api/phantom/alerts` en el Dashboard.
+
+Estado del Master:
+
+```bash
+curl http://127.0.0.1:8002/api/health
+curl http://127.0.0.1:8002/api/status
+```
 
 ## Sol — Cerebro accesible desde el dashboard
 

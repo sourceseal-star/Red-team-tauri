@@ -14,6 +14,13 @@ BACKEND_API="${BACKEND_API:-http://localhost:8001}"
 MASTER_PORT="${MASTER_PORT:-8002}"
 NUM_NODES="${NUM_NODES:-1}"
 MODE="${1:-all}"  # master | node | all
+MASTER_PID=""
+NODE_PIDS=()
+CLEANED=0
+
+case "$NUM_NODES" in
+    ''|*[!0-9]*) echo "[ghost] NUM_NODES debe ser un entero no negativo" >&2; exit 1 ;;
+esac
 
 echo ""
 echo "╔═══════════════════════════════════════════════════════╗"
@@ -35,7 +42,10 @@ check_deps() {
     done
     if [ ${#missing[@]} -gt 0 ]; then
         echo "[ghost] Instalando dependencias: ${missing[*]}"
-        pip install "${missing[@]}" 2>&1 | tail -5
+        python3 -m pip install "${missing[@]}" 2>&1 | tail -5 || {
+            echo "[ghost] No se pudieron instalar las dependencias: ${missing[*]}" >&2
+            return 1
+        }
     fi
 }
 
@@ -53,6 +63,10 @@ check_backend() {
 
 # ─── Arrancar Master ────────────────────────────────────
 start_master() {
+    if curl -fsS -m 2 "http://127.0.0.1:$MASTER_PORT/api/health" >/dev/null 2>&1; then
+        echo "[ghost] Ya hay un Master respondiendo en :$MASTER_PORT; no se inicia otro." >&2
+        return 1
+    fi
     echo "[ghost] Arrancando Master en :$MASTER_PORT..."
     export BACKEND_API="$BACKEND_API"
     export MASTER_PORT="$MASTER_PORT"
@@ -83,29 +97,41 @@ start_nodes() {
         MASTER_URL="http://localhost:$MASTER_PORT" \
         BACKEND_API="$BACKEND_API" \
         python3 node.py &
-        echo "[ghost] Nodo $i PID: $!"
+        NODE_PIDS+=("$!")
+        echo "[ghost] Nodo $i PID: ${NODE_PIDS[-1]}"
         sleep 0.5
     done
 }
 
 # ─── Cleanup ────────────────────────────────────────────
 cleanup() {
+    [ "$CLEANED" -eq 1 ] && return
+    CLEANED=1
     echo ""
     echo "[ghost] Apagando GHOST HUNTER PHANTOM..."
-    pkill -f "ghost_hunter_phantom/master.py" 2>/dev/null || true
-    pkill -f "ghost_hunter_phantom/node.py" 2>/dev/null || true
+    if [ -n "$MASTER_PID" ]; then
+        kill "$MASTER_PID" 2>/dev/null || true
+    fi
+    for pid in "${NODE_PIDS[@]}"; do
+        kill "$pid" 2>/dev/null || true
+    done
+    wait "$MASTER_PID" 2>/dev/null || true
+    for pid in "${NODE_PIDS[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
     echo "[ghost] ✅ Apagado completo"
-    exit 0
 }
-trap cleanup SIGTERM SIGINT
+trap cleanup EXIT
+trap 'exit 130' SIGINT
+trap 'exit 143' SIGTERM
 
 # ─── Ejecución ───────────────────────────────────────────
-check_deps
+check_deps || exit 1
 check_backend
 
 case "$MODE" in
     master)
-        start_master
+        start_master || exit 1
         echo ""
         echo "[ghost] Master corriendo. Presiona Ctrl+C para detener."
         wait $MASTER_PID
@@ -118,7 +144,7 @@ case "$MODE" in
         python3 node.py
         ;;
     all)
-        start_master
+        start_master || exit 1
         start_nodes
         echo ""
         echo "╔═══════════════════════════════════════════════════════╗"

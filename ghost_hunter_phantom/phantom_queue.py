@@ -19,11 +19,11 @@ class PhantomQueue:
     """Cola persistente con degradación graceful"""
 
     def __init__(self, db_path: str = "phantom_queue.db"):
-        self.db_path = db_path
+        self.db_path = str(Path(db_path))
         self.redis_client = None
         self.use_redis = False
         self.use_sqlite = False
-        self.json_path = "phantom_queue.json"
+        self.json_path = str(Path(self.db_path).with_suffix(".json"))
         self._init_storage()
 
     def _init_storage(self):
@@ -187,10 +187,26 @@ class PhantomQueue:
         return []
 
     def get_all_tasks(self) -> List[Dict]:
+        if self.use_redis:
+            task_ids = self.redis_client.lrange("tasks:queue", 0, -1)
+            task_ids += self.redis_client.lrange("tasks:processing", 0, -1)
+            tasks = []
+            for task_id in dict.fromkeys(task_ids):
+                data = self.redis_client.hgetall(f"task:{task_id}")
+                if data:
+                    tasks.append({
+                        k: json.loads(v) if v and v.startswith(("{", "[")) else v
+                        for k, v in data.items()
+                    })
+            return tasks
         if self.use_sqlite:
             rows = self.conn.execute("SELECT data FROM tasks ORDER BY created_at DESC LIMIT 100").fetchall()
             return [json.loads(r["data"]) for r in rows]
-        return []
+        try:
+            data = json.loads(Path(self.json_path).read_text(encoding="utf-8"))
+            return data if isinstance(data, list) else []
+        except (OSError, json.JSONDecodeError):
+            return []
 
     def cleanup(self):
         if self.use_sqlite:
