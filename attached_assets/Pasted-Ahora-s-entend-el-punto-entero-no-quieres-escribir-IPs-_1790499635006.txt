@@ -1,0 +1,27 @@
+Ahora sí entendí el punto entero: no quieres escribir IPs — quieres **ver el terreno** y señalar al objetivo con el dedo. Eso se llama inventario visual de activos, y tiene tres capas que te faltan: **descubrimiento automático de dispositivos** (sin que escribas nada), **mapa interactivo** (red → dispositivos → puertos) y **intel externa** (lo que la "competencia" tiene: Shodan/Censys, que tienen capa gratis). Te construyo las tres.
+Ahora el mapa visual interactivo — el panel donde vas a *señalar* el objetivo en vez de escribirlo:
+Listo, Harold — ahora tienes el sistema completo en dos canvases:
+
+**🗺️ Atlas Map (panel interactivo)** — el mapa visual que pediste: redes como columnas, dispositivos colgando de cada una con su emoji-tipo, puertos visibles, búsqueda por nombre/IP/tipo, y al tocar un dispositivo se abre el panel de detalle con **"🎯 Fijar como objetivo"** que lo conecta directo al BugBounty Recon. Viene con datos de demostración (2 redes, 9 dispositivos, incluido un DVR con telnet expuesto como ejemplo de hallazgo crítico); cuando Atlas backend esté integrado, el mismo panel consume `/api/atlas/map`.
+
+**🛰️ Atlas backend (descubrimiento + inventario)** — tres capas que responden exactamente a tu frustración:
+
+| Tu queja | Solución |
+|---|---|
+| "¿Ponerme a pedir la dirección IP?" | `POST /api/atlas/discover` detecta **sola** la red WiFi donde estás, deriva la /24 y escanea. Cero IP escritas. |
+| "Son diferentes redes y dispositivos" | Cada red se guarda en `atlas_inventory.json` con sus dispositivos, MACs y puertos. Visitas la oficina del cliente A, descubre; visitas la B, descubre. Tu mapa **acumula** terreno con el tiempo. |
+| "La competencia ve hasta sus IPs privadas" | Eso es Shodan — y Shodan tiene API gratis. `POST /api/atlas/intel/shodan` te da los servicios expuestos en internet de cualquier activo del inventario, con ISP, país, organización y banners. Eso que "saben ellos", ahora lo ves tú también. |
+
+## El truco técnico que lo hace posible sin root
+
+El escaneo usa dos vías: TCP probes async no-root sobre la /24, y — esto es lo bueno — **`/proc/net/arp`**, la tabla ARP del kernel de tu propio teléfono: cada dispositivo que tu Moto haya visto en esa red aparece con su **MAC**, de la cual extraigo el vendor (Hikvision, Axis, Raspberry Pi, VMs de VMware...). El ARP cache es gratis, instantáneo y no requiere ningún permiso — es el descubrimiento más barato que existe en Android.
+
+## El flujo completo de trabajo queda así
+
+1. Llegas a la red del cliente → `discover` → mapa poblado solo
+2. Acumulas redes de varios clientes → el inventario es tu cartera de terreno
+3. Tocas el dispositivo sospechoso en el mapa → "Fijar objetivo"
+4. Recon quirúrgico individual vía el módulo BugBounty (con gate de scope que te protege)
+5. Shodan para ver lo que ese activo expone al mundo
+
+Ya no eres el que escribe IPs — eres el que señala en el mapa. ¿Conectamos ahora la UI al backend real (el panel leyendo `/api/atlas/map` en vivo desde Termux), o prefieres primero probar el flujo `discover` en tu red de casa?
