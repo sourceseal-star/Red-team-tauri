@@ -1,6 +1,44 @@
 #!/bin/bash
 # mesh/discovery.sh - Detección de Dispositivos para COM-LINK v3.0
 
+# El dashboard puede ejecutar este archivo directamente, sin pasar antes por
+# comlink.sh. En ese caso las funciones de core no existen todavía. Cargar
+# solo las dependencias necesarias aquí, sin duplicarlas cuando el archivo se
+# incluye desde comlink.sh.
+DISCOVERY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMLINK_DIR="$(cd "$DISCOVERY_DIR/.." && pwd)"
+: "${INSTALL_DIR:=$COMLINK_DIR}"
+: "${DATA_DIR:=$COMLINK_DIR/data}"
+: "${TEMP_DIR:=/tmp/comlink}"
+: "${LOG_DIR:=$DATA_DIR/logs}"
+mkdir -p "$DATA_DIR" "$LOG_DIR" "$TEMP_DIR"
+
+if ! declare -f info >/dev/null 2>&1; then
+    if [ -f "$COMLINK_DIR/core/logger.sh" ]; then
+        # shellcheck source=/dev/null
+        source "$COMLINK_DIR/core/logger.sh"
+    else
+        info() { printf '[INFO] %s\n' "$1"; }
+        warning() { printf '[WARN] %s\n' "$1" >&2; }
+        error() { printf '[ERROR] %s\n' "$1" >&2; }
+        success() { printf '[OK] %s\n' "$1"; }
+    fi
+fi
+
+if ! declare -f check_wifi >/dev/null 2>&1 \
+   && [ -f "$COMLINK_DIR/core/fallback.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$COMLINK_DIR/core/fallback.sh"
+fi
+
+if ! declare -f discover_devices >/dev/null 2>&1 \
+   && [ -f "$DISCOVERY_DIR/p2p_http.sh" ]; then
+    # list_known_devices usa el descubrimiento HTTP P2P cuando está
+    # disponible; cargarlo aquí hace que el modo directo sea coherente.
+    # shellcheck source=/dev/null
+    source "$DISCOVERY_DIR/p2p_http.sh"
+fi
+
 # ============================================================
 # FUNCIONES
 # ============================================================

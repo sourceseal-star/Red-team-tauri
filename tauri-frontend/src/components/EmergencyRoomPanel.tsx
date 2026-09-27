@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   AlertTriangle, Battery, CheckCircle2, Clock, Crosshair, MapPin,
-  Radio, RefreshCw, Send, Siren, Smartphone, Wifi, Zap
+  Radio, RefreshCw, Send, Siren, Smartphone, Wifi, Wrench, Zap
 } from 'lucide-react'
 
 type Channel = {
@@ -25,6 +25,20 @@ type QuickStatus = {
   environment: string
   queue_stats?: Record<string, number>
   last_emergency?: EmergencyReport | null
+}
+
+type DoctorChannel = Channel & {
+  verdict?: 'ready' | 'wakeable' | 'partial' | 'hardware_unavailable' | string
+  evidence?: Record<string, unknown>
+}
+
+type DoctorReport = {
+  ready_count: number
+  ready_channels: string[]
+  wakeable_channels?: string[]
+  channels: Record<string, DoctorChannel>
+  generated_at?: string
+  note?: string
 }
 
 function headers(json = false): Record<string, string> {
@@ -73,6 +87,11 @@ export default function EmergencyRoomPanel() {
   const [quickSendMsg, setQuickSendMsg] = useState('')
   const [quickSending, setQuickSending] = useState(false)
   const [quickResult, setQuickResult] = useState<any>(null)
+  const [doctor, setDoctor] = useState<DoctorReport | null>(null)
+  const [doctorLoading, setDoctorLoading] = useState(false)
+  const [doctorWaking, setDoctorWaking] = useState(false)
+  const [doctorResult, setDoctorResult] = useState<string | null>(null)
+  const [doctorStale, setDoctorStale] = useState(false)
 
   // FIX SEGURIDAD (2026-09-08): esta pantalla es de EMERGENCIA/SOS — no puede
   // quedarse pegada mostrando canales verdes viejos si el backend se cayó.
@@ -86,10 +105,11 @@ export default function EmergencyRoomPanel() {
   const fetchStatus = useCallback(async () => {
     setLoading(true)
     try {
-      const [statusRes, contactsRes, dataRes] = await Promise.all([
+      const [statusRes, contactsRes, dataRes, doctorRes] = await Promise.all([
         fetch('/api/commander/comlink/status', { headers: headers() }),
         fetch('/api/commander/comlink/contacts', { headers: headers() }),
         fetch('/api/commander/comlink/data', { headers: headers() }),
+        fetch('/api/doctor/status', { headers: headers() }),
       ])
       if (statusRes.ok) {
         const s = await statusRes.json()
@@ -109,13 +129,51 @@ export default function EmergencyRoomPanel() {
         const d = await dataRes.json()
         setLastEmergency(d.last_emergency || null)
       }
+      if (doctorRes.ok) {
+        setDoctor(await doctorRes.json())
+        setDoctorStale(false)
+      } else {
+        setDoctorStale(true)
+      }
     } catch {
       // Ni siquiera hubo respuesta de red — mismo tratamiento: marcar caído.
       setIsStale(true)
+      setDoctorStale(true)
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const runDoctor = async (wake = false) => {
+    if (wake) {
+      setDoctorWaking(true)
+      setDoctorResult(null)
+    } else {
+      setDoctorLoading(true)
+    }
+    try {
+      const response = await fetch(wake ? '/api/doctor/wake' : '/api/doctor/report', {
+        method: wake ? 'POST' : 'GET',
+        headers: headers(true),
+        ...(wake ? { body: JSON.stringify({ channels: ['mesh_wifi'], enable_wifi: true }) } : {}),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`)
+      setDoctor(payload.report || payload)
+      setDoctorStale(false)
+      setDoctorResult(
+        wake
+          ? payload.actions?.map((item: any) => `${item.channel}: ${item.detail}`).join(' · ') || 'Wake completado'
+          : 'Diagnóstico actualizado',
+      )
+    } catch (error: any) {
+      setDoctorStale(true)
+      setDoctorResult(error.message || 'No se pudo ejecutar el Channel Doctor')
+    } finally {
+      setDoctorLoading(false)
+      setDoctorWaking(false)
+    }
+  }
 
   useEffect(() => {
     fetchStatus()
@@ -265,6 +323,75 @@ export default function EmergencyRoomPanel() {
             )
           })}
         </div>
+      </Card>
+
+      {/* Channel Doctor — diagnóstico separado, sin activar transmisiones */}
+      <Card className={`border ${doctorStale ? 'border-red-500/30' : 'border-cyan-500/20'}`}>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <Wrench className="w-5 h-5 text-cyan-300" />
+            <div>
+              <h3 className="text-sm font-semibold text-cyan-200">Channel Doctor</h3>
+              <p className="text-[10px] text-slate-500">Diagnóstico real; no transmite ni activa SOS</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => runDoctor(false)}
+              disabled={doctorLoading || doctorWaking}
+              className="px-3 py-1.5 text-[11px] rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-50"
+            >
+              {doctorLoading ? 'Diagnosticando…' : 'Diagnosticar'}
+            </button>
+            <button
+              onClick={() => runDoctor(true)}
+              disabled={doctorLoading || doctorWaking}
+              className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white disabled:opacity-50"
+            >
+              <Zap className="w-3 h-3" />
+              {doctorWaking ? 'Despertando…' : 'Despertar Wi‑Fi'}
+            </button>
+          </div>
+        </div>
+        {doctorStale && (
+          <p className="text-[11px] text-red-300 mb-2">Channel Doctor sin conexión; no se puede afirmar el estado actual.</p>
+        )}
+        {doctor ? (
+          <>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400 mb-3">
+              <span><b className="text-green-300">{doctor.ready_count}/7</b> listos según probe real</span>
+              <span><b className="text-amber-300">{doctor.wakeable_channels?.length || 0}</b> despertables</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+              {Object.entries(doctor.channels || {}).map(([id, channel]) => {
+                const Icon = CHANNEL_ICONS[id] || Radio
+                const ready = channel.verdict === 'ready'
+                const wakeable = channel.verdict === 'wakeable'
+                return (
+                  <div key={id} className={`p-2 rounded-lg border ${ready ? 'border-green-500/30 bg-green-500/5' : wakeable ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-700/50 bg-slate-800/30'}`} title={channel.reason}>
+                    <div className="flex items-center gap-1">
+                      <Icon className={`w-3.5 h-3.5 ${ready ? 'text-green-400' : wakeable ? 'text-amber-300' : 'text-slate-500'}`} />
+                      <span className="text-[10px] text-slate-300 truncate">{CHANNEL_LABELS[id] || id}</span>
+                    </div>
+                    <div className={`mt-1 text-[9px] ${ready ? 'text-green-400' : wakeable ? 'text-amber-300' : 'text-slate-500'}`}>
+                      {ready ? 'listo' : wakeable ? 'despertable' : channel.verdict === 'hardware_unavailable' ? 'hardware' : 'parcial'}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="mt-3 space-y-1">
+              {Object.entries(doctor.channels || {}).map(([id, channel]) => (
+                <div key={id} className="text-[10px] text-slate-500">
+                  <span className="text-slate-300">{CHANNEL_LABELS[id] || id}:</span> {channel.reason}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-slate-500">Pulsa Diagnosticar para comprobar permisos, APIs y hardware.</p>
+        )}
+        {doctorResult && <p className="mt-3 text-[10px] text-cyan-300">{doctorResult}</p>}
       </Card>
 
       {/* SOS Broadcast */}

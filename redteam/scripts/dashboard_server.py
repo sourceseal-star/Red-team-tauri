@@ -1370,6 +1370,16 @@ except Exception as _cmd_err:
     traceback.print_exc()
     _COMMANDER_OK = False
 
+# ── CHANNEL DOCTOR — diagnóstico real y explícito de COM-LINK ───────────────
+try:
+    from channel_doctor import router as channel_doctor_router
+    from channel_doctor import configure_commander_dir
+    configure_commander_dir(globals().get("_commander_dir"))
+    app.include_router(channel_doctor_router)
+    print("[CHANNEL-DOCTOR] Router montado en /api/doctor/*", flush=True)
+except Exception as _doctor_err:
+    print(f"[WARN] Channel Doctor no cargado: {_doctor_err}", flush=True)
+
 # ── Endpoints de integración ARTO + SEAL ──────────────────────────────────
 @app.get("/api/integrated/health")
 async def integrated_health():
