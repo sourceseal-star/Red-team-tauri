@@ -61,7 +61,7 @@ if ! npm run build 2>&1; then
   exit 1
 fi
 if ! python3 "$ROOT/redteam/scripts/validate_frontend_dist.py"; then
-  echo "[start] X Validacion del dist fallo; no se arrancara el dashboard."
+  echo "[start] X Validacion del dist generado fallo; no se arrancara el dashboard."
   exit 1
 fi
 

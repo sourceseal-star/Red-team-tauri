@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
-"""Validate that the tracked frontend bundle is internally complete.
+"""Validate that the generated frontend bundle is internally complete.
 
 The dashboard can return HTTP 200 while a stale or partial Vite dist leaves
 the browser with a blank page. Keep this check dependency-free so both Replit
 and Termux can run it before starting the backend.
+
+The normal check validates the freshly generated dist on disk. Use
+``--require-tracked`` when reviewing a commit that must carry every generated
+asset in Git. A Vite content hash can legitimately change on republish, so
+Git tracking is not an appropriate runtime/startup condition.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -24,7 +30,7 @@ JS_ASSET_RE = re.compile(
 )
 
 
-def validate(dist: Path = DIST) -> list[str]:
+def validate(dist: Path = DIST, require_tracked: bool = False) -> list[str]:
     errors: list[str] = []
     index = dist / "index.html"
     if not index.is_file():
@@ -49,35 +55,40 @@ def validate(dist: Path = DIST) -> list[str]:
             referenced_files.add(Path("assets") / asset_name)
 
     tracked = set()
-    try:
-        result = subprocess.run(
-            ["git", "ls-files", "--", "tauri-frontend/dist"],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        prefix = Path("tauri-frontend/dist")
-        tracked = {
-            Path(path).relative_to(prefix)
-            for path in result.stdout.splitlines()
-            if Path(path).is_relative_to(prefix)
-        }
-    except OSError:
-        errors.append("git is unavailable; cannot verify tracked dist")
+    if require_tracked:
+        try:
+            result = subprocess.run(
+                ["git", "ls-files", "--", "tauri-frontend/dist"],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            prefix = Path("tauri-frontend/dist")
+            tracked = {
+                Path(path).relative_to(prefix)
+                for path in result.stdout.splitlines()
+                if Path(path).is_relative_to(prefix)
+            }
+        except OSError:
+            errors.append("git is unavailable; cannot verify tracked dist")
 
     for relative in sorted(referenced_files):
         candidate = dist / relative
         if not candidate.is_file():
             errors.append(f"missing referenced asset /{relative.as_posix()}")
-        if tracked and relative not in tracked:
+        if require_tracked and tracked and relative not in tracked:
             errors.append(f"asset is not tracked by Git /{relative.as_posix()}")
 
     return errors
 
 
 def main() -> int:
-    errors = validate()
+    require_tracked = (
+        "--require-tracked" in sys.argv[1:]
+        or os.environ.get("REQUIRE_TRACKED_DIST", "").lower() in {"1", "true", "yes"}
+    )
+    errors = validate(require_tracked=require_tracked)
     if errors:
         print("frontend_dist=fail")
         for error in errors:
@@ -86,7 +97,8 @@ def main() -> int:
 
     index = DIST / "index.html"
     assets = sorted(set(INDEX_ASSET_RE.findall(index.read_text(encoding="utf-8"))))
-    print(f"frontend_dist=ok assets={len(assets)} path={DIST}")
+    mode = "strict-tracked" if require_tracked else "generated"
+    print(f"frontend_dist=ok assets={len(assets)} mode={mode} path={DIST}")
     return 0
 
 
