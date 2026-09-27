@@ -9,3 +9,4 @@
 - [GitHub publishing](github-publishing.md) — usar la conexión administrada cuando el helper local de GitHub rechaza las credenciales
 - [Frontend auth preview](frontend-auth-preview.md) — 401/403 debe ser visible y accionable, nunca un bucle de recarga o una pantalla negra
 - [PHANTOM runtime compatibility](phantom-runtime.md) — el nodo usa websockets.client.send(JSON), y las tareas no terminales se recuperan desde la cola al reiniciar
+- [Ghost Radio safety boundary](ghost-radio.md) — Ghost Radio v3 solo diagnostica y hace probes autorizados; TX requiere TNC/driver verificado

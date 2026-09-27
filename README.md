@@ -119,6 +119,24 @@ curl http://127.0.0.1:8002/api/health
 curl http://127.0.0.1:8002/api/status
 ```
 
+### Ghost Radio v3
+
+La primera versión operativa es deliberadamente de solo lectura: reutiliza el
+diagnóstico real de COM-LINK y el endpoint autenticado de reconocimiento de
+streams. No transmite, no escribe en puertos serie y no anuncia AX.25/TNC sin
+hardware y driver verificados.
+
+```bash
+# Diagnóstico local, sin activar hardware
+bash boot_ghost.sh doctor --json
+
+# Probe únicamente dentro de un alcance autorizado
+bash boot_ghost.sh scan --target 192.168.1.20 --confirm-scope --json
+
+# Instalación local idempotente (no instala drivers)
+bash install_ghost_radio.sh
+```
+
 ## Sol — Cerebro accesible desde el dashboard
 
 Sol tiene 3 endpoints en el backend para que el SolWidget (War Room) y FloatingSol funcionen:
