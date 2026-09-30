@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Radar, Search, Camera, Wifi, Terminal, Radio, Crosshair,
          Activity, Globe, Shield, Cpu, Server, Zap, RefreshCw, AlertCircle,
          CheckCircle2, Clock3, Database, FileText, Play, ShieldCheck, XCircle } from 'lucide-react'
+import { resolveCommanderResponse } from './commanderRelay'
 
 function authH(): Record<string, string> {
   const k = localStorage.getItem('api_token')
@@ -140,7 +141,7 @@ export default function CommanderPanel() {
         method: 'POST', headers: authH(),
         body: JSON.stringify({ target: scanTarget, authorized: true })
       })
-      const data = await r.json()
+      const data = await resolveCommanderResponse(r, authHGet())
       setScanResult(JSON.stringify(data, null, 2).substring(0, 3000))
     } catch (e: any) {
       setScanResult(`Error: ${e.message}`)
@@ -161,7 +162,7 @@ export default function CommanderPanel() {
         method: 'POST', headers: authH(),
         body: JSON.stringify({ target, authorized: true })
       })
-      const data = await r.json()
+      const data = await resolveCommanderResponse(r, authHGet())
       setCameraResult(JSON.stringify(data, null, 2).substring(0, 4000))
     } catch (e: any) {
       setCameraResult(`Error: ${e.message}`)
@@ -182,7 +183,7 @@ export default function CommanderPanel() {
         method: 'POST', headers: authH(),
         body: JSON.stringify({ target, email: auditEmail.trim(), authorized: true })
       })
-      const data = await r.json()
+      const data = await resolveCommanderResponse(r, authHGet())
       setAuditResult(JSON.stringify(data, null, 2).substring(0, 4000))
       if (r.ok) await refresh()
     } catch (e: any) {
@@ -212,7 +213,7 @@ export default function CommanderPanel() {
         method: 'POST', headers: authH(),
         body: JSON.stringify({ authorized: true, email: auditEmail.trim() })
       })
-      const data = await r.json()
+      const data = await resolveCommanderResponse(r, authHGet())
       setAuditResult(JSON.stringify(data, null, 2).substring(0, 4000))
       await refresh()
     } catch (e: any) {

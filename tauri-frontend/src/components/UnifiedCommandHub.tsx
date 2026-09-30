@@ -4,6 +4,7 @@ import {
   LocateFixed, MessageSquare, Radio, RefreshCw, Search, Send,
   Shield, Smartphone, Terminal, Users, Wifi, XCircle,
 } from 'lucide-react'
+import { resolveCommanderResponse } from './commanderRelay'
 
 type HubProps = {
   onNavigate?: (module: string) => void
@@ -41,9 +42,10 @@ async function request(url: string, init?: RequestInit) {
     ...init,
     headers: { ...authHeaders(Boolean(init?.body)), ...(init?.headers || {}) },
   })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data.detail || data.error || `HTTP ${response.status}`)
-  return data
+  return resolveCommanderResponse(response, {
+    ...authHeaders(Boolean(init?.body)),
+    ...((init?.headers || {}) as Record<string, string>),
+  })
 }
 
 function Panel({ children, className = '' }: { children: ReactNode, className?: string }) {

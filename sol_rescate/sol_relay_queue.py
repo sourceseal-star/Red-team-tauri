@@ -132,13 +132,15 @@ def push_result(task_id, ok, data, device=None):
     """Registra el resultado de una tarea ejecutada en Termux."""
     with _lock:
         task = next((t for t in _pending if t["id"] == task_id), None)
+        if task is None:
+            return None
         entry = {
             "id": task_id,
-            "tool": task["tool"] if task else "?",
+            "tool": task["tool"],
             "ok": bool(ok),
             "data": data,
-            "origin": task["origin"] if task else "?",
-            "enqueued_at": task["enqueued_at"] if task else None,
+            "origin": task["origin"],
+            "enqueued_at": task["enqueued_at"],
             "finished_at": _now_iso(),
             "device": device or _device or {},
         }
@@ -148,6 +150,32 @@ def push_result(task_id, ok, data, device=None):
         _pending[:] = [t for t in _pending if t["id"] != task_id]
         _save_state()
         return entry
+
+
+def task_status(task_id):
+    """Estado individual para que el dashboard pueda esperar el resultado."""
+    with _lock:
+        task = next((t for t in _pending if t["id"] == task_id), None)
+        if task:
+            return {
+                "task_id": task_id,
+                "tool": task["tool"],
+                "status": "running" if task.get("claimed_at") else "queued",
+                "enqueued_at": task["enqueued_at"],
+                "claimed_at": task.get("claimed_at"),
+            }
+        result = next((r for r in reversed(_results) if r.get("id") == task_id), None)
+        if result:
+            return {
+                "task_id": task_id,
+                "tool": result["tool"],
+                "status": "completed" if result["ok"] else "failed",
+                "ok": result["ok"],
+                "result": result.get("data"),
+                "finished_at": result["finished_at"],
+                "device": result.get("device"),
+            }
+        return None
 
 
 def results(since_index=0, limit=10):

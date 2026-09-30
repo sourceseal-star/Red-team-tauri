@@ -32,6 +32,7 @@ import sys
 import json
 import time
 import subprocess
+import importlib.util
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -43,9 +44,12 @@ os.environ["SOL_RELAY_AGENT"] = "1"
 SOL_DIR = Path.home() / ".sol"
 LOG_DIR = SOL_DIR / "logs"
 LOG_FILE = LOG_DIR / "relay.log"
-ENV_FILE = Path(__file__).parent / ".env"
+SOL_REPO = Path(os.environ.get("SOL_REPO", str(Path.home() / "sol"))).expanduser()
+ENV_FILE = SOL_REPO / ".env"
+COMMANDER_DIR = Path(os.environ.get("COMMANDER_DIR", str(Path.home() / "commander"))).expanduser()
 
 POLL_INTERVAL = int(os.environ.get("SOL_RELAY_INTERVAL", "15"))  # segundos
+_COMMANDER_MOD = None
 
 
 def log(msg):
@@ -61,11 +65,12 @@ def log(msg):
 
 
 def load_env():
-    """Carga ~/sol/.env si las variables no vienen del entorno."""
-    if not ENV_FILE.exists():
+    """Carga la configuración local de Sol sin imprimir sus valores."""
+    env_file = ENV_FILE if ENV_FILE.exists() else Path(__file__).parent / ".env"
+    if not env_file.exists():
         return
     try:
-        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
@@ -74,7 +79,7 @@ def load_env():
             if k and k not in os.environ:
                 os.environ[k] = v
     except Exception as e:
-        log(f"⚠️ No pude leer {ENV_FILE}: {e}")
+        log(f"⚠️ No pude leer el archivo de configuración del relé: {e}")
 
 
 def device_info():
@@ -111,9 +116,71 @@ def _request(url, payload=None, headers=None, timeout=20):
         return json.loads(resp.read())
 
 
+def _json_safe(value):
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _commander_module():
+    global _COMMANDER_MOD
+    if _COMMANDER_MOD is not None:
+        return _COMMANDER_MOD
+    module_path = COMMANDER_DIR / "commander.py"
+    if not module_path.is_file():
+        raise RuntimeError(f"Commander no encontrado en {COMMANDER_DIR}")
+    if str(COMMANDER_DIR) not in sys.path:
+        sys.path.insert(0, str(COMMANDER_DIR))
+    spec = importlib.util.spec_from_file_location("commander_relay_mod", str(module_path))
+    if spec is None or spec.loader is None:
+        raise RuntimeError("No se pudo cargar el módulo local de Commander")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    _COMMANDER_MOD = module
+    return module
+
+
+def _execute_commander_task(name, args, kwargs):
+    """Dispatcher estricto: nunca acepta shell ni nombres de función arbitrarios."""
+    if kwargs.get("authorized") is not True:
+        return {"success": False, "error": "Tarea Commander sin confirmación de alcance"}
+    module = _commander_module()
+    if name == "commander_scan_network" and len(args) == 2:
+        target, ports = args
+        result = module.scan_network(str(target), str(ports))
+        return {"success": "error" not in result, "result": {"target": target, "result": result}}
+    if name == "commander_scan_cameras" and len(args) == 1:
+        target = args[0]
+        result = module.scan_cameras(str(target))
+        return {"success": "error" not in result, "result": {"target": target, "result": result}}
+    if name == "commander_audit" and len(args) == 2:
+        target, email = args
+        scan_id = module.create_scan_record(str(target), "dashboard_audit")
+        report = module.run_audit_phased(scan_id, str(target), email)
+        return {
+            "success": True,
+            "result": {"ok": True, "scan_id": scan_id, "target": target, "report": _json_safe(report)},
+        }
+    if name == "commander_resume_audit" and len(args) == 2:
+        scan_id, email = args
+        report = module.resume_scan(int(scan_id), email)
+        return {
+            "success": True,
+            "result": {"ok": True, "scan_id": int(scan_id), "report": _json_safe(report)},
+        }
+    return {"success": False, "error": f"Operación Commander no permitida: {name}"}
+
+
 def poll(base_url, api_key, device):
     """Un ciclo: pedir tareas, ejecutarlas, devolver resultados."""
-    headers = {"x-sol-key": api_key}
+    headers = {"X-API-Key": api_key}
     r = _request(f"{base_url}/api/relay/poll", payload={"device": device}, headers=headers)
     tasks = r.get("tasks", [])
     for task in tasks:
@@ -123,11 +190,22 @@ def poll(base_url, api_key, device):
         kwargs = task.get("kwargs", {})
         log(f"📨 Tarea {tid}: {name} args={args}")
         try:
-            import sol_tools
-            if not sol_tools.get_tool(name):
-                result = {"success": False, "error": f"tool no registrada: {name}"}
+            if name in {
+                "commander_scan_network",
+                "commander_scan_cameras",
+                "commander_audit",
+                "commander_resume_audit",
+            }:
+                result = _execute_commander_task(name, args, kwargs)
             else:
-                result = sol_tools.execute_tool(name, *args, **kwargs)
+                if str(SOL_REPO) not in sys.path:
+                    sys.path.insert(0, str(SOL_REPO))
+                import sol_tools
+                if not sol_tools.get_tool(name):
+                    result = {"success": False, "error": f"tool no registrada: {name}"}
+                else:
+                    result = sol_tools.execute_tool(name, *args, **kwargs)
+            result = _json_safe(result)
         except Exception as e:
             result = {"success": False, "error": f"excepción ejecutando {name}: {e}"}
         ok = bool(result.get("success"))
@@ -145,7 +223,7 @@ def poll(base_url, api_key, device):
 def loop():
     load_env()
     base_url = os.environ.get("SOL_PUBLIC_URL", "").rstrip("/")
-    api_key = os.environ.get("SOL_API_KEY", "")
+    api_key = os.environ.get("REDTEAM_API_KEY") or os.environ.get("SOL_API_KEY", "")
     if not base_url or not api_key:
         log("❌ Faltan SOL_PUBLIC_URL o SOL_API_KEY (~/sol/.env) — no puedo arrancar")
         sys.exit(1)
@@ -179,20 +257,17 @@ def status():
     """Ping manual: ¿Replit está al alcance?"""
     load_env()
     base_url = os.environ.get("SOL_PUBLIC_URL", "").rstrip("/")
-    api_key = os.environ.get("SOL_API_KEY", "")
+    api_key = os.environ.get("REDTEAM_API_KEY") or os.environ.get("SOL_API_KEY", "")
     if not base_url or not api_key:
-        print("❌ Faltan SOL_PUBLIC_URL o SOL_API_KEY en ~/sol/.env")
+        print("❌ Faltan SOL_PUBLIC_URL o REDTEAM_API_KEY/SOL_API_KEY en ~/sol/.env")
         sys.exit(1)
-    print(f"Ping a {base_url} ...")
+    print("Consultando estado del relé en Replit ...")
     try:
-        _request(f"{base_url}/api/relay/poll", payload={"device": device_info()},
-                 headers={"x-sol-key": api_key})
-        print("✅ Replit respondió — relé operativo")
-        try:
-            s = _request(f"{base_url}/api/relay/status")
-            print(f"   Cola pendiente: {s.get('pending')} · resultados: {s.get('results_total')}")
-        except Exception:
-            pass
+        s = _request(f"{base_url}/api/relay/status", headers={"X-API-Key": api_key})
+        print(
+            f"Replit respondió — Termux {'en línea' if s.get('termux_online') else 'sin latido reciente'}; "
+            f"cola: {s.get('pending')} pendiente(s), {s.get('claimed')} en curso"
+        )
         sys.exit(0)
     except Exception as e:
         print(f"❌ Sin respuesta de Replit: {e}")
@@ -203,7 +278,7 @@ def once():
     """Un solo ciclo de poll (prueba end-to-end)."""
     load_env()
     base_url = os.environ.get("SOL_PUBLIC_URL", "").rstrip("/")
-    api_key = os.environ.get("SOL_API_KEY", "")
+    api_key = os.environ.get("REDTEAM_API_KEY") or os.environ.get("SOL_API_KEY", "")
     n = poll(base_url, api_key, device_info())
     print(f"✅ Un ciclo ejecutado: {n} tarea(s)")
 

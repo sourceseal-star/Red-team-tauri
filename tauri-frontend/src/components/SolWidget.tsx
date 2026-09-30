@@ -61,8 +61,12 @@ export const SolWidget = () => {
     const text = input.trim();
     setInput('');
     try {
-      const r = await fetch(`/api/sol/think?q=${encodeURIComponent(text)}`);
+      const token = localStorage.getItem('api_token');
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const r = await fetch(`/api/sol/think?q=${encodeURIComponent(text)}`, { headers });
       const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
       setStatus(s => ({ ...s, lastMessage: d.response || '...' }));
     } catch {
       setStatus(s => ({ ...s, lastMessage: '⚠️ Sin conexión con mi cerebro.' }));

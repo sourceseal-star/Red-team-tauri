@@ -215,6 +215,70 @@ API_KEY = ensure_managed_secret("REDTEAM_API_KEY")
 # Las rutas activas se mantienen en este backend unificado; la autenticación
 # usa REDTEAM_API_KEY tanto para login como para las rutas protegidas.
 
+def _commander_relay_enabled():
+    """En Replit, las operaciones autorizadas de Commander se ejecutan en Termux."""
+    mode = os.environ.get("COMMANDER_EXECUTION_MODE", "").strip().lower()
+    if mode == "local":
+        return False
+    if mode in {"relay", "termux-relay"}:
+        return True
+    is_termux = os.environ.get("PREFIX", "").startswith("/data/data/com.termux")
+    return not is_termux and bool(os.environ.get("REPL_SLUG") or os.environ.get("REPL_OWNER"))
+
+
+def _valid_commander_target(target):
+    return (
+        isinstance(target, str)
+        and 1 <= len(target) <= 255
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:%/-]*", target) is not None
+    )
+
+
+def _valid_commander_ports(ports):
+    if not isinstance(ports, str) or not ports or len(ports) > 256:
+        return False
+    parts = ports.split(",")
+    if len(parts) > 32:
+        return False
+    total = 0
+    for part in parts:
+        if "-" in part:
+            bounds = part.split("-")
+            if len(bounds) != 2 or not all(bound.isdigit() for bound in bounds):
+                return False
+            start, end = map(int, bounds)
+            if start < 1 or end > 65535 or start > end:
+                return False
+            total += end - start + 1
+        else:
+            if not part.isdigit() or not 1 <= int(part) <= 65535:
+                return False
+            total += 1
+    return total <= 256
+
+
+def _enqueue_commander_task(tool, args):
+    try:
+        import sol_relay_queue as relay
+        queued = relay.enqueue(tool, args, {"authorized": True}, origin="commander")
+    except Exception as exc:
+        return JSONResponse({"error": f"Relé Termux no disponible: {exc}"}, status_code=503)
+    if not queued.get("success"):
+        return JSONResponse({"error": queued.get("error", "No se pudo encolar")}, status_code=503)
+    relay_status = relay.status()
+    return JSONResponse(
+        {
+            "ok": True,
+            "queued": True,
+            "task_id": queued["task_id"],
+            "status": "queued",
+            "execution_target": "Termux",
+            "termux_online": relay_status["termux_online"],
+            "message": "Commander ejecutará esta operación en Termux cuando el teléfono consulte la cola.",
+        },
+        status_code=202,
+    )
+
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Red-Team Tauri · Unified Dashboard Backend",
@@ -426,6 +490,11 @@ try:
 
         @commander_router.get("/api/commander/health")
         async def commander_health():
+            try:
+                import sol_relay_queue as relay
+                relay_status = relay.status()
+            except Exception:
+                relay_status = {}
             return {
                 "available": True,
                 "dir": _commander_dir,
@@ -440,8 +509,32 @@ try:
                     "encrypted_reports",
                     "sourceseal_anchor",
                 ],
-                "execution_context": "Integrado en el proceso del dashboard",
+                "execution_context": (
+                    "Termux por relé PULL"
+                    if _commander_relay_enabled()
+                    else "Integrado en el proceso del dashboard"
+                ),
+                "termux_online": relay_status.get("termux_online", False),
             }
+
+        @commander_router.get("/api/commander/tasks/{task_id}")
+        async def commander_task_status(task_id: str):
+            try:
+                import sol_relay_queue as relay
+                status = relay.task_status(task_id)
+            except Exception as exc:
+                return JSONResponse({"error": f"Relé Termux no disponible: {exc}"}, status_code=503)
+            if status is None:
+                return JSONResponse({"error": "Tarea no encontrada"}, status_code=404)
+            if status.get("status") in {"completed", "failed"}:
+                result = status.get("result")
+                if isinstance(result, dict) and "success" in result:
+                    status["ok"] = bool(result.get("success"))
+                    if status["ok"]:
+                        status["result"] = result.get("result")
+                    else:
+                        status["error"] = result.get("error", "La tarea de Termux falló")
+            return status
 
         def _commander_db_path():
             config = getattr(_commander_mod, "CONFIG", {})
@@ -535,15 +628,21 @@ try:
 
         @commander_router.post("/api/commander/scan/network")
         async def commander_scan_network(payload: dict = Body(default={})):
-            target = payload.get("target", "")
+            target = str(payload.get("target", "")).strip()
             ports = payload.get("ports", "22,80,443,3306,8080,554,21,25,53,139,445,3389")
             if not target:
                 return JSONResponse({"error": "target requerido"}, status_code=400)
+            if not _valid_commander_target(target):
+                return JSONResponse({"error": "target inválido; usa una IP, CIDR o nombre de host simple"}, status_code=400)
+            if not _valid_commander_ports(ports):
+                return JSONResponse({"error": "ports inválido; máximo 32 entradas y 256 puertos"}, status_code=400)
             if payload.get("authorized") is not True:
                 return JSONResponse(
                     {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
                     status_code=400,
                 )
+            if _commander_relay_enabled():
+                return _enqueue_commander_task("commander_scan_network", [target, ports])
             try:
                 result = await run_in_threadpool(_commander_mod.scan_network, target, ports)
                 return {"target": target, "result": result}
@@ -555,11 +654,15 @@ try:
             target = str(payload.get("target", "")).strip()
             if not target:
                 return JSONResponse({"error": "target requerido"}, status_code=400)
+            if not _valid_commander_target(target):
+                return JSONResponse({"error": "target inválido; usa una IP, CIDR o nombre de host simple"}, status_code=400)
             if payload.get("authorized") is not True:
                 return JSONResponse(
                     {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
                     status_code=400,
                 )
+            if _commander_relay_enabled():
+                return _enqueue_commander_task("commander_scan_cameras", [target])
             try:
                 result = await run_in_threadpool(_commander_mod.scan_cameras, target)
                 return {"target": target, "result": result}
@@ -577,6 +680,10 @@ try:
                     {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
                     status_code=400,
                 )
+            if not _valid_commander_target(target):
+                return JSONResponse({"error": "target inválido; usa una IP, CIDR o nombre de host simple"}, status_code=400)
+            if _commander_relay_enabled():
+                return _enqueue_commander_task("commander_audit", [target, email])
             try:
                 def _run():
                     scan_id = _commander_mod.create_scan_record(target, "dashboard_audit")
@@ -599,6 +706,10 @@ try:
                     {"error": "Confirma que el objetivo está dentro de tu alcance autorizado"},
                     status_code=400,
                 )
+            if scan_id < 1:
+                return JSONResponse({"error": "scan_id inválido"}, status_code=400)
+            if _commander_relay_enabled():
+                return _enqueue_commander_task("commander_resume_audit", [scan_id, email])
             try:
                 result = await run_in_threadpool(_commander_mod.resume_scan, scan_id, email)
                 return {"ok": True, "scan_id": scan_id, "report": str(result) if result else None}
@@ -1433,6 +1544,14 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 #   /api/health, /health, /healthz  → health checks
 #   /canary/callback               → intruso phone-home (debe ser accesible)
 PUBLIC_PATHS = {"/api/health", "/api/healthz", "/health", "/healthz", "/canary/callback", "/api/phantom/alert", "/api/auth/login", "/api/auth/biometric", "/api/auth/password", "/api/auth/webauthn/status", "/api/auth/webauthn/register/begin", "/api/auth/webauthn/register/finish", "/api/auth/webauthn/auth/begin", "/api/auth/webauthn/auth/finish", "/favicon.ico", "/robots.txt", "/manifest.json", "/api/sol/status", "/api/sol/think", "/api/sol/tts", "/api/sol/think-voice", "/api/sol/memory", "/api/sol/identity", "/api/sol/integrity", "/api/sol/services", "/api/sol/personality", "/api/sol/last-message", "/api/sol/speak", "/api/sol/tools", "/api/sol/tools/execute", "/api/sil/lessons", "/api/sil/lesson", "/api/sil/practice/next", "/api/sil/practice/answer", "/api/sil/stats", "/api/sil/export", "/sw.js"}
+SOL_AUTH_REQUIRED_PATHS = {
+    "/api/sol/think",
+    "/api/sol/think-voice",
+    "/api/sol/speak",
+    "/api/sol/tools/execute",
+    "/api/sol/personality",
+    "/api/sol/personality/set",
+}
 
 # ── CORS lockdown ───────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
@@ -1518,6 +1637,13 @@ try:
 except Exception as e:
     print(f"[SOL] No cargado: {e}", flush=True)
 
+try:
+    from relay_router import router as termux_relay_router
+    app.include_router(termux_relay_router)
+    print("[TERMUX-RELAY] Rutas PULL montadas en /api/relay/*", flush=True)
+except Exception as e:
+    print(f"[TERMUX-RELAY] No cargado: {e}", flush=True)
+
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
                    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
                    allow_headers=["X-API-Key", "Content-Type", "Authorization"],
@@ -1598,9 +1724,9 @@ async def security_middleware(request: Request, call_next):
         and path != "/openapi.json"
     )
     if (
-        path in PUBLIC_PATHS
+        (path in PUBLIC_PATHS and path not in SOL_AUTH_REQUIRED_PATHS)
         or path == "/"
-        or path.startswith("/api/sol/")
+        or (path.startswith("/api/sol/") and path not in SOL_AUTH_REQUIRED_PATHS)
         or is_spa_navigation
         or path.startswith("/assets/")
         or path.startswith("/vite/")
@@ -1620,7 +1746,7 @@ async def security_middleware(request: Request, call_next):
             return JSONResponse({"error": "Unauthorized — API key required"}, status_code=401)
     else:
         # Intentar X-API-Key primero (compatibilidad scripts)
-        key = request.headers.get("X-API-Key", "")
+        key = request.headers.get("X-API-Key", "") or request.headers.get("x-sol-key", "")
         # Luego intentar Authorization: Bearer <token> (lo que usa el frontend)
         if not key:
             auth_header = request.headers.get("Authorization", "")

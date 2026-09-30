@@ -11,6 +11,7 @@ SOL_DIR="$HOME/.sol"
 LOG_DIR="$SOL_DIR/logs"
 ENV_FILE="$ROOT/.env"
 SOL_REPO="${SOL_REPO:-$HOME/sol}"
+export SOL_REPO
 SOL_GATE_PORT="${SOL_GATE_PORT:-8012}"
 SOL_PORTERO_URL="${SOL_PORTERO_URL:-http://127.0.0.1:${SOL_GATE_PORT}}"
 SOL_CORE_ONLY="${SOL_CORE_ONLY:-0}"
@@ -590,13 +591,17 @@ start() {
   # ── 10. Sol Relay (Replit ⇄ Termux) — Sol en Replit ordena, el Edge ejecuta ──
   # El teléfono no tiene IP pública: el agente SONDEA la cola de Replit cada
   # 15s (patrón PULL). Requisitos: SOL_PUBLIC_URL + SOL_API_KEY en ~/sol/.env
-  if [ -f "$SOL_REPO/sol_relay.py" ]; then
-    if pgrep -f "sol_relay.py" >/dev/null 2>&1; then
-      ok "Relé Termux ☀️     ya corriendo (PID $(pgrep -f sol_relay.py | head -1))"
+  RELAY_SCRIPT="$ROOT/sol_rescate/sol_relay.py"
+  [ -f "$RELAY_SCRIPT" ] || RELAY_SCRIPT="$SOL_REPO/sol_relay.py"
+  if [ -f "$RELAY_SCRIPT" ]; then
+    if pgrep -f "$RELAY_SCRIPT" >/dev/null 2>&1; then
+      ok "Relé Termux ☀️     ya corriendo con el agente actualizado (PID $(pgrep -f "$RELAY_SCRIPT" | head -1))"
+    elif pgrep -f '[s]ol_relay.py' >/dev/null 2>&1; then
+      warn "Hay un relé anterior activo; ejecuta 'bash omni.sh restart' para cargar el agente actualizado"
     elif grep -q "^SOL_PUBLIC_URL=..*" "$SOL_REPO/.env" 2>/dev/null; then
-      info "Relé Termux ☀️ — arrancando agente (desde ~/sol)..."
+      info "Relé Termux ☀️ — arrancando agente actualizado..."
       cd "$SOL_REPO"
-      nohup python3 sol_relay.py >> "$LOG_DIR/relay.log" 2>&1 &
+      nohup python3 "$RELAY_SCRIPT" >> "$LOG_DIR/relay.log" 2>&1 &
       echo $! > "$SOL_DIR/relay.pid"
       sleep 2
       if kill -0 "$(cat "$SOL_DIR/relay.pid" 2>/dev/null)" 2>/dev/null; then
