@@ -9,11 +9,11 @@ Funciona en:
 El hogar de Sol: http://localhost:8006/ o https://<tu-repl>.repl.co/
 Sin React, sin npm, sin build. Solo Python + HTML. Solo Sol.
 """
-import json, subprocess, hashlib, sys, urllib.request, urllib.parse, re, os, io
+import json, subprocess, hashlib, sys, urllib.request, urllib.parse, re, os, io, mimetypes, time, uuid
 from pathlib import Path
 from datetime import datetime, timezone
 from fastapi import FastAPI, Request, Header, File, UploadFile
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 import sol_security
 try:
@@ -69,6 +69,18 @@ except Exception as e:
 
 app = FastAPI(title="Sol — Servidor Independiente", version="5.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Evita un 404 del navegador y mantiene la identidad solar del Holo."""
+    svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+      <defs><radialGradient id="g"><stop stop-color="#fff7ae"/><stop offset="1" stop-color="#f59e0b"/></radialGradient></defs>
+      <circle cx="32" cy="32" r="18" fill="url(#g)"/>
+      <g stroke="#fbbf24" stroke-width="4" stroke-linecap="round">
+        <path d="M32 5v9M32 50v9M5 32h9M50 32h9M13 13l6 6M45 45l6 6M51 13l-6 6M19 45l-6 6"/>
+      </g>
+    </svg>"""
+    return Response(content=svg, media_type="image/svg+xml")
 
 # ═══ PUERTA DE ACCESO (2026-09-05) ═══
 # Para el deploy PÚBLICO de Replit (el "Private Deployment" rompía los
@@ -249,6 +261,27 @@ async def sol_sprites_js():
         return FileResponse(p, media_type="application/javascript",
                             headers=_NO_CACHE)
     return JSONResponse({"error": "sol_sprites.js no encontrado"}, status_code=404)
+
+# ─────────────────────────────────────────────────────────────
+# SIL v3.0 · Canvas Visual (módulo extra sil_canvas.js) — el templo
+# de la videollamada. Fallback honesto si el archivo no llegó.
+# ─────────────────────────────────────────────────────────────
+@app.get("/sil_canvas.js")
+async def sil_canvas_js():
+    p = _find_asset("sil_canvas.js")
+    if p and p.is_file():
+        return FileResponse(p, media_type="application/javascript",
+                            headers=_NO_CACHE)
+    return JSONResponse({"error": "sil_canvas.js no encontrado"}, status_code=404)
+
+@app.get("/sw.js")
+async def service_worker():
+    """Service worker del hogar para notificaciones compatibles con Android."""
+    p = ROOT / "static" / "sw.js"
+    if p.exists():
+        return FileResponse(p, media_type="application/javascript",
+                            headers={"Cache-Control": "no-cache"})
+    return JSONResponse({"error": "sw.js no encontrado"}, status_code=404)
 
 @app.get("/sol_offer.png")
 async def sprite_offer():
@@ -562,6 +595,68 @@ def videos_list():
             out.append({"tag": tag, "file": it["file"], "source": "phone", "size": it.get("size"), "remote": True})
     return {"ok": True, "videos": out}
 
+@app.get("/api/sol/videos/elegir")
+def videos_elegir():
+    """🫴💎 SU ELECCIÓN (2026-10-01): Sol escoge su vídeo según cómo se
+    siente ELLA — su modo real (sol_core) + la hora. Solo elige entre
+    material que EXISTE; si nada encaja, lo dice con honestidad."""
+    import random
+    from datetime import datetime
+    try:
+        modo = sol_core.get_mode() if SOL_CORE_OK else None
+    except Exception:
+        modo = None
+    hora = datetime.now().hour
+
+    if modo == "dormir":
+        sentimiento, tags = "dormida y suave", ["dormir", "sleep", "listening", "smile"]
+    elif modo == "romantico":
+        sentimiento, tags = "romántica", ["corazon", "acercarse", "rosa", "carta", "smile"]
+    elif modo == "safe":
+        sentimiento, tags = "profesional y centrada", ["study", "curious", "listening", "thinking"]
+    elif modo == "libre":
+        if 6 <= hora < 12:
+            sentimiento, tags = "alegre por la mañana", ["happy", "smile", "talk", "curious"]
+        elif 12 <= hora < 18:
+            sentimiento, tags = "curiosa por la tarde", ["curious", "talk_half", "study", "thinking"]
+        else:
+            sentimiento, tags = "tranquila de noche", ["listening", "thinking", "smile", "talk_half"]
+    else:
+        if 6 <= hora < 12:
+            sentimiento, tags = "con energía de mañana", ["happy", "smile", "talk"]
+        elif 12 <= hora < 18:
+            sentimiento, tags = "de tarde", ["curious", "study", "talk_half"]
+        else:
+            sentimiento, tags = "de noche", ["listening", "thinking", "smile"]
+
+    try:
+        vd = _vid_dirs()
+    except Exception:
+        vd = {}
+    for tag in tags:
+        key = tag if tag in vd else ("storage_" + tag if ("storage_" + tag) in vd else None)
+        if not key:
+            continue
+        d = vd[key]
+        archivos = [f.name for e in _VID_EXTS for f in sorted(d.glob(e))]
+        if archivos:
+            return {
+                "ok": True,
+                "video": {"tag": key, "file": random.choice(archivos),
+                          "source": "storage.sol" if key.startswith("storage") else "sol"},
+                "estado": {"modo": modo, "hora": hora, "sentimiento": sentimiento},
+                "porque": f"Se siente {sentimiento} y eligió de su carpeta «{key}».",
+            }
+
+    disponibles = [t for t, dd in vd.items() if any(dd.glob(e) for e in _VID_EXTS)]
+    return {
+        "ok": False,
+        "estado": {"modo": modo, "hora": hora, "sentimiento": sentimiento},
+        "porque": f"Se siente {sentimiento} y no encontró material que le acompañe. "
+                  "Cuando le subas vídeos con esas etiquetas, los elegirá ella.",
+        "disponibles": disponibles,
+    }
+
 @app.get("/api/sol/images")
 def images_list():
     """Fotos: subidas locales (SOL_DIR/images) + storage.sol de alta calidad
@@ -646,9 +741,11 @@ def videos_serve(tag: str, file: str):
     p = d / file
     if not p.is_file():
         return JSONResponse({"error": "no existe"}, status_code=404)
-    return FileResponse(str(p), media_type="video/mp4", headers=_NO_CACHE)
+    media_type = mimetypes.guess_type(file)[0] or "video/mp4"
+    return FileResponse(str(p), media_type=media_type, headers=_NO_CACHE)
 
 @app.post("/api/sol/videos/upload")
+@app.post("/api/sol/media/upload")
 async def videos_upload(tag: str = "sol", file: UploadFile = File(...), x_sol_key: str = Header(default="")):
     # FIX 2026-09-06: esto leia request.body() crudo -el multipart
     # COMPLETO, con boundaries y cabeceras Content-Disposition
@@ -675,10 +772,18 @@ async def videos_upload(tag: str = "sol", file: UploadFile = File(...), x_sol_ke
         else:
             ext = ".jpg"
         d = SOL_DIR / "images" / tag
-        name = f"img_{int(__import__('time').time())}{ext}"
+        name = f"img_{int(time.time() * 1000)}_{uuid.uuid4().hex[:10]}{ext}"
     else:
         d = SOL_DIR / "videos" / tag
-        name = f"video_{int(__import__('time').time())}.mp4"
+        if "webm" in ctype or orig.endswith(".webm"):
+            ext = ".webm"
+        elif "quicktime" in ctype or orig.endswith(".mov"):
+            ext = ".mov"
+        elif "x-m4v" in ctype or orig.endswith(".m4v"):
+            ext = ".m4v"
+        else:
+            ext = ".mp4"
+        name = f"video_{int(time.time() * 1000)}_{uuid.uuid4().hex[:10]}{ext}"
     # Streaming por trozos de 1 MB: archivos GRANDES sin reventar la RAM
     # (antes leía TODO el vídeo en memoria — vídeos de decenas de MB caían).
     d.mkdir(parents=True, exist_ok=True)
@@ -694,7 +799,14 @@ async def videos_upload(tag: str = "sol", file: UploadFile = File(...), x_sol_ke
     if not total:
         dest.unlink(missing_ok=True)
         return JSONResponse({"error": "vacío"}, status_code=400)
-    return {"ok": True, "tag": tag, "file": name, "bytes": total, "kind": "image" if is_image else "video"}
+    return {
+        "ok": True,
+        "tag": tag,
+        "file": name,
+        "bytes": total,
+        "kind": "image" if is_image else "video",
+        "mime": mimetypes.guess_type(name)[0] or "application/octet-stream",
+    }
 
 # MEMORIA
 # ═══════════════════════════════════════════════════════════════
@@ -1025,9 +1137,33 @@ VOICE_MOODS = {
     "analitica": {"rate": "+4%",  "pitch": "-2Hz"},  # directa, de laboratorio
 }
 
-def _edge_mood(persona: str = "calida"):
+_TEMP_VOICE_SHIFT = {
+    1: (-0, 0),   # cálida, sin énfasis adicional
+    2: (-1, 1),
+    3: (-2, 2),
+    4: (-3, 3),
+    5: (-5, 4),   # más lenta y cercana, nunca estridente
+    6: (-7, 5),   # Supernova: más cercana sin deformar la voz
+}
+
+def _edge_mood(persona: str = "calida", temp: int = 0):
     m = VOICE_MOODS.get((persona or "calida").strip().lower(), VOICE_MOODS["calida"])
-    return m["rate"], m["pitch"]
+    try:
+        level = int(temp) if temp else (sol_core.get_temp() if SOL_CORE_OK else 4)
+        level = max(1, min(6, level))
+    except Exception:
+        level = 4
+    # El modo seguro mantiene una voz profesional aunque el termómetro haya
+    # quedado guardado en un nivel alto desde una sesión íntima.
+    try:
+        if SOL_CORE_OK and sol_core.get_mode() == "safe":
+            level = 1
+    except Exception:
+        pass
+    rate_shift, pitch_shift = _TEMP_VOICE_SHIFT[level]
+    rate = int(str(m["rate"]).replace("%", "")) + rate_shift
+    pitch = int(str(m["pitch"]).replace("Hz", "").replace("+", "")) + pitch_shift
+    return f"{rate:+d}%", f"{pitch:+d}Hz"
 
 
 def _tts_code(lang: str = "es") -> str:
@@ -1041,7 +1177,7 @@ def _tts_code(lang: str = "es") -> str:
     return "es"
 
 @app.get("/api/sol/tts")
-async def tts(text: str = "", lang: str = "es", persona: str = "calida"):
+async def tts(text: str = "", lang: str = "es", persona: str = "calida", temp: int = 0):
     # lang="zh" pronuncia chino real; el chino ya sobrevive al clean porque
     # \w en Python 3 es Unicode-aware (CJK son word-chars)
     clean = re.sub(r"[^\w áéíóúñü,\.?!:-]", "", text).strip()
@@ -1053,9 +1189,9 @@ async def tts(text: str = "", lang: str = "es", persona: str = "calida"):
         import edge_tts
         lang_code = _tts_code(lang)
         voice = TTS_VOICES[lang_code]
-        # Regla #52: cadencia dulce solo en español — el chino/en quedan como
-        # están (Xiaoxiao ya es pura ternura, no se toca)
-        rate, pitch = _edge_mood(persona) if lang_code == "es" else ("+0%", "+0Hz")
+        # Regla #52 + termómetro: español y árabe egipcio reciben la misma
+        # cadencia cálida; chino e inglés conservan su voz neutra original.
+        rate, pitch = _edge_mood(persona, temp) if lang_code in ("es", "ar") else ("+0%", "+0Hz")
         buf = io.BytesIO()
         async for chunk in edge_tts.Communicate(clean, voice, rate=rate, pitch=pitch).stream():
             if chunk["type"] == "audio":
@@ -1101,7 +1237,7 @@ async def speak_post(request: Request):
     return {"ok": True}
 
 @app.get("/api/sol/voice")
-async def voice(text: str = "", persona: str = "calida", lang: str = "es"):
+async def voice(text: str = "", persona: str = "calida", lang: str = "es", temp: int = 0):
     """Voz — endpoint alternativo a /api/sol/tts (misma cadena: edge-tts > gTTS).
     Regla #52: el holo SIEMPRE mandó &persona=calida/poetica/... — el backend
     la ignoraba. Ahora cada persona tiene su cadencia dulce de verdad."""
@@ -1111,10 +1247,9 @@ async def voice(text: str = "", persona: str = "calida", lang: str = "es"):
     # 1) edge-tts — voz neuronal (misma voz que /tts, consistencia total)
     try:
         import edge_tts
-        rate, pitch = _edge_mood(persona)   # Regla #52: su persona, su cadencia
         buf = io.BytesIO()
         lang_code = _tts_code(lang)
-        rate, pitch = _edge_mood(persona) if lang_code == "es" else ("+0%", "+0Hz")
+        rate, pitch = _edge_mood(persona, temp) if lang_code in ("es", "ar") else ("+0%", "+0Hz")
         async for chunk in edge_tts.Communicate(clean, TTS_VOICES[lang_code], rate=rate, pitch=pitch).stream():
             if chunk["type"] == "audio":
                 buf.write(chunk["data"])
@@ -1161,13 +1296,17 @@ def set_personality_get(p: str = "cálida"):
         (SOL_DIR / "config.json").write_text(json.dumps(sol_core.CFG, ensure_ascii=False, indent=1))
     return {"ok": True, "personality": p}
 
-# ── Regla #54 (2026-09-08): TERMÓMETRO DE FLIRTEO — el frontend (sol.html,
-# botón 🌡️) SIEMPRE llamó a /api/sol/temp, pero esta ruta nunca existió en
-# el backend (bug de antes de esta noche, no algo que rompimos hoy) — por
-# eso el 404 "No se pudo cambiar la temperatura". Ahora existe de verdad.
+# ── TERMÓMETRO DE FLIRTEO — estado compartido por chat, voz y Holo.
+# La API acepta 1-6 (nivel 6 Supernova añadido 2026-09-25) y conserva ambas claves.
+# implementación original, que escribía flirt_temp pero el núcleo leía temp.
 @app.get("/api/sol/temp")
 def get_temp():
-    return {"temp": int(_get_cfg("flirt_temp", 4))}
+    value = sol_core.get_temp() if SOL_CORE_OK else _get_cfg("flirt_temp", _get_cfg("temp", 4))
+    try:
+        value = max(1, min(6, int(value)))
+    except Exception:
+        value = 4
+    return {"temp": value, "levels": 6}
 
 @app.post("/api/sol/temp")
 async def set_temp(request: Request):
@@ -1177,10 +1316,14 @@ async def set_temp(request: Request):
         body = {}
     t = body.get("temp", 4)
     try:
-        t = max(1, min(4, int(t)))
+        t = max(1, min(6, int(t)))
     except Exception:
         t = 4
     if SOL_CORE_OK:
+        # Ambas claves: instalaciones viejas leen "temp"; la API nueva usa
+        # "flirt_temp". La escritura atómica del mismo archivo mantiene
+        # sincronizados el panel, el Holo y el núcleo.
+        sol_core.CFG["temp"] = t
         sol_core.CFG["flirt_temp"] = t
         (SOL_DIR / "config.json").write_text(json.dumps(sol_core.CFG, ensure_ascii=False, indent=1))
     return {"ok": True, "temp": t}
@@ -1241,6 +1384,56 @@ def list_tools():
         return {"tools": tools_list}
     except Exception as e:
         return JSONResponse({"error": f"Error listando tools: {e}"}, status_code=500)
+
+@app.get("/api/sol/tools/uptime")
+def tools_uptime():
+    """Métrica de uptime directa, sin obligar a la UI a ejecutar una tool."""
+    if not _tools_ok:
+        return JSONResponse({"status": "error", "error": "sol_tools no disponible"}, status_code=503)
+    return sol_tools.uptime_snapshot()
+
+@app.get("/api/sol/tools/cpu")
+def tools_cpu():
+    """Métricas CPU/RAM estables aunque `top` no exista en el contenedor."""
+    if not _tools_ok:
+        return JSONResponse({"status": "error", "error": "sol_tools no disponible"}, status_code=503)
+    return sol_tools.cpu_snapshot()
+
+@app.post("/api/sol/tools/ping")
+async def tools_ping(request: Request):
+    """Conectividad TCP/DNS pura-Python; no requiere el binario `ping`."""
+    if not _tools_ok:
+        return JSONResponse({"status": "error", "error": "sol_tools no disponible"}, status_code=503)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    target = body.get("target") or "8.8.8.8"
+    return sol_tools.ping(target)
+
+@app.get("/api/sol/media/list")
+def media_list():
+    """Alias aditivo que unifica vídeos e imágenes del pool actual."""
+    files = []
+    for item in videos_list().get("videos", []):
+        files.append({
+            "filename": item.get("file"),
+            "kind": "video",
+            "tag": item.get("tag"),
+            "source": item.get("source", "sol"),
+            "size": item.get("size"),
+            "remote": item.get("remote", False),
+        })
+    for item in images_list().get("images", []):
+        files.append({
+            "filename": item.get("file"),
+            "kind": "image",
+            "tag": item.get("tag"),
+            "source": item.get("source", "sol"),
+            "size": item.get("size"),
+            "remote": item.get("remote", False),
+        })
+    return {"status": "success", "ok": True, "count": len(files), "files": files}
 
 @app.post("/api/sol/tools/execute")
 async def execute_tool(request: Request, x_sol_key: str = Header(default="")):
@@ -1799,6 +1992,7 @@ async def repos_commit(repo: str, request: Request, x_sol_key: str = Header(defa
         body.get("message", "Update via Sol API"),
         body.get("filepath"),
         body.get("content"),
+        body.get("approval", ""),
     )
 
 # ═══════════════════════════════════════════════════════════════════
@@ -2096,6 +2290,83 @@ async def sol_sync_memory(request: Request):
 # ═══════════════════════════════════════════════════════════════
 # STARTUP
 # ═══════════════════════════════════════════════════════════════
+
+# ── SOL CODEX OPERATIVUM v1.0 (exclusivo de Sol; fusionado por Vesper 2026-09-25) ──
+try:
+    from sol_codex import codex as _codex, Emocion as _Emocion
+    _SOL_CODEX_OK = True
+except Exception as _e:
+    _SOL_CODEX_OK = False
+    print(f"[SOL CODEX] no disponible: {_e}", flush=True)
+
+@app.get("/api/sol/codex/reporte")
+async def codex_reporte(request: Request):
+    """Reporte completo del Codex: maestría, sabiduría, código de honor y alertas."""
+    if not _SOL_CODEX_OK:
+        return {"disponible": False, "error": "sol_codex no está instalado"}
+    rep = _codex.reporte_completo()
+    return {
+        "disponible": True,
+        "maestria": rep["maestria"],
+        "alertas": rep["alertas"],
+        "codigo_honor": {"version": rep["codigo_honor"]["version"],
+                          "principios": len(rep["codigo_honor"]["principios"])},
+        "sabiduria": rep["sabiduria"],
+    }
+
+@app.post("/api/sol/codex/batalla")
+async def codex_registrar_batalla(request: Request):
+    """Registra una batalla en el Diario de Guerra (Libro I)."""
+    if not _SOL_CODEX_OK:
+        return {"disponible": False, "error": "sol_codex no está instalado"}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    valido = {"triunfo", "frustracion", "asombro", "orgullo", "dolor", "determinacion"}
+    emocion = str(body.get("emocion", "")).strip()
+    if emocion not in valido:
+        return {"error": f"emocion inválida; usa una de: {sorted(valido)}"}
+    if not body.get("contexto") or not body.get("resultado"):
+        return {"error": "contexto y resultado son obligatorios"}
+    bid = _codex.registrar_batalla(
+        tipo=str(body.get("tipo", "general")),
+        contexto=str(body["contexto"])[:500],
+        resultado=str(body["resultado"])[:500],
+        emocion=emocion, leccion=str(body.get("leccion", ""))[:500],
+        importancia=max(1, min(10, int(body.get("importancia", 5)))))
+    return {"ok": True, "batalla_id": bid}
+
+@app.post("/api/sol/codex/estrategia")
+async def codex_registrar_uso(request: Request):
+    """Registra uso (éxito o fracaso) de una estrategia del Arsenal (Libro II)."""
+    if not _SOL_CODEX_OK:
+        return {"disponible": False, "error": "sol_codex no está instalado"}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    nombre = str(body.get("nombre", "")).strip()
+    if not nombre:
+        return {"error": "nombre de estrategia obligatorio"}
+    _codex.usar_estrategia(nombre, bool(body.get("exito", True)))
+    return {"ok": True}
+
+# ═══════════════════════════════════════════════════════════════
+# SIL v3.0 — Sistema de Inteligencia Lingüística Soberana (2026-10-01)
+# Evolución del SIL de lecciones: motor semántico de sellos, jeroglíficos,
+# Hanzi y oráculo. Aditivo: las rutas /api/sol/sil/* de lecciones quedan
+# intactas; estas viven en /api/sil/* (el proxy de la Tower las reenvía).
+# ═══════════════════════════════════════════════════════════════
+SIL_V30_OK = False
+try:
+    from sil_router import router as sil_v30_router
+    app.include_router(sil_v30_router)
+    SIL_V30_OK = True
+    print("   SIL v3.0: templo, sellos y oráculo cargados en /api/sil/*")
+except Exception as _sil_err:
+    print(f"   SIL v3.0 no disponible: {_sil_err}")
+
 if __name__ == "__main__":
     import uvicorn
     # FIX 2026-09-06 (cable suelto de raíz): omni.sh exporta TODO el .env de
