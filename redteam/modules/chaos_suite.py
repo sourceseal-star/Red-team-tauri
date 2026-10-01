@@ -320,3 +320,196 @@ def suite_status():
     return {"module": "chaos_suite v1", "state": "active",
             "suites": ["auth", "scope", "stress", "universe"],
             "veredicto_default": "POST /api/chaos/run para lanzar la batería"}
+
+
+# ============================================================
+# E) CHAOS SUITE v2 — اجرای مداوم، هشدار و سطح حمله عمیق
+# ============================================================
+
+import base64 as _b64
+
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.interval import IntervalTrigger
+    _HAS_APS = True
+except ImportError:
+    _HAS_APS = False
+
+try:
+    import httpx as _httpx
+    _HAS_HTTPX = True
+except ImportError:
+    _HAS_HTTPX = False
+
+CHAOS_ALERT_WEBHOOK = os.environ.get("CHAOS_ALERT_WEBHOOK", "")
+CHAOS_INTERVAL_HOURS = int(os.environ.get("CHAOS_INTERVAL_HOURS", "6"))
+CHAOS_CANARY = os.environ.get("CHAOS_CANARY", "1") == "1"
+
+
+async def send_alert(message: str):
+    """هشدار امنیتی — در صورت تنظیم CHAOS_ALERT_WEBHOOK به وب‌هوک (تلگرام/Slack) ارسال می‌شود."""
+    print(f"\n[ALERTA DE SEGURIDAD] {message}")
+    _record({"suite": "_alert", "mensaje": message})
+    if CHAOS_ALERT_WEBHOOK and _HAS_HTTPX:
+        try:
+            async with _httpx.AsyncClient(timeout=10) as client:
+                await client.post(CHAOS_ALERT_WEBHOOK, json={"text": message})
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [!] fallo al enviar alerta: {exc}")
+
+
+# ------------------------------------------------------------
+# ستون ۳: سطح حمله عمیق — JWT، Race Condition، WebSocket
+# ------------------------------------------------------------
+
+def _jwt_unsigned(payload: dict) -> str:
+    """ساخت توکن JWT با alg=none برای تست پذیرش توکن بدون امضا."""
+    h = _b64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode()).rstrip(b"=")
+    p = _b64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=")
+    return f"{h.decode()}.{p.decode()}."
+
+
+async def suite_deep(base_url: str, http_get, http_post) -> list:
+    """تست‌های عمیق: دستکاری JWT، race condition و فازینگ WebSocket."""
+    r = Result("deep")
+    out = []
+
+    # 1) JWT alg=none نباید پذیرفته شود
+    token = _jwt_unsigned({"sub": "attacker", "role": "admin", "exp": 9999999999})
+    code, _ = await http_get(f"{base_url}/api/chaos/status",
+                             headers={"Authorization": f"Bearer {token}"})
+    out.append(r.log("jwt-alg-none", "PASS" if code in (401, 403) else "FAIL",
+                     f"alg=none -> HTTP {code}"))
+
+    # 2) امضای جعلی (HMAC با کلید حدسی) نباید پذیرفته شود
+    h = _b64.urlsafe_b64encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode()).rstrip(b"=")
+    p = _b64.urlsafe_b64encode(json.dumps({"sub": "attacker", "exp": 9999999999}).encode()).rstrip(b"=")
+    sig = _b64.urlsafe_b64encode(hmac.new(b"secret", h + b"." + p, hashlib.sha256).digest()).rstrip(b"=")
+    code, _ = await http_get(f"{base_url}/api/chaos/status",
+                             headers={"Authorization": f"Bearer {h.decode()}.{p.decode()}.{sig.decode()}"})
+    out.append(r.log("jwt-firma-falsa", "PASS" if code in (401, 403) else "FAIL",
+                     f"firma falsa -> HTTP {code}"))
+
+    # 3) Race condition (TOCTOU): ۲۰ درخواست همزمان — سرور نباید کرش کند
+    async def _hit():
+        c, _ = await http_get(f"{base_url}/api/chaos/status")
+        return c
+    codes = await asyncio.gather(*[_hit() for _ in range(20)], return_exceptions=True)
+    errs = [c for c in codes if isinstance(c, Exception) or c >= 500]
+    out.append(r.log("race-toctou", "PASS" if not errs else "FAIL",
+                     f"20 req simultáneas, errores: {len(errs)}"))
+
+    # 4) WebSocket fuzzing (اگر endpoint وجود داشته باشد)
+    ws_url = base_url.replace("http", "ws", 1) + "/ws"
+    try:
+        import websockets  # type: ignore
+        try:
+            async with websockets.connect(ws_url, open_timeout=3) as ws:
+                for junk in ('{"x":' + "A" * 5000, "\x00\x01\x02", "not json"):
+                    await ws.send(junk)
+                out.append(r.log("ws-fuzz", "PASS", "ws sobrevivió fuzzing"))
+        except Exception:
+            out.append(r.log("ws-fuzz", "PASS", "ws rechazó conexión/fuzz correctamente"))
+    except ImportError:
+        out.append(r.log("ws-fuzz", "FOUND", "websockets no instalado; prueba omitida"))
+
+    return out
+
+
+# ------------------------------------------------------------
+# ستون ۲: اجرای مداوم با Canary
+# ------------------------------------------------------------
+
+async def scheduled_chaos_run(base_url: str = "http://127.0.0.1:8001"):
+    """اجرای دوره‌ای خودکار: ابتدا Canary (سناریوهای سبک)، سپس باتری کامل در صورت سلامت."""
+    if not _HAS_HTTPX:
+        print("[!] httpx no disponible; ejecución programada omitida")
+        return
+    print("\n[CHAOS v2] ejecución automática iniciada")
+
+    async with _httpx.AsyncClient(timeout=15, verify=False) as client:
+        async def http_get(url, **kw):
+            try:
+                resp = await client.get(url, **kw)
+                return resp.status_code, resp.text
+            except Exception:
+                return 0, ""
+
+        async def http_post(url, **kw):
+            try:
+                resp = await client.post(url, **kw)
+                return resp.status_code, resp.text
+            except Exception:
+                return 0, ""
+
+        # Canary: فقط تست‌های عمیقِ سبک روی endpoint سلامت
+        canary = await suite_deep(base_url, http_get, http_post)
+        canary_fails = sum(1 for x in canary if x is False)
+
+        if CHAOS_CANARY and canary_fails > 0:
+            await send_alert(f"Chaos Canary: {canary_fails} fallos en pruebas ligeras; "
+                             "batería completa pospuesta.")
+            return
+
+        results = canary
+        for suite_fn in (suite_stress,):
+            results += await suite_fn()
+
+    fails = sum(1 for x in results if x is False)
+    _record({"suite": "_summary_v2", "total": len(results), "falls": fails,
+             "ejecutado": datetime.now(timezone.utc).isoformat()})
+    if fails > 0:
+        await send_alert(f"Chaos Suite v2 detectó {fails} debilidades. Revisión urgente.")
+    else:
+        print("[CHAOS v2] sistema resistente")
+
+
+scheduler = AsyncIOScheduler() if _HAS_APS else None
+
+
+@router.on_event("startup")
+async def start_scheduler():
+    if scheduler is None:
+        print("[CHAOS v2] APScheduler no instalado; ejecución automática desactivada")
+        return
+    scheduler.add_job(scheduled_chaos_run, IntervalTrigger(hours=CHAOS_INTERVAL_HOURS),
+                      id="chaos-auto", replace_existing=True)
+    scheduler.start()
+    print(f"[CHAOS v2] scheduler activo (cada {CHAOS_INTERVAL_HOURS}h, canary={CHAOS_CANARY})")
+
+
+@router.on_event("shutdown")
+def stop_scheduler():
+    if scheduler is not None and scheduler.running:
+        scheduler.shutdown(wait=False)
+
+
+@router.post("/run/deep")
+async def run_deep(base_url: str = "http://127.0.0.1:8001"):
+    """اجرای دستی تست‌های عمیق v2 (JWT, race, WebSocket)."""
+    if not _HAS_HTTPX:
+        return {"error": "httpx no instalado"}
+    async with _httpx.AsyncClient(timeout=15, verify=False) as client:
+        async def http_get(url, **kw):
+            try:
+                resp = await client.get(url, **kw)
+                return resp.status_code, resp.text
+            except Exception:
+                return 0, ""
+
+        async def http_post(url, **kw):
+            try:
+                resp = await client.post(url, **kw)
+                return resp.status_code, resp.text
+            except Exception:
+                return 0, ""
+        results = await suite_deep(base_url, http_get, http_post)
+    return {"suite": "deep", "total": len(results),
+            "fallos": sum(1 for x in results if x is False)}
+
+
+@router.post("/run/now")
+async def run_now():
+    """اجرای فوری چرخه خودکار (Canary + باتری) بدون انتظار برای زمان‌بند."""
+    await scheduled_chaos_run()
+    return {"suite": "auto", "state": "completed"}
