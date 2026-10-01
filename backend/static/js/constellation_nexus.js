@@ -477,7 +477,8 @@ class ConstellationNexus {
 
     async iniciar() {
         await this.cargar();
-        setInterval(() => this.cargar(), 12000);  // 12s — se auto-pausa si document.hidden
+        this._actualizarPanel();
+        setInterval(async () => { await this.cargar(); this._actualizarPanel(); }, 12000);  // 12s — se auto-pausa si document.hidden
 
         const loop = () => {
             this.fisica();
