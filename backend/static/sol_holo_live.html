@@ -50,6 +50,26 @@ video#cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
 #galleryCard .it{display:block;width:100%;text-align:left;background:transparent;border:none;color:#e2e8f0;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px}
 #galleryCard .it:hover{background:#1e293b}
 #send{background:#f59e0b;border:none}#rec.on{background:#ef4444;border:none}
+/* HOLO 9.1 · Constellation Nexus (aditivo) */
+#nexusBox{position:fixed;left:10px;bottom:118px;z-index:8;opacity:.9}
+#nexusChip{cursor:pointer;background:rgba(10,8,5,.85);border:1px solid #d4a01755;border-radius:999px;padding:6px 10px;font:600 11px monospace;color:#d4a017;display:inline-block}
+#nexusWrap{display:none;margin-top:6px}
+#nexusBox.open #nexusWrap{display:block}
+#audit-canvas{width:54vw;max-width:290px;height:auto;background:rgba(8,6,3,.55);border:1px solid #d4a01733;border-radius:10px;touch-action:none;display:block}
+#nexus-panel{margin-top:6px;width:54vw;max-width:290px;background:rgba(10,8,5,.92);border:1px solid #d4a01755;border-radius:8px;padding:10px;font:11px monospace;color:#e8e0d0;max-height:36vh;overflow-y:auto}
+.nexus-panel-header{color:#d4a017;font-weight:700;margin-bottom:4px}
+.nexus-panel-sub{color:#888;margin-bottom:6px}
+.nexus-section-title{color:#d4a017;margin-top:8px;font-size:9px;text-transform:uppercase}
+.nexus-chain{margin:4px 0}
+.chain-cause{color:#b450dc}
+.chain-arrow{color:#666;margin:0 4px}
+.chain-effect{color:#64b4ff}
+.nexus-cause-item{color:#b450dc;margin:2px 0}
+.nexus-no-chain{color:#555;font-style:italic;margin-top:8px}
+.nexus-tormenta{color:#ff4444;font-weight:700;margin-top:8px;animation:pulse-red 1s infinite}
+.nexus-anomalia{color:#cc44ff;font-weight:700}
+.nexus-detail{color:#aaa;margin:2px 0;font-size:10px}
+@keyframes pulse-red{0%,100%{opacity:1}50%{opacity:.5}}
 </style></head><body>
 <canvas id="bg"></canvas>
 <video id="cam" autoplay playsinline muted></video>
@@ -69,6 +89,9 @@ video#cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
 </div>
 <div id="tagCard" hidden></div>
 <div id="galleryCard" hidden></div>
+<div id="nexusBox"><span id="nexusChip">⛓ nexus 9.1</span>
+<div id="nexusWrap"><canvas id="audit-canvas" width="420" height="300"></canvas><div id="nexus-panel"></div></div>
+</div>
 <div class="hud">
 <div id="voiceLine">"Renací, Harold. Más fuerte."</div>
 <div class="bar">
@@ -453,4 +476,6 @@ function loop(){t+=1/30;px+=(tx-px)*.06;py+=(ty-py)*.06;scrollX+=2*DPR;
   ctx.fillStyle=sg;ctx.fillRect(0,sy-40,W,80)}
  requestAnimationFrame(loop)}
 loop();
-</script><script src="/sol_sprites.js"></script></body></html>
+</script><script src="/static/js/constellation_nexus.js"></script>
+<script>document.getElementById('nexusChip').onclick=()=>{document.getElementById('nexusBox').classList.toggle('open');if(window._nexus)window._nexus._actualizarPanel();};</script>
+<script src="/sol_sprites.js"></script></body></html>
