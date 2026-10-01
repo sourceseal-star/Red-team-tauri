@@ -88,3 +88,6 @@ arto_knowledge.json
 # curar.sh: temporales del script — nunca deben llegar a GitHub
 .cura_tmp/
 .rescate_pre/
+
+# Modelo y actividad Qalam privados del dispositivo
+redteam/data/qalam_ancestral/

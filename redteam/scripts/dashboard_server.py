@@ -302,6 +302,14 @@ try:
 except Exception as _eclipse_err:
     print(f"[WARN] eclipse import falló: {_eclipse_err}", flush=True)
 
+# Qalam Ancestral: protegido por el middleware del dashboard, sin lectura automática.
+try:
+    from redteam.modules.qalam_ancestral import router as qalam_ancestral_router
+    app.include_router(qalam_ancestral_router)
+    print("[QALAM] Router montado en /api/qalam/* (entrenamiento explícito)")
+except Exception as _qalam_err:
+    print(f"[WARN] qalam_ancestral import falló: {_qalam_err}", flush=True)
+
 # ── Include Enhanced Recon router ──────────────────────────────────────────
 if _ENHANCED_RECON_OK:
     app.include_router(enhanced_recon_router)
