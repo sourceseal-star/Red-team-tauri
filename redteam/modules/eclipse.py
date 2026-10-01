@@ -60,6 +60,9 @@ os.makedirs(FORENSIC_DIR, exist_ok=True)
 
 DEFAULT_BASE_URL = os.getenv("ECLIPSE_TARGET", "http://127.0.0.1:8001")
 ALERT_WEBHOOK = os.getenv("ECLIPSE_ALERT_WEBHOOK", "")  # خالی = فقط لاگ
+UNIVERSE_STATUS_PATH = os.getenv("ECLIPSE_STATUS_PATH", "/api/universe/status")
+UNIVERSE_POST_PATH = os.getenv("ECLIPSE_POST_PATH", "/api/universe/telemetry")
+SERVE_PORT = int(os.getenv("ECLIPSE_PORT", "8021"))
 
 
 # ============================================================ هسته
@@ -477,8 +480,16 @@ async def suite_universe(base_url: str = DEFAULT_BASE_URL) -> List[bool]:
     out: List[bool] = []
     try:
         async with httpx.AsyncClient(timeout=8, verify=False) as c:
+            # D0: endpoint وضعیت (GET) — قابل‌تنظیم با ECLIPSE_STATUS_PATH
+            st = await c.get(base_url + UNIVERSE_STATUS_PATH)
+            out.append(r.log(
+                "D0-status-endpoint",
+                "PASS" if st.status_code == 200 else "FAIL",
+                f"GET {UNIVERSE_STATUS_PATH} → {st.status_code}",
+            ))
+
             resp = await c.post(
-                base_url + "/api/universe/telemetry",
+                base_url + UNIVERSE_POST_PATH,
                 json={"target_latitude": 4.7, "target_longitude": -74.1},
             )
             if resp.status_code != 200:
@@ -503,7 +514,7 @@ async def suite_universe(base_url: str = DEFAULT_BASE_URL) -> List[bool]:
 
             # D2: consistency — دو درخواست متوالی نباید داده متناقض بدهند
             resp2 = await c.post(
-                base_url + "/api/universe/telemetry",
+                base_url + UNIVERSE_POST_PATH,
                 json={"target_latitude": 4.7, "target_longitude": -74.1},
             )
             d2 = resp2.json()
@@ -516,7 +527,7 @@ async def suite_universe(base_url: str = DEFAULT_BASE_URL) -> List[bool]:
 
             # D3: مختصات نامعتبر
             bad = await c.post(
-                base_url + "/api/universe/telemetry",
+                base_url + UNIVERSE_POST_PATH,
                 json={"target_latitude": 999, "target_longitude": -999},
             )
             out.append(r.log(
@@ -721,7 +732,38 @@ async def api_reset_circuit():
 # 🖥️ CLI MODE — اجرای مستقل
 # ============================================================
 if __name__ == "__main__":
-    import sys
+    import argparse
 
-    target = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_BASE_URL
-    asyncio.run(run_all_suites(target))
+    parser = argparse.ArgumentParser(
+        prog="eclipse",
+        description="🌑 ECLIPSE v2.0 — ابزار کامل امنیت، آشوب و پاسخ خودکار",
+    )
+    parser.add_argument(
+        "target", nargs="?", default=DEFAULT_BASE_URL,
+        help="آدرس هدف (پیش‌فرض: ECLIPSE_TARGET یا http://127.0.0.1:8001)",
+    )
+    parser.add_argument(
+        "--serve", action="store_true",
+        help="اجرای سرور مستقل روی پورت ECLIPSE_PORT (پیش‌فرض: 8021)",
+    )
+    args = parser.parse_args()
+
+    if args.serve:
+        import uvicorn
+        from fastapi import FastAPI
+
+        standalone = FastAPI(title="ECLIPSE v2.0", version="2.0")
+        standalone.include_router(router)
+
+        @standalone.on_event("startup")
+        async def _standalone_startup():
+            await _eclipse_startup()
+
+        @standalone.on_event("shutdown")
+        async def _standalone_shutdown():
+            await _eclipse_shutdown()
+
+        print(f"[🌑 ECLIPSE] سرور مستقل روی :{SERVE_PORT} — هدف: {args.target}")
+        uvicorn.run(standalone, host="0.0.0.0", port=SERVE_PORT)
+    else:
+        asyncio.run(run_all_suites(args.target))
