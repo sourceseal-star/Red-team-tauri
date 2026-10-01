@@ -42,8 +42,20 @@ MODE="${1:-once}"
 # Un .env es configuración, no un script: así una línea accidental no puede
 # ejecutar comandos ni romper el sync por comillas especiales en una clave.
 env_value() {
+  # Busca en TODOS los .env candidatos, en orden de autoridad: el .env
+  # real de Sol (~/sol/.env, el que omni.sh usa para arrancarla) primero,
+  # luego el de al lado del script (por si vive en otra carpeta). Antes
+  # SOLO miraba "./.env" relativo a donde vive el script — si alguien
+  # copia o corre sol_media_sync.sh desde OTRA carpeta (ej. ~/Red-team-tauri),
+  # leía su .env equivocado (o ninguno) y mandaba una llave vacía/errónea
+  # al servidor, que SIEMPRE la exige en modo protegido (default) → 401
+  # "acceso no autorizado" aunque Sol esté perfectamente despierta.
   local key="$1" line value
-  line="$(grep -E "^${key}[[:space:]]*=" ./.env 2>/dev/null | head -1 || true)"
+  for envf in "$HOME/sol/.env" "./.env"; do
+    [ -f "$envf" ] || continue
+    line="$(grep -E "^${key}[[:space:]]*=" "$envf" 2>/dev/null | head -1 || true)"
+    [ -n "$line" ] && break
+  done
   [ -n "$line" ] || return 0
   value="${line#*=}"
   value="${value#"${value%%[![:space:]]*}"}"
@@ -58,7 +70,7 @@ env_value() {
 
 KEY="${SOL_API_KEY:-}"
 BASE=""
-if [ -f ./.env ]; then
+if [ -f "$HOME/sol/.env" ] || [ -f ./.env ]; then
   file_key="$(env_value SOL_API_KEY)"
   file_base="$(env_value SOL_PUBLIC_URL)"
   [ -n "$file_key" ] && KEY="$file_key"
