@@ -294,6 +294,14 @@ try:
 except Exception as _chaos_err:
     print(f"[WARN] chaos_suite import falló: {_chaos_err}", flush=True)
 
+# ── ECLIPSE — seguridad, caos y respuesta automática (v2.0) ───────────────
+try:
+    from redteam.modules.eclipse import router as eclipse_router
+    app.include_router(eclipse_router)
+    print("[ECLIPSE] Router montado en /api/eclipse/* (chaos + red team + auto-response)")
+except Exception as _eclipse_err:
+    print(f"[WARN] eclipse import falló: {_eclipse_err}", flush=True)
+
 # ── Include Enhanced Recon router ──────────────────────────────────────────
 if _ENHANCED_RECON_OK:
     app.include_router(enhanced_recon_router)

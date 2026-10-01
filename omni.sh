@@ -1671,6 +1671,18 @@ chaos() {
   esac
 }
 
+eclipse() {
+  local sub="${1:-status}" base="${ECLIPSE_BASE_URL:-http://127.0.0.1:8001}"
+  case "$sub" in
+    run)       info "Lanzando bateria ECLIPSE completa..."; curl -s -X POST "$base/api/eclipse/run" | python3 -m json.tool ;;
+    history)   curl -s "$base/api/eclipse/history" | python3 -m json.tool ;;
+    status)    curl -s "$base/api/eclipse/status" | python3 -m json.tool ;;
+    forensics) curl -s "$base/api/eclipse/forensics" | python3 -m json.tool ;;
+    reset)     info "Rearmando circuit breaker de ECLIPSE..."; curl -s -X POST "$base/api/eclipse/reset-circuit" | python3 -m json.tool ;;
+    *) fail "eclipse: subcomando desconocido '$sub' (run|history|status|forensics|reset)"; return 1 ;;
+  esac
+}
+
 case "${1:-help}" in
   start)          acquire_lock; start ;;
   stop)           acquire_lock; stop ;;
@@ -1686,6 +1698,7 @@ case "${1:-help}" in
   verify)         verify ;;
   watchdog)       watchdog ;;
   chaos)          chaos "${2:-status}" ;;
+  eclipse)        eclipse "${2:-status}" ;;
   help|--help|-h) help ;;
   *)              echo "Comando desconocido: $1"; echo ""; help; exit 1 ;;
 esac
