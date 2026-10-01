@@ -64,6 +64,7 @@ const MODULES = [
   { id: 'arto', label: 'ARTO AI', icon: Cpu, color: 'text-orange-400', badge: 'AI' },
   { id: 'seal', label: 'SEAL Pack', icon: Fingerprint, color: 'text-cyan-400', badge: 'NEW' },
   { id: 'leviathan', label: 'LEVIATHAN', icon: Shield, color: 'text-purple-400', badge: 'v3.0' },
+  { id: 'eclipse', label: 'ECLIPSE', icon: Moon, color: 'text-indigo-300', badge: 'v2.0' },
   // ── Añadidos 2026-09-06: rutas que ya existían y funcionaban en el
   // dashboard simplificado — se agregan aquí para que NO desaparezcan
   // al reconectar el War Room completo. Nada se quita, solo se suma. ──
@@ -82,7 +83,7 @@ const SIDEBAR_SECTIONS = [
   { id: 'mando', title: '🏠 Mando', moduleIds: ['warroom', 'tower', 'operations', 'services', 'terminal'] },
   { id: 'red', title: '🗺️ Red', moduleIds: ['supergate', 'universe', 'netmap', 'topology', 'wifi', 'iot'] },
   { id: 'inteligencia', title: '🧠 Inteligencia', moduleIds: ['nexus', 'osint_adv', 'threat', 'arto', 'blackmirror'] },
-  { id: 'laboratorio', title: '⚔️ Laboratorio', moduleIds: ['osint', 'leviathan', 'interceptor', 'tactical'] },
+  { id: 'laboratorio', title: '⚔️ Laboratorio', moduleIds: ['osint', 'leviathan', 'eclipse', 'interceptor', 'tactical'] },
   { id: 'campo', title: '📡 Campo', moduleIds: ['comlink', 'emergency', 'commander', 'android'] },
   { id: 'sistema', title: '⚙️ Sistema', moduleIds: ['alerts', 'export', 'settings', 'seal', 'cameras', 'ultra'] },
   { id: 'mas', title: '📁 Más', moduleIds: ['reports', 'deception', 'soar', 'geo', 'rasp', 'ventas', 'sysconfig', 'about'] },
@@ -127,6 +128,7 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
   arto: 'ARTO AI · análisis y priorización',
   seal: 'SEAL Pack · dispositivos y orquestación',
   leviathan: 'LEVIATHAN · escáneres y módulos de seguridad',
+  eclipse: 'ECLIPSE · batería de caos y resiliencia (auth/scope/stress/universe)',
 };
 
 // ==========================================

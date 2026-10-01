@@ -1673,12 +1673,17 @@ chaos() {
 
 eclipse() {
   local sub="${1:-status}" base="${ECLIPSE_BASE_URL:-http://127.0.0.1:8001}"
+  # Fix 2026-10-01: faltaba el header de autenticación -- el middleware de
+  # dashboard_server.py exige Authorization/X-API-Key en todo /api/* y
+  # devolvia 401 "Unauthorized" en los 5 subcomandos. Mismo patron que
+  # Commander mas arriba (REDTEAM_API_KEY como Bearer).
+  local auth=(-H "Authorization: Bearer ${REDTEAM_API_KEY:-}")
   case "$sub" in
-    run)       info "Lanzando bateria ECLIPSE completa..."; curl -s -X POST "$base/api/eclipse/run" | python3 -m json.tool ;;
-    history)   curl -s "$base/api/eclipse/history" | python3 -m json.tool ;;
-    status)    curl -s "$base/api/eclipse/status" | python3 -m json.tool ;;
-    forensics) curl -s "$base/api/eclipse/forensics" | python3 -m json.tool ;;
-    reset)     info "Rearmando circuit breaker de ECLIPSE..."; curl -s -X POST "$base/api/eclipse/reset-circuit" | python3 -m json.tool ;;
+    run)       info "Lanzando bateria ECLIPSE completa..."; curl -s "${auth[@]}" -X POST "$base/api/eclipse/run" | python3 -m json.tool ;;
+    history)   curl -s "${auth[@]}" "$base/api/eclipse/history" | python3 -m json.tool ;;
+    status)    curl -s "${auth[@]}" "$base/api/eclipse/status" | python3 -m json.tool ;;
+    forensics) curl -s "${auth[@]}" "$base/api/eclipse/forensics" | python3 -m json.tool ;;
+    reset)     info "Rearmando circuit breaker de ECLIPSE..."; curl -s "${auth[@]}" -X POST "$base/api/eclipse/reset-circuit" | python3 -m json.tool ;;
     *) fail "eclipse: subcomando desconocido '$sub' (run|history|status|forensics|reset)"; return 1 ;;
   esac
 }

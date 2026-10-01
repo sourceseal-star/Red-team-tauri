@@ -19,6 +19,7 @@ import { ARTOProvider } from './components/ARTOProvider'
 import BlackMirrorPanel from './components/BlackMirrorPanel'
 import KrakenPanel from './components/KrakenPanel'
 import LeviathanPanel from './components/LeviathanPanel'
+import EclipsePanel from './components/EclipsePanel'
 import InterceptorSealPanel from './components/SealPanel'
 import CommanderPanel from './components/CommanderPanel'
 import ComlinkPanel from './components/ComlinkPanel'
@@ -110,6 +111,7 @@ function Shell() {
         <Route path="/arto" element={<ARTOProvider><ARTOPanel /></ARTOProvider>} />
         <Route path="/seal" element={<InterceptorSealPanel />} />
         <Route path="/leviathan" element={<LeviathanPanel />} />
+        <Route path="/eclipse" element={<EclipsePanel />} />
 
         {/* ── Rutas ya existentes — conservadas, ahora sumadas al menú ── */}
         <Route path="/reports" element={<Reports />} />
