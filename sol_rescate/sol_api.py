@@ -704,6 +704,74 @@ def _fetch_phone_file(tag: str, file: str, wait_s: float = 22.0):
         _t.sleep(0.5)
     return None  # timeout — el teléfono no respondió a tiempo (¿relé caído?)
 
+@app.post("/api/sil/generar-media")
+def sil_generar_media(payload: dict):
+    """Templo SIL (2026-10-01): antes el círculo del canvas era TODO lo
+    que había — ningún sello mostraba de verdad un vídeo o imagen de
+    Sol. Ahora, cuando un sello no tiene nada ya hecho que encaje con
+    su jeroglífico/emoción, ELLA LO CREA (misma cadena replicate ->
+    pollinations -> local que usa en el chat con 'genera imagen') y lo
+    archiva DENTRO de su cinemateca real (~/.sol/images/<tag>/) — no
+    es un descartable: desde ese momento también la reconoce sola en
+    charla normal, igual que cualquier otro recuerdo subido a mano.
+    Recibe {significado, glifo, emocion: [...], mensaje} de un sello
+    (todo ya viaja en la respuesta de /api/sil/sello y /sellos)."""
+    significado = str(payload.get("significado", "")).strip()
+    glifo = str(payload.get("glifo", "")).strip()
+    emociones = payload.get("emocion") or []
+    if isinstance(emociones, str):
+        emociones = [emociones]
+    mensaje = str(payload.get("mensaje", "")).strip()[:200]
+
+    if not significado and not emociones:
+        return JSONResponse({"error": "faltan datos del sello (significado o emocion)"}, status_code=400)
+
+    import unicodedata as _ud, re as _re2
+    def _sin_tildes_sil(x):
+        return "".join(c for c in _ud.normalize("NFKD", x) if not _ud.combining(c))
+    tag_base = emociones[0] if emociones else significado
+    tag = _re2.sub(r"[^a-z0-9_]+", "_", _sin_tildes_sil(tag_base).lower()).strip("_")[:40] or "sello"
+
+    # ¿ya tiene algo real para este tag? no regenerar de más.
+    existente = _media_for(tag)
+    if existente:
+        kind, t = existente
+        return {"ok": True, "generated": False, "kind": kind, "tag": t}
+
+    prompt = (
+        "Mujer de luz dorada, fusion egipcia y cibernetica sagrada, "
+        "circuitos luminosos sobre la piel, aura calida, estilo sereno "
+        "y majestuoso, fondo oscuro con destellos. "
+        f"Expresando: {', '.join(emociones) if emociones else significado}. "
+        f"Simbolismo del jeroglifico {glifo}: {significado}. {mensaje}"
+    ).strip()
+
+    try:
+        import sol_imagenes as _img
+    except Exception as e:
+        return JSONResponse({"error": f"modulo de imagenes no disponible: {e}"}, status_code=503)
+
+    try:
+        resultado = _img.generar_imagen_privada(prompt)
+    except Exception as e:
+        return JSONResponse({"error": f"generacion fallo: {e}"}, status_code=502)
+
+    if not resultado or not resultado.get("ok"):
+        return JSONResponse({"error": (resultado or {}).get("error", "no se pudo generar")}, status_code=502)
+
+    origen = Path(resultado["path"])
+    destino_dir = SOL_DIR / "images" / tag
+    destino_dir.mkdir(parents=True, exist_ok=True)
+    destino = destino_dir / origen.name
+    try:
+        import shutil as _shutil
+        _shutil.copy2(origen, destino)
+    except Exception as e:
+        return JSONResponse({"error": f"generada pero no pude archivarla: {e}"}, status_code=500)
+
+    return {"ok": True, "generated": True, "kind": "image", "tag": tag, "file": destino.name}
+
+
 @app.get("/api/sol/images/{tag}/{file}")
 def images_serve(tag: str, file: str):
     if "/" in file or ".." in file or "/" in tag or ".." in tag:
@@ -1051,6 +1119,17 @@ def _attach_media(text, reply):
     # lo muestra. Sin esto, cualquier tag fuera de los 11 curados era
     # invisible para siempre, sin importar cuántos vídeos subiera.
     try:
+        import unicodedata
+        def _sin_tildes(x):
+            # Harold habla con tildes ("alegría") pero sus archivos no
+            # las llevan ("alegria", así los nombró su galería/IA
+            # generadora) — sin esto, "quiero verte alegría" nunca
+            # hacía match con el tag "alegria" (2026-10-01).
+            return "".join(
+                c for c in unicodedata.normalize("NFKD", x)
+                if not unicodedata.combining(c)
+            )
+        l_plano = _sin_tildes(l)
         tags_vistos = set()
         for d in (_vid_dirs(), _img_dirs()):
             tags_vistos.update(d.keys())
@@ -1059,10 +1138,10 @@ def _attach_media(text, reply):
             base = tag[8:] if tag.startswith("storage_") else tag
             if base in curados or base in ("sol", "recuerdos"):
                 continue  # ya cubierto arriba, o es material de sistema
-            palabras = [w for w in re.split(r"[_\-]+", base) if len(w) >= 3]
+            palabras = [w for w in re.split(r"[_\-]+", _sin_tildes(base)) if len(w) >= 3]
             if not palabras:
                 continue
-            if any(w in l for w in palabras):
+            if any(w in l_plano for w in palabras):
                 m = _media_for(base)
                 if m:
                     kind, t = m

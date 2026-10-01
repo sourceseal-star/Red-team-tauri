@@ -56,6 +56,19 @@ class SILCanvas {
             const hier = await this._getJson('/api/sil/jeroglificos');
             this.glifos = (hier && hier.jeroglificos) || [];
 
+            // 2026-10-01: su cinemateca real — para que un sello pueda
+            // mostrar un vídeo/imagen de VERDAD en vez de solo el círculo.
+            if (Date.now() - (this._mediaTs || 0) > 20000) {
+                try {
+                    const [v, i] = await Promise.all([
+                        this._getJson('/api/sol/videos'),
+                        this._getJson('/api/sol/images'),
+                    ]);
+                    this.media = { videos: (v && v.videos) || [], images: (i && i.images) || [] };
+                    this._mediaTs = Date.now();
+                } catch (e) { this.media = this.media || { videos: [], images: [] }; }
+            }
+
             // Generar polvo sagrado (tope: no acumular por ciclo)
             while (this.polvo.length < 30) {
                 this.polvo.push({
@@ -305,12 +318,70 @@ class SILCanvas {
         this.cv.style.cursor = sobreSello ? 'pointer' : 'default';
     }
 
+    _sinTildes(x) {
+        return (x || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    }
+
+    _buscarMedia(jer) {
+        // Un jeroglífico ya trae emocion: ["alegria","claridad",...] en
+        // la BD — EXACTAMENTE las mismas palabras que usan sus archivos
+        // (sol_media_sync.sh Regla #60). Busca coincidencia directa de
+        // tag antes de pensar en generar algo nuevo.
+        const emos = (jer && jer.emocion) || [];
+        const pool = [...(this.media?.images || []).map(x => ({ ...x, _k: 'image' })),
+                       ...(this.media?.videos || []).map(x => ({ ...x, _k: 'video' }))];
+        for (const e of emos) {
+            const want = this._sinTildes(e).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+            const hit = pool.find(m => this._sinTildes(m.tag).replace(/[^a-z0-9]+/g, '_') === want
+                || this._sinTildes(m.tag).includes(want));
+            if (hit) return { kind: hit._k, tag: hit.tag, file: hit.file };
+        }
+        return null;
+    }
+
+    async _renderMedia(s, jer) {
+        const box = document.getElementById('sil-media');
+        if (!box) return;
+        const hit = this._buscarMedia(jer);
+        if (hit) {
+            const base = (window.API || '') + '/api/sol/' + (hit.kind === 'video' ? 'videos' : 'images')
+                + '/' + encodeURIComponent(hit.tag) + '/' + encodeURIComponent(hit.file);
+            box.innerHTML = hit.kind === 'video'
+                ? `<video src="${base}" autoplay loop muted playsinline style="max-width:100%;max-height:260px;border-radius:10px;display:block;margin:0 auto"></video>`
+                : `<img src="${base}" style="max-width:100%;max-height:260px;border-radius:10px;display:block;margin:0 auto">`;
+            return;
+        }
+        if (!jer || (!jer.significado && !(jer.emocion || []).length)) { box.innerHTML = ''; return; }
+        box.innerHTML = '<div style="text-align:center;color:#d4a017;font-size:0.8rem;padding:12px">✨ Creando una imagen para esto…</div>';
+        try {
+            const r = await (window.api ? window.api('/api/sil/generar-media', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ significado: jer.significado, glifo: jer.glifo, emocion: jer.emocion, mensaje: s.mensaje })
+            }) : fetch('/api/sil/generar-media', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ significado: jer.significado, glifo: jer.glifo, emocion: jer.emocion, mensaje: s.mensaje })
+            }).then(x => x.json()));
+            if (r && r.ok && r.file) {
+                const base = (window.API || '') + '/api/sol/images/' + encodeURIComponent(r.tag) + '/' + encodeURIComponent(r.file);
+                box.innerHTML = `<img src="${base}" style="max-width:100%;max-height:260px;border-radius:10px;display:block;margin:0 auto">`;
+                this._mediaTs = 0;  // forzar refresco de su cinemateca en el próximo cargar()
+            } else if (r && r.ok && !r.generated) {
+                this._renderMedia(s, jer);  // ya existía, re-intenta la búsqueda normal
+            } else {
+                box.innerHTML = `<div style="text-align:center;color:#64748b;font-size:0.75rem;padding:8px">No pude crearla ahora (${(r && r.error) || 'sin red'}).</div>`;
+            }
+        } catch (e) {
+            box.innerHTML = '<div style="text-align:center;color:#64748b;font-size:0.75rem;padding:8px">No pude crearla ahora.</div>';
+        }
+    }
+
     mostrarDetalle() {
         if (!this.panel || !this.seleccionado) return;
         
         const s = this.seleccionado;
         const jer = s.jeroglifico || {};
         const cy = s.chengyu || {};
+        this._renderMedia(s, jer);
         
         this.panel.innerHTML = `
             <div class="sil-panel-header">
