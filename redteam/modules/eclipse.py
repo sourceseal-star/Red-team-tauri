@@ -30,6 +30,7 @@ import random
 import string
 import time
 import traceback
+import uuid
 from collections import deque
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
@@ -341,8 +342,14 @@ def scope_check(target: str) -> bool:
         if s.startswith("*."):
             suffix = s[1:]
             if t.endswith(suffix) and t != suffix.lstrip("."):
-                # باید ساب‌دامین واقعی باشد، نه صرفاً دامنه اصلی
-                if t.count(".") >= suffix.count(".") + 1:
+                # FIX 2026-10-01: el "+1" exigía UN punto más de los que el
+                # propio sufijo (con su punto líder) ya representa — eso
+                # rechazaba subdominios de primer nivel legítimos como
+                # 'app.miprograma.com' (bug encontrado al correr la batería
+                # de scope como job real: B3 y B7 fallaban su propio caso
+                # esperado). t != dominio-raíz (línea de arriba) YA excluye
+                # el dominio base; no se necesita un conteo extra.
+                if t.count(".") >= suffix.count("."):
                     return True
         elif t == s:
             return True
@@ -648,34 +655,115 @@ class RunRequest(BaseModel):
         default=["auth", "scope", "stress", "universe"],
         description="کدام دسته‌ها اجرا شوند",
     )
-    base_url: Optional[str] = None
+    base_url: Optional[str] = None  # legado: un solo target (compat)
+    # FIX 2026-10-01 (Harold): la zona objetivo NUNCA debe quedar anclada
+    # a una sola IP. targets acepta cualquier cantidad de hosts a escanear;
+    # vacío → usa DEFAULT_BASE_URL como único fallback, no como ancla fija.
+    targets: List[str] = Field(default_factory=list)
+    autonomous: bool = Field(
+        default=True,
+        description="True: corre en background y devuelve job_id de inmediato "
+                     "(no bloquea, nunca da 504). False: espera y devuelve el resultado.",
+    )
 
 
-@router.post("/run")
-async def api_run(req: RunRequest):
-    """اجرای باتری کامل یا انتخابی."""
-    target = req.base_url or DEFAULT_BASE_URL
+# ── Trabajos en background (2026-10-01) ──
+# El 504 "operación tardó más de 25s" pasaba porque /run bloqueaba la
+# petición HTTP hasta terminar TODA la batería. Ahora, por defecto,
+# arranca el trabajo y responde de inmediato con un job_id — el panel
+# lo consulta con GET /run/{job_id}. autonomous=false conserva el modo
+# viejo (bloqueante) para quien lo necesite explícitamente.
+_JOBS: Dict[str, Dict[str, Any]] = {}
+_JOBS_MAXLEN = 50
+
+
+def _resolve_targets(req: "RunRequest") -> List[str]:
+    """Nunca un solo valor anclado: lista de targets a escanear.
+    targets[] tiene prioridad; base_url (legado) se suma si viene;
+    sin ninguno de los dos, cae al único fallback por defecto."""
+    targets = [t.strip() for t in (req.targets or []) if t and t.strip()]
+    if req.base_url and req.base_url.strip() and req.base_url.strip() not in targets:
+        targets.append(req.base_url.strip())
+    if not targets:
+        targets = [DEFAULT_BASE_URL]
+    return targets
+
+
+async def _run_battery(suites: List[str], targets: List[str]) -> Dict[str, Any]:
+    """Ejecuta la batería contra TODOS los targets (nunca solo uno),
+    en paralelo. auth/scope son locales (no dependen de un target)."""
     all_results: List[bool] = []
+    por_target: Dict[str, Dict[str, Any]] = {}
 
-    if "auth" in req.suites:
+    if "auth" in suites:
         all_results += await suite_auth()
-    if "scope" in req.suites:
+    if "scope" in suites:
         all_results += suite_scope()
-    if "stress" in req.suites:
-        all_results += await suite_stress(target)
-    if "universe" in req.suites:
-        all_results += await suite_universe(target)
+
+    async def _per_target(target: str):
+        res: List[bool] = []
+        if "stress" in suites:
+            res += await suite_stress(target)
+        if "universe" in suites:
+            res += await suite_universe(target)
+        fails_t = sum(1 for x in res if x is False)
+        por_target[target] = {"total": len(res), "falls": fails_t}
+        return res
+
+    if "stress" in suites or "universe" in suites:
+        resultados = await asyncio.gather(*[_per_target(t) for t in targets])
+        for r in resultados:
+            all_results += r
 
     fails = sum(1 for x in all_results if x is False)
     return {
         "ejecutado": datetime.now(timezone.utc).isoformat(),
-        "suites": req.suites,
-        "target": target,
+        "suites": suites,
+        "targets": targets,
+        "por_target": por_target,
         "total": len(all_results),
         "falls": fails,
         "veredicto": "SISTEMA RESISTE" if fails == 0 else f"{fails} PUNTO(S) DÉBIL(ES)",
         "circuit_breaker": circuit_breaker.state(),
     }
+
+
+async def _run_job(job_id: str, suites: List[str], targets: List[str]) -> None:
+    try:
+        result = await _run_battery(suites, targets)
+        _JOBS[job_id] = {"status": "done", "result": result}
+    except Exception as e:
+        _JOBS[job_id] = {"status": "error", "error": str(e)}
+    # cap de memoria: conservar solo los últimos N jobs
+    if len(_JOBS) > _JOBS_MAXLEN:
+        for old_id in list(_JOBS.keys())[:-_JOBS_MAXLEN]:
+            _JOBS.pop(old_id, None)
+
+
+@router.post("/run")
+async def api_run(req: RunRequest):
+    """Lanza la batería (auth/scope/stress/universe) a elección contra
+    cualquier cantidad de targets — nunca anclada a uno solo.
+    autonomous=true (por defecto): no bloquea, devuelve job_id de inmediato.
+    autonomous=false: espera y devuelve el resultado completo (modo legado)."""
+    targets = _resolve_targets(req)
+
+    if not req.autonomous:
+        return await _run_battery(req.suites, targets)
+
+    job_id = uuid.uuid4().hex[:12]
+    _JOBS[job_id] = {"status": "running"}
+    asyncio.create_task(_run_job(job_id, req.suites, targets))
+    return {"job_id": job_id, "status": "running", "suites": req.suites, "targets": targets}
+
+
+@router.get("/run/{job_id}")
+async def api_run_status(job_id: str):
+    """Consulta un trabajo lanzado en background (autonomous=true)."""
+    job = _JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job_id no encontrado (¿expiró del caché o nunca existió?)")
+    return {"job_id": job_id, **job}
 
 
 @router.get("/history")
@@ -702,6 +790,7 @@ async def api_status():
         "state": "active",
         "suites": ["auth", "scope", "stress", "universe"],
         "target_default": DEFAULT_BASE_URL,
+        "target_nota": "fallback único si no se especifican targets — nunca obligatorio ni anclado",
         "alert_webhook": bool(ALERT_WEBHOOK),
         "scheduler": "active" if scheduler and scheduler.running else "inactive",
         "jwt": JWT_AVAILABLE,
