@@ -3747,8 +3747,17 @@ async def _proxy_to_sol(prefix: str, rest: str, request: Request):
         value = request.headers.get(key)
         if value:
             headers[key] = value
+    # FIX 2026-10-01: generar una imagen (SIL /api/sil/generar-media,
+    # cadena replicate->pollinations) tarda fácilmente 10-60s — el timeout
+    # general de 20s del proxy mataba la generación a la mitad cuando el
+    # Templo se abría vía la torre (:8001). Directo por :8006 nunca tuvo
+    # este problema. Solo esta ruta recibe ventana larga; el chat sigue
+    # con su timeout corto y responsivo.
+    _t = _SOL_PROXY_TIMEOUT
+    if prefix == "/api/sil" and rest.startswith("generar-media"):
+        _t = max(_SOL_PROXY_TIMEOUT, 150.0)
     try:
-        async with httpx.AsyncClient(timeout=_SOL_PROXY_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=_t) as client:
             resp = await client.request(
                 request.method, url,
                 content=body,
