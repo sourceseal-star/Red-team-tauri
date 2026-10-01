@@ -1044,6 +1044,31 @@ def _attach_media(text, reply):
             if m:
                 kind, t = m
                 return reply.rstrip() + f" [[{kind}:{t}]]"
+    # 2026-10-01 (Regla #59): fallback GENÉRICO — Harold tiene 60+ tags
+    # propios en sol_media.mc que nunca estarán en la lista curada de
+    # arriba. Si el NOMBRE del tag (o sus palabras, separadas por _/-)
+    # aparece tal cual en lo que se dijo, ella también lo reconoce y
+    # lo muestra. Sin esto, cualquier tag fuera de los 11 curados era
+    # invisible para siempre, sin importar cuántos vídeos subiera.
+    try:
+        tags_vistos = set()
+        for d in (_vid_dirs(), _img_dirs()):
+            tags_vistos.update(d.keys())
+        curados = {t for t, _ in MEDIA_HINTS}
+        for tag in tags_vistos:
+            base = tag[8:] if tag.startswith("storage_") else tag
+            if base in curados or base in ("sol", "recuerdos"):
+                continue  # ya cubierto arriba, o es material de sistema
+            palabras = [w for w in re.split(r"[_\-]+", base) if len(w) >= 3]
+            if not palabras:
+                continue
+            if any(w in l for w in palabras):
+                m = _media_for(base)
+                if m:
+                    kind, t = m
+                    return reply.rstrip() + f" [[{kind}:{t}]]"
+    except Exception:
+        pass
     return reply
 
 def _think(text, language="es"):

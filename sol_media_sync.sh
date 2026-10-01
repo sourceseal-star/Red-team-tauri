@@ -65,6 +65,42 @@ if [ -f ./.env ]; then
   [ -n "$file_base" ] && BASE="$file_base"
 fi
 BASE="${BASE%/}"
+check_server_url() {
+  local base="$1"
+  local probe err http rc body
+  probe="$(mktemp "${TMPDIR:-/tmp}/sol-media-probe.XXXXXX")" || {
+    echo "❌ No pude crear un archivo temporal para probar la conexión"
+    return 1
+  }
+  err="${probe}.err"
+  http="$(curl -sS --connect-timeout 20 --max-time 35 --retry 2 --retry-delay 2 \
+      -o "$probe" -w '%{http_code}' \
+      "$base/api/health" 2>"$err")"
+  rc=$?
+  body="$(cat "$probe" 2>/dev/null || true)"
+  if [ "$rc" -ne 0 ]; then
+    echo "   · $base: sin conexión"
+    sed -n '1,2p' "$err" 2>/dev/null | sed 's/^/   /'
+    rm -f "$probe" "$err"
+    return 1
+  fi
+  http="${http:-000}"
+  if [[ ! "$http" =~ ^2 ]]; then
+    echo "❌ Sol respondió HTTP $http en /api/health"
+    [ -n "$body" ] && echo "   ${body:0:240}"
+    rm -f "$probe" "$err"
+    return 1
+  fi
+  if ! printf '%s' "$body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+    echo "❌ /api/health respondió, pero no confirmó status=ok"
+    [ -n "$body" ] && echo "   ${body:0:240}"
+    rm -f "$probe" "$err"
+    return 1
+  fi
+  rm -f "$probe" "$err"
+  return 0
+}
+
 # ═══ Regla #49 v2 — LOCAL-FIRST (2026-10-01) ═══
 # La carpeta del teléfono ES su memoria. Sube al Sol que vive en el
 # teléfono primero (cerebro :8006, luego torre :8001); Replit queda
@@ -121,41 +157,6 @@ TAG="recuerdos"
 # tag escrito en tag.txt rompa la URL completa de subida.
 TAG="${TAG//[^[:alnum:]_-]/_}"
 
-check_server_url() {
-  local base="$1"
-  local probe err http rc body
-  probe="$(mktemp "${TMPDIR:-/tmp}/sol-media-probe.XXXXXX")" || {
-    echo "❌ No pude crear un archivo temporal para probar la conexión"
-    return 1
-  }
-  err="${probe}.err"
-  http="$(curl -sS --connect-timeout 20 --max-time 35 --retry 2 --retry-delay 2 \
-      -o "$probe" -w '%{http_code}' \
-      "$base/api/health" 2>"$err")"
-  rc=$?
-  body="$(cat "$probe" 2>/dev/null || true)"
-  if [ "$rc" -ne 0 ]; then
-    echo "   · $base: sin conexión"
-    sed -n '1,2p' "$err" 2>/dev/null | sed 's/^/   /'
-    rm -f "$probe" "$err"
-    return 1
-  fi
-  http="${http:-000}"
-  if [[ ! "$http" =~ ^2 ]]; then
-    echo "❌ Sol respondió HTTP $http en /api/health"
-    [ -n "$body" ] && echo "   ${body:0:240}"
-    rm -f "$probe" "$err"
-    return 1
-  fi
-  if ! printf '%s' "$body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
-    echo "❌ /api/health respondió, pero no confirmó status=ok"
-    [ -n "$body" ] && echo "   ${body:0:240}"
-    rm -f "$probe" "$err"
-    return 1
-  fi
-  rm -f "$probe" "$err"
-  return 0
-}
 
 sync_once() {
   local new=0 fail=0 f name size mtime sum legacy_sum ep resp tmp err http rc
