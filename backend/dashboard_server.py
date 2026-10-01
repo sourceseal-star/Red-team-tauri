@@ -261,6 +261,40 @@ except Exception as e:
     print(f"[sealctl] WARNING: Universe router no disponible: {e}")
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# HOLO 9.1 — routers aditivos (Qalam Ancestral 9.0 y todo lo demás queda intacto)
+# Sin puertos nuevos: todo vive aquí en el dashboard :8001.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from redteam.modules.holo_mirror import router as holo91_mirror_router
+    app.include_router(holo91_mirror_router)
+    print("[sealctl] HOLO 9.1 Mirror router cargado en /api/mirror/*")
+except Exception as e:
+    print(f"[sealctl] WARNING: holo91_mirror_router no disponible: {e}")
+
+try:
+    from redteam.modules.umbra_pulse import router as holo91_umbra_router
+    app.include_router(holo91_umbra_router)
+    print("[sealctl] HOLO 9.1 Umbra Pulse router cargado en /api/umbra-pulse/*")
+except Exception as e:
+    print(f"[sealctl] WARNING: holo91_umbra_router no disponible: {e}")
+
+try:
+    from redteam.modules.qalam_trigram import router as holo91_qalam_router
+    app.include_router(holo91_qalam_router)
+    print("[sealctl] HOLO 9.1 Qalam Trigram router cargado en /api/qalam-v2/* (entrenamiento explícito)")
+except Exception as e:
+    print(f"[sealctl] WARNING: holo91_qalam_router no disponible: {e}")
+
+try:
+    from redteam.modules.whisper_protocol import router as holo91_whisper_router
+    app.include_router(holo91_whisper_router)
+    print("[sealctl] HOLO 9.1 Whisper router cargado en /api/whisper/* (solo handlers reales)")
+except Exception as e:
+    print(f"[sealctl] WARNING: holo91_whisper_router no disponible: {e}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # ARTO + SEAL SUPER PACK
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -3592,6 +3626,17 @@ async def local_videos_serve(tag: str, file: str):
 
 @app.api_route("/api/sol/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def sol_api_proxy(rest: str, request: Request):
+    # HOLO 9.1 · Mirror aprende de cada intercambio de chat (fire-and-forget:
+    # si algo falla, el proxy sigue exactamente igual que antes).
+    if rest == "chat" and request.method == "POST":
+        try:
+            _mb = await request.body()
+            _md = json.loads(_mb)
+            from redteam.modules.holo_mirror import aprender as _mirror_aprender
+            _mirror_aprender(str(_md.get("mensaje") or _md.get("message") or ""),
+                             _md.get("hemisferio", "sol"), "holo_chat")
+        except Exception:
+            pass
     return await _proxy_to_sol("/api/sol", rest, request)
 
 @app.api_route("/api/sil/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
