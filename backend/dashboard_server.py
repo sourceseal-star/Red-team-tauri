@@ -295,6 +295,18 @@ except Exception as e:
     print(f"[sealctl] WARNING: holo91_whisper_router no disponible: {e}")
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# ECLIPSE v2.0 — suite de seguridad (auth harness, circuit breaker, scope).
+# Fix 2026-10-01: el router EXISTÍA pero nunca se registró — el panel de la
+# war room daba 404. Registrado con auth: es una suite de ataque/defensa.
+# ═══════════════════════════════════════════════════════════════════════════════
+try:
+    from redteam.modules.eclipse import router as eclipse_router
+    app.include_router(eclipse_router, dependencies=[Depends(require_auth)])
+    print("[sealctl] ECLIPSE v2.0 router cargado en /api/eclipse/* (auth)")
+except Exception as e:
+    print(f"[sealctl] WARNING: eclipse_router no disponible: {e}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # ARTO + SEAL SUPER PACK
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -415,6 +427,216 @@ async def root():
     if _FRONTEND_BUILT:
         return FileResponse(_FRONTEND_INDEX, media_type="text/html")
     return await _health_payload()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🌑 ECLIPSE DE LA WAR ROOM (2026-10-01) — lo que un eclipse representa:
+# opaca y oscurece TODO por unos minutos. Estado REAL en este servidor:
+# cada pestaña/navegador del war room se oscurece junto (botón 🌑 + WS)
+# y se restaura sola al terminar. 🔓 desbloqueo deliberado manteniendo
+# presionado 1.5s. Sin puertos nuevos: todo aquí en :8001. Nada simulado.
+# ═══════════════════════════════════════════════════════════════════════════════
+_ECLIPSE = {"activo": False, "inicio": None, "fin": None, "minutos": 0, "motivo": ""}
+
+class EclipseRequest(BaseModel):
+    minutos: int = 3
+    motivo: str = ""
+
+@app.get("/api/eclipse/estado")
+async def eclipse_estado():
+    """Estado del eclipse — lectura pública (solo activo/restante, nada sensible).
+    Expira solo: si el tiempo pasó, el servidor mismo lo apaga."""
+    import time as _t
+    fin = _ECLIPSE.get("fin")
+    restante = 0
+    if _ECLIPSE["activo"] and fin:
+        restante = int(fin - _t.time())
+        if restante <= 0:
+            _ECLIPSE.update({"activo": False, "fin": None})
+            restante = 0
+            try:
+                await broadcast_ws({"type": "eclipse", "activo": False, "restante": 0})
+            except Exception:
+                pass
+    return {"activo": _ECLIPSE["activo"], "restante": restante,
+            "minutos": _ECLIPSE.get("minutos", 0), "motivo": _ECLIPSE.get("motivo", "")}
+
+@app.post("/api/eclipse/iniciar", dependencies=[Depends(require_auth)])
+async def eclipse_iniciar(req: EclipseRequest):
+    """Oscurecer todo el war room por N minutos (1-60). Requiere la API key."""
+    import time as _t
+    m = max(1, min(60, int(req.minutos or 3)))
+    _ECLIPSE.update({"activo": True, "inicio": _t.time(), "fin": _t.time() + m * 60,
+                     "minutos": m, "motivo": (req.motivo or "")[:80]})
+    try:
+        await broadcast_ws({"type": "eclipse", "activo": True,
+                            "restante": m * 60, "motivo": _ECLIPSE["motivo"]})
+    except Exception:
+        pass
+    return {"ok": True, "activo": True, "minutos": m, "restante": m * 60}
+
+@app.post("/api/eclipse/terminar", dependencies=[Depends(require_auth)])
+async def eclipse_terminar():
+    """🔓 Terminar el eclipse antes de tiempo (desbloqueo deliberado)."""
+    _ECLIPSE.update({"activo": False, "fin": None})
+    try:
+        await broadcast_ws({"type": "eclipse", "activo": False, "restante": 0})
+    except Exception:
+        pass
+    return {"ok": True, "activo": False}
+
+_ECLIPSE_JS = '''
+// 🌑 ECLIPSE DE LA WAR ROOM — v1.0 (2026-10-01)
+// Lo que un eclipse representa: opaca y oscurece TODO por unos minutos.
+// El estado vive en el SERVIDOR (:8001): todas las pestañas y navegadores
+// del war room se oscurecen juntas y se restauran solas. Nada simulado.
+(function(){
+  if (window.__eclipseInstalled) return; window.__eclipseInstalled = true;
+
+  var key = function(){ try { return localStorage.getItem('api_token') || ''; } catch(e){ return ''; } };
+  var authH = function(){ var k = key(); var h = {}; if (k) { h['Authorization'] = 'Bearer ' + k; h['X-Api-Key'] = k; } return h; };
+
+  var overlay = null, tickTimer = null, restante = 0;
+
+  function fmt(s){ var m = Math.floor(s/60), r = s%60; return m + ':' + (r<10?'0':'') + r; }
+
+  function buildOverlay(){
+    if (overlay) return overlay;
+    overlay = document.createElement('div');
+    overlay.id = 'eclipse-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#000;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-family:system-ui,sans-serif;';
+    overlay.innerHTML = [
+      '<div id="eclipse-disc" style="width:170px;height:170px;border-radius:50%;position:relative;overflow:hidden;background:#000;box-shadow:0 0 90px 18px rgba(140,20,20,.35);">',
+      ' <div style="position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 30% 30%, rgba(255,90,60,.55), rgba(90,10,10,.25) 60%, transparent);"></div>',
+      ' <div id="eclipse-moon" style="position:absolute;top:-6px;left:-100%;width:100%;height:112%;border-radius:50%;background:#000;"></div>',
+      '</div>',
+      '<div style="color:#c33;font-size:1.25rem;letter-spacing:4px;font-weight:700;">🌑 ECLIPSE ACTIVO</div>',
+      '<div id="eclipse-motivo" style="color:#665;font-size:0.8rem;"></div>',
+      '<div id="eclipse-count" style="color:#fff;font-size:2.6rem;font-variant-numeric:tabular-nums;font-weight:300;"></div>',
+      '<div style="color:#554;font-size:0.72rem;">todo oscurecido · se restaura solo al terminar</div>',
+      '<button id="eclipse-unlock" style="margin-top:8px;background:transparent;border:1px solid #433;color:#a86;padding:10px 22px;border-radius:999px;font-size:0.85rem;cursor:pointer;">🔓 mantener para terminar</button>'
+    ].join('');
+    document.body.appendChild(overlay);
+    var btn = overlay.querySelector('#eclipse-unlock');
+    var hold = null;
+    var start = function(){
+      hold = setTimeout(function(){
+        fetch('/api/eclipse/terminar', { method: 'POST',
+          headers: Object.assign({'Content-Type':'application/json'}, authH()), body: '{}' }).catch(function(){});
+      }, 1500);
+    };
+    var stop = function(){ if (hold) { clearTimeout(hold); hold = null; } };
+    btn.addEventListener('mousedown', start);
+    btn.addEventListener('touchstart', start, { passive: true });
+    ['mouseup','mouseleave','touchend','touchcancel'].forEach(function(ev){ btn.addEventListener(ev, stop); });
+    return overlay;
+  }
+
+  function paintCount(){
+    var o = overlay && overlay.querySelector('#eclipse-count');
+    if (o) o.textContent = fmt(Math.max(0, restante));
+  }
+
+  function tick(){
+    restante--;
+    if (restante <= 0) { hide(); syncNow(); } else { paintCount(); }
+  }
+
+  function show(data){
+    var o = buildOverlay();
+    if (o.style.display === 'none' || !o.style.display) {
+      o.style.display = 'flex';
+      document.documentElement.style.overflow = 'hidden';
+    }
+    o.querySelector('#eclipse-motivo').textContent = data.motivo ? ('· ' + data.motivo + ' ·') : '';
+    var moon = o.querySelector('#eclipse-moon');
+    moon.style.transition = 'none'; moon.style.left = '-100%';
+    void moon.offsetWidth;
+    var dur = Math.max(data.restante, 10);
+    moon.style.transition = 'left ' + dur + 's linear';
+    moon.style.left = '100%';
+    restante = data.restante || 0;
+    paintCount();
+    if (!tickTimer) tickTimer = setInterval(tick, 1000);
+  }
+
+  function hide(){
+    if (!overlay) return;
+    overlay.style.display = 'none';
+    document.documentElement.style.overflow = '';
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+  }
+
+  function apply(d){
+    if (d && d.activo && d.restante > 0) show(d); else hide();
+  }
+
+  function syncNow(){
+    fetch('/api/eclipse/estado').then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if (d) apply(d); }).catch(function(){});
+  }
+
+  // sincronizar con el servidor cada 4s; pestaña oculta → pausa (batería)
+  setInterval(function(){ if (!document.hidden) syncNow(); }, 4000);
+  syncNow();
+
+  // botón flotante 🌑 — pedir un eclipse desde el war room
+  var btn = document.createElement('button');
+  btn.id = 'eclipse-start';
+  btn.title = 'Eclipse — oscurecer todo el war room por unos minutos';
+  btn.textContent = '🌑';
+  btn.style.cssText = 'position:fixed;bottom:16px;right:14px;z-index:2147483646;background:rgba(0,0,0,.55);border:1px solid #533;color:#eee;border-radius:999px;width:46px;height:46px;font-size:1.2rem;cursor:pointer;';
+  btn.onclick = function(){
+    var m = prompt('🌑 ¿Cuántos minutos debe durar el eclipse? (1-60)', '3');
+    if (m === null) return;
+    var min = parseInt(m, 10);
+    if (!min || min < 1) min = 3;
+    if (min > 60) min = 60;
+    fetch('/api/eclipse/iniciar', { method: 'POST',
+      headers: Object.assign({'Content-Type':'application/json'}, authH()),
+      body: JSON.stringify({ minutos: min, motivo: 'eclipse manual' })
+    }).then(function(r){
+      return r.json().then(function(j){ if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status)); return j; });
+    }).then(function(){ syncNow(); })
+      .catch(function(e){ alert('🌑 ' + (e.message || 'no se pudo iniciar (¿falta la API key?)')); });
+  };
+  document.body.appendChild(btn);
+})();
+
+'''
+
+@app.get("/eclipse.js")
+async def eclipse_js():
+    from fastapi import Response as _FR
+    return _FR(content=_ECLIPSE_JS, media_type="application/javascript",
+               headers={"Cache-Control": "no-cache"})
+
+# ── Inyección: el eclipse entra a CUALQUIER html que sirva el dashboard ──
+from starlette.middleware.base import BaseHTTPMiddleware as _EclipseBHMiddleware
+from starlette.responses import Response as _EclipseSResponse
+
+class _EclipseInjectMiddleware(_EclipseBHMiddleware):
+    """Inyecta <script src="/eclipse.js"> en las páginas text/html — así el
+    eclipse sobrevive a cualquier rebuild del frontend, sin tocar dist/."""
+    async def dispatch(self, request, call_next):
+        resp = await call_next(request)
+        try:
+            ct = resp.headers.get("content-type", "")
+            if "text/html" in ct:
+                body = b""
+                async for chunk in resp.body_iterator:
+                    body += chunk
+                if b"</body>" in body:
+                    body = body.replace(b"</body>",
+                                        b'<script src="/eclipse.js"></script></body>', 1)
+                    nh = {k: v for k, v in resp.headers.items()
+                          if k.lower() not in ("content-length", "content-type")}
+                    return _EclipseSResponse(content=body, status_code=resp.status_code,
+                                              media_type="text/html", headers=nh)
+        except Exception:
+            pass
+        return resp
+
+app.add_middleware(_EclipseInjectMiddleware)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TOPOLOGY — sockets reales, no random
