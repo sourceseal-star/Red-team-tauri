@@ -464,7 +464,7 @@ async def eclipse_estado():
 async def eclipse_iniciar(req: EclipseRequest):
     """Oscurecer todo el war room por N minutos (1-60). Requiere la API key."""
     import time as _t
-    m = max(1, min(60, int(req.minutos or 3)))
+    m = max(1, min(60, int(req.minutos) if req.minutos is not None else 3))
     _ECLIPSE.update({"activo": True, "inicio": _t.time(), "fin": _t.time() + m * 60,
                      "minutos": m, "motivo": (req.motivo or "")[:80]})
     try:
