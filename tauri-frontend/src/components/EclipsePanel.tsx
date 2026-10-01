@@ -30,8 +30,23 @@ export default function EclipsePanel() {
   const fetchStatus = useCallback(async () => {
     setLoadingKey('status', true);
     try {
+      const sRes = await fetch(`${API_BASE}${ECL}/status`, { headers: eclHeaders() });
+      if (!sRes.ok) {
+        // Fix 2026-10-01: antes un 401/404 se tragaba en silencio y el panel
+        // quedaba casi en blanco (solo guiones) sin decir por qué.
+        const msg = sRes.status === 404
+          ? 'El backend no tiene montado /api/eclipse (revisa que el import de eclipse.py no haya fallado en el server — "omni.sh logs" o reinicia).'
+          : sRes.status === 401
+          ? 'No autorizado (401) — tu sesión/token no es válido para esta ruta. Vuelve a iniciar sesión en el panel.'
+          : `HTTP ${sRes.status} en /api/eclipse/status`;
+        setStatus(null);
+        setHistory([]);
+        setError(msg);
+        setLoadingKey('status', false);
+        return;
+      }
       const [s, h] = await Promise.all([
-        fetch(`${API_BASE}${ECL}/status`, { headers: eclHeaders() }).then(r => r.ok ? r.json() : { error: `HTTP ${r.status}` }),
+        sRes.json(),
         fetch(`${API_BASE}${ECL}/history?limit=20`, { headers: eclHeaders() }).then(r => r.ok ? r.json() : []),
       ]);
       setStatus(s);

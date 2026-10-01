@@ -61,7 +61,7 @@ const ID_TO_PATH: Record<string, string> = {
   operations: '/operations', android: '/android', tactical: '/tactical',
   topology: '/topology', iot: '/iot', alerts: '/alerts', export: '/export',
   settings: '/config', osint_adv: '/osint-adv', interceptor: '/interceptor',
-  arto: '/arto', seal: '/seal', leviathan: '/leviathan',
+  arto: '/arto', seal: '/seal', leviathan: '/leviathan', eclipse: '/eclipse',
   reports: '/reports', deception: '/honeypot', soar: '/soar', geo: '/geo',
   rasp: '/rasp', ventas: '/ventas', sysconfig: '/settings', about: '/about',
 };
