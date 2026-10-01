@@ -12,6 +12,12 @@
 #
 #  Si algo sale ❌, copia y pega TODO lo que imprime este script
 #  — ahí está el diagnóstico exacto, no más adivinanzas.
+#
+#  2026-10-01: hay OTRO curar.sh dentro del repo 'sol' (más chico) — ese
+#  SOLO valida/snapshotea los archivos de 'sol', nunca hace git reset ni
+#  reinicia nada. Este de aquí (Red-team-tauri) es el que de verdad cura
+#  el war room completo — mismo alcance que omni.sh. Si corriste "bash
+#  curar.sh" desde ~/sol y esperabas esto, usa: cd ~/Red-team-tauri.
 # ═══════════════════════════════════════════════════════════════════
 HOME_DIR="$HOME"
 RT_DIR="$HOME_DIR/Red-team-tauri"
