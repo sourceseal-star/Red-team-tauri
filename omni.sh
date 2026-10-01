@@ -147,6 +147,7 @@ OMNI.SH — comandos:
   start | stop | restart | status | sync | sync-deps | sync-frontend
   logs [dashboard|gate|all] | supergate [status|sweep|action]
   snapshot | verify | watchdog | recover
+  chaos [run|deep|now|history|status]
 HELP
 }
 termux_guard() {
@@ -1657,6 +1658,19 @@ start_evolve_daemon() {
 # ═══════════════════════════════════════════════════════════════════════
 #  DISPATCH
 # ═══════════════════════════════════════════════════════════════════════
+
+chaos() {
+  local sub="${1:-status}" base="${CHAOS_BASE_URL:-http://127.0.0.1:8001}"
+  case "$sub" in
+    run)     info "Lanzando bateria Chaos completa..."; curl -s -X POST "$base/api/chaos/run" | python3 -m json.tool ;;
+    deep)    info "Lanzando pruebas profundas v2 (JWT/race/ws)..."; curl -s -X POST "$base/api/chaos/run/deep" | python3 -m json.tool ;;
+    now)     info "Ejecutando ciclo automatico (canary + bateria)..."; curl -s -X POST "$base/api/chaos/run/now" | python3 -m json.tool ;;
+    history) curl -s "$base/api/chaos/history" | python3 -m json.tool ;;
+    status)  curl -s "$base/api/chaos/status" | python3 -m json.tool ;;
+    *) fail "chaos: subcomando desconocido '$sub' (run|deep|now|history|status)"; return 1 ;;
+  esac
+}
+
 case "${1:-help}" in
   start)          acquire_lock; start ;;
   stop)           acquire_lock; stop ;;
@@ -1671,6 +1685,7 @@ case "${1:-help}" in
   snapshot)       snapshot ;;
   verify)         verify ;;
   watchdog)       watchdog ;;
+  chaos)          chaos "${2:-status}" ;;
   help|--help|-h) help ;;
   *)              echo "Comando desconocido: $1"; echo ""; help; exit 1 ;;
 esac
