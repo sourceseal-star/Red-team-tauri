@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Moon, Shield, Play, RefreshCw, Loader2, AlertTriangle,
   CheckCircle2, XCircle, FileText, History, RotateCcw
@@ -24,6 +24,15 @@ export default function EclipsePanel() {
   const [suites, setSuites] = useState<string[]>(['auth', 'scope', 'stress']);
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+  // FIX 2026-10-01 (Harold): la zona objetivo NUNCA debe quedar anclada a
+  // una sola IP. Campo libre: una por línea o separadas por coma; vacío
+  // usa el único fallback del backend (status.target_default).
+  const [targetsText, setTargetsText] = useState<string>('');
+  const [jobId, setJobId] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const parseTargets = () =>
+    targetsText.split(/[\n,]/).map(s => s.trim()).filter(Boolean);
 
   const setLoadingKey = (k: string, v: boolean) => setLoading(prev => ({ ...prev, [k]: v }));
 
@@ -63,18 +72,49 @@ export default function EclipsePanel() {
   const toggleSuite = (s: string) =>
     setSuites(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
 
+  // FIX 2026-10-01 (Harold): el 504 "tardó más de 25s" no era de red —
+  // la propia suite 'auth' simula backoff exponencial real (~45-90s por
+  // diseño). Ningún target lo iba a arreglar: hacía falta no bloquear la
+  // petición. Ahora /run devuelve un job_id de inmediato y este panel lo
+  // consulta solo, cada 2s, hasta que termine — nunca más 504.
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
+
+  const pollJob = (id: string) => {
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await fetch(`${API_BASE}${ECL}/run/${id}`, { headers: eclHeaders() });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { stopPolling(); setRunResult({ error: `HTTP ${r.status}`, detail: d }); setLoadingKey('run', false); return; }
+        if (d.status === 'done') {
+          stopPolling(); setRunResult(d.result); setLoadingKey('run', false); fetchStatus();
+        } else if (d.status === 'error') {
+          stopPolling(); setRunResult({ error: d.error || 'el job falló' }); setLoadingKey('run', false);
+        }
+        // 'running' -> sigue consultando
+      } catch (e: any) {
+        stopPolling(); setRunResult({ error: e.message }); setLoadingKey('run', false);
+      }
+    }, 2000);
+  };
+
+  useEffect(() => () => stopPolling(), []);
+
   const runBattery = async () => {
-    setLoadingKey('run', true); setRunResult(null);
+    setLoadingKey('run', true); setRunResult(null); setJobId(null);
+    const targets = parseTargets(); // nunca un solo valor obligatorio
     try {
       const res = await fetch(`${API_BASE}${ECL}/run`, {
         method: 'POST', headers: eclHeaders(),
-        body: JSON.stringify({ suites }),
+        body: JSON.stringify({ suites, targets, autonomous: true }),
       });
       const data = await res.json().catch(() => ({}));
-      setRunResult(res.ok ? data : { error: `HTTP ${res.status}`, detail: data });
-      fetchStatus();
-    } catch (e: any) { setRunResult({ error: e.message }); }
-    setLoadingKey('run', false);
+      if (!res.ok) { setRunResult({ error: `HTTP ${res.status}`, detail: data }); setLoadingKey('run', false); return; }
+      setJobId(data.job_id);
+      pollJob(data.job_id);
+    } catch (e: any) { setRunResult({ error: e.message }); setLoadingKey('run', false); }
   };
 
   const resetCircuit = async () => {
@@ -127,6 +167,18 @@ export default function EclipsePanel() {
             </button>
           ))}
         </div>
+        <div className="space-y-1">
+          <label className="text-[11px] text-slate-500">
+            Zona(s) objetivo — una por línea o separadas por coma (vacío = usar el fallback por defecto, nunca anclado a una sola IP)
+          </label>
+          <textarea
+            value={targetsText}
+            onChange={e => setTargetsText(e.target.value)}
+            placeholder={status?.target_default ? `ej: ${status.target_default}\nhttp://10.0.0.5:8001` : 'ej: http://10.0.0.5:8001'}
+            rows={2}
+            className="w-full text-xs bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 placeholder:text-slate-600"
+          />
+        </div>
         {suites.includes('universe') && (
           <p className="text-[11px] text-amber-400/80">
             ⚠ El sub-test "universe" (D1-D3) espera un endpoint de telemetría GPS con caché (mode/cache_age_s) que
@@ -138,15 +190,32 @@ export default function EclipsePanel() {
           className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50">
           {loading.run ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Lanzar batería ({suites.length})
         </button>
+        {jobId && loading.run && (
+          <div className="flex items-center gap-2 text-xs text-indigo-300">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Corriendo en background (job {jobId}) — no bloquea, puedes seguir usando el panel.
+          </div>
+        )}
         {runResult && (
           <div className={`rounded-lg border p-3 text-xs ${runResult.error ? 'border-red-900/50 bg-red-950/20' : 'border-slate-700 bg-slate-950'}`}>
             {runResult.error ? (
               <div className="text-red-400">❌ {runResult.error}{runResult.detail ? ` · ${JSON.stringify(runResult.detail)}` : ''}</div>
             ) : (
-              <div className="flex items-center gap-2">
-                {runResult.falls === 0 ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-red-400" />}
-                <span className="text-slate-200">{runResult.veredicto}</span>
-                <span className="text-slate-500">· {runResult.total - runResult.falls}/{runResult.total} OK</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  {runResult.falls === 0 ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-red-400" />}
+                  <span className="text-slate-200">{runResult.veredicto}</span>
+                  <span className="text-slate-500">· {runResult.total - runResult.falls}/{runResult.total} OK</span>
+                </div>
+                {runResult.por_target && Object.keys(runResult.por_target).length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {Object.entries(runResult.por_target).map(([t, v]: [string, any]) => (
+                      <div key={t} className="flex items-center justify-between text-[11px] text-slate-400">
+                        <span className="truncate">{t}</span>
+                        <span>{v.total - v.falls}/{v.total} OK</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
