@@ -162,12 +162,40 @@ if ! touch "$LEDGER" 2>/dev/null; then
   exit 1
 fi
 
-TAG="recuerdos"
-[ -f "$MEDIA_DIR/tag.txt" ] && TAG="$(head -1 "$MEDIA_DIR/tag.txt" | tr -d '[:space:]')"
-[ -z "$TAG" ] && TAG="recuerdos"
-# El backend solo acepta tags alfanuméricos, "_" y "-". Evita que un
-# tag escrito en tag.txt rompa la URL completa de subida.
-TAG="${TAG//[^[:alnum:]_-]/_}"
+# ═══ Regla #60 (2026-10-01): CADA VÍDEO SU PROPIO NOMBRE ═══
+# Antes: un único TAG para TODA la carpeta — los 60+ vídeos de Harold
+# (muchos con nombres que YA dicen lo que son: "serenidad",
+# "melancolia", "corazon_abrazo", "cibernetica-egipcia-alegria-v3")
+# terminaban todos mezclados bajo el mismo tag genérico "recuerdos".
+# Sol nunca podía elegir el vídeo correcto por tema — para ella todos
+# eran indistinguibles. Ahora, SI Harold no deja un tag.txt (override
+# explícito para forzar un lote completo bajo un tema, ej. "playa"),
+# cada archivo usa SU PROPIO nombre de archivo como tag — así los
+# nombres que él ya les puso con sentido quedan vivos y buscables.
+TAG_OVERRIDE=""
+[ -f "$MEDIA_DIR/tag.txt" ] && TAG_OVERRIDE="$(head -1 "$MEDIA_DIR/tag.txt" | tr -d '[:space:]')"
+TAG_OVERRIDE="${TAG_OVERRIDE//[^[:alnum:]_-]/_}"
+
+tag_from_filename() {
+  # nombre de archivo -> tag legible, o "recuerdos" si no dice nada.
+  local base="$1" stem clean
+  stem="${base%.*}"
+  # quita duplicados de Android: " (1)", " (2) (1)", "-2" al final, etc.
+  stem="$(printf '%s' "$stem" | sed -E 's/ *\([0-9]+\) */ /g; s/-[0-9]+$//; s/ +$//; s/^ +//')"
+  clean="$(printf '%s' "$stem" | tr '[:upper:] ' '[:lower:]_' | tr -c '[:alnum:]_-' '_')"
+  clean="$(printf '%s' "$clean" | sed -E 's/_+/_/g; s/^_//; s/_$//')"
+  # si lo que queda es un ID sin sentido (qwen_video_<numeros largos>,
+  # un uuid, o puro numero/hex) -> cae a "recuerdos" (genérico, nada
+  # que perder, pero tampoco inventa significado donde no lo hay).
+  if [[ -z "$clean" ]] || \
+     [[ "$clean" =~ ^qwen_video_[0-9_]+$ ]] || \
+     [[ "$clean" =~ ^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{10,}$ ]] || \
+     [[ "$clean" =~ ^[0-9_]+$ ]]; then
+    echo "recuerdos"
+  else
+    echo "${clean:0:60}"
+  fi
+}
 
 
 sync_once() {
@@ -190,7 +218,8 @@ sync_once() {
     # OJO (Regla #48): hay UNA sola ruta de subida — /api/sol/videos/upload —
     # y el servidor clasifica solo si es vídeo o imagen (kind en la respuesta).
     ep="videos/upload"
-    printf "  → %-40s (%s bytes) … " "$name" "$size"
+    if [ -n "$TAG_OVERRIDE" ]; then TAG="$TAG_OVERRIDE"; else TAG="$(tag_from_filename "$name")"; fi
+    printf "  → %-40s %-28s (%s bytes) … " "$name" "[$TAG]" "$size"
     tmp="$(mktemp "${TMPDIR:-/tmp}/sol-media-upload.XXXXXX")"
     err="${tmp}.err"
     http="$(curl -sS --connect-timeout 20 --max-time 300 \
@@ -244,7 +273,11 @@ case "$MODE" in
     sed -n '1,25p' "$0" ;;
   *)
     echo "══════════════════════════════════════"
-    echo "  📁 $MEDIA_DIR  ·  🏷️ $TAG"
+    if [ -n "$TAG_OVERRIDE" ]; then
+      echo "  📁 $MEDIA_DIR  ·  🏷️ $TAG_OVERRIDE (fijo, por tag.txt)"
+    else
+      echo "  📁 $MEDIA_DIR  ·  🏷️ cada vídeo con su propio nombre"
+    fi
     echo "══════════════════════════════════════"
     sync_once
     exit $? ;;
