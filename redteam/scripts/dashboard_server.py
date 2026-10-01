@@ -286,6 +286,14 @@ app = FastAPI(
     description="Backend único: escaneo + servicios + SOAR + TIP + RASP + terminal + canary + honeypot + dist/",
 )
 
+# ── CHAOS SUITE — regresión de seguridad automática ────────────────────────
+try:
+    from redteam.modules.chaos_suite import router as chaos_router
+    app.include_router(chaos_router)
+    print("[CHAOS] Router montado en /api/chaos/* (regresión de seguridad)")
+except Exception as _chaos_err:
+    print(f"[WARN] chaos_suite import falló: {_chaos_err}", flush=True)
+
 # ── Include Enhanced Recon router ──────────────────────────────────────────
 if _ENHANCED_RECON_OK:
     app.include_router(enhanced_recon_router)
