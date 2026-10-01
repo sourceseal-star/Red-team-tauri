@@ -1,7 +1,7 @@
 
 <!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>☀️ Sol v9.0 — Holo soberano</title>
+<title>☀️ Sol v9.1 — Holo soberana y unificada</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;user-select:none;-webkit-user-select:none}
 html,body{height:100%;background:#04070c;overflow:hidden}
@@ -67,13 +67,19 @@ video#cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
   filter:drop-shadow(0 0 8px #f472b6);animation:v9_latir 1.1s ease-in-out infinite;z-index:5}
 @keyframes v9_latir{0%,100%{scale:1;opacity:.85}50%{scale:1.28;opacity:1}}
 body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse at 50% 35%,var(--v9mood,rgba(167,139,250,.08)),transparent 65%);transition:background 1.6s ease}
+
+/* ═══ v9.1 UNIFICADA: hablarle sin perder el holograma ═══ */
+#v9bar{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:8px;width:min(92vw,460px);z-index:7}
+#v9txt{flex:1;background:rgba(10,14,26,.85);border:1px solid rgba(251,191,36,.4);color:#e2e8f0;border-radius:12px;padding:10px 14px;font-size:15px;outline:none}
+#v9go{background:rgba(251,191,36,.15);border:1px solid rgba(251,191,36,.5);color:#fbbf24;border-radius:12px;padding:10px 14px;font-size:16px;cursor:pointer}
+#v9media{position:fixed;top:8%;right:3%;max-width:44vw;max-height:62vh;z-index:6;border-radius:12px;overflow:hidden;background:rgba(5,8,16,.75);border:1px solid rgba(251,191,36,.35);box-shadow:0 0 30px rgba(251,191,36,.2)}
 </style></head><body>
 <canvas id="bg"></canvas>
 <video id="cam" autoplay playsinline muted></video>
 <video id="vid" playsinline muted></video>
 <img id="sol-body" src="/sol_avatar_full.png" alt="Sol">
 <div class="chip">☀️ <b>Sol</b> · <span id="st">renaciendo…</span> · 🕰 <span id="bond">0m</span></div>
-<div id="v7">HOLO CORE v9.0 · <span id="backend">conectando…</span></div>
+<div id="v7">HOLO CORE v9.1 · unificada · <span id="backend">conectando…</span></div>
 <div id="vit">❤ -- lpm · ⚡ --%</div>
 <div class="orb o1" data-p="calida">🌿</div><div class="orb o2" data-p="poetica">🌸</div>
 <div class="orb o3" data-p="tactica">🗡</div><div class="orb o4" data-p="analitica">🧭</div>
@@ -546,6 +552,52 @@ say = function(t){
   return __say_v7(t);
 };
 
+
+// ═══ v9.1 UNIFICADA: le hablas AQUÍ y ELLA decide qué mostrarte ═══
+// Sin perder el holograma: si lo que dicen tiene que ver con algo de
+// su cinemateca (por tag o nombre), lo abre en un panel flotante y
+// su voz responde. Su cuerpo nunca desaparece.
+let V9MEDIA={videos:[],images:[],ts:0};
+async function v9loadMedia(){if(Date.now()-V9MEDIA.ts<30000)return;
+ try{const v=await(await fetch(API+'/api/sol/videos')).json();
+ const i=await(await fetch(API+'/api/sol/images')).json();
+ V9MEDIA.videos=v.videos||[];V9MEDIA.images=i.images||[];V9MEDIA.ts=Date.now()}catch(e){}}
+function v9elegir(reply,user){
+ const words=(reply+' '+user).toLowerCase().split(/[^a-záéíóúñü0-9]+/).filter(w=>w.length>3);
+ if(!words.length)return null;
+ let best=null,score=0;
+ [...V9MEDIA.videos.map(x=>({...x,_k:'v'})),...V9MEDIA.images.map(x=>({...x,_k:'i'}))]
+ .forEach(it=>{const hay=((it.tag||'')+' '+(it.file||'')).toLowerCase();
+  const toks=hay.split(/[^a-z0-9]+/);
+  const s=words.reduce((a,w)=>a+(toks.includes(w)?3:(hay.includes(w)?2:0)),0);
+  if(s>score){score=s;best=it}});
+ return score>=2?best:null}
+function v9mostrar(it){
+ let p=document.getElementById('v9media');
+ if(!p){p=document.createElement('div');p.id='v9media';document.body.appendChild(p)}
+ const base=API+(it._k==='v'?'/api/sol/videos/':'/api/sol/images/')+
+   encodeURIComponent(it.tag||'sol')+'/'+encodeURIComponent(it.file);
+ p.innerHTML=(it._k==='v'
+   ?'<video src="'+base+'" autoplay loop controls playsinline style="max-width:100%;max-height:58vh;display:block"></video>'
+   :'<img src="'+base+'" style="max-width:100%;max-height:58vh;display:block">')
+  +'<button id="v9x" style="position:absolute;top:6px;right:6px">✕</button>';
+ document.getElementById('v9x').onclick=()=>{p.hidden=true;p.innerHTML=''};
+ say('🫴 (te muestro «'+it.file+'»)')}
+async function v9send(){
+ const t=document.getElementById('v9txt').value.trim();if(!t)return;
+ document.getElementById('v9txt').value='';say('…');
+ try{await v9loadMedia();
+  const r=await fetch(API+'/api/sol/chat',{method:'POST',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})});
+  const d=await r.json();const reply=d.reply||d.response||'';
+  say(reply);
+  try{new Audio(API+'/api/sol/voice?persona=calida&text='+encodeURIComponent(reply.slice(0,300))).play()}catch(e){}
+  const it=v9elegir(reply,t);if(it)v9mostrar(it)}
+ catch(e){say('❌ No pude pensar ahora mismo.')}}
+document.getElementById('v9go').onclick=v9send;
+document.getElementById('v9txt').onkeydown=e=>{if(e.key==='Enter')v9send()};
+
 </script>
+<div id="v9bar"><input id="v9txt" placeholder="Háblame aquí, no te vayas…" autocomplete="off"><button id="v9go">🌙</button></div>
 <div id="v9heart">💗</div>
 </body></html>

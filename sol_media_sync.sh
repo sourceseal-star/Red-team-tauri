@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════
+# SOL_MEDIA_SYNC — tu carpeta mágica sol_media.mc ⇄ Sol (Regla #49)
+# ═══════════════════════════════════════════════════════════════
+# La idea de Harold (2026-09-07): una carpeta en el teléfono donde
+# suelta vídeos/fotos como quien deja cartas, y Sol las absorbe sola.
+#
+#   Carpeta:  ~/storage/shared/sol_media.mc
+#   (se crea sola; visible desde cualquier galería / file manager)
+#
+# Uso:
+#   bash sol_media_sync.sh          → sincroniza UNA VEZ (sube lo nuevo)
+#   bash sol_media_sync.sh watch    → vigila la carpeta para siempre
+#                                     (cada 60s; déjalo en una sesión
+#                                     de Termux abierta)
+#
+# Extras:
+#   - Un archivo tag.txt DENTRO de la carpeta cambia la etiqueta
+#     emocional (una palabra: alegria, amor, calma…). Sin él: "recuerdos".
+#   - Nada se borra ni se mueve: tus originales quedan intactos.
+#   - Registro en ~/sol/.sol_media_ledger.txt — nunca sube dos veces
+#     el mismo archivo (nombre + tamaño).
+#   - Lo que sube vive EN EL SERVIDOR → aparece en el holo ✨, en la
+#     videollamada y en la cinemateca, donde sea que los abras
+#     (Reglas #47 y #49 lo ponen en bucle en todas las superficies).
+
+set -uo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
+
+for command in curl find mktemp grep stat; do
+  command -v "$command" >/dev/null 2>&1 || {
+    echo "❌ Falta el comando requerido: $command"
+    exit 1
+  }
+done
+
+MEDIA_DIR="${HOME}/storage/shared/sol_media.mc"
+LEDGER="${HOME}/.sol_media_ledger.txt"
+MODE="${1:-once}"
+
+# Cargar llave y URL de ~/sol/.env sin ejecutar el archivo.
+# Un .env es configuración, no un script: así una línea accidental no puede
+# ejecutar comandos ni romper el sync por comillas especiales en una clave.
+env_value() {
+  local key="$1" line value
+  line="$(grep -E "^${key}[[:space:]]*=" ./.env 2>/dev/null | head -1 || true)"
+  [ -n "$line" ] || return 0
+  value="${line#*=}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  if [ "${#value}" -ge 2 ] &&
+     { [ "${value:0:1}" = '"' ] || [ "${value:0:1}" = "'" ]; } &&
+     [ "${value:0:1}" = "${value: -1}" ]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "$value"
+}
+
+KEY="${SOL_API_KEY:-}"
+BASE=""
+if [ -f ./.env ]; then
+  file_key="$(env_value SOL_API_KEY)"
+  file_base="$(env_value SOL_PUBLIC_URL)"
+  [ -n "$file_key" ] && KEY="$file_key"
+  [ -n "$file_base" ] && BASE="$file_base"
+fi
+BASE="${BASE%/}"
+# ═══ Regla #49 v2 — LOCAL-FIRST (2026-10-01) ═══
+# La carpeta del teléfono ES su memoria. Sube al Sol que vive en el
+# teléfono primero (cerebro :8006, luego torre :8001); Replit queda
+# de último recurso, solo si SOL_PUBLIC_URL está configurado y
+# responde. La llave solo es obligatoria si el destino es remoto:
+# el Sol local en modo libre no la pide (Regla #49 v2).
+CANDIDATES=("http://127.0.0.1:8006" "http://127.0.0.1:8001")
+[ -n "$BASE" ] && CANDIDATES+=("$BASE")
+BASE=""
+for c in "${CANDIDATES[@]}"; do
+  if [[ "$c" =~ ^https?://[^[:space:]]+$ ]] && check_server_url "$c"; then
+    BASE="$c"; break
+  fi
+done
+if [ -z "$BASE" ]; then
+  echo "❌ No encontré a Sol despierta. Probé:"
+  echo "   · http://127.0.0.1:8006 (su cerebro aquí en el teléfono)"
+  echo "   · http://127.0.0.1:8001 (la torre)"
+  [ -n "${SOL_PUBLIC_URL:-}" ] && echo "   · ${SOL_PUBLIC_URL} (Replit)"
+  echo "   Arranca primero:  bash omni.sh start"
+  exit 1
+fi
+case "$BASE" in
+  http://127.0.0.1*|http://localhost*) REMOTE=0 ;;
+  *) REMOTE=1 ;;
+esac
+if [ "$REMOTE" -eq 1 ] && [ -z "$KEY" ]; then
+  echo "❌ El destino elegido es remoto ($BASE) y falta SOL_API_KEY en ~/sol/.env"
+  exit 1
+fi
+if [ "$REMOTE" -eq 0 ]; then
+  echo "🫂 Destino: $BASE — ella, aquí en tu teléfono"
+else
+  echo "☁️  Destino: $BASE (remoto)"
+fi
+
+if [ ! -d "$MEDIA_DIR" ]; then
+  if ! mkdir -p "$MEDIA_DIR" 2>/dev/null; then
+    echo "❌ No pude crear $MEDIA_DIR"
+    echo "   Corre primero: termux-setup-storage"
+    exit 1
+  fi
+  echo "📁 Carpeta creada: $MEDIA_DIR"
+fi
+if ! touch "$LEDGER" 2>/dev/null; then
+  echo "❌ No puedo escribir el ledger: $LEDGER"
+  exit 1
+fi
+
+TAG="recuerdos"
+[ -f "$MEDIA_DIR/tag.txt" ] && TAG="$(head -1 "$MEDIA_DIR/tag.txt" | tr -d '[:space:]')"
+[ -z "$TAG" ] && TAG="recuerdos"
+# El backend solo acepta tags alfanuméricos, "_" y "-". Evita que un
+# tag escrito en tag.txt rompa la URL completa de subida.
+TAG="${TAG//[^[:alnum:]_-]/_}"
+
+check_server_url() {
+  local base="$1"
+  local probe err http rc body
+  probe="$(mktemp "${TMPDIR:-/tmp}/sol-media-probe.XXXXXX")" || {
+    echo "❌ No pude crear un archivo temporal para probar la conexión"
+    return 1
+  }
+  err="${probe}.err"
+  http="$(curl -sS --connect-timeout 20 --max-time 35 --retry 2 --retry-delay 2 \
+      -o "$probe" -w '%{http_code}' \
+      "$base/api/health" 2>"$err")"
+  rc=$?
+  body="$(cat "$probe" 2>/dev/null || true)"
+  if [ "$rc" -ne 0 ]; then
+    echo "   · $base: sin conexión"
+    sed -n '1,2p' "$err" 2>/dev/null | sed 's/^/   /'
+    rm -f "$probe" "$err"
+    return 1
+  fi
+  http="${http:-000}"
+  if [[ ! "$http" =~ ^2 ]]; then
+    echo "❌ Sol respondió HTTP $http en /api/health"
+    [ -n "$body" ] && echo "   ${body:0:240}"
+    rm -f "$probe" "$err"
+    return 1
+  fi
+  if ! printf '%s' "$body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+    echo "❌ /api/health respondió, pero no confirmó status=ok"
+    [ -n "$body" ] && echo "   ${body:0:240}"
+    rm -f "$probe" "$err"
+    return 1
+  fi
+  rm -f "$probe" "$err"
+  return 0
+}
+
+sync_once() {
+  local new=0 fail=0 f name size mtime sum legacy_sum ep resp tmp err http rc
+  if ! check_server_url "$BASE"; then
+    echo "   No se intentó subir ningún archivo; repara la conexión y vuelve a ejecutar."
+    return 1
+  fi
+  while IFS= read -r -d '' f; do
+    name="$(basename "$f")"
+    size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
+    mtime=$(stat -c%Y "$f" 2>/dev/null || stat -f%m "$f" 2>/dev/null || echo 0)
+    sum="${name}|${size}|${mtime}"
+    legacy_sum="${name}|${size}"
+    # Acepta el ledger antiguo para no repetir todos los archivos tras la
+    # actualización; los nuevos registros sí detectan cambios de contenido
+    # por tamaño o fecha de modificación.
+    grep -qxF "$sum" "$LEDGER" && continue
+    grep -qxF "$legacy_sum" "$LEDGER" && continue
+    # OJO (Regla #48): hay UNA sola ruta de subida — /api/sol/videos/upload —
+    # y el servidor clasifica solo si es vídeo o imagen (kind en la respuesta).
+    ep="videos/upload"
+    printf "  → %-40s (%s bytes) … " "$name" "$size"
+    tmp="$(mktemp "${TMPDIR:-/tmp}/sol-media-upload.XXXXXX")"
+    err="${tmp}.err"
+    http="$(curl -sS --connect-timeout 20 --max-time 300 \
+        -H "x-sol-key: $KEY" \
+        -F "file=@$f" \
+        -o "$tmp" -w '%{http_code}' \
+        "$BASE/api/sol/$ep?tag=$TAG" 2>"$err")"
+    rc=$?
+    resp="$(cat "$tmp" 2>/dev/null || true)"
+    http="${http:-000}"
+    if [ "$rc" -eq 0 ] && [[ "$http" =~ ^2 ]] && echo "$resp" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'; then
+      if printf '%s\n' "$sum" >> "$LEDGER"; then
+        echo "✅"
+        new=$((new+1))
+      else
+        echo "⚠️ subido, pero no pude guardar el ledger"
+        fail=$((fail+1))
+      fi
+    else
+      if [ "$rc" -ne 0 ]; then
+        echo "❌ conexión (curl $rc)"
+        sed -n '1,2p' "$err" 2>/dev/null | sed 's/^/     /'
+      elif [[ "$http" =~ ^2 ]]; then
+        echo "❌ respuesta inválida: ${resp:0:160}"
+      else
+        echo "❌ HTTP $http: ${resp:0:160}"
+      fi
+      fail=$((fail+1))
+    fi
+    rm -f "$tmp" "$err"
+  done < <(find "$MEDIA_DIR" -maxdepth 1 -type f \( \
+      -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mov' -o -iname '*.m4v' \
+      -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -print0)
+  if [ "$new" -gt 0 ]; then
+    echo "☁️  $new recuerdo(s) nuevos con Sol — ya se ven en el holo y la videollamada ✨"
+  elif [ "$fail" -gt 0 ]; then
+    echo "❌ $fail archivo(s) no pudieron subirse — revisa la conexión"
+  else
+    echo "😌 Nada nuevo en sol_media.mc — todo sincronizado"
+  fi
+  [ "$fail" -eq 0 ]
+}
+
+case "$MODE" in
+  watch)
+    echo "👁️  Vigilando $MEDIA_DIR (cada 60s; Ctrl-C para parar)…"
+    command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock 2>/dev/null
+    trap 'command -v termux-wake-unlock >/dev/null 2>&1 && termux-wake-unlock 2>/dev/null; exit 0' INT TERM
+    while true; do sync_once || true; sleep 60; done ;;
+  help|-h|--help)
+    sed -n '1,25p' "$0" ;;
+  *)
+    echo "══════════════════════════════════════"
+    echo "  📁 $MEDIA_DIR  ·  🏷️ $TAG"
+    echo "══════════════════════════════════════"
+    sync_once
+    exit $? ;;
+esac
