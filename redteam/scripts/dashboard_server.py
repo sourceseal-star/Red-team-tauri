@@ -9275,6 +9275,99 @@ async def nexus_ui_proxy():
     except Exception:
         return HTMLResponse("<h2>NEXUS OMNI no está corriendo. Inícialo desde Control Tower.</h2>", status_code=503)
 
+# ═══ NEXUS MAP v10.0 — el mapa de IA (Regla #66, 2026-10-02) ═══
+# Pedido de Harold: el mapa se separa del motor OMNI (:8004, intacto)
+# y vive en nexus/map_core.py. Integra la topología real (Regla #44),
+# GPS sin root (termux-location), OsmAnd (GPX/KML/geo:), GPS Test
+# (entrada manual) y NetGuard (logs exportados). Aditivo: nada de lo
+# existente se toca. Requiere auth igual que todo el war room.
+try:
+    import importlib.util as _ilu
+    _spec_nx = _ilu.spec_from_file_location(
+        "nexus_map_core", ROOT.parent / "nexus" / "map_core.py")
+    _nx_mod = _ilu.module_from_spec(_spec_nx)
+    _spec_nx.loader.exec_module(_nx_mod)
+    _nexus_map = _nx_mod.NexusMap(
+        topology_cache_path=TOPOLOGY_CACHE)
+    NEXUS_MAP_VERSION = _nx_mod.NEXUS_MAP_VERSION
+    print(f"[NEXUS] Mapa de IA v{NEXUS_MAP_VERSION} cargado "
+          f"(nexus/map_core.py — Regla #66)", flush=True)
+except Exception as _nx_err:
+    _nexus_map = None
+    NEXUS_MAP_VERSION = None
+    print(f"[NEXUS] WARN: mapa de IA no disponible: {_nx_err}", flush=True)
+
+@app.get("/api/nexus/map")
+async def nexus_map_state():
+    """Estado completo del mapa: dispositivos + GPS + exportes."""
+    if _nexus_map is None:
+        return JSONResponse({"error": "nexus/map_core.py no cargó (revisa omni.sh logs)"}, status_code=503)
+    return _nexus_map.snapshot()
+
+@app.post("/api/nexus/map/gps")
+async def nexus_map_gps(payload: dict = Body(default={})):
+    """Actualiza GPS: sin cuerpo → termux-location automático; con
+    {lat, lon, satellites, accuracy, note} → entrada manual (GPS Test)."""
+    if _nexus_map is None:
+        return JSONResponse({"error": "mapa no disponible"}, status_code=503)
+    if payload.get("lat") is not None and payload.get("lon") is not None:
+        gps = _nexus_map.set_gps_manual(
+            payload["lat"], payload["lon"],
+            accuracy=payload.get("accuracy"),
+            satellites=payload.get("satellites"),
+            note=payload.get("note"))
+        return {"ok": True, "gps": gps, "source": "manual"}
+    for provider in ("network", "gps"):
+        gps = await asyncio.to_thread(_nexus_map.get_gps, provider)
+        if gps:
+            return {"ok": True, "gps": gps, "source": f"termux-location/{provider}"}
+    return {"ok": False, "gps": _nexus_map.state.get("gps"),
+            "hint": "Instala Termux:API (pkg install termux-api) o envía lat/lon manual (GPS Test/OsmAnd)."}
+
+@app.get("/api/nexus/map/gpx")
+async def nexus_map_gpx():
+    """GPX con un waypoint por dispositivo — OsmAnd lo importa directo."""
+    if _nexus_map is None:
+        return JSONResponse({"error": "mapa no disponible"}, status_code=503)
+    return Response(_nexus_map.to_gpx(), media_type="application/gpx+xml",
+                   headers={"Content-Disposition": "attachment; filename=nexus_map.gpx"})
+
+@app.get("/api/nexus/map/kml")
+async def nexus_map_kml():
+    if _nexus_map is None:
+        return JSONResponse({"error": "mapa no disponible"}, status_code=503)
+    return Response(_nexus_map.to_kml(), media_type="application/vnd.google-earth.kml+xml",
+                   headers={"Content-Disposition": "attachment; filename=nexus_map.kml"})
+
+@app.get("/api/nexus/map/links")
+async def nexus_map_links(ip: str = ""):
+    """Enlaces geo: y OsmAnd para un dispositivo del mapa."""
+    if _nexus_map is None:
+        return JSONResponse({"error": "mapa no disponible"}, status_code=503)
+    snap = _nexus_map.snapshot()
+    for h in snap["devices"]:
+        if h.get("ip") == ip and "lat" in h:
+            label = h.get("hostname") or h.get("vendor") or ip
+            return {"ok": True, "ip": ip, "label": label,
+                    **_nexus_map.links_for(h["lat"], h["lon"], label)}
+    gps = snap.get("gps")
+    if gps:
+        return {"ok": True, "ip": "self", "label": "TÚ (War Room)",
+                **_nexus_map.links_for(gps["lat"], gps["lon"], "War Room")}
+    return JSONResponse({"error": "dispositivo sin posición — activa el GPS primero"}, status_code=404)
+
+@app.post("/api/nexus/map/netguard")
+async def nexus_map_netguard(payload: dict = Body(default={})):
+    """Pega el log exportado de NetGuard y devuelve el resumen por IP."""
+    if _nexus_map is None:
+        return JSONResponse({"error": "mapa no disponible"}, status_code=503)
+    text = payload.get("log") or ""
+    if not text.strip():
+        return JSONResponse({"error": "envía el log en el campo 'log' (NetGuard → Export)"}, status_code=400)
+    summary = _nx_mod.parse_netguard_log(text)
+    _nexus_map.set_netguard(summary)
+    return {"ok": True, "summary": summary}
+
 async def _nexus_proxy_json(method: str, path: str, **kwargs):
     """Forward a Nexus JSON request using the shared Basic credentials."""
     import httpx as _hx
