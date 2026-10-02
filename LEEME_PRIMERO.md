@@ -1430,3 +1430,52 @@ buscaron media hora en `backend/` antes de caer en la cuenta.
 con una llave desechable local (`REDTEAM_API_KEY=test_xxx python3
 dashboard_server.py`) y curl los endpoints arreglados con
 `X-Api-Key: test_xxx`. La llave de Harold NUNCA se toca ni se commitea.
+
+## Regla #44 — DISCOVERY NO-ROOT v2: ver TODA la red real en el mapa (2026-10-01, pedido de Harold)
+
+**El problema:** en la red real de Harold hay 3 routers wifi + 1 DVR +
+1 desktop, pero el mapa solo mostraba 1 host. Causa raíz: el TCP scan
+sin root solo ve dispositivos con puertos abiertos y filtrables; los
+routers que ignoran SYNs, el desktop sin 445/139 en la lista de puertos
+y los dispositivos silenciosos jamás aparecían. Harold lo pidió claro:
+escaneo MANUAL (nada automático en background), sin root, y que se vea
+TODO lo que existe en el entorno donde está.
+
+**La solución (100% dentro de `redteam/scripts/dashboard_server.py` — el que
+CORRE, Regla #43 — + el componente):**
+
+1. `POST /api/scan/topology` ahora fusiona 5 fuentes independientes:
+   - **ARP** (`/proc/net/arp`, sin root en Termux): todo lo que alguna
+     vez habló con el teléfono, CON su MAC.
+   - **Ping sweep**: `nmap -sn` (rápido) o `ping` del sistema con
+     concurrencia — deja el ARP caliente.
+   - **SSDP/UPnP** (UDP 1900 multicast, sin root): routers/DVRs/TVs se
+     anuncian con SERVER/USN/LOCATION.
+   - **mDNS** (UDP 5353 multicast, sin root): PCs anuncian su nombre
+     `.local` (ej. eclipse.local).
+   - **TCP probe** solo sobre los VIVOS con lista extendida de puertos
+     (135/139/445 para Windows, 8000/37777/34567/8899 para DVRs) — o
+     barrido /24 clásico como respaldo si la fase 1 no vio a nadie.
+2. **NetBIOS NBSTAT** (UDP 137, sin root): los Windows responden con su
+   nombre real de máquina. Se consulta solo a hosts aún sin nombre.
+3. Enriquecimiento: MAC → vendor (mini-tabla OUI offline), hostname,
+   fuentes (`sources`), y clasificación nueva con TODO: `dvr`,
+   `desktop`, `router` con y sin puertos abiertos.
+4. Respuesta compatible (mismos campos) + `local_ip`, `local_hostname`
+   y `discovery` (conteo por fuente). El frontend muestra bloque
+   IDENTIDAD con hostname/fuentes y filtros DVR/Escritorio.
+5. `NetworkTopology.tsx` reconstruido con `npm run build`; dist
+   actualizado y commiteado (Regla #41: dist siempre completo).
+
+**Qué NO cambió:** `/api/scan/cameras`, `deep`, `routers`, `iot`,
+`wifi`, `video-urls`, ARTO, commander, Leviathan, el holo. `_probe_host`
+y `_probe_port` intactos para los demás escaneos. Escaneo manual igual:
+el botón dispara, nada corre en background.
+
+**Verificado:** compila; clasificación correcta con router/DVR/desktop
+con y sin puertos; parse de /proc/net/arp con MAC real; paquete NBSTAT
+wildcard (`CK`+`CA*15`) correcto; build del frontend en 5.6s.
+
+**Paso de Harold:** `cd ~/Red-team-tauri && git pull && bash omni.sh restart` → War Room → Mapa Global → **Escanear Red**. Esperar ~10-20s
+(ARP+ping+SSDP+mDNS corren en paralelo). Los 3 routers, el DVR y el
+desktop (con su nombre NetBIOS/mDNS, ej. ECLIPSE) deben aparecer.\n

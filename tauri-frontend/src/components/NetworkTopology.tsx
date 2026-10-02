@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { getApiKey } from '../lib/api'
 import { Network, Scan, Filter, AlertCircle, Shield, Camera, Router as RouterIcon,
          Server, Cpu, Wifi, Eye, RefreshCw, ChevronDown, X, Play, Radio,
-         Globe, Lock, Fingerprint, Activity, Crosshair, Zap, Radar } from 'lucide-react'
+         Globe, Lock, Fingerprint, Activity, Crosshair, Zap, Radar,
+         Monitor, HardDrive, Tag } from 'lucide-react'
 
 interface HostPort { port: number; service: string; state: string; banner: string }
 interface Host {
@@ -10,6 +11,7 @@ interface Host {
   ports: HostPort[]; type: string; status: string
   risk: 'low' | 'medium' | 'high' | 'critical'
   risk_reasons?: string[]
+  hostname?: string; sources?: string[]; ssdp?: { server: string } | null
 }
 interface Camera {
   ip: string; port: number; brand: string; model: string
@@ -25,7 +27,12 @@ const RISK_LABELS: Record<string, string> = {
   low: 'Bajo', medium: 'Medio', high: 'Alto', critical: 'Crítico', unknown: '—'
 }
 const TYPE_ICONS: Record<string, typeof Camera> = {
-  camera: Camera, router: RouterIcon, server: Server, iot: Cpu, phone: Radio, unknown: Globe
+  camera: Camera, router: RouterIcon, server: Server, iot: Cpu, phone: Radio,
+  unknown: Globe, dvr: HardDrive, desktop: Monitor
+}
+const TYPE_LABELS: Record<string, string> = {
+  camera: 'Camara', router: 'Router', server: 'Servidor', iot: 'IoT',
+  phone: 'Telefono', unknown: 'Desconocido', dvr: 'DVR', desktop: 'Escritorio'
 }
 const SERVICE_NAMES: Record<number, string> = {
   80: 'HTTP', 443: 'HTTPS', 554: 'RTSP', 22: 'SSH', 23: 'Telnet', 21: 'FTP',
@@ -139,6 +146,7 @@ export default function NetworkTopology() {
       setHosts(data.results || []); setSubnet(data.subnet || '')
       setLocalIp(data.local_ip || ''); setLocalHostname(data.local_hostname || '')
       addLog(`Topologia: ${data.hosts_up} hosts en ${data.subnet}`)
+      if (data.discovery) addLog(`Fuentes: ARP ${data.discovery.arp || 0} | ping ${data.discovery.ping_up || 0} | SSDP ${data.discovery.ssdp || 0} | mDNS ${data.discovery.mdns || 0} | ocultos sin TCP: ${data.discovery.vivos_sin_tcp || 0}`)
       addLog('Buscando camaras ONVIF/RTSP...')
       const camQuery = selectedIface ? `?subnet=${encodeURIComponent(selectedIface)}` : ''
       const camRes = await fetch(`/api/scan/cameras${camQuery}`, { method: 'POST', headers: authHeaders() })
@@ -263,6 +271,8 @@ export default function NetworkTopology() {
               <option value="iot">IoT</option>
               <option value="server">Servidor</option>
               <option value="phone">Telefono</option>
+              <option value="dvr">DVR</option>
+              <option value="desktop">Escritorio</option>
               <option value="unknown">Desconocido</option>
             </select>
           </div>
@@ -631,6 +641,20 @@ export default function NetworkTopology() {
                 <div className="text-[10px] text-slate-500">MAC</div><div className="text-xs font-mono text-slate-300">{selectedHost.mac || 'No detectada'}</div>
                 {selectedHost.vendor && <><div className="text-[10px] text-slate-500 mt-1">VENDOR</div><div className="text-xs text-slate-300">{selectedHost.vendor}</div></>}
               </div>
+              {(selectedHost.hostname || (selectedHost.sources && selectedHost.sources.length > 0) || selectedHost.ssdp?.server) && (
+                <div className="bg-slate-900 rounded-lg p-2 space-y-1">
+                  <div className="text-[10px] text-slate-500 mb-1 flex items-center gap-1"><Tag size={10} /> IDENTIDAD</div>
+                  {selectedHost.hostname && <div className="text-xs font-mono text-cyan-300 truncate" title={selectedHost.hostname}>{selectedHost.hostname}</div>}
+                  {selectedHost.ssdp?.server && <div className="text-[10px] text-slate-400 truncate" title={selectedHost.ssdp.server}>SSDP: {selectedHost.ssdp.server}</div>}
+                  {selectedHost.sources && selectedHost.sources.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {selectedHost.sources.map((s, i) => (
+                        <span key={i} className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[9px] font-mono text-slate-400">{s}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="bg-slate-900 rounded-lg p-2 space-y-1">
                 <div className="text-[10px] text-slate-500 mb-1">PUERTOS ABIERTOS ({selectedHost.ports.length})</div>
                 {selectedHost.ports.length > 0 ? (

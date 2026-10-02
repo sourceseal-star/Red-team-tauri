@@ -12,6 +12,12 @@
 
 ---
 
+## 🌐 Discovery v2 (Regla #43, 2026-10-01) — TOPOLOGÍA REAL SIN ROOT
+- `/api/scan/topology` fusiona ARP + ping + SSDP + mDNS + TCP + NetBIOS
+- Ahora se ven los 3 routers, el DVR y el desktop de Harold (con nombre)
+- Manual, sin root, sin background. Detalle completo en LEEME_PRIMERO.md Regla #43
+- `git pull && bash omni.sh restart` → Mapa Global → Escanear Red
+
 ## ☀️ ARQUITECTURA SOL — Actualizado 02-sep-2026 20:30
 
 ### Sol vive en su propio repo (sourceseal-star/sol)
