@@ -1527,3 +1527,48 @@ multi-subred. Lo que faltaba: la misma integración que KRAKEN 5.0.
 **Nueva constelación war room (octubre 2026):** NEXUS 10.0 (mapa) →
 KRAKEN 5.0 (exploits del mapa) → LEVIATHAN 4.0 (orquestación del mapa).
 Los tres beben de la misma topología descubierta (Regla #44).
+
+## Regla #69 — Topología: purgados los datos DEMO, conectado el escaneo real (2026-10-02)
+
+**Hallazgo:** Harold vio en /topologia 6 hosts (router.local, cam-sala.local,
+dvr-nvr.local, workstation-01, printer-hp.local, unknown-device, tag "demo")
+que parecían su red real. Causa raíz: `_seed_v2_if_empty()` (Regla previa del
+2026-09-08) ya exigía `REDTEAM_SEED_DEMO=1` explícito, PERO esos 6 hosts se
+sembraron ANTES de que existiera ese guard y nunca se limpiaron de `v2_hosts`
+(la tabla que lee /topologia). Segundo hallazgo, más grave: `/api/scan/topology`
+(el motor real, Regla #44, el mismo que usa NEXUS) **nunca escribía en
+`v2_hosts`** — solo en `TOPOLOGY_CACHE`. Por eso un escaneo real jamás
+reemplazaba lo que se veía en /topologia: eran dos tablas separadas.
+
+**Fix (aditivo, Regla #63):**
+1. `_purge_legacy_demo_v2()`: al arrancar, borra SOLO las filas con los
+   valores LITERALES del seed viejo (nunca una fila real), una vez
+   (bandera en `v2_settings`).
+2. `/api/scan/topology` ahora también hace `db_v2.insert_host(...)` por cada
+   host real descubierto, con `tags` = las fuentes reales (arp/ssdp/mdns/
+   netbios/nmap) — nunca "demo". Cada escaneo real actualiza /topologia de
+   verdad.
+
+**Paso de Harold:** `git pull && bash omni.sh restart` → verás /topologia en
+0 hosts (purgado) → ve a cualquier panel con "Escanear red" → vuelve a
+/topologia → ahora son TUS dispositivos reales.
+
+## Regla #70 — Black Mirror: pestaña Ultrasonido (contravigilancia, 2026-10-02)
+
+**Contexto:** Harold probó el módulo "jammer_errante" del Toolkit de
+Contravigilancia (barridos 12-22kHz vía sox/play contra micrófonos
+ocultos/grabadoras — ataca AGC y genera distorsión armónica) y pidió
+integrarlo a Black Mirror ("mismo módulo de inteligencia").
+
+**Qué se integró:** nueva pestaña **Ultrasonido** en Black Mirror
+(junto a Canary/Ghost/Chaos):
+- `GET /api/blackmirror/ultrasonic/status` — disponibilidad de `sox`, estado.
+- `POST /api/blackmirror/ultrasonic/start` — bucle de bursts con perfil
+  aleatorio (square_sweep/agc_pumper/beat_frequency), auto-apagado de
+  seguridad a los 10 min (configurable, máx 1h). 100% MANUAL.
+- `POST /api/blackmirror/ultrasonic/stop`.
+- `GET /api/blackmirror/ultrasonic/log` — sellos de auditoría (tabla
+  `bm_ultrasonic_log` en `blackmirror.db`, mismo patrón que canaries/chaos).
+
+**Requiere:** `pkg install sox` en Termux. Sin eso, el botón queda
+deshabilitado y el panel avisa.

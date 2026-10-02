@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Eye, FileText, Activity, Fingerprint, AlertTriangle, Clock } from 'lucide-react';
+import { Eye, FileText, Activity, Fingerprint, AlertTriangle, Clock, Radio, Play, Square } from 'lucide-react';
 
-type BMTab = 'canary' | 'ghost' | 'chaos';
+type BMTab = 'canary' | 'ghost' | 'chaos' | 'ultra';
 
 export default function BlackMirrorPanel() {
   const [activeTab, setActiveTab] = useState<BMTab>('canary');
@@ -17,6 +17,9 @@ export default function BlackMirrorPanel() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [chaosRules, setChaosRules] = useState<any[]>([]);
+  const [ultraStatus, setUltraStatus] = useState<any>(null);
+  const [ultraLog, setUltraLog] = useState<any[]>([]);
+  const [ultraLoading, setUltraLoading] = useState(false);
 
   // FIX 2026-09-08 (RAÍZ REAL — Black Mirror 401 en el teléfono): todos los
 // fetch de este panel salían SIN llave y el middleware global del servidor
@@ -118,9 +121,63 @@ const forgeCanary = async () => {
     }
   };
 
+  const loadUltraStatus = async () => {
+    try {
+      const res = await fetch('/api/blackmirror/ultrasonic/status', { headers: headers() });
+      setUltraStatus(await responseJson(res));
+    } catch (e: any) {
+      setUltraStatus({ sox_available: false, running: false });
+    }
+  };
+
+  const loadUltraLog = async () => {
+    try {
+      const res = await fetch('/api/blackmirror/ultrasonic/log', { headers: headers() });
+      const data = await responseJson(res);
+      setUltraLog(Array.isArray(data.log) ? data.log : []);
+    } catch { setUltraLog([]); }
+  };
+
+  const startUltra = async () => {
+    setUltraLoading(true); setStatus(null);
+    try {
+      const res = await fetch('/api/blackmirror/ultrasonic/start', {
+        method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration_s: 600 }),
+      });
+      const data = await responseJson(res);
+      setStatus(data.ok ? 'Ultrasonido activo — contravigilancia en marcha (auto-apagado en 10 min)' : (data.detail || 'No se pudo iniciar'));
+    } catch (e: any) {
+      setStatus(`Error: ${e.message}`);
+    } finally {
+      setUltraLoading(false);
+      await loadUltraStatus();
+      setTimeout(() => setStatus(null), 8000);
+    }
+  };
+
+  const stopUltra = async () => {
+    setUltraLoading(true);
+    try {
+      await fetch('/api/blackmirror/ultrasonic/stop', { method: 'POST', headers: headers() });
+      setStatus('Ultrasonido detenido');
+    } catch (e: any) {
+      setStatus(`Error: ${e.message}`);
+    } finally {
+      setUltraLoading(false);
+      await loadUltraStatus();
+      await loadUltraLog();
+      setTimeout(() => setStatus(null), 5000);
+    }
+  };
+
   useEffect(() => {
     loadCanaries();
     loadChaosStatus();
+    loadUltraStatus();
+    loadUltraLog();
+    const i = setInterval(() => { loadUltraStatus(); }, 5000);
+    return () => clearInterval(i);
   }, []);
 
   const days = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
@@ -132,12 +189,12 @@ const forgeCanary = async () => {
           <Eye size={14} /> Black Mirror
         </h3>
         <div className="flex gap-1 bg-[var(--ss-bg-3)] rounded p-0.5">
-          {(['canary', 'ghost', 'chaos'] as BMTab[]).map(tab => (
+          {(['canary', 'ghost', 'chaos', 'ultra'] as BMTab[]).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`px-2 py-0.5 text-[9px] rounded font-mono transition ${
                 activeTab === tab ? 'bg-purple-500/30 text-purple-200 border border-purple-500/40' : 'text-gray-500 hover:text-gray-300 border border-transparent'
               }`}>
-              {tab === 'canary' ? 'Canary' : tab === 'ghost' ? 'Ghost' : 'Chaos'}
+              {tab === 'canary' ? 'Canary' : tab === 'ghost' ? 'Ghost' : tab === 'chaos' ? 'Chaos' : 'Ultrasonido'}
             </button>
           ))}
         </div>
@@ -343,6 +400,67 @@ const forgeCanary = async () => {
               {chaosRules.length === 0 && (
                 <div className="text-center text-gray-600 text-[10px] py-2 font-mono">
                   No hay reglas Chaos registradas.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ─── ULTRASONIDO (contravigilancia, Regla #70) ─── */}
+        {activeTab === 'ultra' && (
+          <div className="space-y-3">
+            <div className="bg-purple-500/5 border border-purple-500/15 rounded p-2">
+              <p className="text-[10px] text-purple-300/70 mb-2 font-mono">
+                Barridos 12-22kHz contra micrófonos ocultos/grabadoras — ataca AGC y
+                genera distorsión armónica. Audible y molesto a propósito. Volumen al máximo.
+              </p>
+              {ultraStatus && !ultraStatus.sox_available && (
+                <div className="mb-2 text-[9px] text-amber-400 font-mono bg-amber-500/10 border border-amber-500/20 rounded p-1.5 flex items-center gap-1">
+                  <AlertTriangle size={10} /> Falta 'sox': pkg install sox
+                </div>
+              )}
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-1.5 h-1.5 rounded-full ${ultraStatus?.running ? 'bg-purple-400 animate-pulse' : 'bg-gray-600'}`} />
+                <span className="text-[10px] font-mono text-gray-400">
+                  {ultraStatus?.running ? `ACTIVO · ${ultraStatus.profile || '...'} · ${ultraStatus.bursts} burst(s)` : 'INACTIVO'}
+                </span>
+              </div>
+              {ultraStatus?.running ? (
+                <button onClick={stopUltra} disabled={ultraLoading}
+                  className="w-full py-1.5 bg-red-600/30 border border-red-500/30 hover:bg-red-600/50 text-red-200 text-[10px] rounded font-mono flex items-center justify-center gap-1 disabled:opacity-50 transition">
+                  <Square size={11} /> {ultraLoading ? 'Deteniendo...' : 'Detener Ultrasonido'}
+                </button>
+              ) : (
+                <button onClick={startUltra} disabled={ultraLoading || !ultraStatus?.sox_available}
+                  className="w-full py-1.5 bg-purple-600/30 border border-purple-500/30 hover:bg-purple-600/50 text-purple-200 text-[10px] rounded font-mono flex items-center justify-center gap-1 disabled:opacity-50 transition">
+                  <Play size={11} /> {ultraLoading ? 'Iniciando...' : 'Iniciar Ultrasonido (10 min)'}
+                </button>
+              )}
+            </div>
+
+            <div className="bg-[var(--ss-bg-3)] rounded p-2 border border-[var(--ss-border)]">
+              <div className="text-[9px] text-gray-500 font-mono space-y-0.5">
+                <div className="text-gray-400 font-bold mb-1">Perfiles rotados por burst:</div>
+                <div>- square_sweep: barrido 12-22kHz (distorsión armónica)</div>
+                <div>- agc_pumper: ráfaga de ruido banda ancha (bombeo AGC)</div>
+                <div>- beat_frequency: dos tonos ultrasónicos (resonancia no lineal)</div>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[9px] text-gray-500 font-mono">
+                <span className="text-gray-400 font-bold flex items-center gap-1"><Radio size={10} /> Sellos registrados</span>
+                <span>{ultraLog.length}</span>
+              </div>
+              {ultraLog.map((entry, i) => (
+                <div key={i} className="flex items-center justify-between gap-2 p-1.5 rounded bg-[var(--ss-bg-3)] border border-[var(--ss-border)] text-[9px] font-mono">
+                  <span className="text-gray-400">{entry.profile}</span>
+                  <span className="text-gray-600">{new Date(entry.ts).toLocaleTimeString()}</span>
+                </div>
+              ))}
+              {ultraLog.length === 0 && (
+                <div className="text-center text-gray-600 text-[10px] py-2 font-mono">
+                  Sin bursts registrados todavía.
                 </div>
               )}
             </div>

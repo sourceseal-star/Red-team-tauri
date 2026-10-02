@@ -3447,6 +3447,31 @@ async def scan_topology(subnet: str = "", subnets: str = Query("")):
             )
     except Exception as exc:
         print(f"[TOPO-CACHE] no se pudo guardar el escaneo agregado: {exc}")
+
+    # ═══ Regla #69 (2026-10-02): puente real → v2_hosts ═══
+    # Hallazgo de la revisión: este escaneo (el motor real, Regla #44) SOLO
+    # escribía en TOPOLOGY_CACHE (el mapa de NEXUS). La página /topologia
+    # lee de v2_hosts — una tabla que NUNCA recibía estos resultados, por
+    # eso solo mostraba los 6 hosts demo (Regla #69, limpiados arriba).
+    # Aditivo: cada escaneo real ahora también puebla v2_hosts, con tags =
+    # las fuentes reales (arp/ssdp/mdns/netbios/nmap), nunca "demo".
+    _RISK_STR_TO_SCORE = {"low": 20, "medium": 55, "high": 85}
+    for h in results:
+        try:
+            ports_nums = [p.get("port") for p in (h.get("ports") or []) if isinstance(p, dict) and p.get("port")]
+            db_v2.insert_host(
+                h.get("ip", ""),
+                hostname=h.get("hostname") or "",
+                mac=h.get("mac") or "",
+                os_guess=h.get("type") or "unknown",
+                risk_score=_RISK_STR_TO_SCORE.get(h.get("risk"), 20),
+                ports=ports_nums,
+                tags=h.get("sources") or [],
+                metadata={"risk_reasons": h.get("risk_reasons") or [], "vendor": h.get("vendor")},
+            )
+        except Exception as _v2_err:
+            print(f"[DB-V2] WARN: no se pudo sincronizar {h.get('ip')}: {_v2_err}", flush=True)
+
     return combined
 
 
@@ -7678,6 +7703,10 @@ def _init_bm_db():
         real_service TEXT, fake_banner TEXT, fake_os TEXT,
         port INTEGER, active INTEGER DEFAULT 1
     )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS bm_ultrasonic_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT, profile TEXT, detalle TEXT
+    )''')
     conn.commit()
     conn.close()
 
@@ -8046,6 +8075,122 @@ import sqlite3 as _sqlite3_v2
 
 DB_PATH_V2 = BASE.parent / "redteam.db"
 
+import random as _random
+
+# ─── 4. ULTRASONIDO (Regla #70, 2026-10-02 — pedido de Harold) ─────────
+# Integra el módulo "jammer_errante" del Toolkit de Contravigilancia
+# (evaluado y confirmado por Harold en Termux) como una táctica más de
+# Black Mirror: ya no es un script aparte, es parte del mismo módulo de
+# decepción/anti-forense. Barridos en 12-22kHz (fuera del oído humano
+# adulto en su mayoría) que atacan AGC y generan distorsión armónica en
+# micrófonos ocultos/grabadoras — interfiere con quien te está grabando
+# sin que tú tengas que gritarlo. Requiere 'sox' (pkg install sox) y
+# volumen alto; es audible/molesto a propósito, por eso es 100% MANUAL
+# (botón Iniciar/Detener) y con auto-apagado de seguridad.
+BM_ULTRASONIC_PROFILES = ("square_sweep", "agc_pumper", "beat_frequency")
+_bm_ultrasonic_task: Optional[asyncio.Task] = None
+_bm_ultrasonic_state: Dict[str, Any] = {"running": False, "profile": None, "started_at": None, "bursts": 0}
+
+def _bm_ultrasonic_log(detalle: dict):
+    conn = _sqlite3.connect(BM_DB)
+    c = conn.cursor()
+    c.execute("INSERT INTO bm_ultrasonic_log (ts, profile, detalle) VALUES (?, ?, ?)",
+              (datetime.now().isoformat(), detalle.get("profile", ""), json.dumps(detalle, ensure_ascii=False)))
+    conn.commit()
+    conn.close()
+
+def _bm_ultrasonic_burst_sync(profile: str) -> dict:
+    """Un burst del perfil elegido. Idéntico al Toolkit de Contravigilancia
+    (jammer_errante), ejecutado vía sox/play — bloqueante, por eso corre
+    en threadpool (to_thread) desde el loop async."""
+    if profile == "square_sweep":
+        f_start, f_end = _random.randint(12000, 16000), _random.randint(19000, 22000)
+        cmd = ["play", "-n", "synth", "0.4", "square", f"{f_start}-{f_end}"]
+        detalle = {"profile": profile, "f_start": f_start, "f_end": f_end}
+    elif profile == "agc_pumper":
+        cmd = ["play", "-n", "synth", "0.2", "brownnoise", "vol", "0.9"]
+        detalle = {"profile": profile}
+    else:  # beat_frequency
+        base = _random.randint(18000, 20000)
+        offset = _random.randint(40, 80)
+        cmd = ["play", "-n", "synth", "0.5", "sine", str(base),
+               "synth", "0.5", "sine", str(base + offset), "mix"]
+        detalle = {"profile": profile, "base_hz": base, "offset_hz": offset}
+    try:
+        subprocess.run(cmd, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL, timeout=5)
+        detalle["ok"] = True
+    except Exception as exc:
+        detalle["ok"] = False
+        detalle["error"] = str(exc)[:160]
+    return detalle
+
+
+async def _bm_ultrasonic_loop(duration_s: int):
+    """Bucle de bursts con perfil aleatorio (como el Toolkit), con
+    auto-apagado de seguridad si duration_s > 0."""
+    global _bm_ultrasonic_state
+    start = time.time()
+    try:
+        while _bm_ultrasonic_state["running"]:
+            if duration_s and (time.time() - start) >= duration_s:
+                break
+            profile = _random.choice(BM_ULTRASONIC_PROFILES)
+            _bm_ultrasonic_state["profile"] = profile
+            detalle = await asyncio.to_thread(_bm_ultrasonic_burst_sync, profile)
+            _bm_ultrasonic_state["bursts"] += 1
+            _bm_ultrasonic_log(detalle)
+            if detalle.get("ok") is False:
+                await broadcast({"type": "blackmirror", "payload": f"Ultrasonido: 'sox' no disponible ({detalle.get('error')})"})
+                break
+            await asyncio.sleep(0.1)
+    finally:
+        _bm_ultrasonic_state["running"] = False
+        await broadcast({"type": "blackmirror", "payload": f"Ultrasonido detenido — {_bm_ultrasonic_state['bursts']} burst(s)"})
+
+
+@app.get("/api/blackmirror/ultrasonic/status")
+async def bm_ultrasonic_status():
+    return {
+        "sox_available": _shutil.which("play") is not None,
+        **_bm_ultrasonic_state,
+        "profiles": BM_ULTRASONIC_PROFILES,
+    }
+
+
+@app.post("/api/blackmirror/ultrasonic/start")
+async def bm_ultrasonic_start(payload: dict = Body(default={})):
+    global _bm_ultrasonic_task, _bm_ultrasonic_state
+    if _shutil.which("play") is None:
+        raise HTTPException(503, "Falta 'sox': instala con 'pkg install sox' en Termux.")
+    if _bm_ultrasonic_state["running"]:
+        return {"ok": False, "detail": "Ya está corriendo. Usa /stop primero."}
+    duration_s = int(payload.get("duration_s") or 600)  # auto-apagado de seguridad: 10 min por defecto
+    duration_s = max(0, min(duration_s, 3600))
+    _bm_ultrasonic_state = {"running": True, "profile": None, "started_at": datetime.now().isoformat(), "bursts": 0}
+    _bm_ultrasonic_task = asyncio.create_task(_bm_ultrasonic_loop(duration_s))
+    await broadcast({"type": "blackmirror", "payload": f"Ultrasonido iniciado ({duration_s}s máx) — contravigilancia activa"})
+    return {"ok": True, "duration_s": duration_s, "state": _bm_ultrasonic_state}
+
+
+@app.post("/api/blackmirror/ultrasonic/stop")
+async def bm_ultrasonic_stop():
+    global _bm_ultrasonic_task
+    _bm_ultrasonic_state["running"] = False
+    if _bm_ultrasonic_task and not _bm_ultrasonic_task.done():
+        _bm_ultrasonic_task.cancel()
+    return {"ok": True, "state": _bm_ultrasonic_state}
+
+
+@app.get("/api/blackmirror/ultrasonic/log")
+async def bm_ultrasonic_log(limit: int = 20):
+    conn = _sqlite3.connect(BM_DB)
+    c = conn.cursor()
+    c.execute("SELECT ts, profile, detalle FROM bm_ultrasonic_log ORDER BY ts DESC LIMIT ?", (limit,))
+    rows = [{"ts": r[0], "profile": r[1], "detalle": json.loads(r[2])} for r in c.fetchall()]
+    conn.close()
+    return {"log": rows}
+
+
 class DatabaseV2:
     def __init__(self, path):
         self.path = path
@@ -8252,6 +8397,51 @@ class DatabaseV2:
 
 
 db_v2 = DatabaseV2(DB_PATH_V2)
+
+# ── Regla #69 (2026-10-02, pedido de Harold): limpieza de los datos DEMO
+# que quedaron viviendo en v2_hosts desde antes de que existiera el guard
+# REDTEAM_SEED_DEMO=1 (ver más abajo). Harold los vio en /topologia como si
+# fueran su red real: router.local, cam-sala.local, dvr-nvr.local,
+# workstation-01, printer-hp.local, unknown-device — con tag "demo".
+# Esta limpieza es ADITIVA y SOLO toca filas con esos valores LITERALES
+# del seed viejo (nunca una fila real, aunque coincida la IP) y corre una
+# sola vez (bandera en v2_settings) para no repetir trabajo en cada
+# arranque.
+def _purge_legacy_demo_v2():
+    try:
+        with db_v2._conn() as c:
+            ya = c.execute(
+                "SELECT value FROM v2_settings WHERE key='demo_purged_regla69'"
+            ).fetchone()
+            if ya:
+                return
+            before = c.execute('SELECT COUNT(*) FROM v2_hosts WHERE tags LIKE \'%"demo"%\'').fetchone()[0]
+            c.execute('DELETE FROM v2_hosts WHERE tags LIKE \'%"demo"%\'')
+            c.execute(
+                "DELETE FROM v2_cameras WHERE ip IN ('192.168.1.10','192.168.1.15') "
+                "AND snapshot_url IN ('/ISAPI/Streaming/channels/101/picture','/cgi-bin/snapshot.cgi')"
+            )
+            c.execute(
+                "DELETE FROM v2_alerts WHERE title IN "
+                "('Cámara Hikvision detectada','Nuevo host descubierto','Puerto Telnet abierto') "
+                "AND source IN ('iot_scanner','arp_scan','port_scan')"
+            )
+            c.execute(
+                "DELETE FROM v2_iocs WHERE (value='192.168.1.100' AND source='port_scan') "
+                "OR (value='23' AND source='telnet_exposed')"
+            )
+            c.execute(
+                "INSERT OR REPLACE INTO v2_settings (key, value) VALUES ('demo_purged_regla69', ?)",
+                (datetime.now().isoformat(),),
+            )
+            c.commit()
+        if before:
+            print(f"[DB-V2] Regla #69: {before} host(s) demo purgados de v2_hosts (Topología).", flush=True)
+    except Exception as _purge_err:
+        print(f"[DB-V2] WARN: no se pudo purgar demo legado: {_purge_err}", flush=True)
+
+
+_purge_legacy_demo_v2()
 
 # ── Seed demo data (solo si la DB está vacía Y se pide explícitamente) ──
 # FIX 2026-09-08 (RAÍZ REAL -- contradice el pedido explícito de "datos
