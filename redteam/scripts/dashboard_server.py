@@ -2230,7 +2230,11 @@ def _list_config_files() -> list:
 # Puertos "huella digital" para clasificar tipo de dispositivo sin nmap -O
 # (nmap -O necesita root/raw sockets, no disponible en Termux sin root)
 FINGERPRINT_PORTS = [21, 22, 23, 80, 443, 554, 1883, 1900, 2323, 5000, 5683,
-                      7070, 8000, 8080, 8443, 8554, 9000, 37777, 47808, 62078]
+                      7070, 8000, 8080, 8443, 8554, 9000, 37777, 47808, 62078,
+                      # Regla #44 (2026-10-01): desktop Windows y DVRs que antes
+                      # quedaban 'unknown' — 445/139/135 SMB, 3389 RDP, 5900 VNC,
+                      # 34567/8899/32400 administrativos de DVR/NVR.
+                      135, 139, 445, 3389, 5900, 34567, 8899, 32400]
 
 SERVICE_NAMES = {
     21: "ftp", 22: "ssh", 23: "telnet", 80: "http", 443: "https",
@@ -2238,6 +2242,8 @@ SERVICE_NAMES = {
     5000: "http-alt", 5683: "coap", 7070: "rtsp-alt", 8000: "http-alt",
     8080: "http-proxy", 8443: "https-alt", 8554: "rtsp-alt",
     9000: "http-alt", 37777: "dahua-dvr", 47808: "bacnet", 62078: "lockdownd",
+    135: "ms-rpc", 139: "netbios-ssn", 445: "smb", 3389: "rdp", 5900: "vnc",
+    34567: "dvr-admin", 8899: "dvr-admin", 32400: "plex-media",
 }
 
 # Puertos que implican riesgo alto si estan abiertos sin mas contexto
@@ -2259,7 +2265,16 @@ async def _fingerprint_host(ip: str) -> dict:
     risk = "low"
     risk_reasons = []
 
-    if any(p in open_ports for p in (554, 8554, 37777)):
+    # Regla #44: DVR/NVR primero (puertos administrativos de grabador) —
+    # un 37777/8000 con RTSP es un DVR, no una cámara suelta.
+    if any(p in open_ports for p in (37777, 8000, 34567, 8899, 32400)) and not any(
+            p in open_ports for p in (135, 139, 445)):
+        dev_type = "dvr"
+        vendor = _detect_camera_brand(" ".join(open_ports.values())) or "DVR/NVR"
+    # Regla #44: desktop Windows/Linux con SMB/RDP/VNC abierto.
+    elif any(p in open_ports for p in (135, 139, 445, 3389, 5900)):
+        dev_type = "desktop"
+    elif any(p in open_ports for p in (554, 8554)):
         dev_type = "camera"
         vendor = _detect_camera_brand(" ".join(open_ports.values()))
     elif any(p in open_ports for p in (1883, 5683, 47808)):
@@ -2399,6 +2414,195 @@ def _arp_ping_sweep(subnet: str, max_hosts: int = 256, wait: float = 4.0) -> dic
                 try: pr.kill()
                 except Exception: pass
     return _read_arp()
+
+# ═══ Regla #44 (2026-10-01): DISCOVERY SIN ROOT — las 3 fuentes que faltaban ═══
+# Pedido de Harold: en su red hay 3 routers wifi + 1 DVR + 1 desktop pero el
+# mapa solo mostraba 1. nmap sin CAP_NET_RAW ve 0 y el TCP connect solo ve lo
+# que abre puertos. ARP ya existe (_arp_ping_sweep); aquí suman SSDP/mDNS/
+# NetBIOS (UDP puro, SIN root) + vendor OUI offline para los vivos sin puertos.
+
+_OUI_VENDORES = {
+    "50:c7:bf": "TP-Link", "a4:2b:b0": "TP-Link", "14:cc:20": "TP-Link",
+    "98:da:60": "TP-Link", "a8:57:4e": "TP-Link", "5c:e9:31": "TP-Link",
+    "64:09:80": "Xiaomi", "78:11:dc": "Xiaomi", "8c:be:be": "Xiaomi",
+    "34:ce:00": "Xiaomi",
+    "14:d6:4d": "D-Link", "3c:1e:04": "D-Link",
+    "c8:3a:35": "Tenda", "20:dc:e6": "Mercusys",
+    "34:6b:d3": "Huawei", "88:28:b3": "Huawei", "c8:0c:c8": "Huawei",
+    "4c:bd:8f": "Hikvision", "c0:56:e7": "Hikvision", "44:47:2f": "Hikvision",
+    "a0:bd:1d": "Dahua", "3c:39:e2": "Dahua",
+    "24:6f:28": "Espressif (IoT)", "5c:cf:7f": "Espressif (IoT)",
+    "84:cc:a8": "Espressif (IoT)", "30:ae:a4": "Espressif (IoT)",
+    "3c:a9:f4": "Intel (PC)", "00:e0:4c": "Realtek (PC)",
+    "b8:27:eb": "Raspberry Pi", "52:54:00": "QEMU (virtual)",
+    "d8:cb:8a": "Google", "f4:f5:d8": "Google",
+}
+
+def _oui_vendor(mac):
+    """Vendor por prefijo OUI, offline (Regla #44). None si desconocido."""
+    try:
+        if not mac:
+            return None
+        return _OUI_VENDORES.get(mac.lower()[:8])
+    except Exception:
+        return None
+
+_SSDP_MSEARCH = (
+    b"M-SEARCH * HTTP/1.1\r\n"
+    b"HOST: 239.255.255.250:1900\r\n"
+    b"MAN: \"ssdp:discover\"\r\n"
+    b"MX: 2\r\n"
+    b"ST: ssdp:all\r\n\r\n"
+)
+
+async def _ssdp_probe(timeout: float = 2.5) -> dict:
+    """SSDP/UPnP multicast UDP 1900 — SIN ROOT. Routers/DVRs/TVs anuncian
+    SERVER/USN/LOCATION solos. Devuelve {ip: {server,usn,location}}."""
+    import socket as _sk
+    found = {}
+    sock = None
+    try:
+        loop = asyncio.get_event_loop()
+        sock = _sk.socket(_sk.AF_INET, _sk.SOCK_DGRAM)
+        sock.setblocking(False)
+        try:
+            sock.setsockopt(_sk.IPPROTO_IP, _sk.IP_MULTICAST_TTL, 2)
+        except OSError:
+            pass
+        for _ in range(3):
+            sock.sendto(_SSDP_MSEARCH, ("239.255.255.250", 1900))
+        deadline = loop.time() + timeout
+        while loop.time() < deadline:
+            restante = max(0.05, deadline - loop.time())
+            try:
+                data, addr = await asyncio.wait_for(loop.sock_recv(sock, 4096), timeout=restante)
+            except asyncio.TimeoutError:
+                break
+            texto = data.decode("latin-1", "ignore")
+            entry = found.setdefault(addr[0], {})
+            for campo, clave in (("SERVER:", "server"), ("USN:", "usn"), ("LOCATION:", "location")):
+                for linea in texto.splitlines():
+                    if linea.upper().startswith(campo):
+                        entry.setdefault(clave, linea.split(":", 1)[1].strip()[:180])
+    except Exception:
+        pass
+    finally:
+        if sock:
+            try:
+                sock.close()
+            except Exception:
+                pass
+    return found
+
+def _mdns_query() -> bytes:
+    """Consulta PTR de enumeración de servicios mDNS (DNS binario mínimo)."""
+    import struct as _st
+    qname = b"".join(bytes([len(l)]) + l for l in
+                     (b"_services", b"_dns-sd", b"_udp", b"local")) + b"\x00"
+    return _st.pack(">HHHHHH", 0, 0, 1, 0, 0, 0) + qname + _st.pack(">HH", 0x000C, 0x0001)
+
+async def _mdns_probe(timeout: float = 2.0) -> dict:
+    """mDNS UDP 5353 — SIN ROOT. Devuelve {ip: 'nombre.local'}: el desktop
+    de Harold (ej. eclipse.local) anuncia su nombre solo."""
+    import re as _re
+    import socket as _sk
+    found = {}
+    sock = None
+    try:
+        loop = asyncio.get_event_loop()
+        sock = _sk.socket(_sk.AF_INET, _sk.SOCK_DGRAM)
+        sock.setblocking(False)
+        try:
+            sock.setsockopt(_sk.IPPROTO_IP, _sk.IP_MULTICAST_TTL, 2)
+        except OSError:
+            pass
+        for _ in range(2):
+            sock.sendto(_mdns_query(), ("224.0.0.251", 5353))
+        deadline = loop.time() + timeout
+        while loop.time() < deadline:
+            restante = max(0.05, deadline - loop.time())
+            try:
+                data, addr = await asyncio.wait_for(loop.sock_recv(sock, 4096), timeout=restante)
+            except asyncio.TimeoutError:
+                break
+            if addr[0] in found:
+                continue
+            m = _re.search(rb"[a-z0-9][a-z0-9-]{2,39}\.local", data, _re.IGNORECASE)
+            if m:
+                found[addr[0]] = m.group(0).decode().lower()
+    except Exception:
+        pass
+    finally:
+        if sock:
+            try:
+                sock.close()
+            except Exception:
+                pass
+    return found
+
+def _nb_encode(name: str = "*") -> bytes:
+    """Codifica un nombre NetBIOS (NBSTAT wildcard): 'CK'+'CA'*15."""
+    raw = (name.encode() + b"\x00" * 16)[:16]
+    enc = b"".join(bytes([(c >> 4) + 0x41, (c & 0xF) + 0x41]) for c in raw)
+    return b"\x20" + enc + b"\x00"
+
+async def _netbios_nombre(ip: str, timeout: float = 1.2):
+    """NBSTAT UDP 137 — SIN ROOT. Un Windows suele responder con su nombre
+    real de máquina (ej. 'ECLIPSE'). None si no responde."""
+    import random as _rnd
+    import re as _re
+    import socket as _sk
+    import struct as _st
+    sock = None
+    try:
+        loop = asyncio.get_event_loop()
+        pkt = _st.pack(">HHHHHH", _rnd.randint(1, 32000), 0x0010, 1, 0, 0, 0) + _nb_encode("*") + _st.pack(">HH", 0x21, 0x0001)
+        sock = _sk.socket(_sk.AF_INET, _sk.SOCK_DGRAM)
+        sock.setblocking(False)
+        sock.sendto(pkt, (ip, 137))
+        try:
+            data, _ = await asyncio.wait_for(loop.sock_recv(sock, 1024), timeout=timeout)
+        except (asyncio.TimeoutError, OSError):
+            return None
+        for m in _re.finditer(rb"[A-Za-z0-9][A-Za-z0-9 _-]{4,15}(?=\x00)", data):
+            n = m.group(0).decode("latin-1", "ignore").strip().upper()
+            if n and not n.startswith(("IS~", "__", "WORKGROUP", "MSBROWSE", "LOCAL")):
+                return n[:20]
+    except Exception:
+        return None
+    finally:
+        if sock:
+            try:
+                sock.close()
+            except Exception:
+                pass
+    return None
+
+def _classify_sin_puertos(vendor, ssdp=None, hostname=None):
+    """Tipo por heurísticas cuando el host está VIVO (ARP/SSDP/mDNS)
+    pero no abre ningún puerto TCP. Regla #44."""
+    try:
+        v = (vendor or "").lower()
+        s = str(ssdp or {}).lower()
+        if any(k in s for k in ("dvr", "nvr", "hikvision", "dahua", "onvif")):
+            return "dvr"
+        if any(k in s for k in ("router", "gateway", "wlan")):
+            return "router"
+        if "tp-link" in v or "d-link" in v or "tenda" in v or "mercusys" in v or "huawei" in v:
+            return "router"
+        if "hikvision" in v or "dahua" in v:
+            return "dvr"
+        if "intel" in v or "realtek" in v or "raspberry" in v:
+            return "desktop"
+        if "espressif" in v:
+            return "iot"
+        if "xiaomi" in v or "google" in v:
+            return "phone"
+        if hostname and ".local" in str(hostname):
+            return "desktop"
+        return "unknown"
+    except Exception:
+        return "unknown"
 
 async def _discover_hosts_tcp(subnet: str) -> list:
     """Escanea cualquier red CIDR (/24, /22, /16, etc.) via TCP connect puro.
@@ -3080,6 +3284,111 @@ async def _scan_topology_single(subnet: str):
             if fp["vendor"] and not h.get("vendor"):
                 h["vendor"] = fp["vendor"]
 
+    # ═══ Regla #44: FUSIÓN SIN ROOT — lo que nmap/TCP jamás ven ═══
+    # Celulares, routers silenciosos, el desktop con firewall, el DVR
+    # dormido: aparecen por ARP (ping del sistema) + SSDP + mDNS.
+    # ADITIVO: solo agrega hosts nuevos y enriquece los existentes
+    # (MAC/vendor/hostname/sources); nada de lo encontrado se toca.
+    try:
+        arp_macos, ssdp_info, mdns_info = await asyncio.gather(
+            asyncio.to_thread(_arp_ping_sweep, subnet),
+            _ssdp_probe(), _mdns_probe())
+    except Exception:
+        arp_macos, ssdp_info, mdns_info = {}, {}, {}
+    fuentes = {"arp": 0, "ssdp": 0, "mdns": 0, "netbios": 0, "vivos_sin_tcp": 0}
+    por_ip = {h["ip"]: h for h in hosts}
+    try:
+        import ipaddress as _ipa_m
+        _red_m = _ipa_m.ip_network(subnet, strict=False)
+        def _en_subred(ip):
+            try:
+                return _ipa_m.ip_address(ip) in _red_m
+            except ValueError:
+                return False
+    except Exception:
+        def _en_subred(ip):
+            return ip.startswith(subnet.rsplit(".", 1)[0])
+
+    def _registrar(ip, fuente, mac=None, nombre=None, ssdp=None):
+        h = por_ip.get(ip)
+        if h is None:
+            h = {"ip": ip, "mac": mac, "vendor": _oui_vendor(mac) or None,
+                 "ports": [], "type": "unknown", "status": "up", "sources": []}
+            por_ip[ip] = h
+            hosts.append(h)
+        else:
+            if mac and not h.get("mac"):
+                h["mac"] = mac
+                if not h.get("vendor"):
+                    h["vendor"] = _oui_vendor(mac) or None
+        if not isinstance(h.get("sources"), list):
+            h["sources"] = []
+        if fuente not in h["sources"]:
+            h["sources"].append(fuente)
+        if nombre and not h.get("hostname"):
+            h["hostname"] = nombre
+        if ssdp and not h.get("ssdp"):
+            h["ssdp"] = ssdp
+
+    for ip, mac in (arp_macos or {}).items():
+        if _en_subred(ip):
+            _registrar(ip, "arp", mac=mac)
+            fuentes["arp"] += 1
+    for ip, info in (ssdp_info or {}).items():
+        if _en_subred(ip):
+            _registrar(ip, "ssdp", ssdp=info)
+            fuentes["ssdp"] += 1
+    for ip, nombre in (mdns_info or {}).items():
+        if _en_subred(ip):
+            _registrar(ip, "mdns", nombre=nombre)
+            fuentes["mdns"] += 1
+
+    # Fingerprint solo para los NUEVOS sin puertos (los ya escaneados no se tocan)
+    nuevos = [h for h in hosts if not h.get("ports")]
+    if nuevos:
+        try:
+            fp_nuevos = await asyncio.gather(*[_fingerprint_host(h["ip"]) for h in nuevos])
+        except Exception:
+            fp_nuevos = [None] * len(nuevos)
+        for h, fp in zip(nuevos, fp_nuevos):
+            if fp and fp.get("ports"):
+                h["type"] = fp["type"]
+                if fp.get("vendor") and not h.get("vendor"):
+                    h["vendor"] = fp["vendor"]
+                h["ports"] = [
+                    {"port": p, "service": SERVICE_NAMES.get(p, "unknown"),
+                     "state": "open", "banner": (fp["banners"].get(p) or "")[:80]}
+                    for p in fp["ports"]
+                ]
+                h["risk"] = fp["risk"]
+                h["risk_reasons"] = fp["risk_reasons"]
+            else:
+                fuentes["vivos_sin_tcp"] += 1
+                if not h.get("risk"):
+                    h["risk"] = "low"
+                if not h.get("risk_reasons"):
+                    h["risk_reasons"] = []
+                if not h.get("type") or h["type"] == "unknown":
+                    h["type"] = _classify_sin_puertos(h.get("vendor"), h.get("ssdp"), h.get("hostname"))
+
+    # NetBIOS: nombre real de los Windows aún sin nombre (UDP 137, sin root)
+    sin_nombre = [h for h in hosts
+                  if not h.get("hostname") and "netbios" not in (h.get("sources") or [])]
+    if sin_nombre:
+        try:
+            nombres = await asyncio.gather(*[_netbios_nombre(h["ip"]) for h in sin_nombre])
+        except Exception:
+            nombres = [None] * len(sin_nombre)
+        for h, nombre in zip(sin_nombre, nombres):
+            if nombre:
+                h["hostname"] = nombre
+                if not isinstance(h.get("sources"), list):
+                    h["sources"] = []
+                h["sources"].append("netbios")
+                fuentes["netbios"] += 1
+                if (h.get("type") in (None, "unknown")) and not h.get("ports"):
+                    h["type"] = "desktop"
+
     await broadcast({"type": "progress", "payload": f"Topología: {len(hosts)} hosts en {subnet}" + (" (via TCP fallback)" if used_tcp_fallback else "")})
     # 2026-09-08 — guardar el último escaneo en disco (aditivo, no bloquea):
     # permite que la War Room restaure los puntos al reabrir el navegador.
@@ -3095,7 +3404,8 @@ async def _scan_topology_single(subnet: str):
     return {"results": hosts, "hosts_up": len(hosts), "subnet": subnet,
             "local_ip": local_ip, "local_hostname": local_hostname,
             "method": "tcp-connect" if used_tcp_fallback else "nmap",
-            "nmap_note": nmap_note if used_tcp_fallback else None}
+            "nmap_note": nmap_note if used_tcp_fallback else None,
+            "discovery": fuentes}
 
 
 @app.post("/api/scan/topology")
@@ -3114,11 +3424,14 @@ async def scan_topology(subnet: str = "", subnets: str = Query("")):
     results = [host for report in reports for host in report.get("results", [])]
     subnets_out = [report["subnet"] for report in reports]
     combined = dict(reports[0])
+    _keys_disco = ("arp", "ssdp", "mdns", "netbios", "vivos_sin_tcp")
     combined.update({
         "results": results,
         "hosts_up": len(results),
         "subnet": ",".join(subnets_out),
         "subnets": subnets_out,
+        "discovery": {k: sum((r.get("discovery") or {}).get(k, 0) for r in reports)
+                      for k in _keys_disco},
         "method": "multi-" + "+".join(report.get("method", "unknown") for report in reports),
         "nmap_note": "; ".join(
             report["nmap_note"] for report in reports if report.get("nmap_note")
