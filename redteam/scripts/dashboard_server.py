@@ -437,7 +437,7 @@ except Exception as _seal_err:
     _SEAL_OK = False
     print(f"[WARN] SEAL import falló: {_seal_err}", flush=True)
 
-# ── LEVIATHAN v3.0 — Módulos de Red Team (scanners, exploiters, AI, reporters) ──
+# ── LEVIATHAN v4.0 — Módulos de Red Team + orquestador conectado al mapa NEXUS (Regla #68) ──
 _LEVIATHAN_OK = False
 try:
     sys.path.insert(0, str(BASE.parent))

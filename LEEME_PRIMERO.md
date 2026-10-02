@@ -1502,3 +1502,28 @@ del dashboard.
 
 **Flujo del operador (Harold):** NEXUS → MAPA IA → *Escanear red* → KRAKEN →
 botón *Mapa* → los resultados llegan con identidad de cada dispositivo.
+
+## Regla #68 — LEVIATHAN v4.0: orquestador conectado al mapa NEXUS (2026-10-02, pedido de Harold)
+
+**Contexto:** Harold pidió revisar y actualizar LEVIATHAN a 4.0. El núcleo
+(`leviathan_core` v3.0) ya era sólido: 18 módulos (scanners/exploiters/AI/
+reporters), routers `/api/leviathan/*` + `/api/v1/*` y orquestador asíncrono
+multi-subred. Lo que faltaba: la misma integración que KRAKEN 5.0.
+
+**Qué es v4.0 (commit del 2026-10-02):**
+- `POST /api/leviathan/command-map`: lanza un job del orquestador sobre los
+  dispositivos REALES del mapa (caché topología Regla #44). Cada IP
+  descubierta entra como /32 con puertos ajustados a su tipo (cámara/DVR →
+  RTSP y puertos de fabricante; router → gestión; desktop → SMB/RDP/VNC).
+  Verifica contra redes RFC1918 antes de aceptar. MANUAL: botón
+  **Mapa NEXUS** en el panel LEVIATHAN.
+- `__version__` 3.0.0 → 4.0.0; banner v4.0 con "NEXUS MAP".
+- `/api/leviathan/command` ORIGINAL INTACTO (Regla #63): escaneo por CIDR
+  manual sigue igual.
+
+**Flujo del operador:** NEXUS → *Escanear red* → LEVIATHAN → botón
+*Mapa NEXUS* → job asíncrono con poll en `/api/leviathan/status/{job_id}`.
+
+**Nueva constelación war room (octubre 2026):** NEXUS 10.0 (mapa) →
+KRAKEN 5.0 (exploits del mapa) → LEVIATHAN 4.0 (orquestación del mapa).
+Los tres beben de la misma topología descubierta (Regla #44).

@@ -19,7 +19,7 @@ BANNER = r"""
             ░  ░░ ░      ░  ░      ░  ░   ░         ░ ░           ░ 
                  ░                                                    
 ======================================================================
-   SOURCESEAL INTELLIGENCE | LEVIATHAN v3.0 | ARTO + SEAL ACTIVE
+   SOURCESEAL INTELLIGENCE | LEVIATHAN v4.0 | ARTO + SEAL ACTIVE | NEXUS MAP
 ======================================================================
 """
 

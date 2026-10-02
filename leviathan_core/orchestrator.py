@@ -313,6 +313,115 @@ async def leviathan_command(req: CommandRequest, background_tasks: BackgroundTas
     }
 
 
+# ── 4b. LEVIATHAN v4.0 — conectado al mapa NEXUS (Regla #68) ──
+# Pedido de Harold (2026-10-02): actualizar LEVIATHAN a 4.0. El
+# orquestador ahora puede lanzar su escaneo multi-subred SOBRE LOS
+# DISPOSITIVOS REALES descubiertos por la topología (Regla #44):
+# nada de escanear 254 IPs a ciegas — cada IP ya descubierta entra
+# como /32 con puertos ajustados a su tipo (cámara → puertos RTSP,
+# router → puertos de gestión). Aditivo: /command sigue intacto.
+
+# Puertos por tipo de dispositivo del mapa (cámara/DVR = RTSP primero)
+PORTS_POR_TIPO: Dict[str, List[int]] = {
+    "camera": [554, 8554, 80, 443, 8000, 8080],
+    "dvr": [554, 8000, 80, 443, 34567, 8899],
+    "router": [80, 443, 22, 23, 53, 1900],
+    "desktop": [22, 135, 139, 445, 3389, 5900],
+    "phone": [5037, 8080],
+    "iot": [80, 1883, 8883, 5555],
+    "unknown": [80, 443, 22],
+}
+
+_TOPOLOGY_CACHE = Path(__file__).resolve().parent.parent / "redteam" / "data" / "topology_last.json"
+
+
+def _devices_from_map() -> List[Dict[str, Any]]:
+    """Última topología descubierta (Regla #44). Mismo contrato que
+    NEXUS: ip, type, hostname, vendor, mac."""
+    try:
+        with open(_TOPOLOGY_CACHE, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data.get("results", [])
+    except Exception:
+        return []
+
+
+@router.post("/command-map")
+async def leviathan_command_map(background_tasks: BackgroundTasks, origin: str = "local"):
+    """v4.0: lanza un job del orquestador sobre los dispositivos del
+    mapa NEXUS (descubiertos por topología, verificados contra redes
+    privadas RFC1918). Manual: solo cuando el operador lo pide."""
+    devices = _devices_from_map()
+    if not devices:
+        raise HTTPException(
+            409,
+            "El mapa está vacío: escanea la red primero (NEXUS → Escanear red).",
+        )
+
+    targets: List[str] = []
+    devices_ok: List[Dict[str, Any]] = []
+    skipped: List[str] = []
+    for dev in devices:
+        ip = str(dev.get("ip", "")).strip()
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if not any(addr in net for net in AUTHORIZED_NETWORKS):
+            skipped.append(ip)
+            continue
+        cidr32 = f"{ip}/32"
+        if cidr32 not in targets:
+            targets.append(cidr32)
+            devices_ok.append(dev)
+
+    if not targets:
+        raise HTTPException(
+            409,
+            "Ningún dispositivo del mapa está en redes autorizadas.",
+        )
+
+    # Puertos unificados: los DEFAULT + los específicos de cada tipo
+    ports = set(DEFAULT_PORTS)
+    for dev in devices_ok:
+        ports.update(PORTS_POR_TIPO.get(dev.get("type") or "unknown", []))
+    ports_list = sorted(ports)
+
+    req = CommandRequest(
+        targets=targets, ports=ports_list, origin=origin)
+    job_id = f"orch_map_{uuid.uuid4().hex[:8]}"
+    JOBS[job_id] = {
+        "status": "accepted",
+        "targets": targets,
+        "origin": origin,
+        "results": [],
+        "progress": {"percent": 0},
+        "created_at": datetime.now().isoformat(),
+        "from_map": True,
+        "devices": [
+            {"ip": d.get("ip"), "type": d.get("type"),
+             "hostname": d.get("hostname"), "vendor": d.get("vendor")}
+            for d in devices_ok
+        ],
+    }
+    _persist_job(job_id, "accepted")
+    background_tasks.add_task(_run_job, job_id, req)
+
+    return {
+        "status": "accepted",
+        "job_id": job_id,
+        "from_map": True,
+        "targets": targets,
+        "skipped": skipped,
+        "ports": ports_list,
+        "message": (
+            f"Job v4.0 sobre el mapa: {len(targets)} dispositivo(s) real(es), "
+            f"{len(ports_list)} puertos por tipo de equipo."
+        ),
+        "poll": f"/api/leviathan/status/{job_id}",
+    }
+
+
 @router.get("/status/{job_id}")
 async def leviathan_status(job_id: str):
     """Hueco 1: polling para Replit/frontend. Lee de memoria; si el

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Shield, Scan, Bug, Activity, FileText, Cpu,
   Loader2, RefreshCw, Play, AlertTriangle, CheckCircle2,
-  XCircle, ChevronDown, ChevronUp, Crosshair, Eye, Zap
+  XCircle, ChevronDown, ChevronUp, Crosshair, Eye, Zap, Map as MapIcon
 } from 'lucide-react';
 import { getApiKey } from '../lib/api';
 
@@ -82,6 +82,45 @@ export default function LeviathanPanel() {
       setError(e.message || 'No se pudieron detectar las redes');
     } finally {
       setLoadingNetworks(false);
+    }
+  };
+
+  const runScanMap = async () => {
+    setLoadingKey('scan', true); setScanResult(null);
+    try {
+      const res = await fetch(`${API_BASE}${LEV}/command-map`, {
+        method: 'POST',
+        headers: levHeaders(),
+        body: JSON.stringify({ origin: 'war-room' }),
+      });
+      const accepted = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setScanResult({ error: `HTTP ${res.status}`, detail: accepted });
+        return;
+      }
+      const jobId = accepted.job_id;
+      if (!jobId) {
+        setScanResult({ error: 'LEVIATHAN no devolvió un job_id', detail: accepted });
+        return;
+      }
+      setScanResult({ async: true, ...accepted, targets: accepted.targets });
+      for (let attempt = 0; attempt < 600; attempt += 1) {
+        await new Promise(resolve => window.setTimeout(resolve, 3000));
+        const poll = await fetch(`${API_BASE}${LEV}/status/${encodeURIComponent(jobId)}`, {
+          headers: levHeaders(),
+        });
+        const job = await poll.json().catch(() => ({}));
+        if (!poll.ok) {
+          setScanResult({ async: true, targets: accepted.targets, job_id: jobId, error: `HTTP ${poll.status}`, detail: job });
+          return;
+        }
+        setScanResult({ async: true, targets: accepted.targets, ...job });
+        if (job.status === 'completed' || job.status === 'error') break;
+      }
+    } catch (e: any) {
+      setScanResult({ error: e.message });
+    } finally {
+      setLoadingKey('scan', false);
     }
   };
 
@@ -246,6 +285,11 @@ export default function LeviathanPanel() {
             title="Detecta redes privadas disponibles; no inicia un escaneo"
             className="px-3 py-2 rounded-lg border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10 text-sm flex items-center gap-2 disabled:opacity-50">
             <RefreshCw className={`w-4 h-4 ${loadingNetworks ? 'animate-spin' : ''}`} /> Redes
+          </button>
+          <button onClick={runScanMap} disabled={loading.scan}
+            title="Job v4.0 sobre los dispositivos reales del mapa NEXUS, puertos según tipo"
+            className="px-3 py-2 rounded-lg border border-purple-500/40 text-purple-300 hover:bg-purple-500/10 text-sm flex items-center gap-2 disabled:opacity-50">
+            <MapIcon className="w-4 h-4" /> Mapa NEXUS
           </button>
           <button onClick={runScan} disabled={loading.scan}
             className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-medium flex items-center gap-2 disabled:opacity-50">
