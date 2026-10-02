@@ -1572,3 +1572,45 @@ integrarlo a Black Mirror ("mismo módulo de inteligencia").
 
 **Requiere:** `pkg install sox` en Termux. Sin eso, el botón queda
 deshabilitado y el panel avisa.
+
+## Regla #71 — Orchestrator Tool v1.0: el C2 limpio, completado y blindado (2026-10-02)
+
+**Contexto:** Harold pidió "activar el C2" y mandó su diseño `orchestrator_tool.py`
+("CÓDIGO FINAL"). Hallazgo: el archivo llegó TRUNCADO — cortaba en la línea 303,
+a mitad de `/help`. Faltaban 5 comandos (`/snapshot`, `/network_info`,
+`/top_processes`, `/monitor_status`, `/sync_repo`), el SystemMonitor, la API
+FastAPI, el loop de polling de Telegram y el `main`.
+
+**Qué se hizo (fiel al diseño de Harold + completado):**
+- `orchestrator_tool.py` completo en la raíz del repo: gestor de repos
+  (~/Red-team-tauri + ~/commander: status/pull/push/sync), 13 comandos de
+  Telegram, SystemMonitor (umbrales CPU 85% / RAM 90% con alerta), API REST
+  con Bearer auth (`/api/health`, `/api/repos/*`, `/api/system/status`,
+  `/api/exec`, `/api/monitor/status`) y polling de Telegram en background.
+- `c2_unified_pro.py` (:8005) INTACTO (Regla #63): el Orchestrator convive,
+  no reemplaza. Es la versión ligera y legible; el C2 Pro queda como está.
+
+**Blindaje (sin cambiar el diseño, 3 decisiones de seguridad):**
+1. Variables `ORCH_*` — NUNCA `TELEGRAM_BOT_TOKEN`: el bot de Sol
+   (@sol_amg_bot) y este tool competirían por los mismos mensajes (bug
+   histórico del LEEME, línea 595). Token PROPIO vía @BotFather.
+2. Bind `127.0.0.1` por defecto. `0.0.0.0` solo con `ORCH_BIND_ALL=1` Y
+   `ORCH_API_SECRET_KEY` configurada (fail-closed: sin clave ni arranca).
+3. Allowlist deny-by-default: sin `ORCH_TELEGRAM_ALLOWED_USERS` el bot
+   rechaza TODOS los comandos (el diseño original permitía a cualquiera
+   si la lista estaba vacía — corregido y documentado en el código).
+
+**Activación (pasos de Harold):**
+1. En Telegram: crear UN bot nuevo con @BotFather (no reutilizar el de Sol).
+2. Añadir a `~/Red-team-tauri/.env`:
+   ORCH_ENABLE=1
+   ORCH_TELEGRAM_BOT_TOKEN=token_del_bot_nuevo
+   ORCH_TELEGRAM_CHAT_ID=tu_chat_id
+   ORCH_TELEGRAM_ALLOWED_USERS=tu_user_id_numerico
+   ORCH_API_SECRET_KEY=una_clave_larga
+3. `bash omni.sh restart` → el status debe mostrar
+   "Orchestrator :8080 listo". El bot te saluda al arrancar.
+4. Probar: `/status`, `/top_processes`, `/snapshot`, `/help`.
+
+Sin las variables de Telegram, corre igual como API local en :8080
+(solo localhost, requiere Bearer) — útil desde la War Room más adelante.

@@ -437,6 +437,29 @@ start() {
 
     fi
 
+# ── 4b. ORCHESTRATOR TOOL (:8080, opt-in) — Regla #71 ──
+# Tool de administración de Harold: repos + monitoreo + Telegram ops.
+# NO arranca solo (protege RAM): se activa con ORCH_ENABLE=1 en .env.
+# Variables propias ORCH_* para que su bot NUNCA compita con el de Sol.
+  if [ "${ORCH_ENABLE:-0}" = "1" ] && [ -f "$ROOT/orchestrator_tool.py" ]; then
+    info "Orchestrator :${ORCH_PORT:-8080} — arrancando (opt-in)..."
+    cd "$ROOT"
+    ORCH_PORT="${ORCH_PORT:-8080}" nohup python3 orchestrator_tool.py >> "$LOG_DIR/orchestrator.log" 2>&1 &
+    ORCH_PID=$!
+    echo "$ORCH_PID" > "$SOL_DIR/orchestrator.pid"
+    for i in $(seq 1 10); do
+      curl -s -m 2 http://127.0.0.1:${ORCH_PORT:-8080}/api/health >/dev/null 2>&1 && break
+      sleep 1
+    done
+    if curl -s -m 3 http://127.0.0.1:${ORCH_PORT:-8080}/api/health >/dev/null 2>&1; then
+      ok "Orchestrator :${ORCH_PORT:-8080} listo (PID $ORCH_PID)"
+    else
+      warn "Orchestrator no respondió en 10s — revisa $LOG_DIR/orchestrator.log"
+    fi
+  elif [ -f "$ROOT/orchestrator_tool.py" ]; then
+    info "Orchestrator disponible pero inactivo (ORCH_ENABLE=1 en .env para activarlo)"
+  fi
+
 # ── 5. SOL GATE (:8012 por defecto) — antes que daemon/Telegram ──
   # Las acciones sensibles fallan cerrado si el portero no está vivo.
   start_sol_gate || warn "Sol seguirá viva, pero push/SMS/Docker/shell/scan externo quedarán bloqueados"
