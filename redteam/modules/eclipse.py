@@ -288,8 +288,8 @@ async def suite_auth() -> List[bool]:
             f"توکن منقضی: {res}",
         ))
     else:
-        out.append(r.log("A5-jwt-none", "FAIL", "pyjwt نصب نیست"))
-        out.append(r.log("A6-jwt-expired", "FAIL", "pyjwt نصب نیست"))
+        out.append(r.log("A5-jwt-none", "FAIL", "pyjwt no está instalado"))
+        out.append(r.log("A6-jwt-expired", "FAIL", "pyjwt no está instalado"))
 
     # A7: fuzzing ورودی‌های خراب
     fuzz_ok = True
@@ -375,7 +375,7 @@ def suite_scope() -> List[bool]:
         got = scope_check(target)
         out.append(r.log(
             name, "PASS" if got == expected else "FAIL",
-            f"'{target[:40]}' → {'داخل' if got else 'رد'} (انتظار: {'داخل' if expected else 'رد'})",
+            f"'{target[:40]}' → {'dentro' if got else 'rechazado'} (esperado: {'dentro' if expected else 'rechazado'})",
         ))
     return out
 
@@ -386,11 +386,14 @@ def suite_scope() -> List[bool]:
 async def suite_stress(base_url: str = DEFAULT_BASE_URL) -> List[bool]:
     r = Result("stress")
     out: List[bool] = []
-    endpoint = "/api/atlas/status"
+    # Regla #65 (2026-10-02): antes apuntaba a /api/atlas/status, que
+    # nunca existió en el dashboard — cada request daba 404 garantizado.
+    # /api/health SÍ existe y es liviano: mide resiliencia real.
+    endpoint = os.getenv("ECLIPSE_STRESS_PATH", "/api/health")
 
     if circuit_breaker.is_blocked(endpoint):
         out.append(r.log("C0-circuit-open", "FAIL",
-                         f"endpoint {endpoint} توسط Circuit Breaker مسدود است"))
+                         f"endpoint {endpoint} bloqueado por el Circuit Breaker"))
         return out
 
     try:
@@ -474,7 +477,7 @@ async def suite_stress(base_url: str = DEFAULT_BASE_URL) -> List[bool]:
             ))
 
     except Exception as e:
-        out.append(r.log("C-connection", "FAIL", f"خطای اتصال: {e}"))
+        out.append(r.log("C-connection", "FAIL", f"error de conexión: {e}"))
 
     return out
 
@@ -544,7 +547,7 @@ async def suite_universe(base_url: str = DEFAULT_BASE_URL) -> List[bool]:
             ))
 
     except Exception as e:
-        out.append(r.log("D-connection", "FAIL", f"universe در دسترس نیست: {e}"))
+        out.append(r.log("D-connection", "FAIL", f"universe no está disponible: {e}"))
     return out
 
 
