@@ -1479,3 +1479,26 @@ wildcard (`CK`+`CA*15`) correcto; build del frontend en 5.6s.
 **Paso de Harold:** `cd ~/Red-team-tauri && git pull && bash omni.sh restart` → War Room → Mapa Global → **Escanear Red**. Esperar ~10-20s
 (ARP+ping+SSDP+mDNS corren en paralelo). Los 3 routers, el DVR y el
 desktop (con su nombre NetBIOS/mDNS, ej. ECLIPSE) deben aparecer.\n
+
+## Regla #67 — KRAKEN v5.0: unido al mapa NEXUS, resultados con identidad (2026-10-02, pedido de Harold)
+
+**Contexto:** Harold pidió revisar y actualizar KRAKEN a 5.0. Hallazgo de la
+revisión: KRAKEN existía PARTIDO en dos — el paquete `kraken/` v3.0 de la raíz
+(lib, sin usar, nada lo importa) y el KRAKEN v4.0 real, el bloque NSE del
+dashboard (`/api/kraken/*`, `kraken_v4.db`). El motor real SIEMPRE fue el bloque
+del dashboard.
+
+**Qué es v5.0 (commit del 2026-10-02):**
+- `POST /api/kraken/scan-map`: escanea con NSE los dispositivos REALES ya
+  descubiertos por el mapa de topología (Regla #44, misma caché que NEXUS).
+  Solo IPs descubiertas y solo en redes privadas autorizadas — nunca inventa
+  objetivos. Manual: se lanza con el botón **Mapa** del panel KRAKEN.
+- `/api/kraken/results` enriquecido: exploits y hosts llegan con
+  `device: {type, hostname, vendor, mac}` del último escaneo de topología.
+  Ya no se lee "192.168.1.20" a secas: se lee el DVR con su nombre.
+- El paquete `kraken/` v3 queda como librería legado en la raíz — NO es el
+  motor. Todo cambio de KRAKEN va en su bloque de
+  `redteam/scripts/dashboard_server.py` (Regla #43).
+
+**Flujo del operador (Harold):** NEXUS → MAPA IA → *Escanear red* → KRAKEN →
+botón *Mapa* → los resultados llegan con identidad de cada dispositivo.

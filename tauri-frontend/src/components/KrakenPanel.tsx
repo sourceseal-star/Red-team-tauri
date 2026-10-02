@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Bug, Server, AlertTriangle, CheckCircle2, XCircle,
   Loader2, RefreshCw, Play, Square, Activity, Zap, Search,
-  ChevronDown, ChevronUp, Crosshair, Clock
+  ChevronDown, ChevronUp, Crosshair, Clock, Radar
 } from 'lucide-react';
 import { getApiKey } from '../lib/api';
 
@@ -180,6 +180,29 @@ export default function KrakenPanel() {
     }
   };
 
+  const handleScanMap = async () => {
+    setScanning(true);
+    setError(null);
+    setStatusMsg(null);
+    setScanResult(null);
+    try {
+      const res = await fetch('/api/kraken/scan-map', { method: 'POST', headers: krakenHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.status === 'error') {
+        setError(data.detail || data.error || `HTTP ${res.status}`);
+      } else {
+        setScanResult({ hosts_found: data.hosts_found || 0, exploits_found: data.exploits_found || 0 });
+        setStatusMsg(`Mapa NEXUS: ${data.targets?.length || 0} dispositivo(s) escaneado(s) con NSE`);
+        if (data.skipped?.length) setStatusMsg((m: any) => `${m} · ${data.skipped.length} fuera de alcance`);
+      }
+      await loadResults();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const handleDaemonToggle = async () => {
     setError(null);
     try {
@@ -215,7 +238,7 @@ export default function KrakenPanel() {
       {/* HEADER */}
       <div className="flex items-center justify-between pb-2 border-b border-[var(--ss-border)]">
         <h3 className="text-xs font-bold uppercase tracking-widest text-red-400 flex items-center gap-2 font-mono">
-          <Bug size={15} /> KRAKEN v4.0 — NSE Exploit Scanner
+          <Bug size={15} /> KRAKEN v5.0 — NSE + Mapa NEXUS
         </h3>
         <div className={`flex items-center gap-1 text-[10px] font-mono ${daemonRunning ? 'text-green-400' : 'text-slate-500'}`}>
           <div className={`w-1.5 h-1.5 rounded-full ${daemonRunning ? 'bg-green-400 animate-pulse' : 'bg-slate-600'}`} />
@@ -244,6 +267,14 @@ export default function KrakenPanel() {
           >
             {scanning ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />}
             {scanning ? 'Scanning...' : targetList.length ? 'Escanear objetivos' : 'Escanear red local'}
+          </button>
+          <button
+            onClick={handleScanMap}
+            disabled={scanning || loadingNetworks}
+            title="Escanea con NSE los dispositivos ya descubiertos en el mapa NEXUS"
+            className="px-3 py-2 text-xs font-mono border border-purple-500/40 text-purple-300 rounded-md hover:bg-purple-500/10 disabled:opacity-40 transition flex items-center gap-1.5 shrink-0"
+          >
+            <Radar size={14} /> Mapa
           </button>
           <button
             onClick={handleDetectNetworks}
@@ -348,6 +379,9 @@ export default function KrakenPanel() {
                       <XCircle size={14} className="text-red-400 shrink-0" />
                     )}
                     <span className="text-slate-200 truncate">{exp.ip}</span>
+                    {exp.device && (exp.device.hostname || exp.device.vendor) && (
+                      <span className="text-[9px] text-purple-300 truncate">{exp.device.hostname || exp.device.vendor}</span>
+                    )}
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 shrink-0">
                       :{exp.port}
                     </span>
@@ -383,6 +417,7 @@ export default function KrakenPanel() {
                 <div key={idx} className="bg-[var(--ss-bg-3)] border border-[var(--ss-border)] rounded-md p-2 text-xs font-mono">
                   <div className="flex items-center justify-between">
                     <span className="text-cyan-300 font-semibold">{h.ip}</span>
+                    {h.device?.type && <span className="text-[9px] text-purple-300">{h.device.type}</span>}
                     <span className="text-[10px] text-slate-500">{h.last_seen?.slice(0, 19) || ''}</span>
                   </div>
                   <div className="text-[10px] text-slate-400 mt-0.5">OS: {h.os || 'Unknown'}</div>

@@ -8894,7 +8894,12 @@ async def compat_export_post(request: Request):
 # ═════════════════════════════════════════════════════════════════════════════
 import sqlite3
 # =====================================================
-# KRAKEN v4.0 — NSE Exploit Scanner
+# KRAKEN v5.0 — NSE Exploit Scanner + Mapa NEXUS (Regla #67)
+# v5.0 (2026-10-02, Harold): se une al mapa de IA de NEXUS 10.0 —
+# escanea los dispositivos DESCUBIERTOS por topología (Regla #44) y
+# los resultados llegan con identidad (tipo/hostname/vendor), no IPs
+# peladas. El escaneo sigue siendo MANUAL. El paquete kraken/ v3 de
+# la raíz queda como librería legado: el motor real es ESTE bloque.
 # =====================================================
 KRAKEN_DB = BASE / "data" / "kraken_v4.db"
 
@@ -8915,6 +8920,23 @@ _KRAKEN_AUTHORIZED_NETWORKS = tuple(
     ipaddress.ip_network(cidr)
     for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
 )
+
+def _kraken_devices_from_map() -> dict:
+    """IP → identidad del dispositivo según el último escaneo de
+    topología (Regla #44). Fuente: TOPOLOGY_CACHE, igual que NEXUS."""
+    try:
+        with open(TOPOLOGY_CACHE, encoding="utf-8") as f:
+            data = json.load(f)
+        out = {}
+        for h in data.get("results", []):
+            out[h.get("ip")] = {
+                "type": h.get("type"), "hostname": h.get("hostname"),
+                "vendor": h.get("vendor"), "mac": h.get("mac"),
+            }
+        return out
+    except Exception:
+        return {}
+
 
 def _kraken_init_db():
     KRAKEN_DB.parent.mkdir(parents=True, exist_ok=True)
@@ -9088,6 +9110,67 @@ async def kraken_scan(
         "hosts": all_hosts,
     }
 
+@app.post("/api/kraken/scan-map")
+async def kraken_scan_map():
+    """v5.0: escanea con NSE los dispositivos REALES descubiertos en el
+    mapa (topología Regla #44). Solo IPs ya descubiertas y solo dentro
+    de redes privadas autorizadas — KRAKEN no inventa objetivos.
+    Manual: se lanza solo cuando el operador lo pide."""
+    import ipaddress as _ipa
+    devices = _kraken_devices_from_map()
+    if not devices:
+        return JSONResponse(
+            {"status": "error",
+             "detail": "El mapa está vacío: escanea la red primero (NEXUS → Escanear red)."},
+            status_code=409,
+        )
+    ips = []
+    skipped = []
+    for ip in devices:
+        try:
+            addr = _ipa.ip_address(ip)
+        except ValueError:
+            continue
+        if any(addr in net for net in _KRAKEN_AUTHORIZED_NETWORKS):
+            ips.append(ip)
+        else:
+            skipped.append(ip)
+    if not ips:
+        return JSONResponse(
+            {"status": "error", "detail": "Ningún dispositivo del mapa está en redes autorizadas.",
+             "skipped": skipped},
+            status_code=409,
+        )
+    _kraken_init_db()
+    loop = asyncio.get_event_loop()
+    results: list[dict[str, Any]] = []
+    all_hosts: list[dict[str, Any]] = []
+    total_exploits = 0
+    for ip in ips:
+        xml_data, error = await loop.run_in_executor(None, _kraken_scan_sync, ip)
+        if error:
+            results.append({"target": ip, "device": devices.get(ip), "status": "error", "error": error})
+            continue
+        hosts = _kraken_parse_xml(xml_data)
+        exploits = _kraken_save(ip, hosts)
+        total_exploits += exploits
+        for h in hosts:
+            h["device"] = devices.get(ip)
+        all_hosts.extend(hosts)
+        results.append({"target": ip, "device": devices.get(ip), "status": "ok",
+                        "hosts_found": len(hosts), "exploits_found": exploits})
+    return {
+        "status": "ok",
+        "targets": ips,
+        "skipped": skipped,
+        "results": results,
+        "hosts_found": len(all_hosts),
+        "exploits_found": total_exploits,
+        "hosts": all_hosts,
+        "note": "Dispositivos del mapa NEXUS escaneados con NSE.",
+    }
+
+
 @app.get("/api/kraken/results")
 async def kraken_results(limit: int = 50):
     """Devuelve resultados almacenados."""
@@ -9095,9 +9178,10 @@ async def kraken_results(limit: int = 50):
     conn = sqlite3.connect(str(KRAKEN_DB))
     c = conn.cursor()
     c.execute("SELECT ip, port, service, vulnerability, cve, success, attempted_at FROM exploits ORDER BY attempted_at DESC LIMIT ?", (limit,))
-    exploits = [{"ip": r[0], "port": r[1], "service": r[2], "vulnerability": r[3], "cve": r[4], "success": bool(r[5]), "attempted_at": r[6]} for r in c.fetchall()]
+    devices = _kraken_devices_from_map()
+    exploits = [{"ip": r[0], "port": r[1], "service": r[2], "vulnerability": r[3], "cve": r[4], "success": bool(r[5]), "attempted_at": r[6], "device": devices.get(r[0])} for r in c.fetchall()]
     c.execute("SELECT ip, last_seen, os FROM hosts ORDER BY last_seen DESC")
-    hosts = [{"ip": r[0], "last_seen": r[1], "os": r[2]} for r in c.fetchall()]
+    hosts = [{"ip": r[0], "last_seen": r[1], "os": r[2], "device": devices.get(r[0])} for r in c.fetchall()]
     c.execute("SELECT target, started_at, hosts_found, exploits_found FROM scan_log ORDER BY started_at DESC LIMIT 20")
     scans = [{"target": r[0], "started_at": r[1], "hosts_found": r[2], "exploits_found": r[3]} for r in c.fetchall()]
     conn.close()

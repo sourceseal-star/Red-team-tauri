@@ -36,7 +36,7 @@ const MODULES = [
   { id: 'warroom', label: 'War Room', icon: LayoutDashboard, color: 'text-cyan-400', badge: null },
   { id: 'cameras', label: 'Cámaras', icon: Camera, color: 'text-red-400', badge: 'live' },
   { id: 'threat', label: 'Threat Intel', icon: Shield, color: 'text-amber-400', badge: null },
-  { id: 'osint', label: 'KRAKEN', icon: Bug, color: 'text-red-400', badge: 'v4.0' },
+  { id: 'osint', label: 'KRAKEN', icon: Bug, color: 'text-red-400', badge: 'v5.0' },
   { id: 'wifi', label: 'WiFi', icon: Wifi, color: 'text-green-400', badge: null },
   { id: 'supergate', label: 'SOL SUPERGATE', icon: ShieldCheck, color: 'text-amber-300', badge: 'LIVE' },
   { id: 'universe', label: 'UNIVERSE · universe.py', icon: Globe, color: 'text-fuchsia-300', badge: 'SAFE' },
