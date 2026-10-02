@@ -94,7 +94,7 @@ _LOCAL_SOL_PORT = os.environ.get("PORT", "8006")
 SOL_API_URL = os.environ.get("SOL_API_URL", f"http://127.0.0.1:{_LOCAL_SOL_PORT}")
 BACKEND_URL = os.environ.get(
     "BACKEND_URL",
-    SOL_API_URL if os.environ.get("SOL_ENV") == "replit" else "http://localhost:8001",
+    SOL_API_URL if os.environ.get("SOL_ENV") == "replit" else "http://127.0.0.1:8001",
 )
 API_KEY = os.environ.get("REDTEAM_API_KEY", "")
 SOL_PUBLIC_URL = os.environ.get("SOL_PUBLIC_URL", "").strip().rstrip("/")
@@ -1375,7 +1375,7 @@ async def cmd_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Sin argumentos — mostrar estado del tutor
         try:
             import urllib.request as ur
-            base = os.environ.get("SOL_API_URL", "http://localhost:8006")
+            base = os.environ.get("SOL_API_URL", "http://127.0.0.1:8006")
             req = ur.Request(f"{base}/api/sol/tutor/status", method="GET")
             with ur.urlopen(req, timeout=10) as resp:
                 import json as _j

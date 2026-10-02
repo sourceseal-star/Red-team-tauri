@@ -439,7 +439,7 @@ import urllib.error
 
 # API key para autenticarse contra el Dashboard :8001 (requerida en la mayoría de endpoints)
 _API_KEY = os.environ.get("REDTEAM_API_KEY", os.environ.get("BACKEND_API_KEY", ""))
-BACKEND_URL = os.environ.get("COMMANDER_API", os.environ.get("BACKEND_URL", "http://localhost:8003"))
+BACKEND_URL = os.environ.get("COMMANDER_API", os.environ.get("BACKEND_URL", "http://127.0.0.1:8003"))
 
 
 def _backend_get(path, params=None, timeout=30):
@@ -456,7 +456,7 @@ def _backend_get(path, params=None, timeout=30):
             return resp.read().decode("utf-8")
     except Exception as e:
         # Fallback al dashboard :8001 directo
-        dash_url = "http://localhost:8001" + path
+        dash_url = "http://127.0.0.1:8001" + path
         if params:
             dash_url = dash_url + "?" + urllib.parse.urlencode(params)
         try:
@@ -484,7 +484,7 @@ def _backend_post(path, payload=None, timeout=60):
             return resp.read().decode("utf-8")
     except Exception as e:
         # Fallback al dashboard :8001 directo
-        dash_url = "http://localhost:8001" + path
+        dash_url = "http://127.0.0.1:8001" + path
         try:
             data2 = json.dumps(payload or {}).encode("utf-8")
             req2 = urllib.request.Request(dash_url, data=data2, method="POST")

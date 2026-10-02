@@ -18,7 +18,7 @@ Uso:
 Requiere:
   - TELEGRAM_BOT_TOKEN  en .env
   - TELEGRAM_CHAT_ID    en .env
-  - Backend corriendo en http://localhost:8001
+  - Backend corriendo en http://127.0.0.1:8001
 
 Autor: SourceSeal Red Team
 """
@@ -48,7 +48,7 @@ except Exception as _e:
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8001")
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8001")
 API_KEY = os.environ.get("REDTEAM_API_KEY", "")
 
 POLL_TIMEOUT = 30
@@ -455,7 +455,7 @@ def cmd_logs(chat_id, service="all"):
 
 def cmd_phantom(chat_id):
     try:
-        req = urllib.request.Request("http://localhost:8002/health", headers={"Authorization": f"Bearer {API_KEY}"})
+        req = urllib.request.Request("http://127.0.0.1:8002/health", headers={"Authorization": f"Bearer {API_KEY}"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             msg = (

@@ -178,7 +178,7 @@ if _HAS_INTEGRATION_CONFIG:
 else:
     CONFIG = {
         "mode": "master",
-        "master_url": "http://localhost:8001",
+        "master_url": "http://127.0.0.1:8001",
         "worker_id": os.urandom(4).hex(),
         "host": "0.0.0.0",
         "port": 8001,
@@ -1085,7 +1085,7 @@ def main():
     parser = argparse.ArgumentParser(description="SourceSeal TACTICAL v5.0")
     parser.add_argument("--mode", choices=["master", "worker"], default="master",
                        help="Modo de operación (default: master)")
-    parser.add_argument("--master-url", default="http://localhost:8001",
+    parser.add_argument("--master-url", default="http://127.0.0.1:8001",
                        help="URL del master (modo worker)")
     parser.add_argument("--worker-id", default=os.urandom(4).hex(),
                        help="ID del worker (auto-generado)")

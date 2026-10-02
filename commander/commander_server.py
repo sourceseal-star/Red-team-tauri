@@ -30,7 +30,7 @@ import uvicorn
 # ─── Config ──────────────────────────────────────────────
 PORT = int(os.environ.get("COMMANDER_PORT", "8003"))
 HOST = os.environ.get("COMMANDER_HOST", "0.0.0.0")
-REDTEAM_API = os.environ.get("BACKEND_API", "http://localhost:8001")
+REDTEAM_API = os.environ.get("BACKEND_API", "http://127.0.0.1:8001")
 ROOT = Path(__file__).parent
 DB_PATH = os.path.expanduser("~/commander.db")
 
@@ -558,7 +558,7 @@ async def phantom_status():
     import httpx
     try:
         async with httpx.AsyncClient(timeout=5) as c:
-            resp = await c.get("http://localhost:8002/api/status")
+            resp = await c.get("http://127.0.0.1:8002/api/status")
             return {"available": True, "status": resp.json()}
     except Exception:
         return {"available": False}
@@ -569,7 +569,7 @@ async def phantom_hunt(req: HuntRequest):
     import httpx
     try:
         async with httpx.AsyncClient(timeout=10) as c:
-            resp = await c.post("http://localhost:8002/api/hunt/start", json={
+            resp = await c.post("http://127.0.0.1:8002/api/hunt/start", json={
                 "query": req.query,
                 "playbook": req.playbook,
                 "max_results": req.max_results
