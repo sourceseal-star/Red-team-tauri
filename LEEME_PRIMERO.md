@@ -1614,3 +1614,44 @@ FastAPI, el loop de polling de Telegram y el `main`.
 
 Sin las variables de Telegram, corre igual como API local en :8080
 (solo localhost, requiere Bearer) — útil desde la War Room más adelante.
+
+## Regla #73 — CORRECCIÓN de Regla #71: un solo bot, Sol, siempre (2026-10-02)
+
+**Harold corrigió el plan** (screenshot de su chat activo con @sol_amg_bot):
+"el bot de Telegram que hay actualmente de Sol déjalo, no incluyas más
+bots, todo debe manejarlo Sol... antes el C2 debería funcionar con ella,
+no crear uno nuevo." El bot de Seal IA queda desconectado a propósito —
+no tocar.
+
+**Qué estaba mal en la Regla #71:** `orchestrator_tool.py` v1.0 traía su
+propio bot de Telegram (`ORCH_TELEGRAM_BOT_TOKEN`, polling propio) — un
+segundo bot, exactamente lo que Harold no quería, aunque el token fuera
+distinto al de Sol.
+
+**Fix — orchestrator_tool.py v1.1:** se eliminó POR COMPLETO la clase
+TelegramBot, el polling y el SystemMonitor con alertas push (ese trabajo
+ya es de `sol_daemon.py` — duplicarlo sería otro sistema paralelo).
+Quedó como pura API backend sin voz propia: RepoManager + estado de
+sistema + exec, todo con Bearer auth en :8080. Sol es la ÚNICA que habla
+en Telegram.
+
+**Integración real:** `sol_telegram_bridge.py` (repo `sol`) ganó 3
+comandos nuevos que consultan al Orchestrator por HTTP — mismo patrón
+exacto que ya usa con C2 UNIFIED PRO (:8005) y Nexus (:8004):
+- `/repos` — estado git de dashboard + commander
+- `/reposync dashboard|commander|all` — pull+push
+- `/top` — top 10 procesos por CPU/RAM
+
+**Única variable nueva a compartir entre ambos repos:** `ORCH_API_SECRET_KEY`
+en el `.env` de Red-team-tauri (que omni.sh exporta a todos los procesos,
+incluido el bridge de Sol). Sin esa clave compartida, Sol no puede
+autenticarse contra el Orchestrator.
+
+**Pasos de Harold:**
+```
+cd ~/Red-team-tauri && git pull
+cd ~/sol && git pull
+```
+Añadir a `~/Red-team-tauri/.env`: `ORCH_ENABLE=1` y `ORCH_API_SECRET_KEY=una_clave_larga`
+(la MISMA clave, ya que ambos procesos leen el mismo .env vía omni.sh).
+`bash omni.sh restart` → probar `/repos`, `/top` directo en el chat con Sol.

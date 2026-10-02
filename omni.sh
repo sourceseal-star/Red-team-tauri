@@ -437,10 +437,12 @@ start() {
 
     fi
 
-# ── 4b. ORCHESTRATOR TOOL (:8080, opt-in) — Regla #71 ──
-# Tool de administración de Harold: repos + monitoreo + Telegram ops.
+# ── 4b. ORCHESTRATOR TOOL (:8080, opt-in) — Regla #71/#73 ──
+# API de administración de Harold: repos + estado de sistema + exec.
+# SIN bot de Telegram propio (corrección Regla #73): Sol (@sol_amg_bot) es
+# la única voz en Telegram y consulta esta API por HTTP (/repos /reposync
+# /top en sol_telegram_bridge.py) — mismo patrón que ya usa con C2/Nexus.
 # NO arranca solo (protege RAM): se activa con ORCH_ENABLE=1 en .env.
-# Variables propias ORCH_* para que su bot NUNCA compita con el de Sol.
   if [ "${ORCH_ENABLE:-0}" = "1" ] && [ -f "$ROOT/orchestrator_tool.py" ]; then
     info "Orchestrator :${ORCH_PORT:-8080} — arrancando (opt-in)..."
     cd "$ROOT"
